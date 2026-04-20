@@ -18,26 +18,30 @@ The original project works, but it is tightly coupled to GitHub DOM classes, per
 - `React` only for the options surface, not the content script rendering path
 - Dedicated modules for GitHub route parsing, selector management, API access, caching, and reviewer rendering
 
-## Planned milestones
+## Implemented MVP
 
-### MVP
+- Detect GitHub repository pages and activate on PR list routes
+- Parse repository route and pull request number from the page
+- Load a saved token from extension settings
+- Fetch requested reviewers, requested teams, and completed reviewers
+- Render inline `Requested` and `Reviewed` reviewer chips in each PR row
+- Reuse per-page cache entries to avoid duplicate fetches for the same pull request
+- Re-process rows during GitHub SPA navigation and DOM updates
 
-- Detect GitHub PR list pages
-- Parse repo and PR metadata from the page
-- Load GitHub token from options
-- Fetch requested reviewers and latest completed review states
-- Render reviewer chips inline inside each PR row
+Implementation details live in [docs/implementation-notes.md](./docs/implementation-notes.md).
+
+## Next milestones
 
 ### V1.1
 
-- Cache reviewer payloads per page load
-- Better error states for `401`, `403`, missing token, and rate limiting
-- Public repo fallback when no token is present
+- Better public-repository fallback messaging
+- Clearer `401`, `403`, and private repository guidance in the UI
+- Token validation flow in settings
 
 ### V1.2
 
-- Playwright regression tests against fixture HTML
-- Selector fallback strategy for GitHub UI changes
+- DOM fixture regression coverage
+- Playwright extension-level rendering tests
 - Chrome Web Store packaging and release workflow
 
 ## Development

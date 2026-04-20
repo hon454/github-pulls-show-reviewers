@@ -52,6 +52,8 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - Treat GitHub DOM as unstable. New selectors should have a clear fallback strategy.
 - Keep the content script light. Move reusable logic into `src/`.
 - Use `browser.storage.local` for extension settings unless there is a clear reason not to.
+- Keep reviewer rendering deterministic and testable through pure view-model helpers where possible.
+- Update `README.md` and `docs/implementation-notes.md` when MVP behavior or scope changes.
 
 ## Workflow
 
@@ -91,3 +93,4 @@ Prefer multiple small commits over one mixed commit.
 - Call out scope creep early.
 - Prioritize breakage risks from GitHub DOM changes, API rate limits, auth handling, and regression coverage.
 - If a task cannot be fully verified, state exactly what was not run or not confirmed.
+- Keep repository docs synchronized with the implemented MVP instead of leaving roadmap text stale.
