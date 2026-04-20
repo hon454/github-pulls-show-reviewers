@@ -23,8 +23,10 @@ The original project works, but it is tightly coupled to GitHub DOM classes, per
 - Detect GitHub repository pages and activate on PR list routes
 - Parse repository route and pull request number from the page
 - Load a saved token from extension settings
-- Fetch requested reviewers, requested teams, and completed reviewers
+- Validate a token directly from the settings page before saving or using it
+- Fetch requested reviewers, requested teams, and latest completed review states
 - Render inline `Requested` and `Reviewed` reviewer chips in each PR row
+- Differentiate `approved`, `changes requested`, `commented`, and `dismissed` review states
 - Reuse per-page cache entries to avoid duplicate fetches for the same pull request
 - Re-process rows during GitHub SPA navigation and DOM updates
 
@@ -35,8 +37,8 @@ Implementation details live in [docs/implementation-notes.md](./docs/implementat
 ### V1.1
 
 - Better public-repository fallback messaging
-- Clearer `401`, `403`, and private repository guidance in the UI
-- Token validation flow in settings
+- Private/public repository guidance that is specific to the current repo
+- Repository-aware token validation flow in settings
 
 ### V1.2
 

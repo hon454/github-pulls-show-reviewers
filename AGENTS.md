@@ -54,6 +54,7 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - Use `browser.storage.local` for extension settings unless there is a clear reason not to.
 - Keep reviewer rendering deterministic and testable through pure view-model helpers where possible.
 - Update `README.md` and `docs/implementation-notes.md` when MVP behavior or scope changes.
+- Keep review-state semantics explicit. If review states are shown, document which GitHub states are included and how they are mapped in the UI.
 
 ## Workflow
 

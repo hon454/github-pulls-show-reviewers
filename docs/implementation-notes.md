@@ -6,8 +6,10 @@
 - Each PR row is inspected for its pull request number.
 - Reviewer data is loaded from the GitHub pull request and reviews REST endpoints.
 - Requested reviewers and completed reviewers are rendered as inline chips.
+- Completed reviews are color-coded by latest visible review state.
 - Reviewer links point back to repo-scoped GitHub pull request searches.
 - Reviewer payloads are cached per page session to avoid duplicate requests for the same pull request.
+- The options page can validate a token against the GitHub API before saving it.
 
 ## Runtime flow
 
@@ -25,10 +27,11 @@
 - There is no fixture-driven DOM regression test yet.
 - API requests are still one pull request plus one reviews request per uncached row.
 - Options UI stores the token, but does not yet verify token permissions.
+- Token validation is not repository-aware yet, so it confirms GitHub acceptance but not exact repo access.
 
 ## Next implementation targets
 
 - Collapse request volume further where practical.
 - Add DOM fixtures and Playwright coverage for rendering regressions.
 - Improve public-repository fallback messaging.
-- Add token self-check and clearer permission guidance in the options page.
+- Add repository-aware token self-check and clearer permission guidance in the options page.
