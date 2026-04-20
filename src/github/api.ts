@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ExtensionSettings } from "~/storage/settings";
+import type { ExtensionSettings } from "../storage/settings";
 
 const pullSchema = z.object({
   user: z.object({
@@ -39,6 +39,53 @@ export type PullReviewerSummary = {
   completedReviewers: string[];
 };
 
+export class GitHubApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly details?: string,
+  ) {
+    super(`GitHub API request failed with status ${status}.`);
+    this.name = "GitHubApiError";
+  }
+}
+
+const errorResponseSchema = z
+  .object({
+    message: z.string().optional(),
+  })
+  .passthrough();
+
+export function describeGitHubApiError(
+  error: unknown,
+  settings: ExtensionSettings,
+): string {
+  if (error instanceof GitHubApiError) {
+    if (error.status === 401) {
+      return settings.githubToken
+        ? "GitHub rejected the saved token. Check the token value and permissions."
+        : "This repository may require authentication. Add a fine-grained token in settings.";
+    }
+
+    if (error.status === 403) {
+      return "GitHub rate limited or denied this request. Check token permissions and API limits.";
+    }
+
+    if (error.status === 404) {
+      return settings.githubToken
+        ? "GitHub could not find this pull request with the current token."
+        : "GitHub could not find this pull request. A token may be required for private repositories.";
+    }
+
+    return error.details ?? error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Unknown GitHub API error.";
+}
+
 export async function fetchPullReviewerSummary(input: {
   owner: string;
   repo: string;
@@ -64,11 +111,11 @@ export async function fetchPullReviewerSummary(input: {
   ]);
 
   if (!pullResponse.ok) {
-    throw new Error(`GitHub pull request API failed with status ${pullResponse.status}.`);
+    throw await createGitHubApiError(pullResponse);
   }
 
   if (!reviewsResponse.ok) {
-    throw new Error(`GitHub reviews API failed with status ${reviewsResponse.status}.`);
+    throw await createGitHubApiError(reviewsResponse);
   }
 
   const pull = pullSchema.parse(await pullResponse.json());
@@ -90,4 +137,12 @@ export async function fetchPullReviewerSummary(input: {
     requestedTeams: pull.requested_teams.map((team) => team.slug),
     completedReviewers,
   };
+}
+
+async function createGitHubApiError(response: Response): Promise<GitHubApiError> {
+  const payload = errorResponseSchema.safeParse(await response.json().catch(() => null));
+  return new GitHubApiError(
+    response.status,
+    payload.success ? payload.data.message : undefined,
+  );
 }

@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useState, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 
-import { getStoredSettings, saveStoredSettings } from "~/storage/settings";
+import { getStoredSettings, saveStoredSettings } from "../../src/storage/settings";
 
 function OptionsPage() {
   const [token, setToken] = useState("");

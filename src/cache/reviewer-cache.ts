@@ -1,6 +1,6 @@
-import type { PullReviewerSummary } from "~/github/api";
+import type { PullReviewerSummary } from "../github/api";
 
-type CacheKey = `${string}/${string}#${string}`;
+export type CacheKey = `${string}/${string}#${string}`;
 
 const reviewerCache = new Map<CacheKey, PullReviewerSummary>();
 
@@ -14,4 +14,8 @@ export function setCachedReviewerSummary(key: CacheKey, value: PullReviewerSumma
 
 export function buildReviewerCacheKey(owner: string, repo: string, pullNumber: string): CacheKey {
   return `${owner}/${repo}#${pullNumber}`;
+}
+
+export function clearReviewerCache(): void {
+  reviewerCache.clear();
 }
