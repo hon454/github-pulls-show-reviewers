@@ -1,7 +1,10 @@
 import { StrictMode, useEffect, useState, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 
-import { validateGitHubToken } from "../../src/github/api";
+import {
+  validateGitHubRepositoryAccess,
+  validateGitHubToken,
+} from "../../src/github/api";
 import { getStoredSettings, saveStoredSettings } from "../../src/storage/settings";
 
 type StatusState = {
@@ -11,6 +14,7 @@ type StatusState = {
 
 function OptionsPage() {
   const [token, setToken] = useState("");
+  const [repository, setRepository] = useState("hon454/github-pulls-show-reviewers");
   const [status, setStatus] = useState<StatusState>({
     tone: "neutral",
     message: "Token is optional for public repositories.",
@@ -56,6 +60,27 @@ function OptionsPage() {
     });
 
     try {
+      const trimmedRepository = repository.trim();
+      if (trimmedRepository) {
+        const repositoryResult = await validateGitHubRepositoryAccess(
+          trimmedToken,
+          trimmedRepository,
+        );
+        if (repositoryResult.ok) {
+          setStatus({
+            tone: "success",
+            message: `GitHub accepted the token and pull-request access check passed for ${repositoryResult.fullName}.`,
+          });
+          return;
+        }
+
+        setStatus({
+          tone: "error",
+          message: repositoryResult.message,
+        });
+        return;
+      }
+
       const result = await validateGitHubToken(trimmedToken);
       if (result.ok) {
         setStatus({
@@ -97,6 +122,21 @@ function OptionsPage() {
         <p style={styles.hint}>
           Prefer a fine-grained token with the minimum read permissions needed for pull
           request data.
+        </p>
+        <label htmlFor="repository-check" style={styles.label}>
+          Repository access check
+        </label>
+        <input
+          id="repository-check"
+          type="text"
+          value={repository}
+          onChange={(event) => setRepository(event.currentTarget.value)}
+          placeholder="owner/name"
+          style={styles.input}
+        />
+        <p style={styles.hint}>
+          Optional. When set, validation checks whether the token can read pull requests
+          for this repository.
         </p>
         <div style={styles.actions}>
           <button

@@ -69,6 +69,16 @@ export type TokenValidationResult =
       message: string;
     };
 
+export type RepositoryValidationResult =
+  | {
+      ok: true;
+      fullName: string;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
 export class GitHubApiError extends Error {
   constructor(
     public readonly status: number,
@@ -217,6 +227,66 @@ export async function validateGitHubToken(token: string): Promise<TokenValidatio
   };
 }
 
+export async function validateGitHubRepositoryAccess(
+  token: string,
+  repository: string,
+): Promise<RepositoryValidationResult> {
+  const parsedRepository = parseRepositoryReference(repository);
+  if (parsedRepository == null) {
+    return {
+      ok: false,
+      message: "Repository must use the form owner/name.",
+    };
+  }
+
+  const response = await fetch(
+    `https://api.github.com/repos/${parsedRepository.owner}/${parsedRepository.repo}/pulls?per_page=1`,
+    {
+      headers: new Headers({
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        Authorization: `Bearer ${token}`,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const error = await createGitHubApiError(response);
+    return {
+      ok: false,
+      message: describeRepositoryValidationError(
+        error,
+        `${parsedRepository.owner}/${parsedRepository.repo}`,
+      ),
+    };
+  }
+
+  return {
+    ok: true,
+    fullName: `${parsedRepository.owner}/${parsedRepository.repo}`,
+  };
+}
+
+export function parseRepositoryReference(repository: string): {
+  owner: string;
+  repo: string;
+} | null {
+  const normalized = repository
+    .trim()
+    .replace(/^https:\/\/github\.com\//, "")
+    .replace(/\/+$/, "");
+  const match = normalized.match(/^([^/\s]+)\/([^/\s]+)$/);
+
+  if (match == null) {
+    return null;
+  }
+
+  return {
+    owner: match[1],
+    repo: match[2],
+  };
+}
+
 async function createGitHubApiError(response: Response): Promise<GitHubApiError> {
   const payload = errorResponseSchema.safeParse(await response.json().catch(() => null));
   return new GitHubApiError(
@@ -258,4 +328,23 @@ function isNewerReview(
   }
 
   return index >= existing.index;
+}
+
+function describeRepositoryValidationError(
+  error: GitHubApiError,
+  repository: string,
+): string {
+  if (error.status === 401) {
+    return `GitHub rejected the token while checking ${repository}.`;
+  }
+
+  if (error.status === 403) {
+    return `GitHub denied access to ${repository}. Check pull request permissions and token scope.`;
+  }
+
+  if (error.status === 404) {
+    return `Repository ${repository} is not accessible with this token.`;
+  }
+
+  return error.details ?? `GitHub validation failed for ${repository}.`;
 }
