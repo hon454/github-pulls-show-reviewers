@@ -1,12 +1,19 @@
-import type { PullReviewerSummary } from "../../github/api";
+import type { CompletedReview, PullReviewerSummary, ReviewState } from "../../github/api";
 import type { PullListRoute } from "../../github/routes";
 
-export type ReviewerChipTone = "requested" | "reviewed" | "team";
+export type ReviewerChipTone =
+  | "requested"
+  | "team"
+  | "approved"
+  | "changes-requested"
+  | "commented"
+  | "dismissed";
 
 export type ReviewerChip = {
   label: string;
   href: string;
   tone: ReviewerChipTone;
+  title?: string;
 };
 
 export type ReviewerSection = {
@@ -25,9 +32,9 @@ export function buildReviewerSections(
   const requestedTeamChips = summary.requestedTeams.map((team) =>
     buildChip(route, `@${team}`, "team"),
   );
-  const reviewedChips = summary.completedReviewers.map((reviewer) =>
-    buildChip(route, reviewer, "reviewed"),
-  );
+  const reviewedChips = [...summary.completedReviews]
+    .sort((left, right) => compareReviewState(left, right))
+    .map((review) => buildReviewedChip(route, review));
 
   return [
     {
@@ -58,6 +65,18 @@ function buildChip(
   };
 }
 
+function buildReviewedChip(route: PullListRoute, review: CompletedReview): ReviewerChip {
+  const tone = mapReviewStateToTone(review.state);
+  const suffix = formatReviewState(review.state);
+
+  return {
+    label: `${review.login} · ${suffix}`,
+    title: `${review.login}: ${suffix}`,
+    tone,
+    href: buildPullSearchUrl(route, review.login, tone, false),
+  };
+}
+
 function buildPullSearchUrl(
   route: PullListRoute,
   reviewer: string,
@@ -67,7 +86,12 @@ function buildPullSearchUrl(
   const normalizedReviewer = isTeam ? reviewer.slice(1) : reviewer;
   let query = "is:pr";
 
-  if (tone === "reviewed") {
+  if (
+    tone === "approved" ||
+    tone === "changes-requested" ||
+    tone === "commented" ||
+    tone === "dismissed"
+  ) {
     query += ` reviewed-by:${normalizedReviewer}`;
   } else if (isTeam) {
     query += ` team-review-requested:${route.owner}/${normalizedReviewer}`;
@@ -76,4 +100,42 @@ function buildPullSearchUrl(
   }
 
   return `https://github.com/${route.owner}/${route.repo}/pulls?q=${encodeURIComponent(query)}`;
+}
+
+function mapReviewStateToTone(state: ReviewState): ReviewerChipTone {
+  if (state === "APPROVED") {
+    return "approved";
+  }
+
+  if (state === "CHANGES_REQUESTED") {
+    return "changes-requested";
+  }
+
+  if (state === "DISMISSED") {
+    return "dismissed";
+  }
+
+  return "commented";
+}
+
+function formatReviewState(state: ReviewState): string {
+  if (state === "CHANGES_REQUESTED") {
+    return "changes requested";
+  }
+
+  return state.toLowerCase();
+}
+
+function compareReviewState(left: CompletedReview, right: CompletedReview): number {
+  const priority = {
+    CHANGES_REQUESTED: 0,
+    APPROVED: 1,
+    COMMENTED: 2,
+    DISMISSED: 3,
+  } as const;
+
+  return (
+    priority[left.state] - priority[right.state] ||
+    left.login.localeCompare(right.login)
+  );
 }

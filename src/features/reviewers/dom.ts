@@ -61,6 +61,26 @@ export function ensureReviewerStyles(): void {
       background: color-mix(in srgb, var(--bgColor-success-muted, #dafbe1) 80%, white);
       border-color: color-mix(in srgb, var(--borderColor-success-muted, #4ac26b) 55%, white);
     }
+    .ghpsr-chip--approved {
+      color: var(--fgColor-success, #1a7f37);
+      background: color-mix(in srgb, var(--bgColor-success-muted, #dafbe1) 80%, white);
+      border-color: color-mix(in srgb, var(--borderColor-success-muted, #4ac26b) 55%, white);
+    }
+    .ghpsr-chip--changes-requested {
+      color: var(--fgColor-danger, #cf222e);
+      background: color-mix(in srgb, var(--bgColor-danger-muted, #ffebe9) 82%, white);
+      border-color: color-mix(in srgb, var(--borderColor-danger-muted, #ff818266) 55%, white);
+    }
+    .ghpsr-chip--commented {
+      color: var(--fgColor-muted, #57606a);
+      background: color-mix(in srgb, var(--bgColor-muted, #f6f8fa) 88%, white);
+      border-color: color-mix(in srgb, var(--borderColor-muted, #d0d7de) 80%, white);
+    }
+    .ghpsr-chip--dismissed {
+      color: var(--fgColor-done, #8250df);
+      background: color-mix(in srgb, var(--bgColor-done-muted, #fbefff) 82%, white);
+      border-color: color-mix(in srgb, var(--borderColor-done-muted, #c297ff) 55%, white);
+    }
     .ghpsr-status {
       color: var(--fgColor-muted, #656d76);
       font-size: 12px;
@@ -114,12 +134,18 @@ export function ensureReviewerMount(row: Element): HTMLElement | null {
 }
 
 export function renderLoading(mount: HTMLElement): void {
-  mount.innerHTML = `<span class="ghpsr-status">Loading reviewers...</span>`;
+  const node = document.createElement("span");
+  node.className = "ghpsr-status";
+  node.textContent = "Loading reviewers...";
+  mount.replaceChildren(node);
   mount.removeAttribute("title");
 }
 
 export function renderError(mount: HTMLElement, message: string): void {
-  mount.innerHTML = `<span class="ghpsr-status ghpsr-status--error">Reviewer data unavailable</span>`;
+  const node = document.createElement("span");
+  node.className = "ghpsr-status ghpsr-status--error";
+  node.textContent = message;
+  mount.replaceChildren(node);
   mount.title = message;
 }
 
@@ -153,6 +179,9 @@ function createSectionNode(section: ReviewerSection): HTMLElement {
     link.className = `ghpsr-chip ghpsr-chip--${chip.tone}`;
     link.href = chip.href;
     link.textContent = chip.label;
+    if (chip.title) {
+      link.title = chip.title;
+    }
     sectionNode.append(link);
   });
 

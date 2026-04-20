@@ -1,11 +1,22 @@
 import { StrictMode, useEffect, useState, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 
+import { validateGitHubToken } from "../../src/github/api";
 import { getStoredSettings, saveStoredSettings } from "../../src/storage/settings";
+
+type StatusState = {
+  tone: "neutral" | "success" | "error";
+  message: string;
+};
 
 function OptionsPage() {
   const [token, setToken] = useState("");
-  const [message, setMessage] = useState("Token is optional for public repositories.");
+  const [status, setStatus] = useState<StatusState>({
+    tone: "neutral",
+    message: "Token is optional for public repositories.",
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
 
   useEffect(() => {
     void getStoredSettings().then((settings) => {
@@ -14,8 +25,53 @@ function OptionsPage() {
   }, []);
 
   async function handleSave() {
-    await saveStoredSettings({ githubToken: token.trim() || null });
-    setMessage("Settings saved.");
+    setIsSaving(true);
+    try {
+      await saveStoredSettings({ githubToken: token.trim() || null });
+      setStatus({
+        tone: "success",
+        message: token.trim()
+          ? "Settings saved. Review pages can now use this token."
+          : "Token cleared. Public repositories should continue to work without it.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleValidate() {
+    const trimmedToken = token.trim();
+    if (!trimmedToken) {
+      setStatus({
+        tone: "error",
+        message: "Enter a token to validate before running a GitHub check.",
+      });
+      return;
+    }
+
+    setIsValidating(true);
+    setStatus({
+      tone: "neutral",
+      message: "Checking the token against the GitHub API...",
+    });
+
+    try {
+      const result = await validateGitHubToken(trimmedToken);
+      if (result.ok) {
+        setStatus({
+          tone: "success",
+          message: `GitHub accepted the token. Core API remaining: ${result.remaining}/${result.limit}.`,
+        });
+        return;
+      }
+
+      setStatus({
+        tone: "error",
+        message: result.message,
+      });
+    } finally {
+      setIsValidating(false);
+    }
   }
 
   return (
@@ -42,10 +98,23 @@ function OptionsPage() {
           Prefer a fine-grained token with the minimum read permissions needed for pull
           request data.
         </p>
-        <button onClick={() => void handleSave()} style={styles.button}>
-          Save settings
-        </button>
-        <p style={styles.status}>{message}</p>
+        <div style={styles.actions}>
+          <button
+            onClick={() => void handleSave()}
+            style={styles.primaryButton}
+            disabled={isSaving || isValidating}
+          >
+            {isSaving ? "Saving..." : "Save settings"}
+          </button>
+          <button
+            onClick={() => void handleValidate()}
+            style={styles.secondaryButton}
+            disabled={isSaving || isValidating}
+          >
+            {isValidating ? "Checking..." : "Validate token"}
+          </button>
+        </div>
+        <p style={statusStyles[status.tone]}>{status.message}</p>
       </section>
     </main>
   );
@@ -110,7 +179,13 @@ const styles: Record<string, CSSProperties> = {
     color: "#6e5f52",
     fontSize: 13,
   },
-  button: {
+  actions: {
+    display: "flex",
+    gap: 12,
+    marginTop: 20,
+    flexWrap: "wrap",
+  },
+  primaryButton: {
     marginTop: 20,
     border: 0,
     borderRadius: 999,
@@ -120,9 +195,32 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 700,
     cursor: "pointer",
   },
-  status: {
+  secondaryButton: {
+    marginTop: 20,
+    borderRadius: 999,
+    padding: "12px 18px",
+    background: "#fffdf9",
+    border: "1px solid #d3c4ae",
+    color: "#3b3024",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+};
+
+const statusStyles: Record<StatusState["tone"], CSSProperties> = {
+  neutral: {
     marginTop: 16,
     color: "#52463b",
+    fontSize: 14,
+  },
+  success: {
+    marginTop: 16,
+    color: "#1a7f37",
+    fontSize: 14,
+  },
+  error: {
+    marginTop: 16,
+    color: "#cf222e",
     fontSize: 14,
   },
 };

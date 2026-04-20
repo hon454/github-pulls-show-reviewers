@@ -25,6 +25,7 @@ const pullSchema = z.object({
 const reviewsSchema = z.array(
   z.object({
     state: z.string(),
+    submitted_at: z.string().nullable().optional(),
     user: z
       .object({
         login: z.string(),
@@ -33,11 +34,40 @@ const reviewsSchema = z.array(
   }),
 );
 
+const rateLimitSchema = z.object({
+  rate: z.object({
+    limit: z.number(),
+    remaining: z.number(),
+  }),
+});
+
+export type ReviewState =
+  | "APPROVED"
+  | "CHANGES_REQUESTED"
+  | "COMMENTED"
+  | "DISMISSED";
+
+export type CompletedReview = {
+  login: string;
+  state: ReviewState;
+};
+
 export type PullReviewerSummary = {
   requestedUsers: string[];
   requestedTeams: string[];
-  completedReviewers: string[];
+  completedReviews: CompletedReview[];
 };
+
+export type TokenValidationResult =
+  | {
+      ok: true;
+      limit: number;
+      remaining: number;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
 
 export class GitHubApiError extends Error {
   constructor(
@@ -62,18 +92,20 @@ export function describeGitHubApiError(
   if (error instanceof GitHubApiError) {
     if (error.status === 401) {
       return settings.githubToken
-        ? "GitHub rejected the saved token. Check the token value and permissions."
-        : "This repository may require authentication. Add a fine-grained token in settings.";
+        ? "Saved token is invalid or expired."
+        : "Private repository or restricted data. Add a fine-grained token in settings.";
     }
 
     if (error.status === 403) {
-      return "GitHub rate limited or denied this request. Check token permissions and API limits.";
+      return settings.githubToken
+        ? "GitHub denied access. Check pull request permissions or API limits."
+        : "GitHub denied unauthenticated access. Add a token for private repositories or higher rate limits.";
     }
 
     if (error.status === 404) {
       return settings.githubToken
-        ? "GitHub could not find this pull request with the current token."
-        : "GitHub could not find this pull request. A token may be required for private repositories.";
+        ? "Repository or pull request is not accessible with the current token."
+        : "Pull request data is not accessible. A token may be required for private repositories.";
     }
 
     return error.details ?? error.message;
@@ -120,22 +152,68 @@ export async function fetchPullReviewerSummary(input: {
 
   const pull = pullSchema.parse(await pullResponse.json());
   const reviews = reviewsSchema.parse(await reviewsResponse.json());
-  const completedReviewers = Array.from(
-    new Set(
-      reviews
-        .filter((review) => review.state.toUpperCase() !== "PENDING")
-        .map((review) => review.user?.login)
-        .filter(
-          (reviewer): reviewer is string =>
-            reviewer != null && reviewer !== pull.user.login,
-        ),
-    ),
-  );
+  const latestReviewByUser = new Map<
+    string,
+    { state: ReviewState; submittedAt: string | null; index: number }
+  >();
+
+  reviews.forEach((review, index) => {
+    const normalizedState = normalizeReviewState(review.state);
+    const reviewer = review.user?.login;
+
+    if (normalizedState == null || reviewer == null || reviewer === pull.user.login) {
+      return;
+    }
+
+    const existingReview = latestReviewByUser.get(reviewer);
+    if (
+      existingReview == null ||
+      isNewerReview(review.submitted_at ?? null, index, existingReview)
+    ) {
+      latestReviewByUser.set(reviewer, {
+        state: normalizedState,
+        submittedAt: review.submitted_at ?? null,
+        index,
+      });
+    }
+  });
+
+  const completedReviews = Array.from(latestReviewByUser.entries())
+    .map(([login, review]) => ({
+      login,
+      state: review.state,
+    }))
+    .sort((left, right) => left.login.localeCompare(right.login));
 
   return {
     requestedUsers: pull.requested_reviewers.map((reviewer) => reviewer.login),
     requestedTeams: pull.requested_teams.map((team) => team.slug),
-    completedReviewers,
+    completedReviews,
+  };
+}
+
+export async function validateGitHubToken(token: string): Promise<TokenValidationResult> {
+  const response = await fetch("https://api.github.com/rate_limit", {
+    headers: new Headers({
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      Authorization: `Bearer ${token}`,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await createGitHubApiError(response);
+    return {
+      ok: false,
+      message: describeGitHubApiError(error, { githubToken: token }),
+    };
+  }
+
+  const payload = rateLimitSchema.parse(await response.json());
+  return {
+    ok: true,
+    limit: payload.rate.limit,
+    remaining: payload.rate.remaining,
   };
 }
 
@@ -145,4 +223,39 @@ async function createGitHubApiError(response: Response): Promise<GitHubApiError>
     response.status,
     payload.success ? payload.data.message : undefined,
   );
+}
+
+function normalizeReviewState(state: string): ReviewState | null {
+  const normalized = state.toUpperCase();
+
+  if (
+    normalized === "APPROVED" ||
+    normalized === "CHANGES_REQUESTED" ||
+    normalized === "COMMENTED" ||
+    normalized === "DISMISSED"
+  ) {
+    return normalized;
+  }
+
+  return null;
+}
+
+function isNewerReview(
+  submittedAt: string | null,
+  index: number,
+  existing: { submittedAt: string | null; index: number },
+): boolean {
+  if (submittedAt && existing.submittedAt) {
+    return submittedAt >= existing.submittedAt;
+  }
+
+  if (submittedAt && !existing.submittedAt) {
+    return true;
+  }
+
+  if (!submittedAt && existing.submittedAt) {
+    return false;
+  }
+
+  return index >= existing.index;
 }
