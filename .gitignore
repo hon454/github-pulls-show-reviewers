@@ -1,6 +1,29 @@
-node_modules
-.output
-.wxt
-dist
-playwright-report
-test-results
+# Dependencies
+node_modules/
+
+# Build outputs
+.output/
+.wxt/
+dist/
+coverage/
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.sample
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
