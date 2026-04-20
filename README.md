@@ -30,28 +30,22 @@ The original project works, but it is tightly coupled to GitHub DOM classes, per
 - Differentiate `approved`, `changes requested`, `commented`, and `dismissed` review states
 - Reuse per-page cache entries to avoid duplicate fetches for the same pull request
 - Re-process rows during GitHub SPA navigation and DOM updates
+- Ship Chrome-extension icons for packaging and store submission
+- Provide a tag-driven release workflow that builds and uploads the Chrome package
+- Show endpoint-specific diagnostics for `GET /pulls/{n}` and `GET /pulls/{n}/reviews`
+- Keep public repositories on the no-token path when GitHub allows unauthenticated access
+- Explain unauthenticated rate-limit failures separately from private-repository access issues
+- Let the options page check the same repository diagnostics with or without a saved token
 
 Implementation details live in [docs/implementation-notes.md](./docs/implementation-notes.md).
-
-## Next milestones
-
-### V1.1
-
-- Better public-repository fallback messaging
-- Private/public repository guidance that is specific to the current repo
-- Token permission diagnostics against the exact GitHub endpoints the extension uses
-
-### V1.2
-
-- Playwright extension-level rendering tests
-- Chrome Web Store packaging and release workflow
-- More GitHub DOM fixture variants for layout-change resilience
+Chrome Web Store submission copy and packaging notes live in [docs/chrome-web-store.md](./docs/chrome-web-store.md).
 
 ## Development
 
 ```bash
 pnpm install
 pnpm prepare
+pnpm icons:render
 pnpm dev
 ```
 
@@ -65,3 +59,18 @@ pnpm zip
 ## Authentication direction
 
 This rewrite should prefer fine-grained PAT guidance instead of the older classic `repo` scope approach. The extension should work without a token for public repositories when possible, and only ask for credentials when private repository access requires it.
+
+For public repositories, the extension first tries GitHub's unauthenticated REST path. When GitHub blocks that path, the UI should distinguish between:
+
+- Exact endpoint failures on `GET /repos/{owner}/{repo}/pulls/{n}`
+- Exact endpoint failures on `GET /repos/{owner}/{repo}/pulls/{n}/reviews`
+- Unauthenticated rate-limit exhaustion versus repository or token access problems
+
+Repository diagnostics in the options page currently map the key cases like this:
+
+| Check path | API shape                                      | UX outcome                                                                               |
+| ---------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| No token   | `200` on pulls list, pull detail, and reviews  | Confirm that the repository works without a token                                        |
+| No token   | `403` with rate-limit message or `remaining=0` | Explain unauthenticated rate limiting and suggest a token for higher limits              |
+| No token   | `404` or private-like auth failure             | Explain that the repository or pull request may be private, deleted, or permission-gated |
+| Token      | `403` without rate-limit signal                | Explain that the token likely needs `Pull requests: Read` or repository selection        |

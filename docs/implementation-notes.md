@@ -10,7 +10,8 @@
 - Reviewer links point back to repo-scoped GitHub pull request searches.
 - Reviewer payloads are cached per page session to avoid duplicate requests for the same pull request.
 - The options page can validate a token against the GitHub API before saving it.
-- Repository diagnostics can verify pull-request access for a specific `owner/name`.
+- Repository diagnostics can discover one pull request and verify the exact detail and reviews endpoints used by the content script, both with a saved token and on the no-token path.
+- The packaged extension now includes dedicated `16/32/48/128` icons under `public/icon/` for Chrome surfaces and store submission.
 
 ## Runtime flow
 
@@ -26,10 +27,28 @@
 
 - The extension still depends on GitHub metadata DOM structure.
 - API requests are still one pull request plus one reviews request per uncached row.
-- Repository access checks validate pull-request listing access, not every GitHub API permission edge case.
+- Public-repository no-token access still depends on GitHub's unauthenticated REST availability and rate limits.
+
+## Request volume decision
+
+- ADR: [0001 - Keep No-Token Support For Public Repositories](./adr/0001-keep-no-token-support-for-public-repositories.md)
+- `v1.0.0` keeps the current `pull + reviews` REST model for cold rows.
+- The current implementation already de-duplicates in-flight row fetches and caches each pull request summary for the active page session, so the immediate duplication risk is contained.
+- A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
+- If request volume becomes the next real bottleneck after launch, the preferred follow-up is a page-level batch strategy on the existing REST path before considering a broader API migration.
+
+## Repository diagnostics matrix
+
+The current repository-check UX is intentionally narrow and pinned by fixture-backed tests:
+
+| Mode     | Response pattern                               | Reported UX                                                                    |
+| -------- | ---------------------------------------------- | ------------------------------------------------------------------------------ |
+| No token | `200` for pulls list, pull detail, and reviews | Repository works on the public no-token path                                   |
+| No token | `403` with rate-limit signal                   | Unauthenticated rate limit exhausted                                           |
+| No token | `404`, `401`, or private-like `403`            | Repository or pull request behaves like a private or permission-gated resource |
+| Token    | `403` without rate-limit signal                | Token is missing `Pull requests: Read` or repository access                    |
 
 ## Next implementation targets
 
 - Collapse request volume further where practical.
-- Improve public-repository fallback messaging.
-- Add richer endpoint-specific permission diagnostics and more GitHub DOM fixtures.
+- Add more fixture-backed extension boot coverage for GitHub DOM variants.

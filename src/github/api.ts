@@ -22,6 +22,12 @@ const pullSchema = z.object({
     .default([]),
 });
 
+const pullListSchema = z.array(
+  z.object({
+    number: z.number(),
+  }),
+);
+
 const reviewsSchema = z.array(
   z.object({
     state: z.string(),
@@ -69,23 +75,68 @@ export type TokenValidationResult =
       message: string;
     };
 
+export type RepositoryValidationAuthMode = "token" | "no-token";
+
+export type RepositoryValidationOutcome =
+  | "accessible"
+  | "invalid-repository"
+  | "no-pulls"
+  | "unauthenticated-rate-limit"
+  | "unauthenticated-private-like"
+  | "token-invalid"
+  | "token-permission"
+  | "token-not-found"
+  | "unknown-error";
+
 export type RepositoryValidationResult =
   | {
       ok: true;
+      authMode: RepositoryValidationAuthMode;
+      outcome: "accessible";
+      message: string;
       fullName: string;
+      pullNumber: string;
     }
   | {
       ok: false;
+      authMode: RepositoryValidationAuthMode;
+      outcome: Exclude<RepositoryValidationOutcome, "accessible">;
       message: string;
+      fullName?: string;
+      pullNumber?: string;
     };
+
+type GitHubEndpointName = "pull" | "reviews" | "pulls-list";
+
+type GitHubEndpointDescriptor = {
+  name: GitHubEndpointName;
+  method: "GET";
+  path: string;
+};
+
+type GitHubRateLimitSnapshot = {
+  limit: number | null;
+  remaining: number | null;
+  resource: string | null;
+  resetAt: number | null;
+};
 
 export class GitHubApiError extends Error {
   constructor(
     public readonly status: number,
     public readonly details?: string,
+    public readonly endpoint?: GitHubEndpointDescriptor,
+    public readonly rateLimit?: GitHubRateLimitSnapshot,
   ) {
     super(`GitHub API request failed with status ${status}.`);
     this.name = "GitHubApiError";
+  }
+}
+
+export class GitHubPullRequestEndpointsError extends Error {
+  constructor(public readonly failures: GitHubApiError[]) {
+    super("GitHub pull request endpoint diagnostics failed.");
+    this.name = "GitHubPullRequestEndpointsError";
   }
 }
 
@@ -99,26 +150,14 @@ export function describeGitHubApiError(
   error: unknown,
   settings: ExtensionSettings,
 ): string {
+  if (error instanceof GitHubPullRequestEndpointsError) {
+    return error.failures
+      .map((failure) => describeGitHubEndpointError(failure, settings))
+      .join(" ");
+  }
+
   if (error instanceof GitHubApiError) {
-    if (error.status === 401) {
-      return settings.githubToken
-        ? "Saved token is invalid or expired."
-        : "Private repository or restricted data. Add a fine-grained token in settings.";
-    }
-
-    if (error.status === 403) {
-      return settings.githubToken
-        ? "GitHub denied access. Check pull request permissions or API limits."
-        : "GitHub denied unauthenticated access. Add a token for private repositories or higher rate limits.";
-    }
-
-    if (error.status === 404) {
-      return settings.githubToken
-        ? "Repository or pull request is not accessible with the current token."
-        : "Pull request data is not accessible. A token may be required for private repositories.";
-    }
-
-    return error.details ?? error.message;
+    return describeGitHubEndpointError(error, settings);
   }
 
   if (error instanceof Error) {
@@ -135,29 +174,34 @@ export async function fetchPullReviewerSummary(input: {
   settings: ExtensionSettings;
   signal?: AbortSignal;
 }): Promise<PullReviewerSummary> {
-  const headers = new Headers({
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  });
-
-  if (input.settings.githubToken) {
-    headers.set("Authorization", `Bearer ${input.settings.githubToken}`);
-  }
-
-  const pullUrl = `https://api.github.com/repos/${input.owner}/${input.repo}/pulls/${input.pullNumber}`;
-  const reviewUrl = `${pullUrl}/reviews`;
+  const headers = createGitHubHeaders(input.settings.githubToken);
+  const pullEndpoint = buildPullEndpoint(
+    input.owner,
+    input.repo,
+    input.pullNumber,
+  );
+  const reviewsEndpoint = buildReviewsEndpoint(
+    input.owner,
+    input.repo,
+    input.pullNumber,
+  );
+  const pullUrl = `https://api.github.com${pullEndpoint.path}`;
+  const reviewUrl = `https://api.github.com${reviewsEndpoint.path}`;
 
   const [pullResponse, reviewsResponse] = await Promise.all([
     fetch(pullUrl, { headers, signal: input.signal }),
     fetch(reviewUrl, { headers, signal: input.signal }),
   ]);
 
-  if (!pullResponse.ok) {
-    throw await createGitHubApiError(pullResponse);
-  }
+  const failures = (
+    await Promise.all([
+      createGitHubApiErrorFromResponse(pullResponse, pullEndpoint),
+      createGitHubApiErrorFromResponse(reviewsResponse, reviewsEndpoint),
+    ])
+  ).filter((failure): failure is GitHubApiError => failure != null);
 
-  if (!reviewsResponse.ok) {
-    throw await createGitHubApiError(reviewsResponse);
+  if (failures.length > 0) {
+    throw new GitHubPullRequestEndpointsError(failures);
   }
 
   const pull = pullSchema.parse(await pullResponse.json());
@@ -171,7 +215,11 @@ export async function fetchPullReviewerSummary(input: {
     const normalizedState = normalizeReviewState(review.state);
     const reviewer = review.user?.login;
 
-    if (normalizedState == null || reviewer == null || reviewer === pull.user.login) {
+    if (
+      normalizedState == null ||
+      reviewer == null ||
+      reviewer === pull.user.login
+    ) {
       return;
     }
 
@@ -202,17 +250,19 @@ export async function fetchPullReviewerSummary(input: {
   };
 }
 
-export async function validateGitHubToken(token: string): Promise<TokenValidationResult> {
+export async function validateGitHubToken(
+  token: string,
+): Promise<TokenValidationResult> {
   const response = await fetch("https://api.github.com/rate_limit", {
-    headers: new Headers({
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      Authorization: `Bearer ${token}`,
-    }),
+    headers: createGitHubHeaders(token),
   });
 
   if (!response.ok) {
-    const error = await createGitHubApiError(response);
+    const error = await createGitHubApiError(response, {
+      name: "pulls-list",
+      method: "GET",
+      path: "/rate_limit",
+    });
     return {
       ok: false,
       message: describeGitHubApiError(error, { githubToken: token }),
@@ -228,42 +278,89 @@ export async function validateGitHubToken(token: string): Promise<TokenValidatio
 }
 
 export async function validateGitHubRepositoryAccess(
-  token: string,
+  token: string | null,
   repository: string,
 ): Promise<RepositoryValidationResult> {
+  const settings = createValidationSettings(token);
+  const authMode = getRepositoryValidationAuthMode(settings);
   const parsedRepository = parseRepositoryReference(repository);
   if (parsedRepository == null) {
     return {
       ok: false,
+      authMode,
+      outcome: "invalid-repository",
       message: "Repository must use the form owner/name.",
     };
   }
 
-  const response = await fetch(
-    `https://api.github.com/repos/${parsedRepository.owner}/${parsedRepository.repo}/pulls?per_page=1`,
-    {
-      headers: new Headers({
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        Authorization: `Bearer ${token}`,
-      }),
-    },
+  const fullName = `${parsedRepository.owner}/${parsedRepository.repo}`;
+  const listEndpoint = buildPullsListEndpoint(
+    parsedRepository.owner,
+    parsedRepository.repo,
   );
+  const response = await fetch(`https://api.github.com${listEndpoint.path}`, {
+    headers: createGitHubHeaders(settings.githubToken),
+  });
 
   if (!response.ok) {
-    const error = await createGitHubApiError(response);
+    const error = await createGitHubApiError(response, listEndpoint);
     return {
       ok: false,
+      authMode,
+      outcome: classifyRepositoryValidationOutcome(error, settings),
+      fullName,
+      message: describeRepositoryValidationError(error, fullName, settings),
+    };
+  }
+
+  const pulls = pullListSchema.parse(await response.json());
+  const firstPull = pulls[0];
+  if (firstPull == null) {
+    return {
+      ok: false,
+      authMode,
+      outcome: "no-pulls",
+      fullName,
+      message: `Repository ${fullName} has no pull requests yet, so the exact reviewer endpoints could not be checked.`,
+    };
+  }
+
+  const pullNumber = String(firstPull.number);
+
+  try {
+    await fetchPullReviewerSummary({
+      owner: parsedRepository.owner,
+      repo: parsedRepository.repo,
+      pullNumber,
+      settings,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      authMode,
+      outcome: classifyRepositoryValidationOutcome(error, settings),
+      fullName,
+      pullNumber,
       message: describeRepositoryValidationError(
         error,
-        `${parsedRepository.owner}/${parsedRepository.repo}`,
+        fullName,
+        settings,
+        pullNumber,
       ),
     };
   }
 
   return {
     ok: true,
-    fullName: `${parsedRepository.owner}/${parsedRepository.repo}`,
+    authMode,
+    outcome: "accessible",
+    message: describeRepositoryValidationSuccess(
+      fullName,
+      pullNumber,
+      authMode,
+    ),
+    fullName,
+    pullNumber,
   };
 }
 
@@ -287,11 +384,42 @@ export function parseRepositoryReference(repository: string): {
   };
 }
 
-async function createGitHubApiError(response: Response): Promise<GitHubApiError> {
-  const payload = errorResponseSchema.safeParse(await response.json().catch(() => null));
+function createGitHubHeaders(token?: string | null): Headers {
+  const headers = new Headers({
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  });
+
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  return headers;
+}
+
+async function createGitHubApiErrorFromResponse(
+  response: Response,
+  endpoint: GitHubEndpointDescriptor,
+): Promise<GitHubApiError | null> {
+  if (response.ok) {
+    return null;
+  }
+
+  return createGitHubApiError(response, endpoint);
+}
+
+async function createGitHubApiError(
+  response: Response,
+  endpoint?: GitHubEndpointDescriptor,
+): Promise<GitHubApiError> {
+  const payload = errorResponseSchema.safeParse(
+    await response.json().catch(() => null),
+  );
   return new GitHubApiError(
     response.status,
     payload.success ? payload.data.message : undefined,
+    endpoint,
+    readRateLimitSnapshot(response),
   );
 }
 
@@ -331,20 +459,219 @@ function isNewerReview(
 }
 
 function describeRepositoryValidationError(
-  error: GitHubApiError,
+  error: unknown,
   repository: string,
+  settings: ExtensionSettings,
+  pullNumber?: string,
 ): string {
-  if (error.status === 401) {
-    return `GitHub rejected the token while checking ${repository}.`;
+  const message = describeGitHubApiError(error, settings);
+  if (pullNumber) {
+    return `Repository diagnostics checked pull #${pullNumber} in ${repository}. ${message}`;
   }
 
-  if (error.status === 403) {
-    return `GitHub denied access to ${repository}. Check pull request permissions and token scope.`;
+  return `Repository diagnostics failed for ${repository}. ${message}`;
+}
+
+function describeRepositoryValidationSuccess(
+  repository: string,
+  pullNumber: string,
+  authMode: RepositoryValidationAuthMode,
+): string {
+  const credentialLabel =
+    authMode === "no-token" ? "without a token" : "with the saved token";
+
+  return `Repository diagnostics checked pull #${pullNumber} in ${repository}. GET /repos/${repository}/pulls/${pullNumber} and /reviews both passed ${credentialLabel}.`;
+}
+
+function describeGitHubEndpointError(
+  error: GitHubApiError,
+  settings: ExtensionSettings,
+): string {
+  const endpointLabel = formatEndpointLabel(error.endpoint);
+  const rateLimitSuffix = formatRateLimitSuffix(error.rateLimit);
+
+  if (settings.githubToken) {
+    if (error.status === 401) {
+      return error.endpoint == null || error.endpoint.path === "/rate_limit"
+        ? "Saved token is invalid or expired."
+        : `Saved token was rejected by ${endpointLabel}.`;
+    }
+
+    if (isRateLimitError(error)) {
+      return `${endpointLabel} hit GitHub's API rate limit${rateLimitSuffix}.`;
+    }
+
+    if (error.status === 403) {
+      return `GitHub denied ${endpointLabel}. Check that the token has Pull requests: Read and includes this repository.`;
+    }
+
+    if (error.status === 404) {
+      return `${endpointLabel} is not accessible with the current token. Confirm the repository is selected in the token and the pull request exists.`;
+    }
+  } else {
+    if (isRateLimitError(error)) {
+      return `${endpointLabel} hit GitHub's unauthenticated rate limit${rateLimitSuffix}. Public repositories usually work without a token until that limit is exhausted; add a token for higher limits.`;
+    }
+
+    if (error.status === 401) {
+      return `${endpointLabel} requires authentication. Public repositories usually work without a token, so this repository or pull request may be private or access-restricted.`;
+    }
+
+    if (error.status === 403) {
+      return `${endpointLabel} was denied without a token. Public repositories usually work without a token; add a token for private repositories or higher API limits.`;
+    }
+
+    if (error.status === 404) {
+      return `${endpointLabel} was not accessible without a token. Public repositories usually work without a token, so the repository or pull request may be private, deleted, or permission-gated.`;
+    }
   }
 
-  if (error.status === 404) {
-    return `Repository ${repository} is not accessible with this token.`;
+  if (error.details) {
+    return `${endpointLabel} failed: ${error.details}`;
   }
 
-  return error.details ?? `GitHub validation failed for ${repository}.`;
+  return `${endpointLabel} failed with status ${error.status}.`;
+}
+
+function buildPullEndpoint(
+  owner: string,
+  repo: string,
+  pullNumber: string,
+): GitHubEndpointDescriptor {
+  return {
+    name: "pull",
+    method: "GET",
+    path: `/repos/${owner}/${repo}/pulls/${pullNumber}`,
+  };
+}
+
+function buildReviewsEndpoint(
+  owner: string,
+  repo: string,
+  pullNumber: string,
+): GitHubEndpointDescriptor {
+  return {
+    name: "reviews",
+    method: "GET",
+    path: `/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
+  };
+}
+
+function buildPullsListEndpoint(
+  owner: string,
+  repo: string,
+): GitHubEndpointDescriptor {
+  return {
+    name: "pulls-list",
+    method: "GET",
+    path: `/repos/${owner}/${repo}/pulls?per_page=1&state=all`,
+  };
+}
+
+function formatEndpointLabel(endpoint?: GitHubEndpointDescriptor): string {
+  if (endpoint == null) {
+    return "GitHub API request";
+  }
+
+  return `${endpoint.method} ${endpoint.path}`;
+}
+
+function readRateLimitSnapshot(response: Response): GitHubRateLimitSnapshot {
+  return {
+    limit: readHeaderNumber(response.headers, "x-ratelimit-limit"),
+    remaining: readHeaderNumber(response.headers, "x-ratelimit-remaining"),
+    resource: response.headers.get("x-ratelimit-resource"),
+    resetAt: readHeaderNumber(response.headers, "x-ratelimit-reset"),
+  };
+}
+
+function readHeaderNumber(headers: Headers, name: string): number | null {
+  const value = headers.get(name);
+  if (value == null) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function isRateLimitError(error: GitHubApiError): boolean {
+  return (
+    error.status === 429 ||
+    error.rateLimit?.remaining === 0 ||
+    error.details?.toLowerCase().includes("rate limit") === true
+  );
+}
+
+function formatRateLimitSuffix(rateLimit?: GitHubRateLimitSnapshot): string {
+  if (rateLimit?.remaining == null || rateLimit.limit == null) {
+    return "";
+  }
+
+  return ` (${rateLimit.remaining}/${rateLimit.limit} remaining)`;
+}
+
+function createValidationSettings(token: string | null): ExtensionSettings {
+  return {
+    githubToken: token?.trim() || null,
+  };
+}
+
+function getRepositoryValidationAuthMode(
+  settings: ExtensionSettings,
+): RepositoryValidationAuthMode {
+  return settings.githubToken ? "token" : "no-token";
+}
+
+function classifyRepositoryValidationOutcome(
+  error: unknown,
+  settings: ExtensionSettings,
+): Exclude<RepositoryValidationOutcome, "accessible"> {
+  const primaryError = getPrimaryGitHubApiError(error);
+
+  if (settings.githubToken) {
+    if (primaryError?.status === 401) {
+      return "token-invalid";
+    }
+
+    if (primaryError?.status === 403 && !isRateLimitError(primaryError)) {
+      return "token-permission";
+    }
+
+    if (primaryError?.status === 404) {
+      return "token-not-found";
+    }
+
+    return "unknown-error";
+  }
+
+  if (primaryError && isRateLimitError(primaryError)) {
+    return "unauthenticated-rate-limit";
+  }
+
+  if (
+    primaryError?.status === 401 ||
+    primaryError?.status === 403 ||
+    primaryError?.status === 404
+  ) {
+    return "unauthenticated-private-like";
+  }
+
+  return "unknown-error";
+}
+
+function getPrimaryGitHubApiError(error: unknown): GitHubApiError | null {
+  if (error instanceof GitHubPullRequestEndpointsError) {
+    return (
+      error.failures.find((failure) => isRateLimitError(failure)) ??
+      error.failures[0] ??
+      null
+    );
+  }
+
+  if (error instanceof GitHubApiError) {
+    return error;
+  }
+
+  return null;
 }

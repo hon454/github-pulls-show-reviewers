@@ -3,7 +3,7 @@ export const githubSelectors = {
   primaryLink: 'a.Link--primary[href*="/pull/"]',
   metaContainers: [
     ".d-flex.mt-1.text-small.color-fg-muted",
-    ".ListItem-module__ListItemMetadataRow--kV1xF",
+    '[class*="ListItem-module__ListItemMetadataRow"]',
   ],
   inlineMetaRowSelectors: [".d-none.d-md-inline-flex"],
 } as const;

@@ -1,0 +1,172 @@
+[
+  {
+    "name": "public repository works without a token",
+    "token": null,
+    "repository": "hon454/github-pulls-show-reviewers",
+    "responses": [
+      {
+        "status": 200,
+        "body": [
+          {
+            "number": 42
+          }
+        ]
+      },
+      {
+        "status": 200,
+        "body": {
+          "user": {
+            "login": "hon454"
+          },
+          "requested_reviewers": [],
+          "requested_teams": []
+        }
+      },
+      {
+        "status": 200,
+        "body": []
+      }
+    ],
+    "expected": {
+      "ok": true,
+      "authMode": "no-token",
+      "outcome": "accessible",
+      "pullNumber": "42",
+      "messageIncludes": [
+        "pull #42",
+        "without a token",
+        "/repos/hon454/github-pulls-show-reviewers/pulls/42",
+        "/reviews"
+      ],
+      "authorizationHeader": null
+    }
+  },
+  {
+    "name": "public repository hits unauthenticated rate limit",
+    "token": null,
+    "repository": "hon454/github-pulls-show-reviewers",
+    "responses": [
+      {
+        "status": 200,
+        "body": [
+          {
+            "number": 42
+          }
+        ]
+      },
+      {
+        "status": 200,
+        "body": {
+          "user": {
+            "login": "hon454"
+          },
+          "requested_reviewers": [],
+          "requested_teams": []
+        }
+      },
+      {
+        "status": 403,
+        "headers": {
+          "x-ratelimit-limit": "60",
+          "x-ratelimit-remaining": "0"
+        },
+        "body": {
+          "message": "API rate limit exceeded for 127.0.0.1."
+        }
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "authMode": "no-token",
+      "outcome": "unauthenticated-rate-limit",
+      "pullNumber": "42",
+      "messageIncludes": [
+        "pull #42",
+        "unauthenticated rate limit",
+        "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews"
+      ],
+      "authorizationHeader": null
+    }
+  },
+  {
+    "name": "public repository looks private without a token",
+    "token": null,
+    "repository": "hon454/github-pulls-show-reviewers",
+    "responses": [
+      {
+        "status": 200,
+        "body": [
+          {
+            "number": 42
+          }
+        ]
+      },
+      {
+        "status": 404,
+        "body": {
+          "message": "Not Found"
+        }
+      },
+      {
+        "status": 200,
+        "body": []
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "authMode": "no-token",
+      "outcome": "unauthenticated-private-like",
+      "pullNumber": "42",
+      "messageIncludes": [
+        "pull #42",
+        "without a token",
+        "private, deleted, or permission-gated",
+        "/repos/hon454/github-pulls-show-reviewers/pulls/42"
+      ],
+      "authorizationHeader": null
+    }
+  },
+  {
+    "name": "token lacks pull request permission",
+    "token": "github_pat_example",
+    "repository": "hon454/github-pulls-show-reviewers",
+    "responses": [
+      {
+        "status": 200,
+        "body": [
+          {
+            "number": 42
+          }
+        ]
+      },
+      {
+        "status": 200,
+        "body": {
+          "user": {
+            "login": "hon454"
+          },
+          "requested_reviewers": [],
+          "requested_teams": []
+        }
+      },
+      {
+        "status": 403,
+        "body": {
+          "message": "Resource not accessible by personal access token"
+        }
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "authMode": "token",
+      "outcome": "token-permission",
+      "pullNumber": "42",
+      "messageIncludes": [
+        "pull #42",
+        "Pull requests: Read",
+        "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews"
+      ],
+      "authorizationHeaderPrefix": "Bearer "
+    }
+  }
+]

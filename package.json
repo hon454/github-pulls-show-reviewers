@@ -1,12 +1,14 @@
 {
   "name": "github-pulls-show-reviewers",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "Chrome extension focused on showing reviewers directly in GitHub pull request lists.",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build --browser chrome",
+    "cws:assets": "pnpm build && node scripts/capture-cws-assets.mjs",
+    "icons:render": "node scripts/render-icons.mjs",
     "zip": "wxt zip --browser chrome",
     "prepare": "wxt prepare",
     "typecheck": "tsc --noEmit",

@@ -2,10 +2,14 @@ import { StrictMode, useEffect, useState, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 
 import {
+  type RepositoryValidationResult,
   validateGitHubRepositoryAccess,
   validateGitHubToken,
 } from "../../src/github/api";
-import { getStoredSettings, saveStoredSettings } from "../../src/storage/settings";
+import {
+  getStoredSettings,
+  saveStoredSettings,
+} from "../../src/storage/settings";
 
 type StatusState = {
   tone: "neutral" | "success" | "error";
@@ -14,7 +18,9 @@ type StatusState = {
 
 function OptionsPage() {
   const [token, setToken] = useState("");
-  const [repository, setRepository] = useState("hon454/github-pulls-show-reviewers");
+  const [repository, setRepository] = useState(
+    "hon454/github-pulls-show-reviewers",
+  );
   const [status, setStatus] = useState<StatusState>({
     tone: "neutral",
     message: "Token is optional for public repositories.",
@@ -66,16 +72,8 @@ function OptionsPage() {
           trimmedToken,
           trimmedRepository,
         );
-        if (repositoryResult.ok) {
-          setStatus({
-            tone: "success",
-            message: `GitHub accepted the token and pull-request access check passed for ${repositoryResult.fullName}.`,
-          });
-          return;
-        }
-
         setStatus({
-          tone: "error",
+          tone: getRepositoryValidationTone(repositoryResult),
           message: repositoryResult.message,
         });
         return;
@@ -99,15 +97,64 @@ function OptionsPage() {
     }
   }
 
+  async function handleNoTokenRepositoryCheck() {
+    const trimmedRepository = repository.trim();
+    if (!trimmedRepository) {
+      setStatus({
+        tone: "error",
+        message:
+          "Enter a repository in owner/name form before running a no-token check.",
+      });
+      return;
+    }
+
+    setIsValidating(true);
+    setStatus({
+      tone: "neutral",
+      message:
+        "Checking whether this repository works on the public no-token path...",
+    });
+
+    try {
+      const repositoryResult = await validateGitHubRepositoryAccess(
+        null,
+        trimmedRepository,
+      );
+      setStatus({
+        tone: getRepositoryValidationTone(repositoryResult),
+        message: repositoryResult.message,
+      });
+    } finally {
+      setIsValidating(false);
+    }
+  }
+
   return (
     <main style={styles.page}>
       <section style={styles.card}>
         <p style={styles.eyebrow}>GitHub Pulls Show Reviewers</p>
-        <h1 style={styles.title}>Reviewer visibility for GitHub pull request lists</h1>
+        <h1 style={styles.title}>
+          Reviewer visibility for GitHub pull request lists
+        </h1>
         <p style={styles.body}>
-          Save a fine-grained personal access token if you need private repository access.
-          Public repositories should remain a no-token path when implementation is complete.
+          Public repositories can stay on the no-token path. For private
+          repositories, save a fine-grained personal access token scoped only to
+          the owners and repositories this extension reads.
         </p>
+        <div style={styles.guidanceBox}>
+          <p style={styles.guidanceTitle}>
+            Recommended fine-grained token setup
+          </p>
+          <ul style={styles.guidanceList}>
+            <li>Repository access: Only select repositories</li>
+            <li>Repository permissions: Pull requests - Read-only</li>
+            <li>No write permissions are required for this extension</li>
+          </ul>
+          <p style={styles.guidanceNote}>
+            Organization-owned repositories may also require org approval before
+            the token can read pull requests.
+          </p>
+        </div>
         <label htmlFor="github-token" style={styles.label}>
           GitHub token
         </label>
@@ -120,8 +167,8 @@ function OptionsPage() {
           style={styles.input}
         />
         <p style={styles.hint}>
-          Prefer a fine-grained token with the minimum read permissions needed for pull
-          request data.
+          Use a fine-grained PAT such as <code>github_pat_...</code>. The
+          reviewer UI only reads pull request metadata and review history.
         </p>
         <label htmlFor="repository-check" style={styles.label}>
           Repository access check
@@ -135,8 +182,11 @@ function OptionsPage() {
           style={styles.input}
         />
         <p style={styles.hint}>
-          Optional. When set, validation checks whether the token can read pull requests
-          for this repository.
+          Optional. Both checks first discover one pull request in this
+          repository, then verify the exact <code>GET /pulls/{`{n}`}</code> and{" "}
+          <code>/reviews</code>
+          endpoints used by the content script. Use the no-token check to
+          confirm whether a public repository can stay on the anonymous path.
         </p>
         <div style={styles.actions}>
           <button
@@ -153,11 +203,32 @@ function OptionsPage() {
           >
             {isValidating ? "Checking..." : "Validate token"}
           </button>
+          <button
+            onClick={() => void handleNoTokenRepositoryCheck()}
+            style={styles.secondaryButton}
+            disabled={isSaving || isValidating}
+          >
+            {isValidating ? "Checking..." : "Check no-token repository"}
+          </button>
         </div>
         <p style={statusStyles[status.tone]}>{status.message}</p>
       </section>
     </main>
   );
+}
+
+function getRepositoryValidationTone(
+  result: RepositoryValidationResult,
+): StatusState["tone"] {
+  if (result.ok) {
+    return "success";
+  }
+
+  if (result.outcome === "no-pulls") {
+    return "neutral";
+  }
+
+  return "error";
 }
 
 const styles: Record<string, CSSProperties> = {
@@ -196,6 +267,32 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     maxWidth: 560,
     color: "#52463b",
+    lineHeight: 1.6,
+  },
+  guidanceBox: {
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 16,
+    background: "rgba(255, 251, 245, 0.92)",
+    border: "1px solid rgba(159, 90, 20, 0.16)",
+  },
+  guidanceTitle: {
+    margin: 0,
+    fontSize: 14,
+    fontWeight: 700,
+    color: "#6f3f11",
+  },
+  guidanceList: {
+    margin: "10px 0 0 18px",
+    padding: 0,
+    color: "#52463b",
+    lineHeight: 1.7,
+    fontSize: 14,
+  },
+  guidanceNote: {
+    margin: "12px 0 0",
+    color: "#6e5f52",
+    fontSize: 13,
     lineHeight: 1.6,
   },
   label: {
