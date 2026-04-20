@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { GitHubApiError, describeGitHubApiError } from "../src/github/api";
+import {
+  GitHubApiError,
+  describeGitHubApiError,
+  parseRepositoryReference,
+} from "../src/github/api";
 
 describe("describeGitHubApiError", () => {
   it("returns a token-specific 401 message", () => {
@@ -17,5 +21,14 @@ describe("describeGitHubApiError", () => {
     });
 
     expect(message).toContain("Private repository");
+  });
+
+  it("parses repository references", () => {
+    expect(parseRepositoryReference("https://github.com/hon454/github-pulls-show-reviewers")).toEqual(
+      {
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+      },
+    );
   });
 });
