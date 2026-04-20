@@ -24,6 +24,7 @@ The original project works, but it is tightly coupled to GitHub DOM classes, per
 - Parse repository route and pull request number from the page
 - Load a saved token from extension settings
 - Validate a token directly from the settings page before saving or using it
+- Optionally validate pull-request access for a specific `owner/name` repository
 - Fetch requested reviewers, requested teams, and latest completed review states
 - Render inline `Requested` and `Reviewed` reviewer chips in each PR row
 - Differentiate `approved`, `changes requested`, `commented`, and `dismissed` review states
@@ -38,13 +39,13 @@ Implementation details live in [docs/implementation-notes.md](./docs/implementat
 
 - Better public-repository fallback messaging
 - Private/public repository guidance that is specific to the current repo
-- Repository-aware token validation flow in settings
+- Token permission diagnostics against the exact GitHub endpoints the extension uses
 
 ### V1.2
 
-- DOM fixture regression coverage
 - Playwright extension-level rendering tests
 - Chrome Web Store packaging and release workflow
+- More GitHub DOM fixture variants for layout-change resilience
 
 ## Development
 
