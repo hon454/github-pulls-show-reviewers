@@ -12,7 +12,7 @@ describe("buildReviewerSections", () => {
     const sections = buildReviewerSections(route, {
       requestedUsers: ["alice"],
       requestedTeams: ["platform"],
-      completedReviewers: ["bob"],
+      completedReviews: [{ login: "bob", state: "APPROVED" }],
     });
 
     expect(sections[0]?.chips.map((chip) => chip.label)).toEqual(["alice", "@platform"]);
@@ -20,6 +20,7 @@ describe("buildReviewerSections", () => {
     expect(sections[0]?.chips[1]?.href).toContain(
       "team-review-requested%3Ahon454%2Fplatform",
     );
+    expect(sections[1]?.chips[0]?.label).toContain("approved");
     expect(sections[1]?.chips[0]?.href).toContain("reviewed-by%3Abob");
   });
 
@@ -27,7 +28,7 @@ describe("buildReviewerSections", () => {
     const sections = buildReviewerSections(route, {
       requestedUsers: [],
       requestedTeams: [],
-      completedReviewers: [],
+      completedReviews: [],
     });
 
     expect(sections[0]?.emptyLabel).toBe("No requested reviewers");
