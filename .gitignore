@@ -4,4 +4,3 @@ node_modules
 dist
 playwright-report
 test-results
-pnpm-lock.yaml
