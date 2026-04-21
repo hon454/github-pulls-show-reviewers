@@ -52,16 +52,19 @@ This repository intentionally stays narrow.
 The extension prefers the lightest access model that works.
 
 - Public repositories: try GitHub's unauthenticated REST path first
-- Private repositories: use a fine-grained PAT with minimum read access
-- Options page: validate the token before saving and diagnose repository access with the same API paths used by the content script
-- Options page: keep the repository diagnostics field empty until you want a repo-specific check, and offer a shortcut button to GitHub's fine-grained PAT creation flow
+- Private repositories: use fine-grained PATs with minimum read access
+- Options page: save multiple PAT scopes using `owner/*` and `owner/repo` matching
+- Runtime auth resolution: prefer `owner/repo`, then `owner/*`, then no-token
+- Matched-token failures do not fall back automatically to another token or the no-token path
+- Legacy single-token settings are ignored instead of being migrated automatically
+- Options page: diagnose repository access with the same API paths used by the content script and offer a shortcut button to GitHub's fine-grained PAT creation flow
 
 Recommended token direction for private repositories:
 
-- Repository access limited to the repos you need
+- Repository access limited to the repos you need or to one owner-wide token per account when appropriate
 - `Pull requests: Read`
 
-The options page distinguishes between public no-token success, unauthenticated rate limiting, private-like access failures, and token permission issues.
+The options page distinguishes between matched-token success, unauthenticated public access, rate limiting, private-like access failures, and token permission issues.
 
 ![Repository access diagnostics in the options page](./docs/chrome-web-store-assets/03-options-repository-check.png)
 
@@ -99,6 +102,24 @@ pnpm typecheck
 pnpm test
 pnpm test:e2e
 ```
+
+## Pre-release Test Workflow
+
+Use the same order locally before packaging or store submission:
+
+```bash
+pnpm verify:release
+```
+
+1. Run `pnpm install` and `pnpm prepare` if dependencies changed or you are on a fresh checkout.
+2. Run `pnpm lint` to catch unsafe edits, stale imports, and repository-level style regressions.
+3. Run `pnpm typecheck` to verify the extension entrypoints and shared reviewer contracts still line up.
+4. Run `pnpm test` to cover selector parsing, reviewer view models, API handling, token diagnostics, and options-page behavior.
+5. Run `pnpm test:e2e` to build the MV3 bundle and verify the packaged extension still renders reviewer chips in Playwright fixture scenarios.
+6. Run `pnpm cws:assets` only when screenshots or store-facing visuals need to be regenerated.
+7. Run `pnpm zip` only after the checks above are green and you are ready to inspect or submit the packaged artifact.
+
+Release automation installs Playwright Chromium and re-runs `pnpm verify:release` before `pnpm zip`, but the regular PR CI is intentionally lighter. Do not treat a green PR check alone as release sign-off.
 
 ## Repository Map
 

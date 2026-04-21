@@ -9,9 +9,10 @@
 - Completed reviews are color-coded by latest visible review state.
 - Reviewer links point back to repo-scoped GitHub pull request searches.
 - Reviewer payloads are cached per page session to avoid duplicate requests for the same pull request.
+- Settings store multiple token entries, each scoped to either `owner/*` or `owner/repo`.
 - The options page can validate a token against the GitHub API before saving it.
-- The options page leaves the repository diagnostics input empty by default and provides a shortcut link to GitHub's fine-grained PAT creation page.
-- Repository diagnostics can discover one pull request and verify the exact detail and reviews endpoints used by the content script, both with a saved token and on the no-token path.
+- The options page leaves the repository diagnostics input empty by default, resolves the best matching stored token for `owner/repo`, and provides a shortcut link to GitHub's fine-grained PAT creation page.
+- Repository diagnostics can discover one pull request and verify the exact detail and reviews endpoints used by the content script, both with the matched token and on the no-token path.
 - The packaged extension now includes dedicated `16/32/48/128` icons under `public/icon/` for Chrome surfaces and store submission.
 
 ## Runtime flow
@@ -20,15 +21,18 @@
 2. Find PR rows with centralized GitHub selectors.
 3. Extract the pull request number from the row id or primary pull request link.
 4. Load settings from `browser.storage.local`.
-5. Fetch reviewer data from GitHub only when the cache is cold.
-6. Render `Requested` and `Reviewed` sections inline in the PR row metadata area.
-7. Re-run row processing when GitHub mutates the page or performs SPA navigation.
+5. Resolve the best matching token scope for the current `owner/repo`.
+6. Fetch reviewer data from GitHub only when the cache is cold.
+7. Use the matched token only; do not auto-fallback to another token or to no-token when a matched token fails.
+8. Render `Requested` and `Reviewed` sections inline in the PR row metadata area.
+9. Re-run row processing when GitHub mutates the page or performs SPA navigation.
 
 ## Current limitations
 
 - The extension still depends on GitHub metadata DOM structure.
 - API requests are still one pull request plus one reviews request per uncached row.
 - Public-repository no-token access still depends on GitHub's unauthenticated REST availability and rate limits.
+- Legacy single-token settings are not migrated and must be re-added as scoped entries.
 
 ## Request volume decision
 

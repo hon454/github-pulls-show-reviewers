@@ -31,9 +31,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile=false
       - run: pnpm prepare
-      - run: pnpm lint
-      - run: pnpm typecheck
-      - run: pnpm test
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm verify:release
       - run: pnpm zip
 
       - name: Resolve release metadata

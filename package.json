@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:e2e": "pnpm build && playwright test"
+    "test:e2e": "pnpm build && playwright test",
+    "verify:release": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e"
   },
   "dependencies": {
     "react": "^19.0.0",

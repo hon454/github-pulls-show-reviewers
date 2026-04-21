@@ -81,13 +81,15 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 ## Release and upload checklist
 
 1. Ensure the package version is the version you intend to submit. Tag names should follow `v<version>`, for example `v1.0.0`.
-2. Run `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm cws:assets`, and `pnpm zip`.
-3. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
-4. Attach the three screenshots listed above.
-5. Paste the short description, detailed description, and privacy policy URL.
-6. Fill in the privacy fields using the draft above, then reconcile every answer against the shipped permissions and network behavior.
-7. If you want review before launch, disable automatic publish and stage the release in the dashboard.
-8. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
+2. Run `pnpm verify:release`.
+3. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
+4. Run `pnpm zip` only after the checks above pass.
+5. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
+6. Attach the three screenshots listed above.
+7. Paste the short description, detailed description, and privacy policy URL.
+8. Fill in the privacy fields using the draft above, then reconcile every answer against the shipped permissions and network behavior.
+9. If you want review before launch, disable automatic publish and stage the release in the dashboard.
+10. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
 
 ## Current package target
 
