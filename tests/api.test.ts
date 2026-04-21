@@ -8,7 +8,6 @@ import {
   describeGitHubApiError,
   parseRepositoryReference,
   validateGitHubRepositoryAccess,
-  validateAccountToken,
 } from "../src/github/api";
 
 type RepositoryValidationMatrixCase = {

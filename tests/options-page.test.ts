@@ -3,13 +3,16 @@ import { act, createElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../src/storage/accounts";
+import type * as AccountsModule from "../src/storage/accounts";
+
+type AccountsModuleType = typeof AccountsModule;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const listAccountsMock = vi.fn<() => Promise<Account[]>>(async () => []);
 
 vi.mock("../src/storage/accounts", async (importActual) => {
-  const actual = await importActual<typeof import("../src/storage/accounts")>();
+  const actual = await importActual<AccountsModuleType>();
   return {
     ...actual,
     listAccounts: listAccountsMock,
