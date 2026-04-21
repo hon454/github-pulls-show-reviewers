@@ -58,7 +58,7 @@ https://github.com/<owner>/<repo>/pulls
 Good manual checks:
 
 - A public repository with open pull requests, to validate the no-token path.
-- A private repository you can access, to validate the fine-grained PAT flow from the options page.
+- A private repository you can access, to validate the classic PAT flow (including SSO authorization) from the options page.
 
 This extension is intentionally narrow. Manual verification should stay focused on reviewer visibility:
 
@@ -79,11 +79,13 @@ This extension is intentionally narrow. Manual verification should stay focused 
 ### Private repository path
 
 1. Open the extension's options page from the extension card in `chrome://extensions`, or from the Chrome extensions menu.
-2. Add a fine-grained PAT scoped to the owner or repository you want to test.
-3. Keep permissions minimal:
-   `Pull requests: Read`.
-4. Save the token and use the repository diagnostics UI if needed.
-5. Re-open the private repository PR list and confirm reviewer chips now render through the authenticated path.
+2. Use the "Create classic PAT" link on the options page to open GitHub's classic token creation flow with the `repo` scope pre-selected.
+3. Keep scope selection minimal:
+   - `public_repo` for public-only usage.
+   - `repo` for private repository usage (the extension only performs read operations).
+4. For each organization that enforces SSO (for example an organization that disallows fine-grained PATs), open the token settings page, find the new token, and click `Configure SSO → Authorize` for that organization.
+5. Save the token in the options page and use the repository diagnostics UI to confirm access.
+6. Re-open the private repository PR list and confirm reviewer chips now render through the authenticated path.
 
 ## 5. Rebuild and reload during iteration
 
@@ -120,7 +122,9 @@ Before considering a manual check complete, verify at least these cases:
 - A completed review shows the latest visible state for that reviewer.
 - GitHub SPA navigation still leaves reviewer chips visible after moving between PR list views.
 - Reloading the page does not duplicate reviewer UI on the same row.
-- Private-repository access does not require broader token permissions than `Pull requests: Read`.
+- Private-repository access works with a classic PAT that holds the `repo` scope (and `public_repo` alone suffices for public-only usage).
+- A saved fine-grained PAT from a prior release still works without reconfiguration, because GitHub treats both styles as `Authorization: Bearer` tokens.
+- Reviewer metadata loads in an organization that disallows fine-grained PATs (for example a `cinev`-style org) after the user authorizes the classic PAT via `Configure SSO → Authorize`.
 
 ## 7. Troubleshooting
 
@@ -136,5 +140,5 @@ If the extension appears loaded but does not work:
 If reviewer data is missing only on private repositories:
 
 - Re-check that the stored PAT matches the target `owner/repo` or `owner/*`.
-- Re-check that the token has repository access and `Pull requests: Read`.
+- Re-check that the classic PAT has the `repo` scope (or `public_repo` for public-only access) and that SSO is authorized for every organization whose repositories you want to read.
 - Use the options page diagnostics to confirm the same GitHub API paths used by the content script can be reached.
