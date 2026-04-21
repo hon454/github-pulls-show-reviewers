@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "wxt",
     "build": "wxt build --browser chrome",
-    "cws:assets": "pnpm build && node scripts/capture-cws-assets.mjs",
+    "cws:assets": "WXT_GITHUB_APP_CLIENT_ID=TESTING_CLIENT_ID WXT_GITHUB_APP_SLUG=test-app WXT_GITHUB_APP_NAME='GitHub Pulls Show Reviewers (testing)' pnpm build && pnpm exec playwright test tests/e2e/capture-cws-assets.spec.ts",
     "icons:render": "node scripts/render-icons.mjs",
     "zip": "wxt zip --browser chrome",
     "prepare": "wxt prepare",
