@@ -17,7 +17,7 @@ Detailed description:
 
 `GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds inline chips for requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
 
-`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, keeps GitHub selectors isolated for DOM resilience, and supports fine-grained personal access tokens with repository-scoped pull-request read access when private repositories need authentication.`
+`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, keeps GitHub selectors isolated for DOM resilience, and supports GitHub classic personal access tokens (public_repo or repo scope) when private repositories need authentication. The extension only performs read operations.`
 
 ## Release workflow
 
@@ -63,7 +63,7 @@ Expected release gate behavior:
 5. Use the short and detailed descriptions above for the store listing.
 6. Refresh screenshots so they show reviewer chips on GitHub pull request lists only.
 7. Confirm the privacy disclosure matches the shipped behavior:
-   no sale of data, no advertising, no remote code, GitHub page access only, and optional fine-grained PAT storage in `browser.storage.local` for private repositories.
+   no sale of data, no advertising, no remote code, GitHub page access only, and optional classic PAT storage in `browser.storage.local` for private repositories.
 8. Keep release tags aligned with the store package version, using `v<manifest-version>` tags such as `v1.0.0`.
 9. Confirm the reviewer-only scope in the listing copy still matches the extension and screenshots before submission.
 
