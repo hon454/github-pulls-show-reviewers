@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to package and publish or refresh
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -14,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - uses: pnpm/action-setup@v4
 
@@ -29,13 +36,41 @@ jobs:
       - run: pnpm test
       - run: pnpm zip
 
+      - name: Resolve release metadata
+        id: release_meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            tag="${{ inputs.tag }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+          else
+            tag=""
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$tag" ] && [ -f "docs/releases/$tag.md" ]; then
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+            echo "notes_path=docs/releases/$tag.md" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: chrome-extension-package
           path: .output/*-chrome.zip
 
-      - if: startsWith(github.ref, 'refs/tags/v')
+      - if: steps.release_meta.outputs.tag != '' && steps.release_meta.outputs.has_notes == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
+          files: .output/*-chrome.zip
+          body_path: ${{ steps.release_meta.outputs.notes_path }}
+
+      - if: steps.release_meta.outputs.tag != '' && steps.release_meta.outputs.has_notes != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.tag }}
           files: .output/*-chrome.zip
           generate_release_notes: true
