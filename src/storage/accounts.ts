@@ -107,3 +107,32 @@ export async function markAccountInvalidated(
   };
   await writeSettings(next);
 }
+
+export async function resolveAccountForRepo(
+  owner: string,
+  repo: string,
+): Promise<Account | null> {
+  const normalizedOwner = owner.toLowerCase();
+  const normalizedRepo = repo.toLowerCase();
+  const normalizedFullName = `${normalizedOwner}/${normalizedRepo}`;
+
+  const accounts = await listAccounts();
+  for (const account of accounts) {
+    if (account.invalidated) {
+      continue;
+    }
+    for (const installation of account.installations) {
+      if (installation.account.login.toLowerCase() !== normalizedOwner) {
+        continue;
+      }
+      if (installation.repositorySelection === "all") {
+        return account;
+      }
+      const fullNames = installation.repoFullNames ?? [];
+      if (fullNames.some((name) => name.toLowerCase() === normalizedFullName)) {
+        return account;
+      }
+    }
+  }
+  return null;
+}

@@ -163,3 +163,144 @@ describe("accounts storage", () => {
     });
   });
 });
+
+describe("resolveAccountForRepo", () => {
+  async function seedAccounts(accounts: unknown[]) {
+    browserMock.browser.storage.local.get.mockResolvedValue({
+      settings: { version: 2, accounts },
+    });
+  }
+
+  function makeAccount(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: "acc",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_abc",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      ...overrides,
+    };
+  }
+
+  it("returns null when no account has a matching installation", async () => {
+    await seedAccounts([makeAccount()]);
+    const { resolveAccountForRepo } = await import("../src/storage/accounts");
+    await expect(
+      resolveAccountForRepo("cinev", "shotloom"),
+    ).resolves.toBeNull();
+  });
+
+  it("matches via an all-repos installation on the same owner", async () => {
+    await seedAccounts([
+      makeAccount({
+        installations: [
+          {
+            id: 1,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "all",
+            repoFullNames: null,
+          },
+        ],
+      }),
+    ]);
+    const { resolveAccountForRepo } = await import("../src/storage/accounts");
+    const account = await resolveAccountForRepo("cinev", "shotloom");
+    expect(account?.login).toBe("hon454");
+  });
+
+  it("matches selected installations by full name case-insensitively", async () => {
+    await seedAccounts([
+      makeAccount({
+        installations: [
+          {
+            id: 1,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "selected",
+            repoFullNames: ["CINEV/Shotloom"],
+          },
+        ],
+      }),
+    ]);
+    const { resolveAccountForRepo } = await import("../src/storage/accounts");
+    const account = await resolveAccountForRepo("cinev", "shotloom");
+    expect(account).not.toBeNull();
+  });
+
+  it("does not match selected installations when repo is absent", async () => {
+    await seedAccounts([
+      makeAccount({
+        installations: [
+          {
+            id: 1,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "selected",
+            repoFullNames: ["cinev/landing"],
+          },
+        ],
+      }),
+    ]);
+    const { resolveAccountForRepo } = await import("../src/storage/accounts");
+    await expect(
+      resolveAccountForRepo("cinev", "shotloom"),
+    ).resolves.toBeNull();
+  });
+
+  it("skips invalidated accounts", async () => {
+    await seedAccounts([
+      makeAccount({
+        invalidated: true,
+        invalidatedReason: "revoked",
+        installations: [
+          {
+            id: 1,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "all",
+            repoFullNames: null,
+          },
+        ],
+      }),
+    ]);
+    const { resolveAccountForRepo } = await import("../src/storage/accounts");
+    await expect(
+      resolveAccountForRepo("cinev", "shotloom"),
+    ).resolves.toBeNull();
+  });
+
+  it("returns the earliest matching account when multiple accounts match", async () => {
+    await seedAccounts([
+      makeAccount({
+        id: "later",
+        login: "hon454-work",
+        createdAt: 10,
+        installations: [
+          {
+            id: 2,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "all",
+            repoFullNames: null,
+          },
+        ],
+      }),
+      makeAccount({
+        id: "earlier",
+        login: "hon454",
+        createdAt: 1,
+        installations: [
+          {
+            id: 1,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "all",
+            repoFullNames: null,
+          },
+        ],
+      }),
+    ]);
+    const { resolveAccountForRepo } = await import("../src/storage/accounts");
+    const account = await resolveAccountForRepo("cinev", "shotloom");
+    expect(account?.id).toBe("earlier");
+  });
+});
