@@ -94,6 +94,8 @@ pnpm build
 pnpm zip
 ```
 
+To test the actual built extension in Chrome, load `.output/chrome-mv3` through `chrome://extensions` with `Developer mode` enabled. See [Manual Chrome testing](./docs/manual-chrome-testing.md) for the repository-specific flow.
+
 Validation:
 
 ```bash
@@ -145,6 +147,7 @@ The current MVP is already implemented around a few explicit constraints:
 ## Related Docs
 
 - [Implementation notes](./docs/implementation-notes.md)
+- [Manual Chrome testing](./docs/manual-chrome-testing.md)
 - [Chrome Web Store notes](./docs/chrome-web-store.md)
 - [Chrome Web Store submission draft](./docs/chrome-web-store-submission.md)
 - [Privacy policy draft](./docs/privacy-policy.md)
