@@ -49,23 +49,20 @@ This repository intentionally stays narrow.
 
 ## Authentication Model
 
-The extension prefers the lightest access model that works.
+- **Public repositories** continue to work without signing in. See
+  [ADR 0001](docs/adr/0001-keep-no-token-support-for-public-repositories.md).
+- **Private repositories** require signing in with GitHub through our GitHub App.
+  Click **Add account** on the options page and complete the OAuth Device Flow
+  (enter the short code on github.com, approve, come back to the options tab).
+  The App only requests `Pull requests: Read`.
+- **Multiple accounts** are supported. Add a personal account and a work
+  account side-by-side; the content script resolves the right one per repo from
+  each account's installations.
+- **Revocation** happens on GitHub's
+  [Applications page](https://github.com/settings/applications). Removing an
+  account from the options page only deletes the locally stored token.
 
-- Public repositories: try GitHub's unauthenticated REST path first
-- Private repositories: use a GitHub classic personal access token (`public_repo` for public-only access, `repo` for private repositories — the extension only performs read operations)
-- Options page: save multiple PAT scopes using `owner/*` and `owner/repo` matching
-- Runtime auth resolution: prefer `owner/repo`, then `owner/*`, then no-token
-- Matched-token failures do not fall back automatically to another token or the no-token path
-- Legacy single-token settings are ignored instead of being migrated automatically
-- Options page: diagnose repository access with the same API paths used by the content script and offer a shortcut button to GitHub's classic PAT creation flow
-
-Recommended token direction for private repositories:
-
-- Create a classic PAT at `https://github.com/settings/tokens/new`
-- Use `public_repo` for public-only access or `repo` for private repositories
-- For organizations that enforce SSO, open the token settings page and click `Configure SSO → Authorize` for each organization you need to read
-
-The options page distinguishes between matched-token success, unauthenticated public access, rate limiting, private-like access failures, and token permission issues. Classic PAT support is an interim step before a GitHub App flow lands; see [ADR 0002](./docs/adr/0002-classic-pat-interim-auth.md).
+See [ADR 0003](docs/adr/0003-github-app-device-flow.md) for the rationale.
 
 ![Repository access diagnostics in the options page](./docs/chrome-web-store-assets/03-options-repository-check.png)
 
@@ -153,4 +150,4 @@ The current MVP is already implemented around a few explicit constraints:
 - [Chrome Web Store submission draft](./docs/chrome-web-store-submission.md)
 - [Privacy policy draft](./docs/privacy-policy.md)
 - [ADR: Keep no-token support for public repositories](./docs/adr/0001-keep-no-token-support-for-public-repositories.md)
-- [ADR: Classic PAT interim auth](./docs/adr/0002-classic-pat-interim-auth.md)
+- [ADR: Interim auth (superseded)](./docs/adr/0002-classic-pat-interim-auth.md)

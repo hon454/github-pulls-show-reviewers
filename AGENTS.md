@@ -12,7 +12,7 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - Keep the initial UX centered on requested reviewers, requested teams, and completed review state.
 - Treat unrelated PR metadata such as checks, mergeability, assignees, or labels as out of scope unless the user approves a scope change.
 - Prefer public-repository support without a token when possible.
-- For private repositories, guide the product toward classic PAT usage (`public_repo` for public-only access, `repo` for private access) and remind users to authorize SSO per organization. A GitHub App flow is the intended long-term replacement and is tracked separately.
+- For private repositories, guide users to sign in with GitHub through the maintainer-owned GitHub App (OAuth Device Flow). Multi-account storage is supported and the App requests `Pull requests: Read` only.
 
 ## Technical Baseline
 

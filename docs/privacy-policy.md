@@ -12,17 +12,24 @@ To provide its reviewer visibility feature, the extension may access:
 
 - GitHub repository and pull request context from the current page, including repository owner/name, pull request numbers, and visible metadata needed to place reviewer chips in the list UI.
 - Reviewer-related metadata returned by GitHub's REST API, including requested reviewers, requested teams, and review states.
-- An optional GitHub classic personal access token (recommended scopes: `public_repo` for public-only access, or `repo` for private repositories) if the user enters one in the extension options page.
+- User-to-server access tokens issued by GitHub after you sign in with our
+  GitHub App (requested permission: `Pull requests: Read`). Tokens are
+  long-lived and revocable from
+  [github.com/settings/applications](https://github.com/settings/applications).
 
 ## How data is used
 
 - GitHub page context is used locally to determine which repository and pull requests are visible on the current page.
 - Reviewer metadata is requested from GitHub's API and rendered inline on the GitHub pull request list page.
-- The optional GitHub token is used only to authenticate requests to GitHub when the user wants private repository access or higher API limits.
+- The GitHub App token is used only to authenticate requests to GitHub for private repository access.
 
 ## Storage and retention
 
-- The optional GitHub token is stored locally in `browser.storage.local` until the user updates or removes it.
+- Connected accounts are stored locally in `browser.storage.local` under a
+  single `settings` key. Each record contains the GitHub login, avatar URL,
+  user-to-server access token, creation timestamp, a cached list of GitHub App
+  installations, and a revocation flag. Entries live there until the user
+  removes the account.
 - Reviewer responses are cached only for the current page session to avoid duplicate fetches while browsing the same pull request list.
 - The extension does not operate its own backend, database, analytics pipeline, or advertising system.
 

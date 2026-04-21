@@ -2,30 +2,28 @@
 
 ## Current MVP behavior
 
-- The content script runs on GitHub repository pages and activates on pull request list routes.
-- Each PR row is inspected for its pull request number.
-- Reviewer data is loaded from the GitHub pull request and reviews REST endpoints.
-- Requested reviewers and completed reviewers are rendered as inline chips.
-- Completed reviews are color-coded by latest visible review state.
-- Reviewer links point back to repo-scoped GitHub pull request searches.
-- Reviewer payloads are cached per page session to avoid duplicate requests for the same pull request.
-- Settings store multiple token entries, each scoped to either `owner/*` or `owner/repo`.
-- The options page can validate a token against the GitHub API before saving it.
-- The options page leaves the repository diagnostics input empty by default, resolves the best matching stored token for `owner/repo`, and provides a shortcut link to GitHub's classic PAT creation page along with an SSO authorization reminder.
-- Repository diagnostics can discover one pull request and verify the exact detail and reviews endpoints used by the content script, both with the matched token and on the no-token path.
-- The packaged extension now includes dedicated `16/32/48/128` icons under `public/icon/` for Chrome surfaces and store submission.
+- Settings store multiple connected GitHub accounts under a single versioned
+  `settings` key. Each account carries a user-to-server token plus a cache of
+  its GitHub App installations (`all` or `selected` with explicit full names).
+- Device flow runs on the options page. Polling stops when the options tab
+  closes; restarts are clean.
+- Content-script reviewer fetches resolve the covering account per repo via
+  the cached installations. No user-typed scope patterns.
+- Row-level failures render an empty reviewer slot. A page-level banner surfaces
+  uncovered-org guidance and unauthenticated rate-limit hints.
 
 ## Runtime flow
 
 1. Parse the current repository route from `window.location.pathname`.
 2. Find PR rows with centralized GitHub selectors.
 3. Extract the pull request number from the row id or primary pull request link.
-4. Load settings from `browser.storage.local`.
-5. Resolve the best matching token scope for the current `owner/repo`.
-6. Fetch reviewer data from GitHub only when the cache is cold.
-7. Use the matched token only; do not auto-fallback to another token or to no-token when a matched token fails.
-8. Render `Requested` and `Reviewed` sections inline in the PR row metadata area.
-9. Re-run row processing when GitHub mutates the page or performs SPA navigation.
+4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
+5. Fetch reviewer data from GitHub only when the cache is cold. Use the
+   matched account's token, or no token if none matches.
+6. Render `Requested` and `Reviewed` sections inline in the PR row metadata area.
+7. On API errors, emit a signal to the banner aggregator; do not render
+   row-level error text.
+8. Re-run row processing when GitHub mutates the page or performs SPA navigation.
 
 ## Current limitations
 
@@ -44,16 +42,38 @@
 
 ## Repository diagnostics matrix
 
-The current repository-check UX is intentionally narrow and pinned by fixture-backed tests:
-
-| Mode     | Response pattern                               | Reported UX                                                                    |
-| -------- | ---------------------------------------------- | ------------------------------------------------------------------------------ |
-| No token | `200` for pulls list, pull detail, and reviews | Repository works on the public no-token path                                   |
-| No token | `403` with rate-limit signal                   | Unauthenticated rate limit exhausted                                           |
-| No token | `404`, `401`, or private-like `403`            | Repository or pull request behaves like a private or permission-gated resource |
-| Token    | `403` without rate-limit signal                | Classic PAT is missing the `repo` scope or the organization requires SSO authorization |
+| Mode               | Response pattern                              | Reported UX                                                                 |
+| ------------------ | --------------------------------------------- | --------------------------------------------------------------------------- |
+| No signed-in account | 200 for pulls list, pull detail, and reviews | Repository works on the public no-token path                                |
+| No signed-in account | 403 with rate-limit signal                   | Unauthenticated rate limit exhausted                                        |
+| No signed-in account | 404 / 401 / private-like 403                 | Repository behaves like a private or permission-gated resource              |
+| Matched account    | 401 on `/rate_limit` or a repository endpoint | Token was revoked — sign in again from the options page                     |
+| Matched account    | 403 / 404 without rate-limit signal           | Installation does not cover this repository — install the GitHub App on the owner |
 
 ## Next implementation targets
 
 - Collapse request volume further where practical.
 - Add more fixture-backed extension boot coverage for GitHub DOM variants.
+
+## Device flow
+
+- Polling lives on the options page because MV3 service workers unload on idle.
+- `POST /login/oauth/access_token` uses the `urn:ietf:params:oauth:grant-type:device_code` grant type. No `client_secret` is required or sent.
+- On `slow_down`, the interval bumps by 5 seconds.
+- On `expired_token` or the local clock passing `expires_at`, the panel offers a
+  retry that requests a fresh device code.
+
+## Registering a personal GitHub App for development
+
+1. Create a new GitHub App on your account. Set Device Flow to **Enabled** and
+   Repository permissions to `Pull requests: Read` only.
+2. Copy the Client ID and App slug into `.env.local`:
+
+```bash
+WXT_GITHUB_APP_CLIENT_ID=<your-client-id>
+WXT_GITHUB_APP_SLUG=<your-app-slug>
+WXT_GITHUB_APP_NAME=<optional display name>
+```
+
+3. Run `pnpm dev` and open the options page to exercise the device flow against
+   your personal App.
