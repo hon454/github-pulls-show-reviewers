@@ -128,9 +128,38 @@ async function withExtensionContext(
     const serviceWorker =
       context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
     expect(serviceWorker.url()).toContain("chrome-extension://");
+    await settleExtensionInstallUi(context);
     await run(context);
   } finally {
     await context.close();
+  }
+}
+
+async function settleExtensionInstallUi(
+  context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+): Promise<void> {
+  const closeExtensionPages = async () => {
+    await Promise.all(
+      context
+        .pages()
+        .filter((page) => page.url().startsWith("chrome-extension://"))
+        .map(async (page) => {
+          await page.close().catch(() => {});
+        }),
+    );
+  };
+
+  await closeExtensionPages();
+
+  const maybeInstallPage = await context
+    .waitForEvent("page", {
+      timeout: 1_000,
+    })
+    .catch(() => null);
+
+  if (maybeInstallPage) {
+    await maybeInstallPage.waitForLoadState("domcontentloaded").catch(() => {});
+    await closeExtensionPages();
   }
 }
 
