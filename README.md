@@ -54,7 +54,8 @@ This repository intentionally stays narrow.
 - **Private repositories** require signing in with GitHub through our GitHub App.
   Click **Add account** on the options page and complete the OAuth Device Flow
   (enter the short code on github.com, approve, come back to the options tab).
-  The App only requests `Pull requests: Read`.
+  The App only requests `Pull requests: Read`. For organization-owned private
+  repositories, an organization owner may need to install the GitHub App first.
 - **Multiple accounts** are supported. Add a personal account and a work
   account side-by-side; the content script resolves the right one per repo from
   each account's installations.

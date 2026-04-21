@@ -29,7 +29,7 @@ export function OptionsPage() {
         <h1 style={styles.title}>Reviewer visibility for GitHub pull request lists</h1>
         <p style={styles.body}>
           {appConfig
-            ? "Sign in with GitHub (via our GitHub App) to see reviewer chips on private-repository pull request lists. Public repositories continue to work without signing in."
+            ? "Sign in with GitHub (via our GitHub App) to see reviewer chips on private-repository pull request lists. Public repositories continue to work without signing in. For organization-owned private repositories, an organization owner may need to install the GitHub App first."
             : "This build is missing its GitHub App configuration, so account sign-in is unavailable. Public repositories continue to work without signing in."}
         </p>
 
