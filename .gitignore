@@ -30,3 +30,6 @@ Thumbs.db
 
 # Local agent worktrees
 .claude/worktrees/
+
+# Local planning and spec notes
+docs/superpowers/

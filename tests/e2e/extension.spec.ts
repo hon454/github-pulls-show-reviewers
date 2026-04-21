@@ -71,6 +71,25 @@ for (const fixtureCase of renderCases) {
   });
 }
 
+test("omits the inline reviewer row when both requested and reviewed are empty", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(path.join(fixturesDir, "github-pulls.html"), "utf8");
+
+    await routeFixturePage(context, fixtureHtml);
+    await routePullApi(context, "42", {
+      user: { login: "hon454" },
+      requested_reviewers: [],
+      requested_teams: [],
+    });
+    await routeReviewsApi(context, "42", []);
+
+    const page = await context.newPage();
+    await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
+
+    await expect(page.locator(".ghpsr-root")).toBeEmpty();
+  });
+});
+
 test("clears the reviewer slot silently when review history is denied", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(path.join(fixturesDir, "github-pulls.html"), "utf8");

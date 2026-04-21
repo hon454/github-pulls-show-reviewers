@@ -59,6 +59,19 @@ describe("reviewer dom rendering", () => {
     expect(mount?.textContent).toContain("approved");
   });
 
+  it("clears the inline reviewer mount when there are no sections to render", () => {
+    const row = document.querySelector(".js-issue-row");
+    expect(row).not.toBeNull();
+
+    const mount = ensureReviewerMount(row!);
+    expect(mount).not.toBeNull();
+
+    renderReviewerSections(mount!, []);
+
+    expect(mount?.textContent).toBe("");
+    expect(mount?.childElementCount).toBe(0);
+  });
+
   it("extracts the pull number from the primary link when the row id is missing", async () => {
     await loadFixture("github-pulls-link-only.html");
 

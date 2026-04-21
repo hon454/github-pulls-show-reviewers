@@ -25,7 +25,7 @@ describe("buildReviewerSections", () => {
     expect(sections[1]?.chips[0]?.href).toContain("reviewed-by%3Abob");
   });
 
-  it("keeps empty states explicit", () => {
+  it("omits both sections when no requested reviewers or completed reviews exist", () => {
     const sections = buildReviewerSections(route, {
       status: "ok",
       requestedUsers: [],
@@ -33,7 +33,18 @@ describe("buildReviewerSections", () => {
       completedReviews: [],
     });
 
-    expect(sections[0]?.emptyLabel).toBe("No requested reviewers");
-    expect(sections[1]?.emptyLabel).toBe("No completed reviews");
+    expect(sections).toEqual([]);
+  });
+
+  it("renders only the reviewed section when there are no requested reviewers", () => {
+    const sections = buildReviewerSections(route, {
+      status: "ok",
+      requestedUsers: [],
+      requestedTeams: [],
+      completedReviews: [{ login: "bob", state: "APPROVED" }],
+    });
+
+    expect(sections.map((section) => section.label)).toEqual(["Reviewed"]);
+    expect(sections[0]?.chips[0]?.label).toContain("bob");
   });
 });

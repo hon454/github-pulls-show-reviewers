@@ -36,18 +36,25 @@ export function buildReviewerSections(
     .sort((left, right) => compareReviewState(left, right))
     .map((review) => buildReviewedChip(route, review));
 
-  return [
-    {
+  const sections: ReviewerSection[] = [];
+
+  if (requestedUserChips.length > 0 || requestedTeamChips.length > 0) {
+    sections.push({
       label: "Requested",
       emptyLabel: "No requested reviewers",
       chips: [...requestedUserChips, ...requestedTeamChips],
-    },
-    {
+    });
+  }
+
+  if (reviewedChips.length > 0) {
+    sections.push({
       label: "Reviewed",
       emptyLabel: "No completed reviews",
       chips: reviewedChips,
-    },
-  ];
+    });
+  }
+
+  return sections;
 }
 
 function buildChip(

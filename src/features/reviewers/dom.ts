@@ -142,6 +142,12 @@ export function renderReviewerSections(
   mount: HTMLElement,
   sections: ReviewerSection[],
 ): void {
+  if (sections.length === 0) {
+    mount.replaceChildren();
+    mount.removeAttribute("title");
+    return;
+  }
+
   mount.replaceChildren(...sections.map(createSectionNode));
   mount.removeAttribute("title");
 }
