@@ -183,7 +183,9 @@ describe("fetchPullReviewerSummary", () => {
       expect(message).toContain(
         "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews",
       );
-      expect(message).toContain("Pull requests: Read");
+      expect(message).toContain("'repo' scope");
+      expect(message).toContain("public_repo");
+      expect(message).toContain("SSO");
     }
   });
 });

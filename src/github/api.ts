@@ -494,9 +494,11 @@ function describeGitHubEndpointError(
 
   if (auth.githubToken) {
     if (error.status === 401) {
-      return error.endpoint == null || error.endpoint.path === "/rate_limit"
-        ? "Saved token is invalid or expired."
-        : `Saved token was rejected by ${endpointLabel}.`;
+      if (error.endpoint == null || error.endpoint.path === "/rate_limit") {
+        return "Saved token is invalid or expired.";
+      }
+
+      return `Saved token was rejected by ${endpointLabel}. If the repository belongs to an SSO-protected organization, authorize the token via 'Configure SSO → Authorize' at https://github.com/settings/tokens.`;
     }
 
     if (isRateLimitError(error)) {
@@ -504,11 +506,11 @@ function describeGitHubEndpointError(
     }
 
     if (error.status === 403) {
-      return `GitHub denied ${endpointLabel}. Check that the token has Pull requests: Read and includes this repository.`;
+      return `GitHub denied ${endpointLabel}. Classic PATs need the 'repo' scope for private repositories (or 'public_repo' for public-only). If the organization uses SSO, also authorize the token via 'Configure SSO → Authorize' at https://github.com/settings/tokens.`;
     }
 
     if (error.status === 404) {
-      return `${endpointLabel} is not accessible with the current token. Confirm the repository is selected in the token and the pull request exists.`;
+      return `${endpointLabel} is not accessible with the current token. Confirm the pull request exists and the Classic PAT has the 'repo' scope (or 'public_repo' for public-only repositories).`;
     }
   } else {
     if (isRateLimitError(error)) {

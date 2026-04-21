@@ -163,7 +163,52 @@
       "pullNumber": "42",
       "messageIncludes": [
         "pull #42",
-        "Pull requests: Read",
+        "'repo' scope",
+        "public_repo",
+        "SSO",
+        "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews"
+      ],
+      "authorizationHeaderPrefix": "Bearer "
+    }
+  },
+  {
+    "name": "saved token rejected with 401 on reviews endpoint",
+    "token": "github_pat_example",
+    "repository": "hon454/github-pulls-show-reviewers",
+    "responses": [
+      {
+        "status": 200,
+        "body": [
+          {
+            "number": 42
+          }
+        ]
+      },
+      {
+        "status": 200,
+        "body": {
+          "user": {
+            "login": "hon454"
+          },
+          "requested_reviewers": [],
+          "requested_teams": []
+        }
+      },
+      {
+        "status": 401,
+        "body": {
+          "message": "Bad credentials"
+        }
+      }
+    ],
+    "expected": {
+      "ok": false,
+      "authMode": "token",
+      "outcome": "token-invalid",
+      "pullNumber": "42",
+      "messageIncludes": [
+        "Saved token was rejected",
+        "SSO",
         "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews"
       ],
       "authorizationHeaderPrefix": "Bearer "
