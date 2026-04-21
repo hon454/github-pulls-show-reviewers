@@ -260,13 +260,18 @@ export async function fetchPullReviewerSummary(input: {
   };
 }
 
-export async function validateGitHubToken(
-  token: string,
+export async function validateAccountToken(
+  account: { token: string } | null,
 ): Promise<TokenValidationResult> {
+  if (account == null) {
+    return {
+      ok: false,
+      message: "No account provided — sign in with GitHub from the options page.",
+    };
+  }
   const response = await fetch("https://api.github.com/rate_limit", {
-    headers: createGitHubHeaders(token),
+    headers: createGitHubHeaders(account.token),
   });
-
   if (!response.ok) {
     const error = await createGitHubApiError(response, {
       name: "pulls-list",
@@ -275,10 +280,9 @@ export async function validateGitHubToken(
     });
     return {
       ok: false,
-      message: describeGitHubApiError(error, { githubToken: token }),
+      message: describeGitHubApiError(error, { githubToken: account.token }),
     };
   }
-
   const payload = rateLimitSchema.parse(await response.json());
   return {
     ok: true,
@@ -288,9 +292,10 @@ export async function validateGitHubToken(
 }
 
 export async function validateGitHubRepositoryAccess(
-  token: string | null,
+  account: { token: string } | null,
   repository: string,
 ): Promise<RepositoryValidationResult> {
+  const token = account?.token ?? null;
   const auth = createAuthContext(token);
   const authMode = getRepositoryValidationAuthMode(auth);
   const parsedRepository = parseRepositoryReference(repository);
@@ -503,10 +508,9 @@ function describeGitHubEndpointError(
   if (auth.githubToken) {
     if (error.status === 401) {
       if (error.endpoint == null || error.endpoint.path === "/rate_limit") {
-        return "Saved token is invalid or expired.";
+        return "Sign in again — the account's access was rejected by GitHub.";
       }
-
-      return `Saved token was rejected by ${endpointLabel}. If the repository belongs to an SSO-protected organization, authorize the token via 'Configure SSO → Authorize' at https://github.com/settings/tokens.`;
+      return `Sign in again — ${endpointLabel} was rejected by GitHub.`;
     }
 
     if (isRateLimitError(error)) {
@@ -514,27 +518,27 @@ function describeGitHubEndpointError(
     }
 
     if (error.status === 403) {
-      return `GitHub denied ${endpointLabel}. Classic PATs need the 'repo' scope for private repositories (or 'public_repo' for public-only). If the organization uses SSO, also authorize the token via 'Configure SSO → Authorize' at https://github.com/settings/tokens.`;
+      return `GitHub denied ${endpointLabel}. The GitHub App needs access to this repository — install the GitHub App on the owner account or add this repository to the existing installation.`;
     }
 
     if (error.status === 404) {
-      return `${endpointLabel} is not accessible with the current token. Confirm the pull request exists and the Classic PAT has the 'repo' scope (or 'public_repo' for public-only repositories).`;
+      return `${endpointLabel} is not covered by any installation of this GitHub App. Install the App on the repository owner or add the repository to the existing installation.`;
     }
   } else {
     if (isRateLimitError(error)) {
-      return `${endpointLabel} hit GitHub's unauthenticated rate limit${rateLimitSuffix}. Public repositories usually work without a token until that limit is exhausted; add a token for higher limits.`;
+      return `${endpointLabel} hit GitHub's unauthenticated rate limit${rateLimitSuffix}. Public repositories usually work without signing in until the rate limit is exhausted; sign in for higher limits.`;
     }
 
     if (error.status === 401) {
-      return `${endpointLabel} requires authentication. Public repositories usually work without a token, so this repository or pull request may be private or access-restricted.`;
+      return `${endpointLabel} requires authentication. Public repositories usually work without signing in, so this repository or pull request may be private or access-restricted.`;
     }
 
     if (error.status === 403) {
-      return `${endpointLabel} was denied without a token. Public repositories usually work without a token; add a token for private repositories or higher API limits.`;
+      return `${endpointLabel} was denied without a signed-in account. Public repositories usually work without signing in; sign in for private repositories or higher API limits.`;
     }
 
     if (error.status === 404) {
-      return `${endpointLabel} was not accessible without a token. Public repositories usually work without a token, so the repository or pull request may be private, deleted, or permission-gated.`;
+      return `${endpointLabel} was not accessible without a signed-in account. Public repositories usually work without signing in, so the repository or pull request may be private, deleted, or permission-gated.`;
     }
   }
 

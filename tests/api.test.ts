@@ -8,6 +8,7 @@ import {
   describeGitHubApiError,
   parseRepositoryReference,
   validateGitHubRepositoryAccess,
+  validateAccountToken,
 } from "../src/github/api";
 
 type RepositoryValidationMatrixCase = {
@@ -44,10 +45,10 @@ afterEach(() => {
 describe("describeGitHubApiError", () => {
   it("returns a token-specific 401 message", () => {
     const message = describeGitHubApiError(new GitHubApiError(401), {
-      githubToken: "github_pat_example",
+      githubToken: "ghu_example",
     });
 
-    expect(message).toBe("Saved token is invalid or expired.");
+    expect(message).toBe("Sign in again — the account's access was rejected by GitHub.");
   });
 
   it("returns a private-repository hint when unauthenticated", () => {
@@ -213,9 +214,10 @@ describe("fetchPullReviewerSummary", () => {
       expect(message).toContain(
         "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews",
       );
-      expect(message).toContain("'repo' scope");
-      expect(message).toContain("public_repo");
-      expect(message).toContain("SSO");
+      expect(message).toContain("GitHub App");
+      expect(message).toContain("install the GitHub App");
+      expect(message).not.toContain("repo scope");
+      expect(message).not.toContain("SSO");
     }
   });
 });
@@ -237,8 +239,10 @@ describe("validateGitHubRepositoryAccess", () => {
         );
       }
 
+      const account =
+        fixtureCase.token != null ? { token: fixtureCase.token } : null;
       const result = await validateGitHubRepositoryAccess(
-        fixtureCase.token,
+        account,
         fixtureCase.repository,
       );
 

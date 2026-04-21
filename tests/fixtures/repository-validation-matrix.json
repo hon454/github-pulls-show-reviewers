@@ -119,7 +119,7 @@
       "pullNumber": "42",
       "messageIncludes": [
         "pull #42",
-        "without a token",
+        "without signing in",
         "private, deleted, or permission-gated",
         "/repos/hon454/github-pulls-show-reviewers/pulls/42"
       ],
@@ -163,9 +163,8 @@
       "pullNumber": "42",
       "messageIncludes": [
         "pull #42",
-        "'repo' scope",
-        "public_repo",
-        "SSO",
+        "GitHub App",
+        "install the GitHub App",
         "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews"
       ],
       "authorizationHeaderPrefix": "Bearer "
@@ -207,8 +206,7 @@
       "outcome": "token-invalid",
       "pullNumber": "42",
       "messageIncludes": [
-        "Saved token was rejected",
-        "SSO",
+        "Sign in again",
         "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews"
       ],
       "authorizationHeaderPrefix": "Bearer "
