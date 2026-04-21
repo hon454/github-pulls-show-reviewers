@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-import type { ExtensionSettings } from "../storage/settings";
+type GitHubAuthContext = {
+  githubToken: string | null;
+};
 
 const pullSchema = z.object({
   user: z.object({
@@ -148,16 +150,16 @@ const errorResponseSchema = z
 
 export function describeGitHubApiError(
   error: unknown,
-  settings: ExtensionSettings,
+  auth: GitHubAuthContext,
 ): string {
   if (error instanceof GitHubPullRequestEndpointsError) {
     return error.failures
-      .map((failure) => describeGitHubEndpointError(failure, settings))
+      .map((failure) => describeGitHubEndpointError(failure, auth))
       .join(" ");
   }
 
   if (error instanceof GitHubApiError) {
-    return describeGitHubEndpointError(error, settings);
+    return describeGitHubEndpointError(error, auth);
   }
 
   if (error instanceof Error) {
@@ -171,10 +173,10 @@ export async function fetchPullReviewerSummary(input: {
   owner: string;
   repo: string;
   pullNumber: string;
-  settings: ExtensionSettings;
+  githubToken: string | null;
   signal?: AbortSignal;
 }): Promise<PullReviewerSummary> {
-  const headers = createGitHubHeaders(input.settings.githubToken);
+  const headers = createGitHubHeaders(input.githubToken);
   const pullEndpoint = buildPullEndpoint(
     input.owner,
     input.repo,
@@ -281,8 +283,8 @@ export async function validateGitHubRepositoryAccess(
   token: string | null,
   repository: string,
 ): Promise<RepositoryValidationResult> {
-  const settings = createValidationSettings(token);
-  const authMode = getRepositoryValidationAuthMode(settings);
+  const auth = createAuthContext(token);
+  const authMode = getRepositoryValidationAuthMode(auth);
   const parsedRepository = parseRepositoryReference(repository);
   if (parsedRepository == null) {
     return {
@@ -299,7 +301,7 @@ export async function validateGitHubRepositoryAccess(
     parsedRepository.repo,
   );
   const response = await fetch(`https://api.github.com${listEndpoint.path}`, {
-    headers: createGitHubHeaders(settings.githubToken),
+    headers: createGitHubHeaders(auth.githubToken),
   });
 
   if (!response.ok) {
@@ -307,9 +309,9 @@ export async function validateGitHubRepositoryAccess(
     return {
       ok: false,
       authMode,
-      outcome: classifyRepositoryValidationOutcome(error, settings),
+      outcome: classifyRepositoryValidationOutcome(error, auth),
       fullName,
-      message: describeRepositoryValidationError(error, fullName, settings),
+      message: describeRepositoryValidationError(error, fullName, auth),
     };
   }
 
@@ -332,19 +334,19 @@ export async function validateGitHubRepositoryAccess(
       owner: parsedRepository.owner,
       repo: parsedRepository.repo,
       pullNumber,
-      settings,
+      githubToken: auth.githubToken,
     });
   } catch (error) {
     return {
       ok: false,
       authMode,
-      outcome: classifyRepositoryValidationOutcome(error, settings),
+      outcome: classifyRepositoryValidationOutcome(error, auth),
       fullName,
       pullNumber,
       message: describeRepositoryValidationError(
         error,
         fullName,
-        settings,
+        auth,
         pullNumber,
       ),
     };
@@ -461,10 +463,10 @@ function isNewerReview(
 function describeRepositoryValidationError(
   error: unknown,
   repository: string,
-  settings: ExtensionSettings,
+  auth: GitHubAuthContext,
   pullNumber?: string,
 ): string {
-  const message = describeGitHubApiError(error, settings);
+  const message = describeGitHubApiError(error, auth);
   if (pullNumber) {
     return `Repository diagnostics checked pull #${pullNumber} in ${repository}. ${message}`;
   }
@@ -485,12 +487,12 @@ function describeRepositoryValidationSuccess(
 
 function describeGitHubEndpointError(
   error: GitHubApiError,
-  settings: ExtensionSettings,
+  auth: GitHubAuthContext,
 ): string {
   const endpointLabel = formatEndpointLabel(error.endpoint);
   const rateLimitSuffix = formatRateLimitSuffix(error.rateLimit);
 
-  if (settings.githubToken) {
+  if (auth.githubToken) {
     if (error.status === 401) {
       return error.endpoint == null || error.endpoint.path === "/rate_limit"
         ? "Saved token is invalid or expired."
@@ -611,25 +613,25 @@ function formatRateLimitSuffix(rateLimit?: GitHubRateLimitSnapshot): string {
   return ` (${rateLimit.remaining}/${rateLimit.limit} remaining)`;
 }
 
-function createValidationSettings(token: string | null): ExtensionSettings {
+function createAuthContext(token: string | null): GitHubAuthContext {
   return {
     githubToken: token?.trim() || null,
   };
 }
 
 function getRepositoryValidationAuthMode(
-  settings: ExtensionSettings,
+  auth: GitHubAuthContext,
 ): RepositoryValidationAuthMode {
-  return settings.githubToken ? "token" : "no-token";
+  return auth.githubToken ? "token" : "no-token";
 }
 
 function classifyRepositoryValidationOutcome(
   error: unknown,
-  settings: ExtensionSettings,
+  auth: GitHubAuthContext,
 ): Exclude<RepositoryValidationOutcome, "accessible"> {
   const primaryError = getPrimaryGitHubApiError(error);
 
-  if (settings.githubToken) {
+  if (auth.githubToken) {
     if (primaryError?.status === 401) {
       return "token-invalid";
     }

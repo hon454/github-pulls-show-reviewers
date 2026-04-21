@@ -9,6 +9,7 @@ import {
 import { fetchPullReviewerSummary, describeGitHubApiError } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
+import { resolveTokenEntryForRepository } from "../../storage/token-scopes";
 import { getStoredSettings, type ExtensionSettings } from "../../storage/settings";
 
 import {
@@ -74,17 +75,20 @@ export function bootReviewerListPage(ctx: ContentScriptContext): void {
 
     const request = (async () => {
       const settings = await loadSettings();
+      const repository = `${currentRoute!.owner}/${currentRoute!.repo}`;
+      const tokenEntry = resolveTokenEntryForRepository(settings, repository);
+      const githubToken = tokenEntry?.token ?? null;
 
       try {
         const summary = await fetchPullReviewerSummary({
           owner: currentRoute!.owner,
           repo: currentRoute!.repo,
           pullNumber,
-          settings,
+          githubToken,
         });
         setCachedReviewerSummary(cacheKey, summary);
       } catch (error) {
-        renderError(mount, describeGitHubApiError(error, settings));
+        renderError(mount, describeGitHubApiError(error, { githubToken }));
       } finally {
         inflightRequests.delete(cacheKey);
       }

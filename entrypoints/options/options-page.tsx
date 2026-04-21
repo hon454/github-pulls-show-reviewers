@@ -6,8 +6,16 @@ import {
   validateGitHubToken,
 } from "../../src/github/api";
 import {
+  findDuplicateTokenScope,
+  maskToken,
+  parseTokenScope,
+  resolveTokenEntryForRepository,
+  validateTokenScopeParts,
+} from "../../src/storage/token-scopes";
+import {
   getStoredSettings,
   saveStoredSettings,
+  type TokenEntry,
 } from "../../src/storage/settings";
 
 type StatusState = {
@@ -15,7 +23,10 @@ type StatusState = {
   message: string;
 };
 
-const FINE_GRAINED_PAT_URL = "https://github.com/settings/personal-access-tokens/new";
+type ScopeType = "owner" | "repo";
+
+const FINE_GRAINED_PAT_URL =
+  "https://github.com/settings/personal-access-tokens/new";
 
 export function buildFineGrainedPatUrl(repository: string): string {
   const url = new URL(FINE_GRAINED_PAT_URL);
@@ -42,8 +53,16 @@ function extractRepositoryOwner(repository: string): string | null {
 }
 
 export function OptionsPage() {
-  const [token, setToken] = useState("");
+  const [tokenEntries, setTokenEntries] = useState<TokenEntry[]>([]);
+  const [tokenOwner, setTokenOwner] = useState("");
+  const [scopeType, setScopeType] = useState<ScopeType>("owner");
+  const [tokenRepo, setTokenRepo] = useState("");
+  const [tokenLabel, setTokenLabel] = useState("");
+  const [tokenValue, setTokenValue] = useState("");
   const [repository, setRepository] = useState("");
+  const [matchedScopeMessage, setMatchedScopeMessage] = useState<string | null>(
+    null,
+  );
   const [status, setStatus] = useState<StatusState>({
     tone: "neutral",
     message: "Token is optional for public repositories.",
@@ -53,67 +72,140 @@ export function OptionsPage() {
 
   useEffect(() => {
     void getStoredSettings().then((settings) => {
-      setToken(settings.githubToken ?? "");
+      setTokenEntries(settings.tokenEntries);
     });
   }, []);
 
-  async function handleSave() {
-    setIsSaving(true);
-    try {
-      await saveStoredSettings({ githubToken: token.trim() || null });
-      setStatus({
-        tone: "success",
-        message: token.trim()
-          ? "Settings saved. Review pages can now use this token."
-          : "Token cleared. Public repositories should continue to work without it.",
-      });
-    } finally {
-      setIsSaving(false);
-    }
+  async function persistTokenEntries(nextEntries: TokenEntry[]) {
+    await saveStoredSettings({ tokenEntries: nextEntries });
+    setTokenEntries(nextEntries);
   }
 
-  async function handleValidate() {
-    const trimmedToken = token.trim();
-    if (!trimmedToken) {
+  async function handleValidateAndSave() {
+    const repoValue = scopeType === "repo" ? tokenRepo : null;
+    const scopeResult = validateTokenScopeParts(tokenOwner, repoValue);
+    if (scopeResult.ok === false) {
       setStatus({
         tone: "error",
-        message: "Enter a token to validate before running a GitHub check.",
+        message: scopeResult.message,
       });
       return;
     }
 
-    setIsValidating(true);
+    const trimmedToken = tokenValue.trim();
+    if (!trimmedToken) {
+      setStatus({
+        tone: "error",
+        message: "Enter a token before validating and saving it.",
+      });
+      return;
+    }
+
+    const duplicate = findDuplicateTokenScope(tokenEntries, scopeResult.scope);
+    if (duplicate) {
+      setStatus({
+        tone: "error",
+        message: `A token for ${scopeResult.scope} is already saved.`,
+      });
+      return;
+    }
+
+    setIsSaving(true);
+    setMatchedScopeMessage(null);
     setStatus({
       tone: "neutral",
       message: "Checking the token against the GitHub API...",
     });
 
     try {
-      const trimmedRepository = repository.trim();
-      if (trimmedRepository) {
-        const repositoryResult = await validateGitHubRepositoryAccess(
-          trimmedToken,
-          trimmedRepository,
-        );
-        setStatus({
-          tone: getRepositoryValidationTone(repositoryResult),
-          message: repositoryResult.message,
-        });
-        return;
-      }
-
       const result = await validateGitHubToken(trimmedToken);
-      if (result.ok) {
+      if (result.ok === false) {
         setStatus({
-          tone: "success",
-          message: `GitHub accepted the token. Core API remaining: ${result.remaining}/${result.limit}.`,
+          tone: "error",
+          message: result.message,
         });
         return;
       }
 
+      const nextEntries = [
+        ...tokenEntries,
+        {
+          id: createTokenEntryId(),
+          scope: scopeResult.scope,
+          token: trimmedToken,
+          label: tokenLabel.trim() || null,
+        },
+      ];
+      await persistTokenEntries(nextEntries);
+      setTokenOwner("");
+      setScopeType("owner");
+      setTokenRepo("");
+      setTokenLabel("");
+      setTokenValue("");
+      setStatus({
+        tone: "success",
+        message: `Saved token for ${scopeResult.scope}. Core API remaining: ${result.remaining}/${result.limit}.`,
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDeleteToken(id: string) {
+    setIsSaving(true);
+    setMatchedScopeMessage(null);
+
+    try {
+      const nextEntries = tokenEntries.filter((entry) => entry.id !== id);
+      await persistTokenEntries(nextEntries);
+      setStatus({
+        tone: "success",
+        message: "Saved token scope deleted.",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleMatchedTokenCheck() {
+    const trimmedRepository = repository.trim();
+    if (!trimmedRepository) {
       setStatus({
         tone: "error",
-        message: result.message,
+        message:
+          "Enter a repository in owner/name form before running a matched-token check.",
+      });
+      return;
+    }
+
+    const tokenEntry = resolveTokenEntryForRepository(
+      { tokenEntries },
+      trimmedRepository,
+    );
+    if (tokenEntry == null) {
+      setMatchedScopeMessage(null);
+      setStatus({
+        tone: "error",
+        message: `No saved token matches ${trimmedRepository}.`,
+      });
+      return;
+    }
+
+    setIsValidating(true);
+    setMatchedScopeMessage(`Matched token scope: ${tokenEntry.scope}.`);
+    setStatus({
+      tone: "neutral",
+      message: "Checking the matched token against the GitHub API...",
+    });
+
+    try {
+      const repositoryResult = await validateGitHubRepositoryAccess(
+        tokenEntry.token,
+        trimmedRepository,
+      );
+      setStatus({
+        tone: getRepositoryValidationTone(repositoryResult),
+        message: repositoryResult.message,
       });
     } finally {
       setIsValidating(false);
@@ -132,6 +224,7 @@ export function OptionsPage() {
     }
 
     setIsValidating(true);
+    setMatchedScopeMessage(null);
     setStatus({
       tone: "neutral",
       message:
@@ -161,7 +254,7 @@ export function OptionsPage() {
         </h1>
         <p style={styles.body}>
           Public repositories can stay on the no-token path. For private
-          repositories, save a fine-grained personal access token scoped only to
+          repositories, save fine-grained personal access tokens scoped only to
           the owners and repositories this extension reads.
         </p>
         <div style={styles.guidanceBox}>
@@ -178,82 +271,201 @@ export function OptionsPage() {
             the token can read pull requests.
           </p>
         </div>
-        <label htmlFor="github-token" style={styles.label}>
-          GitHub token
-        </label>
-        <input
-          id="github-token"
-          type="password"
-          value={token}
-          onChange={(event) => setToken(event.currentTarget.value)}
-          placeholder="github_pat_..."
-          style={styles.input}
-        />
-        <p style={styles.hint}>
-          Use a fine-grained PAT such as <code>github_pat_...</code>. The
-          reviewer UI only reads pull request metadata and review history.
-        </p>
-        <div style={styles.inlineActions}>
-          <a
-            href={buildFineGrainedPatUrl(repository)}
-            target="_blank"
-            rel="noreferrer"
-            style={styles.linkButton}
+
+        <section style={styles.section}>
+          <h2 style={styles.sectionTitle}>Saved token scopes</h2>
+          {tokenEntries.length === 0 ? (
+            <p style={styles.hint}>No saved token scopes yet.</p>
+          ) : (
+            <div style={styles.tokenList}>
+              {tokenEntries.map((entry) => {
+                const parsedScope = parseTokenScope(entry.scope);
+                if (parsedScope == null) {
+                  return null;
+                }
+
+                return (
+                  <div key={entry.id} style={styles.tokenCard}>
+                    <div style={styles.tokenCardHeader}>
+                      <div>
+                        <p style={styles.tokenOwner}>{parsedScope.owner}</p>
+                        <p style={styles.tokenScopeType}>
+                          {parsedScope.scopeType === "owner"
+                            ? "All repos under this owner"
+                            : "Single repository"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        style={styles.deleteButton}
+                        disabled={isSaving || isValidating}
+                        onClick={() => void handleDeleteToken(entry.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    {parsedScope.repo ? (
+                      <p style={styles.tokenMeta}>Repository: {parsedScope.repo}</p>
+                    ) : null}
+                    {entry.label ? (
+                      <p style={styles.tokenMeta}>Label: {entry.label}</p>
+                    ) : null}
+                    <p style={styles.tokenMeta}>Token: {maskToken(entry.token)}</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section style={styles.section}>
+          <h2 style={styles.sectionTitle}>Add token</h2>
+          <label htmlFor="token-owner" style={styles.label}>
+            Owner
+          </label>
+          <input
+            id="token-owner"
+            type="text"
+            value={tokenOwner}
+            onChange={(event) => setTokenOwner(event.currentTarget.value)}
+            placeholder="owner"
+            style={styles.input}
+          />
+
+          <label htmlFor="scope-type" style={styles.label}>
+            Scope type
+          </label>
+          <select
+            id="scope-type"
+            value={scopeType}
+            onChange={(event) =>
+              setScopeType(event.currentTarget.value as ScopeType)
+            }
+            style={styles.input}
           >
-            Create fine-grained PAT
-          </a>
-        </div>
-        <p style={styles.hint}>
-          Opens GitHub&apos;s token creation page with{" "}
-          <code>Pull requests: Read</code> preselected. If you enter a
-          repository below, the link also targets that owner.
-        </p>
-        <label htmlFor="repository-check" style={styles.label}>
-          Repository access check
-        </label>
-        <input
-          id="repository-check"
-          type="text"
-          value={repository}
-          onChange={(event) => setRepository(event.currentTarget.value)}
-          placeholder="owner/name"
-          style={styles.input}
-        />
-        <p style={styles.hint}>
-          Optional. Leave this blank until you want to run a repo-specific
-          check. Both checks first discover one pull request in this repository,
-          then verify the exact <code>GET /pulls/{`{n}`}</code> and{" "}
-          <code>/reviews</code>
-          endpoints used by the content script. Use the no-token check to
-          confirm whether a public repository can stay on the anonymous path.
-        </p>
-        <div style={styles.actions}>
-          <button
-            onClick={() => void handleSave()}
-            style={styles.primaryButton}
-            disabled={isSaving || isValidating}
-          >
-            {isSaving ? "Saving..." : "Save settings"}
-          </button>
-          <button
-            onClick={() => void handleValidate()}
-            style={styles.secondaryButton}
-            disabled={isSaving || isValidating}
-          >
-            {isValidating ? "Checking..." : "Validate token"}
-          </button>
-          <button
-            onClick={() => void handleNoTokenRepositoryCheck()}
-            style={styles.secondaryButton}
-            disabled={isSaving || isValidating}
-          >
-            {isValidating ? "Checking..." : "Check no-token repository"}
-          </button>
-        </div>
+            <option value="owner">All repos under this owner</option>
+            <option value="repo">Single repository</option>
+          </select>
+
+          {scopeType === "repo" ? (
+            <>
+              <label htmlFor="token-repo" style={styles.label}>
+                Repository
+              </label>
+              <input
+                id="token-repo"
+                type="text"
+                value={tokenRepo}
+                onChange={(event) => setTokenRepo(event.currentTarget.value)}
+                placeholder="repo-name"
+                style={styles.input}
+              />
+            </>
+          ) : null}
+
+          <label htmlFor="token-label" style={styles.label}>
+            Label
+          </label>
+          <input
+            id="token-label"
+            type="text"
+            value={tokenLabel}
+            onChange={(event) => setTokenLabel(event.currentTarget.value)}
+            placeholder="Optional"
+            style={styles.input}
+          />
+
+          <label htmlFor="token-value" style={styles.label}>
+            GitHub token
+          </label>
+          <input
+            id="token-value"
+            type="password"
+            value={tokenValue}
+            onChange={(event) => setTokenValue(event.currentTarget.value)}
+            placeholder="github_pat_..."
+            style={styles.input}
+          />
+          <p style={styles.hint}>
+            Use a fine-grained PAT such as <code>github_pat_...</code>. The
+            reviewer UI only reads pull request metadata and review history.
+          </p>
+          <div style={styles.inlineActions}>
+            <a
+              href={buildFineGrainedPatUrl(repository)}
+              target="_blank"
+              rel="noreferrer"
+              style={styles.linkButton}
+            >
+              Create fine-grained PAT
+            </a>
+            <button
+              type="button"
+              data-testid="validate-save-token"
+              onClick={() => void handleValidateAndSave()}
+              style={styles.primaryButton}
+              disabled={isSaving || isValidating}
+            >
+              {isSaving ? "Saving..." : "Validate and save"}
+            </button>
+          </div>
+          <p style={styles.hint}>
+            The PAT link keeps the repository-check owner in sync. Token save
+            validates only that GitHub accepts the token; repository access is
+            checked separately below.
+          </p>
+        </section>
+
+        <section style={styles.section}>
+          <h2 style={styles.sectionTitle}>Repository access check</h2>
+          <label htmlFor="repository-check" style={styles.label}>
+            Repository
+          </label>
+          <input
+            id="repository-check"
+            type="text"
+            value={repository}
+            onChange={(event) => setRepository(event.currentTarget.value)}
+            placeholder="owner/name"
+            style={styles.input}
+          />
+          <p style={styles.hint}>
+            Optional. Leave this blank until you want to run a repo-specific
+            check. Matched-token checks use the exact scope resolution that the
+            content script uses at runtime.
+          </p>
+          {matchedScopeMessage ? (
+            <p style={styles.scopeMessage}>{matchedScopeMessage}</p>
+          ) : null}
+          <div style={styles.actions}>
+            <button
+              type="button"
+              data-testid="check-matched-token"
+              onClick={() => void handleMatchedTokenCheck()}
+              style={styles.primaryButton}
+              disabled={isSaving || isValidating}
+            >
+              {isValidating ? "Checking..." : "Check matched token"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleNoTokenRepositoryCheck()}
+              style={styles.secondaryButton}
+              disabled={isSaving || isValidating}
+            >
+              {isValidating ? "Checking..." : "Check no-token repository"}
+            </button>
+          </div>
+        </section>
+
         <p style={statusStyles[status.tone]}>{status.message}</p>
       </section>
     </main>
   );
+}
+
+function createTokenEntryId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `token-${Date.now()}`;
 }
 
 function getRepositoryValidationTone(
@@ -288,6 +500,15 @@ const styles: Record<string, CSSProperties> = {
     background: "rgba(255, 255, 255, 0.82)",
     boxShadow: "0 18px 60px rgba(34, 29, 24, 0.12)",
     border: "1px solid rgba(34, 29, 24, 0.08)",
+  },
+  section: {
+    marginTop: 32,
+    paddingTop: 24,
+    borderTop: "1px solid rgba(34, 29, 24, 0.08)",
+  },
+  sectionTitle: {
+    margin: 0,
+    fontSize: 20,
   },
   eyebrow: {
     margin: 0,
@@ -336,7 +557,7 @@ const styles: Record<string, CSSProperties> = {
   },
   label: {
     display: "block",
-    marginTop: 28,
+    marginTop: 20,
     marginBottom: 10,
     fontSize: 14,
     fontWeight: 700,
@@ -356,11 +577,49 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 13,
     lineHeight: 1.6,
   },
+  tokenList: {
+    display: "grid",
+    gap: 12,
+    marginTop: 16,
+  },
+  tokenCard: {
+    padding: 16,
+    borderRadius: 16,
+    background: "#fffdf9",
+    border: "1px solid rgba(34, 29, 24, 0.08)",
+  },
+  tokenCardHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    alignItems: "flex-start",
+  },
+  tokenOwner: {
+    margin: 0,
+    fontWeight: 700,
+    fontSize: 16,
+  },
+  tokenScopeType: {
+    margin: "4px 0 0",
+    color: "#6e5f52",
+    fontSize: 13,
+  },
+  tokenMeta: {
+    margin: "10px 0 0",
+    color: "#52463b",
+    fontSize: 14,
+  },
+  scopeMessage: {
+    marginTop: 14,
+    color: "#6f3f11",
+    fontSize: 14,
+  },
   inlineActions: {
     display: "flex",
     gap: 12,
     marginTop: 16,
     flexWrap: "wrap",
+    alignItems: "center",
   },
   actions: {
     display: "flex",
@@ -369,7 +628,6 @@ const styles: Record<string, CSSProperties> = {
     flexWrap: "wrap",
   },
   primaryButton: {
-    marginTop: 20,
     border: 0,
     borderRadius: 999,
     padding: "12px 18px",
@@ -379,12 +637,20 @@ const styles: Record<string, CSSProperties> = {
     cursor: "pointer",
   },
   secondaryButton: {
-    marginTop: 20,
     borderRadius: 999,
     padding: "12px 18px",
     background: "#fffdf9",
     border: "1px solid #d3c4ae",
     color: "#3b3024",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  deleteButton: {
+    borderRadius: 999,
+    padding: "8px 14px",
+    background: "#fff4f4",
+    border: "1px solid rgba(207, 34, 46, 0.18)",
+    color: "#cf222e",
     fontWeight: 700,
     cursor: "pointer",
   },

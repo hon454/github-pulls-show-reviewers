@@ -129,7 +129,7 @@ describe("fetchPullReviewerSummary", () => {
       owner: "hon454",
       repo: "github-pulls-show-reviewers",
       pullNumber: "42",
-      settings: { githubToken: null },
+      githubToken: null,
     });
 
     expect(summary).toEqual({
@@ -169,7 +169,7 @@ describe("fetchPullReviewerSummary", () => {
         owner: "hon454",
         repo: "github-pulls-show-reviewers",
         pullNumber: "42",
-        settings: { githubToken: "github_pat_example" },
+        githubToken: "github_pat_example",
       });
       throw new Error("Expected fetchPullReviewerSummary to reject.");
     } catch (error) {
