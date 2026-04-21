@@ -11,7 +11,7 @@
 - Reviewer payloads are cached per page session to avoid duplicate requests for the same pull request.
 - Settings store multiple token entries, each scoped to either `owner/*` or `owner/repo`.
 - The options page can validate a token against the GitHub API before saving it.
-- The options page leaves the repository diagnostics input empty by default, resolves the best matching stored token for `owner/repo`, and provides a shortcut link to GitHub's fine-grained PAT creation page.
+- The options page leaves the repository diagnostics input empty by default, resolves the best matching stored token for `owner/repo`, and provides a shortcut link to GitHub's classic PAT creation page along with an SSO authorization reminder.
 - Repository diagnostics can discover one pull request and verify the exact detail and reviews endpoints used by the content script, both with the matched token and on the no-token path.
 - The packaged extension now includes dedicated `16/32/48/128` icons under `public/icon/` for Chrome surfaces and store submission.
 
@@ -51,7 +51,7 @@ The current repository-check UX is intentionally narrow and pinned by fixture-ba
 | No token | `200` for pulls list, pull detail, and reviews | Repository works on the public no-token path                                   |
 | No token | `403` with rate-limit signal                   | Unauthenticated rate limit exhausted                                           |
 | No token | `404`, `401`, or private-like `403`            | Repository or pull request behaves like a private or permission-gated resource |
-| Token    | `403` without rate-limit signal                | Token is missing `Pull requests: Read` or repository access                    |
+| Token    | `403` without rate-limit signal                | Classic PAT is missing the `repo` scope or the organization requires SSO authorization |
 
 ## Next implementation targets
 
