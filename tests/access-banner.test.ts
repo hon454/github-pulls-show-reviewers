@@ -86,3 +86,60 @@ describe("formatBannerMessage", () => {
     );
   });
 });
+
+import { mountBanner } from "../src/features/access-banner/dom";
+
+describe("banner DOM", () => {
+  it("does not insert a banner when state is empty", () => {
+    document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
+    const target = document.querySelector<HTMLElement>(".gh-header")!;
+    const banner = mountBanner({
+      insertAfter: target,
+      installUrl: "https://github.com/apps/test-app/installations/new",
+      optionsPageUrl: "chrome-extension://ext-id/options.html",
+      onDismiss: () => {},
+    });
+    banner.update({ uncoveredOrgs: [], unauthRateLimited: false, dismissed: false });
+    expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
+  });
+
+  it("inserts the banner when an uncovered org is reported", () => {
+    document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
+    const target = document.querySelector<HTMLElement>(".gh-header")!;
+    const banner = mountBanner({
+      insertAfter: target,
+      installUrl: "https://github.com/apps/test-app/installations/new",
+      optionsPageUrl: "chrome-extension://ext-id/options.html",
+      onDismiss: () => {},
+    });
+    banner.update({
+      uncoveredOrgs: ["cinev"],
+      unauthRateLimited: false,
+      dismissed: false,
+    });
+    const el = document.querySelector("[data-ghpsr-banner]");
+    expect(el?.textContent).toContain("@cinev");
+  });
+
+  it("removes the banner when dismissed", () => {
+    document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
+    const target = document.querySelector<HTMLElement>(".gh-header")!;
+    const banner = mountBanner({
+      insertAfter: target,
+      installUrl: "https://github.com/apps/test-app/installations/new",
+      optionsPageUrl: "chrome-extension://ext-id/options.html",
+      onDismiss: () => {},
+    });
+    banner.update({
+      uncoveredOrgs: ["cinev"],
+      unauthRateLimited: false,
+      dismissed: false,
+    });
+    banner.update({
+      uncoveredOrgs: ["cinev"],
+      unauthRateLimited: false,
+      dismissed: true,
+    });
+    expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
+  });
+});
