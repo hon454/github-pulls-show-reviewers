@@ -98,16 +98,25 @@ describe("options page", () => {
     expect(input?.value).toBe("");
   });
 
-  it("renders a fine-grained PAT creation link in the token section", async () => {
+  it("renders a classic PAT creation link in the token section", async () => {
     await renderOptionsPage();
 
     const link = document.querySelector<HTMLAnchorElement>(
-      'a[href*="github.com/settings/personal-access-tokens/new"]',
+      'a[href*="github.com/settings/tokens/new"]',
     );
 
     expect(link).not.toBeNull();
-    expect(link?.textContent).toContain("Create fine-grained PAT");
-    expect(link?.href).toContain("pull_requests=read");
+    expect(link?.textContent).toContain("Create classic PAT");
+    expect(link?.href).toContain("scopes=repo");
+    expect(link?.href).toContain("description=");
+  });
+
+  it("shows SSO authorization guidance in the token section", async () => {
+    await renderOptionsPage();
+
+    expect(document.body.textContent).toContain("Configure SSO");
+    expect(document.body.textContent).toContain("Authorize");
+    expect(document.body.textContent).toContain("public_repo");
   });
 
   it("renders saved token scopes from storage", async () => {

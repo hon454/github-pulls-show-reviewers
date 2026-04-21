@@ -25,31 +25,19 @@ type StatusState = {
 
 type ScopeType = "owner" | "repo";
 
-const FINE_GRAINED_PAT_URL =
-  "https://github.com/settings/personal-access-tokens/new";
+const CLASSIC_PAT_NEW_URL = "https://github.com/settings/tokens/new";
+const CLASSIC_PAT_MANAGEMENT_URL = "https://github.com/settings/tokens";
 
-export function buildFineGrainedPatUrl(repository: string): string {
-  const url = new URL(FINE_GRAINED_PAT_URL);
+export function buildClassicPatUrl(): string {
+  const url = new URL(CLASSIC_PAT_NEW_URL);
 
-  url.searchParams.set("name", "GitHub Pulls Show Reviewers");
+  url.searchParams.set("scopes", "repo");
   url.searchParams.set(
     "description",
-    "Read reviewer metadata for GitHub pull request lists",
+    "GitHub Pulls Show Reviewers — read reviewer metadata",
   );
-  url.searchParams.set("pull_requests", "read");
-
-  const owner = extractRepositoryOwner(repository);
-  if (owner) {
-    url.searchParams.set("target_name", owner);
-  }
 
   return url.toString();
-}
-
-function extractRepositoryOwner(repository: string): string | null {
-  const trimmed = repository.trim().replace(/^\/+|\/+$/g, "");
-  const match = /^([^/\s]+)\/([^/\s]+)$/.exec(trimmed);
-  return match ? match[1] : null;
 }
 
 export function OptionsPage() {
@@ -254,21 +242,32 @@ export function OptionsPage() {
         </h1>
         <p style={styles.body}>
           Public repositories can stay on the no-token path. For private
-          repositories, save fine-grained personal access tokens scoped only to
-          the owners and repositories this extension reads.
+          repositories, save a GitHub classic personal access token scoped to
+          the minimum needed for reading pull request reviewer metadata.
         </p>
         <div style={styles.guidanceBox}>
-          <p style={styles.guidanceTitle}>
-            Recommended fine-grained token setup
-          </p>
+          <p style={styles.guidanceTitle}>Recommended classic PAT setup</p>
           <ul style={styles.guidanceList}>
-            <li>Repository access: Only select repositories</li>
-            <li>Repository permissions: Pull requests - Read-only</li>
+            <li>
+              Public-only access: the <code>public_repo</code> scope is enough
+            </li>
+            <li>
+              Private repositories: the <code>repo</code> scope (note the
+              broader surface area — the extension only performs read operations)
+            </li>
             <li>No write permissions are required for this extension</li>
           </ul>
           <p style={styles.guidanceNote}>
-            Organization-owned repositories may also require org approval before
-            the token can read pull requests.
+            After creating the token, open the{" "}
+            <a
+              href={CLASSIC_PAT_MANAGEMENT_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              token settings page
+            </a>{" "}
+            and click <strong>Configure SSO → Authorize</strong> for each
+            organization with private repositories.
           </p>
         </div>
 
@@ -383,21 +382,22 @@ export function OptionsPage() {
             type="password"
             value={tokenValue}
             onChange={(event) => setTokenValue(event.currentTarget.value)}
-            placeholder="github_pat_..."
+            placeholder="ghp_..."
             style={styles.input}
           />
           <p style={styles.hint}>
-            Use a fine-grained PAT such as <code>github_pat_...</code>. The
-            reviewer UI only reads pull request metadata and review history.
+            Use a GitHub classic PAT (token strings start with{" "}
+            <code>ghp_</code>). The reviewer UI only reads pull request metadata
+            and review history.
           </p>
           <div style={styles.inlineActions}>
             <a
-              href={buildFineGrainedPatUrl(repository)}
+              href={buildClassicPatUrl()}
               target="_blank"
               rel="noreferrer"
               style={styles.linkButton}
             >
-              Create fine-grained PAT
+              Create classic PAT
             </a>
             <button
               type="button"
