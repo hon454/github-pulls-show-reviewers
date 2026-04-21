@@ -1,6 +1,6 @@
 {
   "name": "github-pulls-show-reviewers",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Chrome extension focused on showing reviewers directly in GitHub pull request lists.",
@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:e2e": "pnpm build && playwright test",
+    "test:e2e": "WXT_GITHUB_APP_CLIENT_ID=TESTING_CLIENT_ID WXT_GITHUB_APP_SLUG=test-app pnpm build && playwright test",
     "verify:release": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e"
   },
   "dependencies": {

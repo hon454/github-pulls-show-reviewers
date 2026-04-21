@@ -71,7 +71,7 @@ for (const fixtureCase of renderCases) {
   });
 }
 
-test("shows the exact reviews endpoint when review history is denied", async () => {
+test("clears the reviewer slot silently when review history is denied", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(path.join(fixturesDir, "github-pulls.html"), "utf8");
 
@@ -101,9 +101,14 @@ test("shows the exact reviews endpoint when review history is denied", async () 
     const page = await context.newPage();
     await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
 
-    const errorNode = page.locator(".ghpsr-status--error");
-    await expect(errorNode).toContainText("/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews");
-    await expect(errorNode).toContainText("unauthenticated rate limit");
+    // Row-level error rendering is removed in v1.2.0; failures silently clear the reviewer slot.
+    await expect(page.locator(".ghpsr-status--error")).toHaveCount(0);
+    // The root mount is either absent or empty after a fetch failure.
+    const root = page.locator(".ghpsr-root");
+    const rootCount = await root.count();
+    if (rootCount > 0) {
+      await expect(root).toBeEmpty();
+    }
   });
 });
 
