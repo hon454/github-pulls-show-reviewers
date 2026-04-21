@@ -44,7 +44,7 @@ pnpm verify:release
 2. Run `pnpm lint` to catch repository-wide lint regressions before packaging.
 3. Run `pnpm typecheck` to verify the WXT entrypoints and shared TypeScript contracts still match.
 4. Run `pnpm test` to exercise unit and fixture-backed regression coverage for routes, selectors, reviewer mapping, settings, and repository diagnostics.
-5. Run `pnpm test:e2e` to build the extension and verify the packaged MV3 output still boots and renders reviewer chips in Playwright scenarios.
+5. Run `pnpm test:e2e` to build the extension and verify the packaged MV3 output still boots and renders reviewer chips in Playwright scenarios. For filtered Playwright runs, use `pnpm test:e2e:build` and then `pnpm test:e2e:grep "<pattern>"`.
 6. Run `pnpm cws:assets` only if store screenshots or other listing visuals need to be refreshed.
 7. Run `pnpm zip` after the checks above are green and the package is ready for inspection or submission.
 8. Manually load `.output/chrome-mv3` in Chrome and confirm the options page never renders as a blank white screen; if the GitHub App build config is missing, it must show an explicit configuration warning instead.

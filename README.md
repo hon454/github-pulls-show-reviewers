@@ -104,6 +104,14 @@ pnpm test
 pnpm test:e2e
 ```
 
+For filtered Playwright runs, build once and use the dedicated grep script instead of
+passing flags to `pnpm test:e2e`:
+
+```bash
+pnpm test:e2e:build
+pnpm test:e2e:grep "renders reviewer chips"
+```
+
 ## Pre-release Test Workflow
 
 Use the same order locally before packaging or store submission:
@@ -116,7 +124,7 @@ pnpm verify:release
 2. Run `pnpm lint` to catch unsafe edits, stale imports, and repository-level style regressions.
 3. Run `pnpm typecheck` to verify the extension entrypoints and shared reviewer contracts still line up.
 4. Run `pnpm test` to cover selector parsing, reviewer view models, API handling, token diagnostics, and options-page behavior.
-5. Run `pnpm test:e2e` to build the MV3 bundle and verify the packaged extension still renders reviewer chips in Playwright fixture scenarios.
+5. Run `pnpm test:e2e` to build the MV3 bundle and verify the packaged extension still renders reviewer chips in Playwright fixture scenarios. For filtered Playwright runs, use `pnpm test:e2e:build` and then `pnpm test:e2e:grep "<pattern>"`.
 6. Run `pnpm cws:assets` only when screenshots or store-facing visuals need to be regenerated.
 7. Run `pnpm zip` only after the checks above are green and you are ready to inspect or submit the packaged artifact.
 

@@ -7,7 +7,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   prettier,
   {
-    ignores: [".output/**", ".wxt/**", "node_modules/**"],
+    ignores: [".output/**", ".wxt/**", "node_modules/**", ".claude/worktrees/**"],
   },
   {
     files: ["**/*.ts", "**/*.tsx"],
