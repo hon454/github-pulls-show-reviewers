@@ -52,19 +52,20 @@ This repository intentionally stays narrow.
 The extension prefers the lightest access model that works.
 
 - Public repositories: try GitHub's unauthenticated REST path first
-- Private repositories: use fine-grained PATs with minimum read access
+- Private repositories: use a GitHub classic personal access token (`public_repo` for public-only access, `repo` for private repositories — the extension only performs read operations)
 - Options page: save multiple PAT scopes using `owner/*` and `owner/repo` matching
 - Runtime auth resolution: prefer `owner/repo`, then `owner/*`, then no-token
 - Matched-token failures do not fall back automatically to another token or the no-token path
 - Legacy single-token settings are ignored instead of being migrated automatically
-- Options page: diagnose repository access with the same API paths used by the content script and offer a shortcut button to GitHub's fine-grained PAT creation flow
+- Options page: diagnose repository access with the same API paths used by the content script and offer a shortcut button to GitHub's classic PAT creation flow
 
 Recommended token direction for private repositories:
 
-- Repository access limited to the repos you need or to one owner-wide token per account when appropriate
-- `Pull requests: Read`
+- Create a classic PAT at `https://github.com/settings/tokens/new`
+- Use `public_repo` for public-only access or `repo` for private repositories
+- For organizations that enforce SSO, open the token settings page and click `Configure SSO → Authorize` for each organization you need to read
 
-The options page distinguishes between matched-token success, unauthenticated public access, rate limiting, private-like access failures, and token permission issues.
+The options page distinguishes between matched-token success, unauthenticated public access, rate limiting, private-like access failures, and token permission issues. Classic PAT support is an interim step before a GitHub App flow lands; see [ADR 0002](./docs/adr/0002-classic-pat-interim-auth.md).
 
 ![Repository access diagnostics in the options page](./docs/chrome-web-store-assets/03-options-repository-check.png)
 
@@ -152,3 +153,4 @@ The current MVP is already implemented around a few explicit constraints:
 - [Chrome Web Store submission draft](./docs/chrome-web-store-submission.md)
 - [Privacy policy draft](./docs/privacy-policy.md)
 - [ADR: Keep no-token support for public repositories](./docs/adr/0001-keep-no-token-support-for-public-repositories.md)
+- [ADR: Classic PAT interim auth](./docs/adr/0002-classic-pat-interim-auth.md)
