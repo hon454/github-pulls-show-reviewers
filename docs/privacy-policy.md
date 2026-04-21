@@ -12,7 +12,7 @@ To provide its reviewer visibility feature, the extension may access:
 
 - GitHub repository and pull request context from the current page, including repository owner/name, pull request numbers, and visible metadata needed to place reviewer chips in the list UI.
 - Reviewer-related metadata returned by GitHub's REST API, including requested reviewers, requested teams, and review states.
-- An optional GitHub personal access token if the user enters one in the extension options page for private repository access.
+- An optional GitHub classic personal access token (recommended scopes: `public_repo` for public-only access, or `repo` for private repositories) if the user enters one in the extension options page.
 
 ## How data is used
 
