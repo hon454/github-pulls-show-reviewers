@@ -20,6 +20,10 @@ env:
 jobs:
   package:
     runs-on: ubuntu-latest
+    env:
+      WXT_GITHUB_APP_CLIENT_ID: ${{ vars.WXT_GITHUB_APP_CLIENT_ID }}
+      WXT_GITHUB_APP_SLUG: ${{ vars.WXT_GITHUB_APP_SLUG }}
+      WXT_GITHUB_APP_NAME: ${{ vars.WXT_GITHUB_APP_NAME }}
     steps:
       - uses: actions/checkout@v4
         with:
