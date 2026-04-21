@@ -10,6 +10,7 @@
 - Reviewer links point back to repo-scoped GitHub pull request searches.
 - Reviewer payloads are cached per page session to avoid duplicate requests for the same pull request.
 - The options page can validate a token against the GitHub API before saving it.
+- The options page leaves the repository diagnostics input empty by default and provides a shortcut link to GitHub's fine-grained PAT creation page.
 - Repository diagnostics can discover one pull request and verify the exact detail and reviews endpoints used by the content script, both with a saved token and on the no-token path.
 - The packaged extension now includes dedicated `16/32/48/128` icons under `public/icon/` for Chrome surfaces and store submission.
 

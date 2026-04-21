@@ -54,6 +54,7 @@ The extension prefers the lightest access model that works.
 - Public repositories: try GitHub's unauthenticated REST path first
 - Private repositories: use a fine-grained PAT with minimum read access
 - Options page: validate the token before saving and diagnose repository access with the same API paths used by the content script
+- Options page: keep the repository diagnostics field empty until you want a repo-specific check, and offer a shortcut button to GitHub's fine-grained PAT creation flow
 
 Recommended token direction for private repositories:
 
