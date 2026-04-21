@@ -163,3 +163,151 @@ export async function pollForAccessToken(input: {
     `Unrecognized device flow error: ${payload.data.error}`,
   );
 }
+
+function createAuthHeaders(token: string): Headers {
+  return new Headers({
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": "2022-11-28",
+  });
+}
+
+function parseNextLink(header: string | null): string | null {
+  if (header == null) {
+    return null;
+  }
+  for (const part of header.split(",")) {
+    const match = /<([^>]+)>\s*;\s*rel="next"/.exec(part.trim());
+    if (match) {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+const githubUserSchema = z.object({
+  login: z.string(),
+  avatar_url: z.string().url().nullable().optional(),
+});
+
+export type AuthenticatedUser = {
+  login: string;
+  avatarUrl: string | null;
+};
+
+export async function fetchAuthenticatedUser(input: {
+  token: string;
+  signal?: AbortSignal;
+}): Promise<AuthenticatedUser> {
+  const response = await fetch("https://api.github.com/user", {
+    headers: createAuthHeaders(input.token),
+    signal: input.signal,
+  });
+  if (!response.ok) {
+    throw new Error(`GET /user failed with status ${response.status}.`);
+  }
+  const payload = githubUserSchema.parse(await response.json());
+  return {
+    login: payload.login,
+    avatarUrl: payload.avatar_url ?? null,
+  };
+}
+
+const apiInstallationAccountSchema = z.object({
+  login: z.string(),
+  type: z.enum(["User", "Organization", "Bot"]),
+  avatar_url: z.string().url().nullable().optional(),
+});
+
+const apiInstallationSchema = z.object({
+  id: z.number(),
+  account: apiInstallationAccountSchema,
+  repository_selection: z.enum(["all", "selected"]),
+});
+
+const userInstallationsSchema = z.object({
+  total_count: z.number(),
+  installations: z.array(apiInstallationSchema),
+});
+
+export type ApiInstallation = {
+  id: number;
+  account: {
+    login: string;
+    type: "User" | "Organization";
+    avatarUrl: string | null;
+  };
+  repositorySelection: "all" | "selected";
+};
+
+export const MAX_INSTALLATION_PAGES = 10;
+
+export async function fetchUserInstallations(input: {
+  token: string;
+  signal?: AbortSignal;
+}): Promise<ApiInstallation[]> {
+  const results: ApiInstallation[] = [];
+  let url: string | null =
+    "https://api.github.com/user/installations?per_page=100";
+  for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
+    const response = await fetch(url, {
+      headers: createAuthHeaders(input.token),
+      signal: input.signal,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `GET /user/installations failed with status ${response.status}.`,
+      );
+    }
+    const payload = userInstallationsSchema.parse(await response.json());
+    for (const installation of payload.installations) {
+      if (installation.account.type === "Bot") {
+        continue;
+      }
+      results.push({
+        id: installation.id,
+        account: {
+          login: installation.account.login,
+          type: installation.account.type as "User" | "Organization",
+          avatarUrl: installation.account.avatar_url ?? null,
+        },
+        repositorySelection: installation.repository_selection,
+      });
+    }
+    url = parseNextLink(response.headers.get("link"));
+  }
+  return results;
+}
+
+const installationRepositoriesSchema = z.object({
+  total_count: z.number(),
+  repositories: z.array(z.object({ full_name: z.string() })),
+});
+
+export async function fetchInstallationRepositories(input: {
+  token: string;
+  installationId: number;
+  signal?: AbortSignal;
+}): Promise<string[]> {
+  const results: string[] = [];
+  let url: string | null = `https://api.github.com/user/installations/${input.installationId}/repositories?per_page=100`;
+  for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
+    const response = await fetch(url, {
+      headers: createAuthHeaders(input.token),
+      signal: input.signal,
+    });
+    if (!response.ok) {
+      throw new Error(
+        `GET /user/installations/${input.installationId}/repositories failed with status ${response.status}.`,
+      );
+    }
+    const payload = installationRepositoriesSchema.parse(
+      await response.json(),
+    );
+    for (const repository of payload.repositories) {
+      results.push(repository.full_name);
+    }
+    url = parseNextLink(response.headers.get("link"));
+  }
+  return results;
+}

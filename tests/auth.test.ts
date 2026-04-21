@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   DeviceFlowError,
+  fetchAuthenticatedUser,
+  fetchInstallationRepositories,
+  fetchUserInstallations,
   initiateDeviceFlow,
   pollForAccessToken,
 } from "../src/github/auth";
@@ -120,5 +123,86 @@ describe("pollForAccessToken", () => {
     await expect(
       pollForAccessToken({ clientId: "Iv1.test", deviceCode: "abc" }),
     ).rejects.toMatchObject({ code: "network_error" });
+  });
+});
+
+function paginatedResponse(body: unknown, linkNext?: string): Response {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  if (linkNext) {
+    headers["link"] = `<${linkNext}>; rel="next"`;
+  }
+  return new Response(JSON.stringify(body), { status: 200, headers });
+}
+
+describe("fetchAuthenticatedUser", () => {
+  it("parses login and avatar URL", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(fixture("user.json")),
+    );
+    const user = await fetchAuthenticatedUser({ token: "ghu_abc" });
+    expect(user.login).toBe("hon454");
+    expect(user.avatarUrl).toBe(
+      "https://avatars.githubusercontent.com/u/123?v=4",
+    );
+  });
+});
+
+describe("fetchUserInstallations", () => {
+  it("returns installations with camelCase fields", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(fixture("user-installations.json")),
+    );
+    const installations = await fetchUserInstallations({ token: "ghu_abc" });
+    expect(installations).toHaveLength(2);
+    expect(installations[0]).toMatchObject({
+      id: 12345,
+      repositorySelection: "all",
+    });
+    expect(installations[0].account.login).toBe("hon454");
+  });
+});
+
+describe("fetchInstallationRepositories", () => {
+  it("returns an array of full_name strings", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(fixture("installation-repositories.json")),
+    );
+    const names = await fetchInstallationRepositories({
+      token: "ghu_abc",
+      installationId: 67890,
+    });
+    expect(names).toEqual(["cinev/shotloom", "cinev/landing"]);
+  });
+
+  it("follows pagination up to the 10-page ceiling", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    for (let page = 1; page <= 10; page++) {
+      fetchMock.mockResolvedValueOnce(
+        paginatedResponse(
+          {
+            total_count: 1,
+            repositories: [{ full_name: `cinev/repo-${page}` }],
+          },
+          `https://api.github.com/user/installations/1/repositories?page=${page + 1}&per_page=100`,
+        ),
+      );
+    }
+    const names = await fetchInstallationRepositories({
+      token: "ghu_abc",
+      installationId: 1,
+    });
+    expect(names).toHaveLength(10);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
+  });
+
+  it("throws on non-ok responses", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("unauthorized", { status: 401 }),
+    );
+    await expect(
+      fetchInstallationRepositories({ token: "ghu_abc", installationId: 1 }),
+    ).rejects.toThrow();
   });
 });

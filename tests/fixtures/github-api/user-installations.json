@@ -1,0 +1,23 @@
+{
+  "total_count": 2,
+  "installations": [
+    {
+      "id": 12345,
+      "account": {
+        "login": "hon454",
+        "type": "User",
+        "avatar_url": "https://avatars.githubusercontent.com/u/123?v=4"
+      },
+      "repository_selection": "all"
+    },
+    {
+      "id": 67890,
+      "account": {
+        "login": "cinev",
+        "type": "Organization",
+        "avatar_url": "https://avatars.githubusercontent.com/u/456?v=4"
+      },
+      "repository_selection": "selected"
+    }
+  ]
+}
