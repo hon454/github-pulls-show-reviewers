@@ -1,6 +1,6 @@
 # ADR 0002: Classic PAT Interim Auth
 
-- Status: Accepted
+- Status: Superseded by [ADR 0003](./0003-github-app-device-flow.md) (2026-04-21)
 - Date: 2026-04-21
 
 ## Context
