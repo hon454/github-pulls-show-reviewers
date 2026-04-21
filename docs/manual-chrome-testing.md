@@ -58,7 +58,7 @@ https://github.com/<owner>/<repo>/pulls
 Good manual checks:
 
 - A public repository with open pull requests, to validate the no-token path.
-- A private repository you can access, to validate the classic PAT flow (including SSO authorization) from the options page.
+- A private repository you can access, to validate the device-flow authenticated path.
 
 This extension is intentionally narrow. Manual verification should stay focused on reviewer visibility:
 
@@ -76,16 +76,50 @@ This extension is intentionally narrow. Manual verification should stay focused 
 3. Confirm the UI shows only reviewer-focused metadata:
    requested reviewers, requested teams, and completed review state.
 
-### Private repository path
+### Signed-in, all-repos installation
 
-1. Open the extension's options page from the extension card in `chrome://extensions`, or from the Chrome extensions menu.
-2. Use the "Create classic PAT" link on the options page to open GitHub's classic token creation flow with the `repo` scope pre-selected.
-3. Keep scope selection minimal:
-   - `public_repo` for public-only usage.
-   - `repo` for private repository usage (the extension only performs read operations).
-4. For each organization that enforces SSO (for example an organization that disallows fine-grained PATs), open the token settings page, find the new token, and click `Configure SSO → Authorize` for that organization.
-5. Save the token in the options page and use the repository diagnostics UI to confirm access.
-6. Re-open the private repository PR list and confirm reviewer chips now render through the authenticated path.
+1. Open the extension options page.
+2. Click **Add account** and complete the device flow with an account where the
+   GitHub App is installed on **All repositories**.
+3. Visit a private PR list in that account's namespace.
+4. Confirm reviewer chips render for every row without an uncovered-org banner.
+
+### Signed-in, selected-repos installation
+
+1. Install the GitHub App on an organization with only two selected
+   repositories.
+2. Complete the device flow with the owning user.
+3. Visit one of the two selected repositories' PR list; confirm reviewer chips
+   render.
+4. Visit a third repository in that org; confirm an empty reviewer slot per row
+   and a banner prompting to add access.
+
+### Uncovered org banner
+
+1. Sign in but do not install the App on `work-org`.
+2. Visit a `work-org` PR list.
+3. Confirm the top-of-page banner surfaces `work-org` and offers an Install
+   link that routes to the App installation page.
+4. Click **Dismiss**. Confirm the banner stays dismissed on reload of the same
+   URL and reappears on a different PR list path.
+
+### Revoked account
+
+1. On github.com → Settings → Applications, revoke the authorization for the
+   test App.
+2. Reload a private PR list.
+3. Confirm the row reviewer slots become empty and the banner prompts to sign
+   in again.
+4. Open the options page; confirm the account card shows the invalidated
+   styling and a **Sign in again** button.
+
+### Unauthenticated rate limit
+
+1. Sign out of every account in the options page.
+2. Refresh a public PR list many times in quick succession to exhaust GitHub's
+   unauthenticated rate limit.
+3. Confirm row reviewer slots become empty and the banner shows the sign-in CTA
+   that opens the options page.
 
 ## 5. Rebuild and reload during iteration
 
@@ -122,9 +156,6 @@ Before considering a manual check complete, verify at least these cases:
 - A completed review shows the latest visible state for that reviewer.
 - GitHub SPA navigation still leaves reviewer chips visible after moving between PR list views.
 - Reloading the page does not duplicate reviewer UI on the same row.
-- Private-repository access works with a classic PAT that holds the `repo` scope (and `public_repo` alone suffices for public-only usage).
-- A saved fine-grained PAT from a prior release still works without reconfiguration, because GitHub treats both styles as `Authorization: Bearer` tokens.
-- Reviewer metadata loads in an organization that disallows fine-grained PATs (for example a `cinev`-style org) after the user authorizes the classic PAT via `Configure SSO → Authorize`.
 
 ## 7. Troubleshooting
 
@@ -139,6 +170,5 @@ If the extension appears loaded but does not work:
 
 If reviewer data is missing only on private repositories:
 
-- Re-check that the stored PAT matches the target `owner/repo` or `owner/*`.
-- Re-check that the classic PAT has the `repo` scope (or `public_repo` for public-only access) and that SSO is authorized for every organization whose repositories you want to read.
+- Re-check that the signed-in account has the GitHub App installed for the target repository.
 - Use the options page diagnostics to confirm the same GitHub API paths used by the content script can be reached.
