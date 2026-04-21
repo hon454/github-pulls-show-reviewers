@@ -5,9 +5,23 @@ export default defineContentScript({
   matches: ["https://github.com/*/*"],
   runAt: "document_idle",
   main(ctx) {
-    const aggregator = bootAccessBanner(ctx);
+    let aggregator = bootAccessBanner(ctx);
+
+    const refreshAccessBanner = () => {
+      aggregator?.teardown();
+      aggregator = bootAccessBanner(ctx);
+    };
+
+    ctx.addEventListener(window, "wxt:locationchange", refreshAccessBanner);
+    ctx.addEventListener(window, "popstate", refreshAccessBanner);
+    ctx.addEventListener(document, "turbo:render", refreshAccessBanner);
+    ctx.addEventListener(document, "pjax:end", refreshAccessBanner);
+
     bootReviewerListPage(ctx, {
       onRowFailure({ owner, account, error }) {
+        if (aggregator == null) {
+          aggregator = bootAccessBanner(ctx);
+        }
         if (aggregator == null) {
           return;
         }

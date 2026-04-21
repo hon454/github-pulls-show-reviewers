@@ -6,9 +6,13 @@ import { parsePullListRoute } from "../../github/routes";
 import { createBannerAggregator, type BannerAggregator } from "./aggregator";
 import { mountBanner, type BannerMount } from "./dom";
 
+export type AccessBannerHandle = BannerAggregator & {
+  teardown(): void;
+};
+
 export function bootAccessBanner(
   ctx: ContentScriptContext,
-): BannerAggregator | null {
+): AccessBannerHandle | null {
   const route = parsePullListRoute(window.location.pathname);
   if (route == null) {
     return null;
@@ -48,10 +52,18 @@ export function bootAccessBanner(
     mount.update(state);
   });
 
-  ctx.onInvalidated(() => {
+  const teardown = () => {
     unsubscribe();
     mount?.teardown();
+    mount = null;
+  };
+
+  ctx.onInvalidated(() => {
+    teardown();
   });
 
-  return aggregator;
+  return {
+    ...aggregator,
+    teardown,
+  };
 }

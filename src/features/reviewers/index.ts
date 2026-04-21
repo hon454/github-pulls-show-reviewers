@@ -19,6 +19,7 @@ import {
   renderReviewerSections,
 } from "./dom";
 import { buildReviewerSections } from "./view-model";
+import { markAccountInvalidated } from "../../storage/accounts";
 
 export type ReviewerBootOptions = {
   onRowFailure?: (signal: {
@@ -90,6 +91,11 @@ export function bootReviewerListPage(
         });
         setCachedReviewerSummary(cacheKey, summary);
       } catch (error) {
+        const invalidationReason =
+          account == null ? null : getAccountInvalidationReason(error);
+        if (account != null && invalidationReason != null) {
+          await markAccountInvalidated(account.id, invalidationReason);
+        }
         mount.replaceChildren();
         mount.removeAttribute("title");
         options?.onRowFailure?.({
@@ -186,4 +192,30 @@ export function bootReviewerListPage(
     observer.disconnect();
     browser.storage.onChanged.removeListener(storageListener);
   });
+}
+
+function getAccountInvalidationReason(
+  error: unknown,
+): "revoked" | "expired" | "unknown" | null {
+  return extractStatus(error) === 401 ? "revoked" : null;
+}
+
+function extractStatus(error: unknown): number | null {
+  if (error && typeof error === "object" && "status" in error) {
+    const value = (error as { status: unknown }).status;
+    return typeof value === "number" ? value : null;
+  }
+
+  if (
+    error &&
+    typeof error === "object" &&
+    "failures" in error &&
+    Array.isArray((error as { failures: unknown }).failures)
+  ) {
+    const first = (error as { failures: Array<{ status?: number }> })
+      .failures[0];
+    return typeof first?.status === "number" ? first.status : null;
+  }
+
+  return null;
 }

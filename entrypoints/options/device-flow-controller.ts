@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   addAccount,
-  replaceInstallations,
   type Account,
   type Installation,
 } from "../../src/storage/accounts";
@@ -105,7 +104,14 @@ export function useDeviceFlowController(input: {
               return;
             }
             setState({ phase: "fetching_installations" });
-            await completeAccountConnect(result.accessToken, input.onConnected);
+            const connected = await completeAccountConnect(
+              result.accessToken,
+              input.onConnected,
+              () => cancelledRef.current,
+            );
+            if (!connected || cancelledRef.current) {
+              return;
+            }
             setState({ phase: "connected", accountId: "pending" });
           } catch (error) {
             if (error instanceof DeviceFlowError) {
@@ -144,6 +150,9 @@ export function useDeviceFlowController(input: {
     void (async () => {
       try {
         const init = await initiateDeviceFlow({ clientId: input.clientId });
+        if (cancelledRef.current) {
+          return;
+        }
         intervalRef.current = init.interval;
         const expiresAt = Date.now() + init.expiresIn * 1000;
         setState({
@@ -171,8 +180,15 @@ export function useDeviceFlowController(input: {
 async function completeAccountConnect(
   accessToken: string,
   onConnected: (account: Account) => void,
-): Promise<void> {
+  isCancelled: () => boolean,
+): Promise<boolean> {
+  if (isCancelled()) {
+    return false;
+  }
   const user = await fetchAuthenticatedUser({ token: accessToken });
+  if (isCancelled()) {
+    return false;
+  }
   const apiInstallations = await fetchUserInstallations({ token: accessToken });
   const installations: Installation[] = await Promise.all(
     apiInstallations.map(async (installation) => {
@@ -191,6 +207,9 @@ async function completeAccountConnect(
       };
     }),
   );
+  if (isCancelled()) {
+    return false;
+  }
   const account: Account = {
     id: globalThis.crypto.randomUUID(),
     login: user.login,
@@ -203,6 +222,9 @@ async function completeAccountConnect(
     invalidatedReason: null,
   };
   await addAccount(account);
-  await replaceInstallations(account.id, installations);
+  if (isCancelled()) {
+    return false;
+  }
   onConnected(account);
+  return true;
 }

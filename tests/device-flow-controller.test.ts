@@ -165,4 +165,95 @@ describe("useDeviceFlowController", () => {
     });
     expect(result.current.state.phase).toBe("idle");
   });
+
+  it("stays idle when canceled before the device code request resolves", async () => {
+    let resolveInit: ((value: {
+      deviceCode: string;
+      userCode: string;
+      verificationUri: string;
+      verificationUriComplete: string;
+      expiresIn: number;
+      interval: number;
+    }) => void) | null = null;
+    (auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveInit = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() =>
+      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+    );
+
+    await act(async () => {
+      result.current.start();
+    });
+    await act(async () => {
+      result.current.cancel();
+    });
+    await act(async () => {
+      resolveInit?.({
+        deviceCode: "dc",
+        userCode: "ABCD-EFGH",
+        verificationUri: "https://github.com/login/device",
+        verificationUriComplete:
+          "https://github.com/login/device?user_code=ABCD-EFGH",
+        expiresIn: 900,
+        interval: 5,
+      });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.phase).toBe("idle");
+  });
+
+  it("does not connect after canceling during installation fetch", async () => {
+    let resolveUser: ((value: { login: string; avatarUrl: null }) => void) | null =
+      null;
+    (auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 5,
+    });
+    (auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_token",
+    });
+    (auth.fetchAuthenticatedUser as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUser = resolve;
+        }),
+    );
+    (auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const onConnected = vi.fn();
+    const { result } = renderHook(() =>
+      useDeviceFlowController({ clientId: "Iv1.test", onConnected }),
+    );
+
+    await act(async () => {
+      result.current.start();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(result.current.state.phase).toBe("fetching_installations");
+
+    await act(async () => {
+      result.current.cancel();
+    });
+    await act(async () => {
+      resolveUser?.({ login: "hon454", avatarUrl: null });
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.phase).toBe("idle");
+    expect(onConnected).not.toHaveBeenCalled();
+  });
 });
