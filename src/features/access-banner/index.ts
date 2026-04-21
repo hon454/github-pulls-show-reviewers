@@ -1,6 +1,6 @@
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
-import { buildInstallAppUrl, getGitHubAppConfig } from "../../config/github-app";
+import { buildInstallAppUrl, readGitHubAppConfig } from "../../config/github-app";
 import { parsePullListRoute } from "../../github/routes";
 
 import { createBannerAggregator, type BannerAggregator } from "./aggregator";
@@ -22,7 +22,11 @@ export function bootAccessBanner(
   });
 
   const optionsPageUrl = browser.runtime.getURL("/options.html");
-  const appConfig = getGitHubAppConfig();
+  const appConfigResult = readGitHubAppConfig();
+  if (!appConfigResult.ok) {
+    return null;
+  }
+  const appConfig = appConfigResult.config;
   const installUrl = buildInstallAppUrl(appConfig.slug);
 
   let mount: BannerMount | null = null;

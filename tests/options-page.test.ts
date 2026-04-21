@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, createElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Account } from "../src/storage/accounts";
 import type * as AccountsModule from "../src/storage/accounts";
@@ -53,6 +53,10 @@ beforeEach(() => {
   listAccountsMock.mockResolvedValue([]);
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("OptionsPage", () => {
   it("shows the empty accounts state when no accounts are stored", async () => {
     await renderOptionsPage();
@@ -98,6 +102,19 @@ describe("OptionsPage", () => {
     await renderOptionsPage();
     expect(
       document.querySelector('[data-testid="account-card-hon454"]'),
+    ).not.toBeNull();
+  });
+
+  it("shows a configuration warning instead of blanking the page when production config is missing", async () => {
+    vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "");
+    vi.stubGlobal("__GITHUB_APP_SLUG__", "");
+    vi.stubGlobal("__GITHUB_APP_NAME__", "");
+    vi.stubGlobal("__PROD__", true);
+
+    await renderOptionsPage();
+
+    expect(
+      document.querySelector('[data-testid="options-config-warning"]'),
     ).not.toBeNull();
   });
 });

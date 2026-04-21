@@ -47,6 +47,7 @@ pnpm verify:release
 5. Run `pnpm test:e2e` to build the extension and verify the packaged MV3 output still boots and renders reviewer chips in Playwright scenarios.
 6. Run `pnpm cws:assets` only if store screenshots or other listing visuals need to be refreshed.
 7. Run `pnpm zip` after the checks above are green and the package is ready for inspection or submission.
+8. Manually load `.output/chrome-mv3` in Chrome and confirm the options page never renders as a blank white screen; if the GitHub App build config is missing, it must show an explicit configuration warning instead.
 
 Expected release gate behavior:
 
@@ -68,5 +69,6 @@ Expected release gate behavior:
    in `browser.storage.local`) for private-repository access.
 8. Keep release tags aligned with the store package version, using `v<manifest-version>` tags such as `v1.0.0`.
 9. Confirm the reviewer-only scope in the listing copy still matches the extension and screenshots before submission.
+10. Open the packaged extension's options page once before submission and confirm it either renders the sign-in UI normally or shows the explicit GitHub App configuration warning, never a blank page.
 
 Concrete submission assets and privacy-form draft live in [chrome-web-store-submission.md](./chrome-web-store-submission.md). The publishable privacy policy draft lives in [privacy-policy.md](./privacy-policy.md).

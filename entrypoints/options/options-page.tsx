@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 
-import { getGitHubAppConfig } from "../../src/config/github-app";
+import { readGitHubAppConfig } from "../../src/config/github-app";
 import { listAccounts, type Account } from "../../src/storage/accounts";
 
 import { AccountsList } from "./components/AccountsList";
@@ -10,7 +10,9 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 export function OptionsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showAddPanel, setShowAddPanel] = useState(false);
-  const appConfig = getGitHubAppConfig();
+  const appConfigResult = readGitHubAppConfig();
+  const appConfig = appConfigResult.ok ? appConfigResult.config : null;
+  const configError = appConfigResult.ok ? null : appConfigResult.message;
 
   const reload = useCallback(async () => {
     setAccounts(await listAccounts());
@@ -26,9 +28,9 @@ export function OptionsPage() {
         <p style={styles.eyebrow}>GitHub Pulls Show Reviewers</p>
         <h1 style={styles.title}>Reviewer visibility for GitHub pull request lists</h1>
         <p style={styles.body}>
-          Sign in with GitHub (via our GitHub App) to see reviewer chips on
-          private-repository pull request lists. Public repositories continue to
-          work without signing in.
+          {appConfig
+            ? "Sign in with GitHub (via our GitHub App) to see reviewer chips on private-repository pull request lists. Public repositories continue to work without signing in."
+            : "This build is missing its GitHub App configuration, so account sign-in is unavailable. Public repositories continue to work without signing in."}
         </p>
 
         <section style={styles.section}>
@@ -36,9 +38,21 @@ export function OptionsPage() {
           <AccountsList
             accounts={accounts}
             onChange={reload}
-            onReauthenticate={() => setShowAddPanel(true)}
+            onReauthenticate={() => {
+              if (appConfig) {
+                setShowAddPanel(true);
+              }
+            }}
           />
-          {showAddPanel ? (
+          {!appConfig ? (
+            <div style={styles.warning} data-testid="options-config-warning">
+              <p style={styles.warningTitle}>GitHub sign-in is unavailable in this build.</p>
+              <p style={styles.warningBody}>
+                {configError} Reinstall a build that includes the maintainer
+                GitHub App client ID and slug.
+              </p>
+            </div>
+          ) : showAddPanel ? (
             <AddAccountPanel
               onConnected={async () => {
                 setShowAddPanel(false);
@@ -62,18 +76,24 @@ export function OptionsPage() {
         <section style={styles.section}>
           <h2 style={styles.sectionTitle}>About</h2>
           <p style={styles.hint}>
-            This extension signs you in through the{" "}
-            <strong>{appConfig.name}</strong> GitHub App. The App requests{" "}
-            <code>Pull requests: Read</code> only. Removing an account locally
-            does not revoke the authorization on GitHub — manage revocation at{" "}
-            <a
-              href="https://github.com/settings/applications"
-              target="_blank"
-              rel="noreferrer"
-            >
-              github.com/settings/applications
-            </a>
-            .
+            {appConfig ? (
+              <>
+                This extension signs you in through the{" "}
+                <strong>{appConfig.name}</strong> GitHub App. The App requests{" "}
+                <code>Pull requests: Read</code> only. Removing an account locally
+                does not revoke the authorization on GitHub — manage revocation at{" "}
+                <a
+                  href="https://github.com/settings/applications"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  github.com/settings/applications
+                </a>
+                .
+              </>
+            ) : (
+              <>GitHub App metadata could not be loaded from this build.</>
+            )}
           </p>
         </section>
       </section>
@@ -117,6 +137,15 @@ const styles: Record<string, CSSProperties> = {
   title: { margin: "12px 0 16px", fontSize: 36, lineHeight: 1.1 },
   body: { margin: 0, maxWidth: 560, color: "#52463b", lineHeight: 1.6 },
   hint: { color: "#6e5f52", fontSize: 13, lineHeight: 1.6 },
+  warning: {
+    marginTop: 12,
+    padding: 16,
+    borderRadius: 16,
+    background: "#fff4f4",
+    border: "1px solid rgba(207, 34, 46, 0.18)",
+  },
+  warningTitle: { margin: 0, color: "#cf222e", fontWeight: 700 },
+  warningBody: { margin: "8px 0 0", color: "#6e5f52", lineHeight: 1.6 },
   primaryButton: {
     marginTop: 12,
     border: 0,

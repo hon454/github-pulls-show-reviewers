@@ -79,10 +79,15 @@ This extension is intentionally narrow. Manual verification should stay focused 
 ### Signed-in, all-repos installation
 
 1. Open the extension options page.
-2. Click **Add account** and complete the device flow with an account where the
+2. Confirm the page loads actual UI content and does not render as a blank
+   white screen.
+3. If this build was intentionally packaged without the GitHub App config,
+   confirm the page shows the explicit configuration warning instead of the
+   sign-in controls.
+4. Otherwise, click **Add account** and complete the device flow with an account where the
    GitHub App is installed on **All repositories**.
-3. Visit a private PR list in that account's namespace.
-4. Confirm reviewer chips render for every row without an uncovered-org banner.
+5. Visit a private PR list in that account's namespace.
+6. Confirm reviewer chips render for every row without an uncovered-org banner.
 
 ### Signed-in, selected-repos installation
 
@@ -156,6 +161,8 @@ Before considering a manual check complete, verify at least these cases:
 - A completed review shows the latest visible state for that reviewer.
 - GitHub SPA navigation still leaves reviewer chips visible after moving between PR list views.
 - Reloading the page does not duplicate reviewer UI on the same row.
+- The options page never falls back to a blank white screen; a misconfigured
+  production build shows an explicit GitHub App configuration warning instead.
 
 ## 7. Troubleshooting
 

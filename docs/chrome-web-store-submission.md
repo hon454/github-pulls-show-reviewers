@@ -90,6 +90,7 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 8. Fill in the privacy fields using the draft above, then reconcile every answer against the shipped permissions and network behavior.
 9. If you want review before launch, disable automatic publish and stage the release in the dashboard.
 10. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
+11. Open the packaged extension's options page once before upload and confirm it never renders as a blank white screen. A missing GitHub App build config must surface the explicit configuration warning instead.
 
 ## Current package target
 

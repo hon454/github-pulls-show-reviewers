@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   createBannerAggregator,
@@ -12,6 +12,8 @@ beforeEach(() => {
 
 afterEach(() => {
   window.sessionStorage.clear();
+  vi.resetModules();
+  vi.unstubAllGlobals();
 });
 
 describe("bannerAggregator", () => {
@@ -141,5 +143,27 @@ describe("banner DOM", () => {
       dismissed: true,
     });
     expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
+  });
+});
+
+describe("bootAccessBanner", () => {
+  it("returns null instead of throwing when production GitHub App config is missing", async () => {
+    vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "");
+    vi.stubGlobal("__GITHUB_APP_SLUG__", "");
+    vi.stubGlobal("__GITHUB_APP_NAME__", "");
+    vi.stubGlobal("__PROD__", true);
+    vi.stubGlobal("browser", {
+      runtime: {
+        getURL: (path: string) => `chrome-extension://ext-id${path}`,
+      },
+    });
+    window.history.replaceState({}, "", "/hon454/github-pulls-show-reviewers/pulls");
+
+    const { bootAccessBanner } = await import("../src/features/access-banner");
+    const handle = bootAccessBanner({
+      onInvalidated: () => {},
+    } as never);
+
+    expect(handle).toBeNull();
   });
 });
