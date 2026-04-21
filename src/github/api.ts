@@ -49,6 +49,12 @@ const rateLimitSchema = z.object({
   }),
 });
 
+export type PullReviewerSummaryStatus =
+  | "ok"
+  | "no-coverage"
+  | "network-error"
+  | "rate-limited";
+
 export type ReviewState =
   | "APPROVED"
   | "CHANGES_REQUESTED"
@@ -61,6 +67,7 @@ export type CompletedReview = {
 };
 
 export type PullReviewerSummary = {
+  status: PullReviewerSummaryStatus;
   requestedUsers: string[];
   requestedTeams: string[];
   completedReviews: CompletedReview[];
@@ -246,6 +253,7 @@ export async function fetchPullReviewerSummary(input: {
     .sort((left, right) => left.login.localeCompare(right.login));
 
   return {
+    status: "ok" as const,
     requestedUsers: pull.requested_reviewers.map((reviewer) => reviewer.login),
     requestedTeams: pull.requested_teams.map((team) => team.slug),
     completedReviews,

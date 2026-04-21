@@ -133,6 +133,7 @@ describe("fetchPullReviewerSummary", () => {
     });
 
     expect(summary).toEqual({
+      status: "ok",
       requestedUsers: ["alice"],
       requestedTeams: ["platform"],
       completedReviews: [{ login: "bob", state: "APPROVED" }],
@@ -141,6 +142,35 @@ describe("fetchPullReviewerSummary", () => {
     const firstHeaders = fetchMock.mock.calls[0]?.[1]?.headers;
     expect(firstHeaders).toBeInstanceOf(Headers);
     expect((firstHeaders as Headers).get("Authorization")).toBeNull();
+  });
+
+  it("returns status 'ok' on a successful fetch", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "1",
+      githubToken: null,
+    });
+
+    expect(summary.status).toBe("ok");
   });
 
   it("reports the exact reviews endpoint when review history access is denied", async () => {

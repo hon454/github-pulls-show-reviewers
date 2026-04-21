@@ -10,6 +10,7 @@ describe("buildReviewerSections", () => {
 
   it("builds requested and reviewed sections with repo-scoped links", () => {
     const sections = buildReviewerSections(route, {
+      status: "ok",
       requestedUsers: ["alice"],
       requestedTeams: ["platform"],
       completedReviews: [{ login: "bob", state: "APPROVED" }],
@@ -26,6 +27,7 @@ describe("buildReviewerSections", () => {
 
   it("keeps empty states explicit", () => {
     const sections = buildReviewerSections(route, {
+      status: "ok",
       requestedUsers: [],
       requestedTeams: [],
       completedReviews: [],

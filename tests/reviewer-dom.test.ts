@@ -43,6 +43,7 @@ describe("reviewer dom rendering", () => {
     const sections = buildReviewerSections(
       { owner: "hon454", repo: "github-pulls-show-reviewers" },
       {
+        status: "ok",
         requestedUsers: ["alice"],
         requestedTeams: ["platform"],
         completedReviews: [{ login: "bob", state: "APPROVED" }],
