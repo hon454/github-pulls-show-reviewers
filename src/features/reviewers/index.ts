@@ -6,37 +6,38 @@ import {
   getCachedReviewerSummary,
   setCachedReviewerSummary,
 } from "../../cache/reviewer-cache";
-import { fetchPullReviewerSummary, describeGitHubApiError } from "../../github/api";
+import { fetchPullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
-import { resolveTokenEntryForRepository } from "../../storage/token-scopes";
-import { getStoredSettings, type ExtensionSettings } from "../../storage/settings";
+import { resolveAccountForRepo, type Account } from "../../storage/accounts";
 
 import {
   ensureReviewerMount,
   ensureReviewerStyles,
   extractPullNumber,
-  renderError,
   renderLoading,
   renderReviewerSections,
 } from "./dom";
 import { buildReviewerSections } from "./view-model";
 
-export function bootReviewerListPage(ctx: ContentScriptContext): void {
+export type ReviewerBootOptions = {
+  onRowFailure?: (signal: {
+    owner: string;
+    repo: string;
+    account: Account | null;
+    error: unknown;
+  }) => void;
+};
+
+export function bootReviewerListPage(
+  ctx: ContentScriptContext,
+  options?: ReviewerBootOptions,
+): void {
   ensureReviewerStyles();
 
   let currentRoute = parsePullListRoute(window.location.pathname);
   let currentHref = window.location.href;
-  let settingsCache: ExtensionSettings | null = null;
   const inflightRequests = new Map<string, Promise<void>>();
-
-  async function loadSettings(): Promise<ExtensionSettings> {
-    if (settingsCache == null) {
-      settingsCache = await getStoredSettings();
-    }
-
-    return settingsCache;
-  }
 
   async function processRow(row: Element): Promise<void> {
     if (currentRoute == null) {
@@ -74,10 +75,11 @@ export function bootReviewerListPage(ctx: ContentScriptContext): void {
     renderLoading(mount);
 
     const request = (async () => {
-      const settings = await loadSettings();
-      const repository = `${currentRoute!.owner}/${currentRoute!.repo}`;
-      const tokenEntry = resolveTokenEntryForRepository(settings, repository);
-      const githubToken = tokenEntry?.token ?? null;
+      const account = await resolveAccountForRepo(
+        currentRoute!.owner,
+        currentRoute!.repo,
+      );
+      const githubToken = account?.token ?? null;
 
       try {
         const summary = await fetchPullReviewerSummary({
@@ -88,7 +90,14 @@ export function bootReviewerListPage(ctx: ContentScriptContext): void {
         });
         setCachedReviewerSummary(cacheKey, summary);
       } catch (error) {
-        renderError(mount, describeGitHubApiError(error, { githubToken }));
+        mount.replaceChildren();
+        mount.removeAttribute("title");
+        options?.onRowFailure?.({
+          owner: currentRoute!.owner,
+          repo: currentRoute!.repo,
+          account,
+          error,
+        });
       } finally {
         inflightRequests.delete(cacheKey);
       }
@@ -161,11 +170,10 @@ export function bootReviewerListPage(ctx: ContentScriptContext): void {
   ctx.addEventListener(document, "pjax:end", () => refreshRoute(true));
 
   const storageListener: Parameters<typeof browser.storage.onChanged.addListener>[0] = (
-    changes,
+    _changes,
     areaName,
   ) => {
-    if (areaName === "local" && changes.settings) {
-      settingsCache = null;
+    if (areaName === "local") {
       clearReviewerCache();
       inflightRequests.clear();
       processRows();

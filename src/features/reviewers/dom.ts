@@ -85,9 +85,6 @@ export function ensureReviewerStyles(): void {
       color: var(--fgColor-muted, #656d76);
       font-size: 12px;
     }
-    .ghpsr-status--error {
-      color: var(--fgColor-danger, #cf222e);
-    }
   `;
 
   document.head.append(style);
@@ -139,14 +136,6 @@ export function renderLoading(mount: HTMLElement): void {
   node.textContent = "Loading reviewers...";
   mount.replaceChildren(node);
   mount.removeAttribute("title");
-}
-
-export function renderError(mount: HTMLElement, message: string): void {
-  const node = document.createElement("span");
-  node.className = "ghpsr-status ghpsr-status--error";
-  node.textContent = message;
-  mount.replaceChildren(node);
-  mount.title = message;
 }
 
 export function renderReviewerSections(
