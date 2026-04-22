@@ -19,23 +19,49 @@ For breaking changes, add `!`:
 
 Breaking PRs also include a `Breaking Changes` section in the body.
 
-## Minimal description template
+## Description template
 
-Use this by default; the
-[`.github/pull_request_template.md`](../../.github/pull_request_template.md)
-auto-populates it.
+Every PR uses the same expanded template, populated by
+[`.github/pull_request_template.md`](../../.github/pull_request_template.md).
+Sections that do not apply to a given PR should still be present:
+leave a short "None", "N/A", or "not applicable" so the reviewer
+knows the author considered the section.
 
     ## Summary
 
-    One paragraph: what changed and why.
+    -
 
-    ## Validation
+    ## Why
 
-    - pnpm lint: <pass | not run because ...>
-    - pnpm typecheck: <pass | not run because ...>
-    - pnpm test: <pass | not run because ...>
-    - Manual: <what was verified in the browser or Chrome extension,
-      or "not applicable">
+    <!-- What problem does this solve? Why is this needed? -->
+
+    ## Changes
+
+    <!-- Summarize by behavior, subsystem, or reviewer concern. -->
+    <!-- Do not provide a file-by-file list unless file location is essential. -->
+
+    -
+
+    ## Impact
+
+    - User-facing impact:
+    - API/schema impact:
+    - Performance impact:
+    - Operational or rollout impact:
+
+    ## Testing
+
+    - [ ] Unit tests
+    - [ ] Integration tests
+    - [ ] Manual testing
+
+    ### Test details
+
+    -
+
+    ## Breaking Changes
+
+    - None
 
     ## Related Issues
 
@@ -43,32 +69,25 @@ auto-populates it.
     (or) Part of #123
     (or) No issue: <reason>
 
-## Expanded template (optional)
+### Writing each section
 
-For large, risky, or multi-part changes, add these sections beneath
-the minimal template:
-
-    ## Context
-
-    Prior state, constraints, and the problem being solved.
-
-    ## Approach
-
-    The chosen strategy and alternatives considered.
-
-    ## Risk
-
-    Known risk areas and mitigations.
-
-    ## Rollout
-
-    How the change is exercised after merge (manual testing, Chrome
-    Web Store release, feature flag, etc.).
-
-    ## Breaking Changes
-
-    Required when the PR title carries `!`. Describe the break and
-    the migration path.
+- **Summary** — 1 to 3 bullets describing the main outcome. Not a
+  filename list; focus on behavior or reviewer concern.
+- **Why** — a few sentences explaining the motivation or problem
+  being solved. Avoid restating the summary.
+- **Changes** — group by behavior, subsystem, or reviewer concern.
+  Examples: user-facing behavior, validation logic, data model
+  changes, performance improvements, test coverage.
+- **Impact** — call out anything release owners or reviewers should
+  notice. Use "None" when genuinely empty.
+- **Testing** — check what was actually run; the Test details list
+  should describe concrete verifications rather than "tested
+  locally". Record pnpm lint / typecheck / test results and any
+  manual Chrome verification in Test details.
+- **Breaking Changes** — state "None" for additive changes. A PR
+  that carries `!` in the title must describe the break and the
+  migration path here.
+- **Related Issues** — see the Issue linkage section below.
 
 ## Issue linkage
 
@@ -128,5 +147,5 @@ applies, the same PR should carry the matching update.
     `docs/chrome-web-store-submission.md`, and
     `docs/chrome-web-store-assets/`.
 
-The minimal PR template includes an optional co-location note; use
-it to confirm which items applied or record "none".
+The PR template includes an optional co-location note; use it to
+confirm which items applied or record "none".

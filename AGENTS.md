@@ -103,8 +103,11 @@ checklist are governed by
 [`docs/guidelines/pr-guideline.md`](./docs/guidelines/pr-guideline.md).
 Before running `gh pr create`, confirm the body matches
 [`.github/pull_request_template.md`](./.github/pull_request_template.md):
-every PR body must include `## Summary`, `## Validation`, and
-`## Related Issues`. `gh pr create --body` bypasses GitHub's
+every PR body must include `## Summary`, `## Why`, `## Changes`,
+`## Impact`, `## Testing`, `## Breaking Changes`, and
+`## Related Issues`. Sections that do not apply still belong in the
+body — mark them "None", "N/A", or "not applicable" so reviewers
+see they were considered. `gh pr create --body` bypasses GitHub's
 template auto-population, so the template must be applied manually.
 
 ## Review Standard
