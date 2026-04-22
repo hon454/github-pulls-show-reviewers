@@ -90,9 +90,13 @@ PR body.
 
 ## Assignee
 
-Every PR is assigned to its author. When using `gh pr create`, pass
-`--assignee @me`. When creating through the web UI, set the assignee
-to yourself.
+Maintainers and collaborators assign every PR to its author. When
+using `gh pr create`, pass `--assignee @me`. When creating through
+the web UI, set the assignee to yourself.
+
+Outside contributors opening a PR from a fork generally cannot
+assign PRs in this repository; the maintainer will set the assignee
+on merge-track PRs. No action is required from the contributor.
 
 ## Co-location checklist
 
