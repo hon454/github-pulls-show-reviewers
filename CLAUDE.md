@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Follow the repository instructions in [AGENTS.md](./AGENTS.md).
+Follow the repository instructions in [AGENTS.md](./AGENTS.md). See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full contribution workflow.
 
 Claude-specific note:
 

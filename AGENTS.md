@@ -83,12 +83,19 @@ pnpm test:e2e
 
 - `feat:` for user-facing functionality
 - `fix:` for bug fixes
-- `docs:` for documentation only
-- `chore:` for tooling, config, and repository maintenance
-- `test:` for test-only changes
 - `refactor:` for internal restructuring without behavior change
+- `docs:` for documentation only
+- `test:` for test-only changes
+- `chore:` for tooling, config, and repository maintenance
+- `perf:` for performance improvements without behavior change
+- `build:` for build system, dependencies, and release packaging
+- `ops:` for CI, release workflows, and infrastructure
+- `style:` for formatting and whitespace-only changes
 
-Prefer multiple small commits over one mixed commit.
+Prefer multiple small commits over one mixed commit. See
+[CONTRIBUTING.md](./CONTRIBUTING.md) for the full contribution
+workflow, including branch naming, PR policy, and the co-location
+checklist.
 
 ## Review Standard
 

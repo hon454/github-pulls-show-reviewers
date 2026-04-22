@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an enhancement to the extension
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, please skim the Product Rules in AGENTS.md.
+        Enhancements outside that scope usually will not be accepted.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed behavior
+      description: What should the extension do? Include UI and data behavior.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope-check
+    attributes:
+      label: Scope check
+      options:
+        - label: I have read AGENTS.md Product Rules and believe this proposal fits the current scope
+          required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you evaluated, if any.

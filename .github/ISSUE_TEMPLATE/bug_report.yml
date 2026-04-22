@@ -1,0 +1,67 @@
+name: Bug report
+description: Report a reproducible bug in the extension
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. This extension has a narrow product
+        scope — see AGENTS.md. Fill in as much detail as you can.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A short description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps, starting from a fresh browser state when possible.
+      placeholder: |
+        1. Go to ...
+        2. Click on ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+      placeholder: "1.2.3"
+    validations:
+      required: true
+  - type: input
+    id: chrome-version
+    attributes:
+      label: Chrome version
+      placeholder: "124.0.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: repo-type
+    attributes:
+      label: Repository type
+      options:
+        - Public
+        - Private
+    validations:
+      required: true
+  - type: textarea
+    id: dom-evidence
+    attributes:
+      label: Selector / DOM evidence (optional)
+      description: Paste relevant HTML fragments, screenshots, or selector paths when the issue is visual.
