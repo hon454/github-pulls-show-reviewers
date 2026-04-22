@@ -1,148 +1,104 @@
-import type { CompletedReview, PullReviewerSummary, ReviewState } from "../../github/api";
+import type {
+  CompletedReview,
+  PullReviewerSummary,
+  ReviewState,
+  ReviewerUser,
+} from "../../github/api";
 import type { PullListRoute } from "../../github/routes";
 
-export type ReviewerChipTone =
-  | "requested"
-  | "team"
-  | "approved"
-  | "changes-requested"
-  | "commented"
-  | "dismissed";
+export type ReviewerEntry =
+  | {
+      kind: "user";
+      login: string;
+      avatarUrl: string | null;
+      state: ReviewState | null;
+      isRequested: boolean;
+      href: string;
+    }
+  | {
+      kind: "team";
+      slug: string;
+      href: string;
+    };
 
-export type ReviewerChip = {
-  label: string;
-  href: string;
-  tone: ReviewerChipTone;
-  title?: string;
-};
-
-export type ReviewerSection = {
-  label: string;
-  emptyLabel: string;
-  chips: ReviewerChip[];
-};
-
-export function buildReviewerSections(
+export function buildReviewers(
   route: PullListRoute,
   summary: PullReviewerSummary,
-): ReviewerSection[] {
-  const requestedUserChips = summary.requestedUsers.map((reviewer) =>
-    buildChip(route, reviewer, "requested"),
-  );
-  const requestedTeamChips = summary.requestedTeams.map((team) =>
-    buildChip(route, `@${team}`, "team"),
-  );
-  const reviewedChips = [...summary.completedReviews]
-    .sort((left, right) => compareReviewState(left, right))
-    .map((review) => buildReviewedChip(route, review));
+): ReviewerEntry[] {
+  const reviewedByLogin = new Map<string, CompletedReview>();
+  for (const review of summary.completedReviews) {
+    reviewedByLogin.set(review.login, review);
+  }
 
-  const sections: ReviewerSection[] = [];
+  const requestedByLogin = new Map<string, ReviewerUser>();
+  for (const user of summary.requestedUsers) {
+    requestedByLogin.set(user.login, user);
+  }
 
-  if (requestedUserChips.length > 0 || requestedTeamChips.length > 0) {
-    sections.push({
-      label: "Requested",
-      emptyLabel: "No requested reviewers",
-      chips: [...requestedUserChips, ...requestedTeamChips],
+  const allLogins = new Set<string>([
+    ...reviewedByLogin.keys(),
+    ...requestedByLogin.keys(),
+  ]);
+
+  const userEntries: Extract<ReviewerEntry, { kind: "user" }>[] = [];
+  for (const login of allLogins) {
+    const reviewed = reviewedByLogin.get(login);
+    const requested = requestedByLogin.get(login);
+    const isRequested = requested != null;
+    const state = reviewed?.state ?? null;
+    const avatarUrl = reviewed?.avatarUrl ?? requested?.avatarUrl ?? null;
+    userEntries.push({
+      kind: "user",
+      login,
+      avatarUrl,
+      state,
+      isRequested,
+      href: buildUserHref(route, login, isRequested),
     });
   }
 
-  if (reviewedChips.length > 0) {
-    sections.push({
-      label: "Reviewed",
-      emptyLabel: "No completed reviews",
-      chips: reviewedChips,
-    });
+  userEntries.sort((left, right) => {
+    const rankDelta = rankUser(left) - rankUser(right);
+    if (rankDelta !== 0) return rankDelta;
+    return left.login.localeCompare(right.login);
+  });
+
+  const teamEntries: Extract<ReviewerEntry, { kind: "team" }>[] = [
+    ...summary.requestedTeams,
+  ]
+    .sort((left, right) => left.localeCompare(right))
+    .map((slug) => ({
+      kind: "team" as const,
+      slug,
+      href: buildTeamHref(route, slug),
+    }));
+
+  return [...userEntries, ...teamEntries];
+}
+
+function rankUser(entry: Extract<ReviewerEntry, { kind: "user" }>): number {
+  if (!entry.isRequested) {
+    return entry.state === "CHANGES_REQUESTED" ? 0 : 1;
   }
-
-  return sections;
+  if (entry.state === "COMMENTED") return 2;
+  if (entry.state === "DISMISSED") return 3;
+  if (entry.state != null) return 3.5;
+  return 4;
 }
 
-function buildChip(
+function buildUserHref(
   route: PullListRoute,
-  rawReviewer: string,
-  tone: ReviewerChipTone,
-): ReviewerChip {
-  const isTeam = rawReviewer.startsWith("@");
-  const label = rawReviewer;
-
-  return {
-    label,
-    tone,
-    href: buildPullSearchUrl(route, rawReviewer, tone, isTeam),
-  };
-}
-
-function buildReviewedChip(route: PullListRoute, review: CompletedReview): ReviewerChip {
-  const tone = mapReviewStateToTone(review.state);
-  const suffix = formatReviewState(review.state);
-
-  return {
-    label: `${review.login} · ${suffix}`,
-    title: `${review.login}: ${suffix}`,
-    tone,
-    href: buildPullSearchUrl(route, review.login, tone, false),
-  };
-}
-
-function buildPullSearchUrl(
-  route: PullListRoute,
-  reviewer: string,
-  tone: ReviewerChipTone,
-  isTeam: boolean,
+  login: string,
+  isRequested: boolean,
 ): string {
-  const normalizedReviewer = isTeam ? reviewer.slice(1) : reviewer;
-  let query = "is:pr";
-
-  if (
-    tone === "approved" ||
-    tone === "changes-requested" ||
-    tone === "commented" ||
-    tone === "dismissed"
-  ) {
-    query += ` reviewed-by:${normalizedReviewer}`;
-  } else if (isTeam) {
-    query += ` team-review-requested:${route.owner}/${normalizedReviewer}`;
-  } else {
-    query += ` review-requested:${normalizedReviewer}`;
-  }
-
+  const qualifier = isRequested
+    ? `review-requested:${login}`
+    : `reviewed-by:${login}`;
+  const query = `is:pr ${qualifier}`;
   return `https://github.com/${route.owner}/${route.repo}/pulls?q=${encodeURIComponent(query)}`;
 }
 
-function mapReviewStateToTone(state: ReviewState): ReviewerChipTone {
-  if (state === "APPROVED") {
-    return "approved";
-  }
-
-  if (state === "CHANGES_REQUESTED") {
-    return "changes-requested";
-  }
-
-  if (state === "DISMISSED") {
-    return "dismissed";
-  }
-
-  return "commented";
-}
-
-function formatReviewState(state: ReviewState): string {
-  if (state === "CHANGES_REQUESTED") {
-    return "changes requested";
-  }
-
-  return state.toLowerCase();
-}
-
-function compareReviewState(left: CompletedReview, right: CompletedReview): number {
-  const priority = {
-    CHANGES_REQUESTED: 0,
-    APPROVED: 1,
-    COMMENTED: 2,
-    DISMISSED: 3,
-  } as const;
-
-  return (
-    priority[left.state] - priority[right.state] ||
-    left.login.localeCompare(right.login)
-  );
+function buildTeamHref(route: PullListRoute, slug: string): string {
+  const query = `is:pr team-review-requested:${route.owner}/${slug}`;
+  return `https://github.com/${route.owner}/${route.repo}/pulls?q=${encodeURIComponent(query)}`;
 }
