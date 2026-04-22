@@ -9,17 +9,23 @@ import {
 import { fetchPullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
-import { resolveAccountForRepo, type Account } from "../../storage/accounts";
+import { markAccountInvalidated, resolveAccountForRepo, type Account } from "../../storage/accounts";
+import {
+  DEFAULT_PREFERENCES,
+  getPreferences,
+  isAccountsChange,
+  isPreferencesChange,
+  type Preferences,
+} from "../../storage/preferences";
 
 import {
   ensureReviewerMount,
   ensureReviewerStyles,
   extractPullNumber,
   renderLoading,
-  renderReviewerSections,
+  renderReviewers,
 } from "./dom";
-import { buildReviewerSections } from "./view-model";
-import { markAccountInvalidated } from "../../storage/accounts";
+import { buildReviewers } from "./view-model";
 
 export type ReviewerBootOptions = {
   onRowFailure?: (signal: {
@@ -39,26 +45,45 @@ export function bootReviewerListPage(
   let currentRoute = parsePullListRoute(window.location.pathname);
   let currentHref = window.location.href;
   const inflightRequests = new Map<string, Promise<void>>();
+  let cachedPreferences: Preferences | null = null;
+
+  async function readPreferences(): Promise<Preferences> {
+    if (cachedPreferences != null) return cachedPreferences;
+    try {
+      cachedPreferences = await getPreferences();
+    } catch {
+      cachedPreferences = DEFAULT_PREFERENCES;
+    }
+    return cachedPreferences;
+  }
+
+  async function renderSummaryForMount(
+    mount: HTMLElement,
+    route: NonNullable<typeof currentRoute>,
+    summary: ReturnType<typeof getCachedReviewerSummary>,
+  ): Promise<void> {
+    if (!summary) return;
+    const preferences = await readPreferences();
+    renderReviewers(mount, buildReviewers(route, summary), {
+      showStateBadge: preferences.showStateBadge,
+      showReviewerName: preferences.showReviewerName,
+    });
+  }
 
   async function processRow(row: Element): Promise<void> {
-    if (currentRoute == null) {
-      return;
-    }
+    if (currentRoute == null) return;
 
     const pullNumber = extractPullNumber(row);
-    if (pullNumber == null) {
-      return;
-    }
+    if (pullNumber == null) return;
 
     const mount = ensureReviewerMount(row);
-    if (mount == null) {
-      return;
-    }
+    if (mount == null) return;
 
-    const cacheKey = buildReviewerCacheKey(currentRoute.owner, currentRoute.repo, pullNumber);
+    const route = currentRoute;
+    const cacheKey = buildReviewerCacheKey(route.owner, route.repo, pullNumber);
     const cachedSummary = getCachedReviewerSummary(cacheKey);
     if (cachedSummary) {
-      renderReviewerSections(mount, buildReviewerSections(currentRoute, cachedSummary));
+      await renderSummaryForMount(mount, route, cachedSummary);
       return;
     }
 
@@ -66,26 +91,20 @@ export function bootReviewerListPage(
     if (existingRequest) {
       renderLoading(mount);
       await existingRequest;
-      const summary = getCachedReviewerSummary(cacheKey);
-      if (summary && currentRoute) {
-        renderReviewerSections(mount, buildReviewerSections(currentRoute, summary));
-      }
+      await renderSummaryForMount(mount, route, getCachedReviewerSummary(cacheKey));
       return;
     }
 
     renderLoading(mount);
 
     const request = (async () => {
-      const account = await resolveAccountForRepo(
-        currentRoute!.owner,
-        currentRoute!.repo,
-      );
+      const account = await resolveAccountForRepo(route.owner, route.repo);
       const githubToken = account?.token ?? null;
 
       try {
         const summary = await fetchPullReviewerSummary({
-          owner: currentRoute!.owner,
-          repo: currentRoute!.repo,
+          owner: route.owner,
+          repo: route.repo,
           pullNumber,
           githubToken,
         });
@@ -99,8 +118,8 @@ export function bootReviewerListPage(
         mount.replaceChildren();
         mount.removeAttribute("title");
         options?.onRowFailure?.({
-          owner: currentRoute!.owner,
-          repo: currentRoute!.repo,
+          owner: route.owner,
+          repo: route.repo,
           account,
           error,
         });
@@ -112,17 +131,11 @@ export function bootReviewerListPage(
     inflightRequests.set(cacheKey, request);
     await request;
 
-    const summary = getCachedReviewerSummary(cacheKey);
-    if (summary && currentRoute) {
-      renderReviewerSections(mount, buildReviewerSections(currentRoute, summary));
-    }
+    await renderSummaryForMount(mount, route, getCachedReviewerSummary(cacheKey));
   }
 
   function processRows(root: ParentNode = document): void {
-    if (currentRoute == null) {
-      return;
-    }
-
+    if (currentRoute == null) return;
     root.querySelectorAll(githubSelectors.row).forEach((row) => {
       void processRow(row);
     });
@@ -130,9 +143,7 @@ export function bootReviewerListPage(
 
   function refreshRoute(force = false): void {
     const nextHref = window.location.href;
-    if (!force && nextHref === currentHref) {
-      return;
-    }
+    if (!force && nextHref === currentHref) return;
 
     currentHref = nextHref;
     const previousRoute = currentRoute;
@@ -153,15 +164,11 @@ export function bootReviewerListPage(
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       mutation.addedNodes.forEach((node) => {
-        if (!(node instanceof Element)) {
-          return;
-        }
-
+        if (!(node instanceof Element)) return;
         if (node.matches(githubSelectors.row)) {
           void processRow(node);
           return;
         }
-
         processRows(node);
       });
     }
@@ -176,10 +183,18 @@ export function bootReviewerListPage(
   ctx.addEventListener(document, "pjax:end", () => refreshRoute(true));
 
   const storageListener: Parameters<typeof browser.storage.onChanged.addListener>[0] = (
-    _changes,
+    changes,
     areaName,
   ) => {
-    if (areaName === "local") {
+    if (areaName !== "local") return;
+
+    if (isPreferencesChange(changes)) {
+      cachedPreferences = null;
+      processRows();
+      return;
+    }
+
+    if (isAccountsChange(changes)) {
       clearReviewerCache();
       inflightRequests.clear();
       processRows();
