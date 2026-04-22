@@ -177,6 +177,24 @@ describe("buildReviewers", () => {
     expect(user.href).toContain("reviewed-by%3Abob");
   });
 
+  it("builds reviewed-by URLs when a reviewer has a state even if also re-requested", () => {
+    const entries = buildReviewers(
+      route,
+      summary({
+        requestedUsers: [{ login: "carol", avatarUrl: null }],
+        completedReviews: [
+          { login: "carol", avatarUrl: null, state: "COMMENTED" },
+        ],
+      }),
+    );
+    const user = entries[0];
+    expect(user.kind).toBe("user");
+    if (user.kind !== "user") return;
+    expect(user.isRequested).toBe(true);
+    expect(user.state).toBe("COMMENTED");
+    expect(user.href).toContain("reviewed-by%3Acarol");
+  });
+
   it("builds team-review-requested URLs scoped to the route owner", () => {
     const entries = buildReviewers(
       route,

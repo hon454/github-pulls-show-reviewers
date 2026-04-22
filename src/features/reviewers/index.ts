@@ -45,14 +45,11 @@ export function bootReviewerListPage(
   let currentRoute = parsePullListRoute(window.location.pathname);
   let currentHref = window.location.href;
   const inflightRequests = new Map<string, Promise<void>>();
-  let cachedPreferences: Preferences | null = null;
+  let cachedPreferences: Promise<Preferences> | null = null;
 
-  async function readPreferences(): Promise<Preferences> {
-    if (cachedPreferences != null) return cachedPreferences;
-    try {
-      cachedPreferences = await getPreferences();
-    } catch {
-      cachedPreferences = DEFAULT_PREFERENCES;
+  function readPreferences(): Promise<Preferences> {
+    if (cachedPreferences == null) {
+      cachedPreferences = getPreferences().catch(() => DEFAULT_PREFERENCES);
     }
     return cachedPreferences;
   }
