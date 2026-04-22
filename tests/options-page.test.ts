@@ -149,4 +149,51 @@ describe("OptionsPage", () => {
       document.querySelector('[data-testid="add-account-start"]'),
     ).toBeNull();
   });
+
+  it("closes the add-account panel when the user clicks Cancel during waiting", async () => {
+    await renderOptionsPage();
+
+    const auth = await import("../src/github/auth");
+    (auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 5,
+    });
+    (auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "pending",
+    });
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const userCode = document.querySelector('[data-testid="device-user-code"]');
+    expect(userCode).not.toBeNull();
+    expect(userCode!.textContent).toBe("ABCD-EFGH");
+
+    const cancelButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((b) => b.textContent?.trim() === "Cancel");
+    expect(cancelButton).toBeDefined();
+
+    await act(async () => {
+      cancelButton!.click();
+      await Promise.resolve();
+    });
+
+    expect(
+      document.querySelector('[data-testid="device-user-code"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-testid="accounts-add"]'),
+    ).not.toBeNull();
+  });
 });
