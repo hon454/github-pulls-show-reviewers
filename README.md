@@ -4,7 +4,7 @@
 
 `GitHub Pulls Show Reviewers` is a Chrome extension built for one narrow workflow: make reviewer visibility obvious on GitHub PR list pages without turning the page into a general PR dashboard.
 
-![GitHub PR list with requested and reviewed chips](./docs/chrome-web-store-assets/01-pr-list-requested-and-reviewed.png)
+![GitHub PR list with merged reviewer chips](./docs/chrome-web-store-assets/01-pr-list-requested-and-reviewed.png)
 
 ## Why This Exists
 
@@ -15,13 +15,13 @@ On GitHub PR list pages, reviewer context is easy to miss. You often need to ope
 - Has anyone already reviewed?
 - Was the latest review an approval, comment, dismissal, or change request?
 
-This extension brings that information into the list itself with lightweight inline chips.
+This extension brings that information into the list itself with lightweight inline chips. By default it renders an avatar-first `Reviewers:` strip, and the options page can reveal reviewer names or hide the review-state badge without refetching data.
 
 ## What The Extension Shows
 
 | Merged `Reviewers` section with state badges | Name-pill layout (optional) |
 | --- | --- |
-| ![Requested reviewers and teams](./docs/chrome-web-store-assets/01-pr-list-requested-and-reviewed.png) | ![Mixed review states](./docs/chrome-web-store-assets/02-pr-list-mixed-review-states.png) |
+| ![Merged reviewer chips](./docs/chrome-web-store-assets/01-pr-list-requested-and-reviewed.png) | ![Reviewer name-pill layout](./docs/chrome-web-store-assets/02-pr-list-mixed-review-states.png) |
 
 Core behavior:
 
@@ -66,7 +66,7 @@ This repository intentionally stays narrow.
 
 See [ADR 0003](docs/adr/0003-github-app-device-flow.md) for the rationale.
 
-![Repository access diagnostics in the options page](./docs/chrome-web-store-assets/03-options-repository-check.png)
+![Display settings and repository diagnostics in the options page](./docs/chrome-web-store-assets/03-options-repository-check.png)
 
 ## Tech Stack
 

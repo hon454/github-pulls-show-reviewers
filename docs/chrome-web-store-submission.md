@@ -12,9 +12,9 @@ Short description:
 
 Detailed description:
 
-`GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds inline chips for requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
+`GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds a single inline Reviewers section with requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
 
-`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only performs read operations.`
+`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, lets users toggle reviewer names and state badges from the options page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only performs read operations.`
 
 Suggested category:
 `Developer Tools`
@@ -27,8 +27,11 @@ Suggested language:
 Chrome's listing guidance expects at least one screenshot and recommends up to five. The current set is:
 
 - `01-pr-list-requested-and-reviewed.png`
+  Caption: `Merged Reviewers row with avatar chips and state badges.`
 - `02-pr-list-mixed-review-states.png`
+  Caption: `Optional name-pill layout when Show reviewer names is enabled.`
 - `03-options-repository-check.png`
+  Caption: `Display settings and repository diagnostics on the options page.`
 
 Regenerate them with:
 
@@ -45,7 +48,7 @@ Single purpose:
 
 Permission justification draft:
 
-- `storage`: stores locally the GitHub App accounts (one user-to-server token per account) so the user can access private repositories.
+- `storage`: stores locally the GitHub App accounts (one user-to-server token per account) so the user can access private repositories. It also stores the review-chip display preferences (`showStateBadge` and `showReviewerName`) under the local `preferences` key.
 - `https://github.com/*`: reads the current GitHub pull request list page to find repository context and render reviewer chips inline.
 - `https://api.github.com/*`: fetches requested reviewers, requested teams, and review history from GitHub's REST API.
 
@@ -85,7 +88,7 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 3. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
 4. Run `pnpm zip` only after the checks above pass.
 5. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
-6. Attach the three screenshots listed above.
+6. Attach the three screenshots listed above with the updated captions.
 7. Paste the short description, detailed description, and privacy policy URL.
 8. Fill in the privacy fields using the draft above, then reconcile every answer against the shipped permissions and network behavior.
 9. If you want review before launch, disable automatic publish and stage the release in the dashboard.
@@ -97,5 +100,5 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 Expected package path after `pnpm zip`:
 
 ```text
-.output/github-pulls-show-reviewers-1.2.1-chrome.zip
+.output/github-pulls-show-reviewers-1.3.0-chrome.zip
 ```

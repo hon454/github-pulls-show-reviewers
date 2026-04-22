@@ -66,6 +66,7 @@ This extension is intentionally narrow. Manual verification should stay focused 
 - Requested teams render inline on PR rows.
 - Completed review state renders from each reviewer's latest visible review.
 - No unrelated PR dashboard data appears.
+- Display preference changes should rerender from cache rather than refetch reviewer API data.
 
 ## 4. Verify the main user flows
 
@@ -128,6 +129,15 @@ This extension is intentionally narrow. Manual verification should stay focused 
 3. Confirm row reviewer slots become empty and the banner shows the sign-in CTA
    that opens the options page.
 
+### Display preference rerender
+
+1. Open a GitHub PR list and open DevTools on the **Network** tab.
+2. Filter requests to `/pulls/` and `/reviews` so reviewer API traffic is easy to spot.
+3. Confirm the default UI shows the merged `Reviewers:` row with avatar chips.
+4. Open the extension options page in another tab and enable **Show reviewer names**.
+5. Return to the PR list and confirm reviewer chips expand into `@login` pills.
+6. Confirm no new reviewer API requests appear in DevTools after the toggle.
+
 ## 5. Rebuild and reload during iteration
 
 The official Chrome docs note that manifest changes, service worker changes, and content script changes require an extension reload, and content script changes also require reloading the host page.
@@ -161,6 +171,7 @@ Before considering a manual check complete, verify at least these cases:
 - Reviewer chips appear on a normal PR list row.
 - A requested team is shown with the expected team label format.
 - A completed review shows the latest visible state for that reviewer.
+- Toggling **Show reviewer names** rerenders the current PR list without extra reviewer API requests.
 - GitHub SPA navigation still leaves reviewer chips visible after moving between PR list views.
 - Reloading the page does not duplicate reviewer UI on the same row.
 - The options page never falls back to a blank white screen; a misconfigured

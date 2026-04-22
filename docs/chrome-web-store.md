@@ -7,6 +7,10 @@
 - Packaged icon sizes: `16`, `32`, `48`, `128`.
 - Rebuild PNG assets with `pnpm icons:render`.
 - Chrome Web Store screenshots are generated under [chrome-web-store-assets/](./chrome-web-store-assets/) with `pnpm cws:assets`.
+- Current screenshot set:
+  - `01-pr-list-requested-and-reviewed.png` — merged `Reviewers` row with avatar chips and state badges
+  - `02-pr-list-mixed-review-states.png` — optional name-pill layout with reviewer names shown
+  - `03-options-repository-check.png` — options page display settings and repository diagnostics
 
 ## Suggested listing copy
 
@@ -15,9 +19,9 @@ Short description:
 
 Detailed description:
 
-`GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds inline chips for requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
+`GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds a single inline Reviewers section with requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
 
-`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only performs read operations.`
+`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, lets users toggle reviewer names and state badges from the options page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only performs read operations.`
 
 ## Release workflow
 
@@ -65,8 +69,9 @@ Expected release gate behavior:
 6. Refresh screenshots so they show reviewer chips on GitHub pull request lists only.
 7. Confirm the privacy disclosure matches the shipped behavior:
    no sale of data, no advertising, no remote code, GitHub page access only,
-   and locally stored GitHub App accounts (one user-to-server token per account
-   in `browser.storage.local`) for private-repository access.
+   and locally stored GitHub App accounts plus a `preferences` record in
+   `browser.storage.local` for private-repository access and reviewer display
+   settings.
 8. Keep release tags aligned with the store package version, using `v<manifest-version>` tags such as `v1.0.0`.
 9. Confirm the reviewer-only scope in the listing copy still matches the extension and screenshots before submission.
 10. Open the packaged extension's options page once before submission and confirm it either renders the sign-in UI normally or shows the explicit GitHub App configuration warning, never a blank page.

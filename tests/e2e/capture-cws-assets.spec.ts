@@ -36,6 +36,7 @@ test("capture Chrome Web Store assets", async () => {
       expectedTeamText: "Team: platform",
     });
 
+    await setPreference(context, extensionId, "showReviewerName", true);
     await capturePullListScreenshot(context, {
       fixture: "github-pulls-list-item-metadata.html",
       fileName: "02-pr-list-mixed-review-states.png",
@@ -54,6 +55,7 @@ test("capture Chrome Web Store assets", async () => {
       ],
       expectedLogins: ["jules", "kian"],
       expectedTeamText: "Team: security",
+      expectedNamePills: ["@jules", "@kian"],
     });
 
     await captureOptionsScreenshot(context, extensionId);
@@ -96,6 +98,7 @@ async function capturePullListScreenshot(
     reviews: object[];
     expectedLogins: string[];
     expectedTeamText: string;
+    expectedNamePills?: string[];
   },
 ): Promise<void> {
   const fixturePath = path.join(projectRoot, "tests/fixtures", scene.fixture);
@@ -138,7 +141,14 @@ async function capturePullListScreenshot(
   await expect(root).toContainText("Reviewers:");
   await expect(root).toContainText(scene.expectedTeamText);
   for (const login of scene.expectedLogins) {
-    await expect(root.locator(`a.ghpsr-avatar[title*="@${login}"]`)).toHaveCount(1);
+    await expect(
+      root.locator(
+        `a.ghpsr-avatar[title*="@${login}"], a.ghpsr-pill[title*="@${login}"]`,
+      ),
+    ).toHaveCount(1);
+  }
+  for (const pill of scene.expectedNamePills ?? []) {
+    await expect(root).toContainText(pill);
   }
 
   await page.addStyleTag({
@@ -171,6 +181,8 @@ async function captureOptionsScreenshot(
   context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
   extensionId: string,
 ): Promise<void> {
+  await setPreference(context, extensionId, "showReviewerName", true);
+
   await context.route(
     "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=1&state=all",
     async (route) => {
@@ -216,6 +228,7 @@ async function captureOptionsScreenshot(
 
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/options.html`);
+  await expect(page.getByTestId("prefs-show-reviewer-name")).toBeChecked();
   await page.getByTestId("diagnostics-repo").fill("hon454/github-pulls-show-reviewers");
   await page.getByTestId("diagnostics-no-token").click();
   await expect(page.locator("body")).toContainText("without a token");
@@ -233,4 +246,24 @@ async function captureOptionsScreenshot(
   await context.unroute(
     "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews",
   );
+}
+
+async function setPreference(
+  context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+  extensionId: string,
+  testId: "showReviewerName" | "showStateBadge",
+  value: boolean,
+): Promise<void> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  const toggleId =
+    testId === "showReviewerName"
+      ? "prefs-show-reviewer-name"
+      : "prefs-show-state-badge";
+  const toggle = page.getByTestId(toggleId);
+  const checked = await toggle.isChecked();
+  if (checked !== value) {
+    await toggle.click();
+  }
+  await page.close();
 }

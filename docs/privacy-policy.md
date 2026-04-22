@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-04-20
+Last updated: 2026-04-22
 
 `GitHub Pulls Show Reviewers` is a Chrome extension that shows requested reviewers, requested teams, and completed review state directly inside GitHub pull request list pages.
 
@@ -30,6 +30,10 @@ To provide its reviewer visibility feature, the extension may access:
   user-to-server access token, creation timestamp, a cached list of GitHub App
   installations, and a revocation flag. Entries live there until the user
   removes the account.
+- Display preferences are stored locally in `browser.storage.local` under a
+  separate `preferences` key. That record currently stores whether review-state
+  badges stay visible and whether reviewer names expand into text pills. The
+  preference record remains until the user changes it or removes the extension.
 - Reviewer responses are cached only for the current page session to avoid duplicate fetches while browsing the same pull request list.
 - The extension does not operate its own backend, database, analytics pipeline, or advertising system.
 
