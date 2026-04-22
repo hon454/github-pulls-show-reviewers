@@ -315,6 +315,51 @@ describe("fetchPullReviewerSummary", () => {
       expect(message).not.toContain("SSO");
     }
   });
+
+  it("rejects non-http(s) avatar_url schemes (javascript:, data:, file:) as null", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [
+              { login: "alice", avatar_url: "javascript:alert(1)" },
+              { login: "bella", avatar_url: "data:text/html,<script>alert(1)</script>" },
+              { login: "carol", avatar_url: "file:///etc/passwd" },
+              {
+                login: "dora",
+                avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+              },
+            ],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: null },
+      { login: "bella", avatarUrl: null },
+      { login: "carol", avatarUrl: null },
+      {
+        login: "dora",
+        avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      },
+    ]);
+  });
 });
 
 describe("validateGitHubRepositoryAccess", () => {

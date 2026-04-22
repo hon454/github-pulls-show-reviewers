@@ -7,6 +7,7 @@ type GitHubAuthContext = {
 const avatarUrlField = z
   .string()
   .url()
+  .refine((value) => /^https?:\/\//i.test(value), "Avatar URL must be http(s)")
   .nullable()
   .optional()
   .catch(null);
