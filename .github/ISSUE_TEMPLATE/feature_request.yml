@@ -24,9 +24,13 @@ body:
   - type: checkboxes
     id: scope-check
     attributes:
-      label: Scope check
+      label: Scope acknowledgment
+      description: |
+        Proposals outside the current Product Rules may still be discussed
+        if the maintainer agrees to widen scope. If you think this is such
+        a case, call it out in "Proposed behavior".
       options:
-        - label: I have read AGENTS.md Product Rules and believe this proposal fits the current scope
+        - label: I have read the Product Rules in AGENTS.md
           required: true
   - type: textarea
     id: alternatives
