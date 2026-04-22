@@ -6,4 +6,10 @@ export default defineBackground(() => {
       });
     }
   });
+
+  browser.action.onClicked.addListener(() => {
+    browser.runtime.openOptionsPage().catch((error) => {
+      console.error("[GitHub Pulls Show Reviewers] Failed to open options page.", error);
+    });
+  });
 });

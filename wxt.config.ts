@@ -28,5 +28,14 @@ export default defineConfig({
     },
     permissions: ["storage"],
     host_permissions: ["https://github.com/*", "https://api.github.com/*"],
+    action: {
+      default_title: "GitHub Pulls Show Reviewers — Open options",
+      default_icon: {
+        16: "/icon/16.png",
+        32: "/icon/32.png",
+        48: "/icon/48.png",
+        128: "/icon/128.png",
+      },
+    },
   },
 });
