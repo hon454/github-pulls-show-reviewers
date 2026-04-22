@@ -19,7 +19,7 @@ This extension brings that information into the list itself with lightweight inl
 
 ## What The Extension Shows
 
-| Requested reviewers and teams | Mixed completed review states |
+| Merged `Reviewers` section with state badges | Name-pill layout (optional) |
 | --- | --- |
 | ![Requested reviewers and teams](./docs/chrome-web-store-assets/01-pr-list-requested-and-reviewed.png) | ![Mixed review states](./docs/chrome-web-store-assets/02-pr-list-mixed-review-states.png) |
 
@@ -44,7 +44,8 @@ Review states currently surfaced in the UI:
 This repository intentionally stays narrow.
 
 - Reviewer visibility first
-- Requested reviewers, requested teams, and completed review state are in scope
+- Requested reviewers, requested teams, and completed review state are in scope, surfaced as a single `Reviewers:` section with avatar + state-badge chips.
+- Display preferences let you hide the state badge or expand each user into an `@login` pill.
 - Checks, mergeability, assignees, labels, and dashboard-style expansion are out of scope unless explicitly approved
 
 ## Authentication Model

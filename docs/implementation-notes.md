@@ -20,7 +20,7 @@
 4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
 5. Fetch reviewer data from GitHub only when the cache is cold. Use the
    matched account's token, or no token if none matches.
-6. Render `Requested` and `Reviewed` sections inline in the PR row metadata area.
+6. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip (border = attention signal, badge = latest review state); requested teams keep the text chip shape.
 7. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text.
 8. Re-run row processing when GitHub mutates the page or performs SPA navigation.
@@ -31,6 +31,13 @@
 - API requests are still one pull request plus one reviews request per uncached row.
 - Public-repository no-token access still depends on GitHub's unauthenticated REST availability and rate limits.
 - Legacy single-token settings are not migrated and must be re-added as scoped entries.
+
+## Display preferences
+
+- Stored under a separate `preferences` key in `browser.storage.local` (schema `version: 1`).
+- `showStateBadge` (default `true`) toggles the SVG state badge on each avatar.
+- `showReviewerName` (default `false`) switches each user chip between avatar-only and a rounded pill containing the avatar and `@login` text.
+- Preference changes rerender without invalidating the per-row reviewer cache — no extra GitHub requests are triggered.
 
 ## Request volume decision
 
