@@ -94,8 +94,18 @@ pnpm test:e2e
 
 Prefer multiple small commits over one mixed commit. See
 [CONTRIBUTING.md](./CONTRIBUTING.md) for the full contribution
-workflow, including branch naming, PR policy, and the co-location
-checklist.
+workflow, including branch naming.
+
+## Pull Request Policy
+
+Title rules, body sections, issue linkage, and the co-location
+checklist are governed by
+[`docs/guidelines/pr-guideline.md`](./docs/guidelines/pr-guideline.md).
+Before running `gh pr create`, confirm the body matches
+[`.github/pull_request_template.md`](./.github/pull_request_template.md):
+every PR body must include `## Summary`, `## Validation`, and
+`## Related Issues`. `gh pr create --body` bypasses GitHub's
+template auto-population, so the template must be applied manually.
 
 ## Review Standard
 
