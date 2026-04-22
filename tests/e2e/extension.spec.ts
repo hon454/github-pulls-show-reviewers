@@ -62,11 +62,12 @@ for (const fixtureCase of renderCases) {
       await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
 
       const root = page.locator(".ghpsr-root");
-      await expect(root).toContainText("Requested:");
-      await expect(root).toContainText("alice");
-      await expect(root).toContainText("@platform");
-      await expect(root).toContainText("Reviewed:");
-      await expect(root).toContainText("bob · approved");
+      await expect(root).toContainText("Reviewers:");
+      await expect(root).toContainText("Team: platform");
+      await expect(root.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(1);
+      await expect(
+        root.locator('a.ghpsr-avatar[title*="@bob"][title*="approved"]'),
+      ).toHaveCount(1);
     });
   });
 }
@@ -120,7 +121,7 @@ test("clears the reviewer slot silently when review history is denied", async ()
     const page = await context.newPage();
     await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
 
-    // Row-level error rendering is removed in v1.2.0; failures silently clear the reviewer slot.
+    // Row-level error rendering is removed; failures silently clear the reviewer slot.
     await expect(page.locator(".ghpsr-status--error")).toHaveCount(0);
     // The root mount is either absent or empty after a fetch failure.
     const root = page.locator(".ghpsr-root");

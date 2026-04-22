@@ -1,8 +1,18 @@
-import type { ReviewerSection } from "./view-model";
+import type { ReviewState } from "../../github/api";
+import type { ReviewerEntry } from "./view-model";
+import { STATE_ICONS } from "./state-icons";
 import { githubSelectors } from "../../github/selectors";
 
 const ROOT_ATTRIBUTE = "data-ghpsr-root";
 const STYLE_ATTRIBUTE = "data-ghpsr-style";
+
+type BorderTone = "requested" | "approved" | "changes-requested";
+type BadgeTone = "approved" | "changes-requested" | "commented" | "dismissed";
+
+type RenderReviewersOptions = {
+  showStateBadge: boolean;
+  showReviewerName: boolean;
+};
 
 export function ensureReviewerStyles(): void {
   if (document.head.querySelector(`[${STYLE_ATTRIBUTE}]`)) {
@@ -16,21 +26,100 @@ export function ensureReviewerStyles(): void {
       display: inline-flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 6px 8px;
+      gap: 4px 6px;
       margin-left: 8px;
       vertical-align: middle;
-    }
-    .ghpsr-section {
-      display: inline-flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 6px;
     }
     .ghpsr-section-label {
       color: var(--fgColor-muted, #656d76);
       font-size: 12px;
       font-weight: 600;
+      margin-right: 2px;
     }
+    .ghpsr-status {
+      color: var(--fgColor-muted, #656d76);
+      font-size: 12px;
+    }
+
+    .ghpsr-avatar {
+      position: relative;
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px var(--ghpsr-border-color, transparent);
+      margin-right: 2px;
+    }
+    .ghpsr-avatar-img,
+    .ghpsr-initials {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: block;
+    }
+    .ghpsr-initials {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .ghpsr-avatar--border-requested         { --ghpsr-border-color: #0969da; }
+    .ghpsr-avatar--border-approved          { --ghpsr-border-color: #2ea043; }
+    .ghpsr-avatar--border-changes-requested { --ghpsr-border-color: #cf222e; }
+
+    .ghpsr-badge {
+      position: absolute;
+      bottom: -3px;
+      right: -5px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      border: 2px solid var(--bgColor-default, #fff);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+      background: var(--ghpsr-badge-color, #6e7781);
+    }
+    .ghpsr-badge svg { width: 10px; height: 10px; fill: currentColor; }
+    .ghpsr-badge--approved          { --ghpsr-badge-color: #2ea043; }
+    .ghpsr-badge--changes-requested { --ghpsr-badge-color: #cf222e; }
+    .ghpsr-badge--commented         { --ghpsr-badge-color: #6e7781; }
+    .ghpsr-badge--dismissed         { --ghpsr-badge-color: #8250df; }
+
+    .ghpsr-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 2px 8px 2px 3px;
+      border-radius: 12px;
+      font-size: 12px;
+      line-height: 20px;
+      text-decoration: none;
+      background: var(--ghpsr-pill-bg);
+      color: var(--ghpsr-pill-fg);
+    }
+    .ghpsr-pill:hover { filter: brightness(0.98); }
+    .ghpsr-pill-name { font-weight: 500; }
+    .ghpsr-avatar--small { width: 18px; height: 18px; }
+    .ghpsr-avatar--small .ghpsr-avatar-img,
+    .ghpsr-avatar--small .ghpsr-initials { width: 18px; height: 18px; }
+    .ghpsr-badge--small {
+      width: 12px;
+      height: 12px;
+      bottom: -2px;
+      right: -3px;
+    }
+    .ghpsr-badge--small svg { width: 8px; height: 8px; }
+
+    .ghpsr-pill--requested         { --ghpsr-pill-bg: var(--bgColor-accent-muted,  #ddf4ff); --ghpsr-pill-fg: var(--fgColor-accent,  #0969da); }
+    .ghpsr-pill--approved          { --ghpsr-pill-bg: var(--bgColor-success-muted, #dafbe1); --ghpsr-pill-fg: var(--fgColor-success, #1a7f37); }
+    .ghpsr-pill--changes-requested { --ghpsr-pill-bg: var(--bgColor-danger-muted,  #ffebe9); --ghpsr-pill-fg: var(--fgColor-danger,  #cf222e); }
+
     .ghpsr-chip {
       display: inline-flex;
       align-items: center;
@@ -42,48 +131,11 @@ export function ensureReviewerStyles(): void {
       text-decoration: none;
       border: 1px solid transparent;
     }
-    .ghpsr-chip:hover {
-      text-decoration: none;
-      filter: brightness(0.98);
-    }
-    .ghpsr-chip--requested {
-      color: var(--fgColor-accent, #0969da);
-      background: color-mix(in srgb, var(--bgColor-accent-muted, #ddf4ff) 80%, white);
-      border-color: color-mix(in srgb, var(--borderColor-accent-muted, #54aeff) 55%, white);
-    }
+    .ghpsr-chip:hover { text-decoration: none; filter: brightness(0.98); }
     .ghpsr-chip--team {
       color: var(--fgColor-attention, #9a6700);
       background: color-mix(in srgb, var(--bgColor-attention-muted, #fff8c5) 80%, white);
       border-color: color-mix(in srgb, var(--borderColor-attention-muted, #d4a72c) 55%, white);
-    }
-    .ghpsr-chip--reviewed {
-      color: var(--fgColor-success, #1a7f37);
-      background: color-mix(in srgb, var(--bgColor-success-muted, #dafbe1) 80%, white);
-      border-color: color-mix(in srgb, var(--borderColor-success-muted, #4ac26b) 55%, white);
-    }
-    .ghpsr-chip--approved {
-      color: var(--fgColor-success, #1a7f37);
-      background: color-mix(in srgb, var(--bgColor-success-muted, #dafbe1) 80%, white);
-      border-color: color-mix(in srgb, var(--borderColor-success-muted, #4ac26b) 55%, white);
-    }
-    .ghpsr-chip--changes-requested {
-      color: var(--fgColor-danger, #cf222e);
-      background: color-mix(in srgb, var(--bgColor-danger-muted, #ffebe9) 82%, white);
-      border-color: color-mix(in srgb, var(--borderColor-danger-muted, #ff818266) 55%, white);
-    }
-    .ghpsr-chip--commented {
-      color: var(--fgColor-muted, #57606a);
-      background: color-mix(in srgb, var(--bgColor-muted, #f6f8fa) 88%, white);
-      border-color: color-mix(in srgb, var(--borderColor-muted, #d0d7de) 80%, white);
-    }
-    .ghpsr-chip--dismissed {
-      color: var(--fgColor-done, #8250df);
-      background: color-mix(in srgb, var(--bgColor-done-muted, #fbefff) 82%, white);
-      border-color: color-mix(in srgb, var(--borderColor-done-muted, #c297ff) 55%, white);
-    }
-    .ghpsr-status {
-      color: var(--fgColor-muted, #656d76);
-      font-size: 12px;
     }
   `;
 
@@ -112,7 +164,10 @@ export function ensureReviewerMount(row: Element): HTMLElement | null {
     return null;
   }
 
-  let inlineMetaRow = findFirst<HTMLElement>(metaContainer, githubSelectors.inlineMetaRowSelectors);
+  let inlineMetaRow = findFirst<HTMLElement>(
+    metaContainer,
+    githubSelectors.inlineMetaRowSelectors,
+  );
   if (inlineMetaRow == null) {
     inlineMetaRow = document.createElement("span");
     inlineMetaRow.className = "d-none d-md-inline-flex";
@@ -138,49 +193,163 @@ export function renderLoading(mount: HTMLElement): void {
   mount.removeAttribute("title");
 }
 
-export function renderReviewerSections(
+export function renderReviewers(
   mount: HTMLElement,
-  sections: ReviewerSection[],
+  entries: ReviewerEntry[],
+  options: RenderReviewersOptions,
 ): void {
-  if (sections.length === 0) {
+  if (entries.length === 0) {
     mount.replaceChildren();
     mount.removeAttribute("title");
     return;
   }
 
-  mount.replaceChildren(...sections.map(createSectionNode));
+  const label = document.createElement("span");
+  label.className = "ghpsr-section-label";
+  label.textContent = "Reviewers:";
+
+  const nodes: Node[] = [label];
+  for (const entry of entries) {
+    if (entry.kind === "team") {
+      nodes.push(createTeamNode(entry));
+    } else {
+      nodes.push(createUserNode(entry, options));
+    }
+  }
+  mount.replaceChildren(...nodes);
   mount.removeAttribute("title");
 }
 
-function createSectionNode(section: ReviewerSection): HTMLElement {
-  const sectionNode = document.createElement("span");
-  sectionNode.className = "ghpsr-section";
+function createTeamNode(entry: Extract<ReviewerEntry, { kind: "team" }>): HTMLElement {
+  const link = document.createElement("a");
+  link.className = "ghpsr-chip ghpsr-chip--team";
+  link.href = entry.href;
+  link.textContent = `Team: ${entry.slug}`;
+  return link;
+}
 
-  const labelNode = document.createElement("span");
-  labelNode.className = "ghpsr-section-label";
-  labelNode.textContent = `${section.label}:`;
-  sectionNode.append(labelNode);
+function createUserNode(
+  entry: Extract<ReviewerEntry, { kind: "user" }>,
+  options: RenderReviewersOptions,
+): HTMLElement {
+  const borderTone = resolveBorderTone(entry);
+  const badgeTone = entry.state ? resolveBadgeTone(entry.state) : null;
+  const stateLabel = resolveStateLabel(entry);
+  const titleText = `@${entry.login} · ${stateLabel}`;
+  const ariaText = `@${entry.login}, ${stateLabel}`;
 
-  if (section.chips.length === 0) {
-    const emptyNode = document.createElement("span");
-    emptyNode.className = "ghpsr-status";
-    emptyNode.textContent = section.emptyLabel;
-    sectionNode.append(emptyNode);
-    return sectionNode;
+  if (options.showReviewerName) {
+    const pill = document.createElement("a");
+    pill.className = `ghpsr-pill ghpsr-pill--${borderTone}`;
+    pill.href = entry.href;
+    pill.title = titleText;
+    pill.setAttribute("aria-label", ariaText);
+
+    const avatarWrap = document.createElement("span");
+    avatarWrap.className = `ghpsr-avatar ghpsr-avatar--small ghpsr-avatar--border-${borderTone}`;
+    attachAvatarImage(avatarWrap, entry, 18);
+    if (options.showStateBadge && badgeTone) {
+      avatarWrap.append(createBadgeNode(badgeTone, true));
+    }
+
+    const name = document.createElement("span");
+    name.className = "ghpsr-pill-name";
+    name.textContent = `@${entry.login}`;
+
+    pill.append(avatarWrap, name);
+    return pill;
   }
 
-  section.chips.forEach((chip) => {
-    const link = document.createElement("a");
-    link.className = `ghpsr-chip ghpsr-chip--${chip.tone}`;
-    link.href = chip.href;
-    link.textContent = chip.label;
-    if (chip.title) {
-      link.title = chip.title;
-    }
-    sectionNode.append(link);
-  });
+  const link = document.createElement("a");
+  link.className = `ghpsr-avatar ghpsr-avatar--border-${borderTone}`;
+  link.href = entry.href;
+  link.title = titleText;
+  link.setAttribute("aria-label", ariaText);
+  attachAvatarImage(link, entry, 24);
+  if (options.showStateBadge && badgeTone) {
+    link.append(createBadgeNode(badgeTone, false));
+  }
+  return link;
+}
 
-  return sectionNode;
+function attachAvatarImage(
+  container: HTMLElement,
+  entry: Extract<ReviewerEntry, { kind: "user" }>,
+  size: 18 | 24,
+): void {
+  const img = document.createElement("img");
+  img.className = "ghpsr-avatar-img";
+  img.alt = "";
+  img.setAttribute("loading", "lazy");
+  img.setAttribute("width", String(size));
+  img.setAttribute("height", String(size));
+  img.src = entry.avatarUrl ?? `https://github.com/${entry.login}.png?size=48`;
+  img.addEventListener("error", () => {
+    const initials = document.createElement("span");
+    initials.className = "ghpsr-initials";
+    initials.textContent = (entry.login[0] ?? "?").toUpperCase();
+    initials.style.background = initialsBackground(entry.login);
+    img.replaceWith(initials);
+  });
+  container.append(img);
+}
+
+function createBadgeNode(tone: BadgeTone, small: boolean): HTMLElement {
+  const badge = document.createElement("span");
+  badge.className = small
+    ? `ghpsr-badge ghpsr-badge--small ghpsr-badge--${tone}`
+    : `ghpsr-badge ghpsr-badge--${tone}`;
+  badge.setAttribute("aria-hidden", "true");
+  badge.innerHTML = selectIconMarkup(tone);
+  return badge;
+}
+
+function selectIconMarkup(tone: BadgeTone): string {
+  if (tone === "approved") return STATE_ICONS.approved;
+  if (tone === "changes-requested") return STATE_ICONS.changesRequested;
+  if (tone === "commented") return STATE_ICONS.commented;
+  return STATE_ICONS.dismissed;
+}
+
+function resolveBorderTone(
+  entry: Extract<ReviewerEntry, { kind: "user" }>,
+): BorderTone {
+  if (entry.isRequested) return "requested";
+  if (entry.state === "CHANGES_REQUESTED") return "changes-requested";
+  return "approved";
+}
+
+function resolveBadgeTone(state: ReviewState): BadgeTone {
+  if (state === "APPROVED") return "approved";
+  if (state === "CHANGES_REQUESTED") return "changes-requested";
+  if (state === "COMMENTED") return "commented";
+  return "dismissed";
+}
+
+function resolveStateLabel(
+  entry: Extract<ReviewerEntry, { kind: "user" }>,
+): string {
+  const base = stateLabelBase(entry.state);
+  if (entry.state != null && entry.isRequested) {
+    return `${base} (still requested)`;
+  }
+  return base;
+}
+
+function stateLabelBase(state: ReviewState | null): string {
+  if (state === "APPROVED") return "approved";
+  if (state === "CHANGES_REQUESTED") return "changes requested";
+  if (state === "COMMENTED") return "commented";
+  if (state === "DISMISSED") return "dismissed";
+  return "requested";
+}
+
+function initialsBackground(login: string): string {
+  let hash = 0;
+  for (let index = 0; index < login.length; index += 1) {
+    hash = (hash * 31 + login.charCodeAt(index)) >>> 0;
+  }
+  return `hsl(${hash % 360}, 40%, 55%)`;
 }
 
 function findFirst<T extends Element>(root: ParentNode, selectors: readonly string[]): T | null {

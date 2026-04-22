@@ -32,7 +32,8 @@ test("capture Chrome Web Store assets", async () => {
           user: { login: "bob" },
         },
       ],
-      expectedTexts: ["alice", "@platform", "bob"],
+      expectedLogins: ["alice", "bob"],
+      expectedTeamText: "Team: platform",
     });
 
     await capturePullListScreenshot(context, {
@@ -51,7 +52,8 @@ test("capture Chrome Web Store assets", async () => {
           user: { login: "kian" },
         },
       ],
-      expectedTexts: ["jules", "@security", "kian"],
+      expectedLogins: ["jules", "kian"],
+      expectedTeamText: "Team: security",
     });
 
     await captureOptionsScreenshot(context, extensionId);
@@ -92,7 +94,8 @@ async function capturePullListScreenshot(
     pullNumber: string;
     summary: object;
     reviews: object[];
-    expectedTexts: string[];
+    expectedLogins: string[];
+    expectedTeamText: string;
   },
 ): Promise<void> {
   const fixturePath = path.join(projectRoot, "tests/fixtures", scene.fixture);
@@ -132,10 +135,10 @@ async function capturePullListScreenshot(
   await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
 
   const root = page.locator(".ghpsr-root");
-  await expect(root).toContainText("Requested:");
-  await expect(root).toContainText("Reviewed:");
-  for (const text of scene.expectedTexts) {
-    await expect(root).toContainText(text);
+  await expect(root).toContainText("Reviewers:");
+  await expect(root).toContainText(scene.expectedTeamText);
+  for (const login of scene.expectedLogins) {
+    await expect(root.locator(`a.ghpsr-avatar[title*="@${login}"]`)).toHaveCount(1);
   }
 
   await page.addStyleTag({

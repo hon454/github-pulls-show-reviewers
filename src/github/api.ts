@@ -4,17 +4,24 @@ type GitHubAuthContext = {
   githubToken: string | null;
 };
 
+const avatarUrlField = z
+  .string()
+  .url()
+  .refine((value) => /^https?:\/\//i.test(value), "Avatar URL must be http(s)")
+  .nullable()
+  .optional()
+  .catch(null);
+
+const userLiteSchema = z.object({
+  login: z.string(),
+  avatar_url: avatarUrlField,
+});
+
 const pullSchema = z.object({
   user: z.object({
     login: z.string(),
   }),
-  requested_reviewers: z
-    .array(
-      z.object({
-        login: z.string(),
-      }),
-    )
-    .default([]),
+  requested_reviewers: z.array(userLiteSchema).default([]),
   requested_teams: z
     .array(
       z.object({
@@ -34,11 +41,7 @@ const reviewsSchema = z.array(
   z.object({
     state: z.string(),
     submitted_at: z.string().nullable().optional(),
-    user: z
-      .object({
-        login: z.string(),
-      })
-      .nullable(),
+    user: userLiteSchema.nullable(),
   }),
 );
 
@@ -61,14 +64,13 @@ export type ReviewState =
   | "COMMENTED"
   | "DISMISSED";
 
-export type CompletedReview = {
-  login: string;
-  state: ReviewState;
-};
+export type ReviewerUser = { login: string; avatarUrl: string | null };
+
+export type CompletedReview = ReviewerUser & { state: ReviewState };
 
 export type PullReviewerSummary = {
   status: PullReviewerSummaryStatus;
-  requestedUsers: string[];
+  requestedUsers: ReviewerUser[];
   requestedTeams: string[];
   completedReviews: CompletedReview[];
 };
@@ -176,6 +178,10 @@ export function describeGitHubApiError(
   return "Unknown GitHub API error.";
 }
 
+function normalizeAvatarUrl(raw: string | null | undefined): string | null {
+  return raw ?? null;
+}
+
 export async function fetchPullReviewerSummary(input: {
   owner: string;
   repo: string;
@@ -217,7 +223,12 @@ export async function fetchPullReviewerSummary(input: {
   const reviews = reviewsSchema.parse(await reviewsResponse.json());
   const latestReviewByUser = new Map<
     string,
-    { state: ReviewState; submittedAt: string | null; index: number }
+    {
+      state: ReviewState;
+      avatarUrl: string | null;
+      submittedAt: string | null;
+      index: number;
+    }
   >();
 
   reviews.forEach((review, index) => {
@@ -239,22 +250,29 @@ export async function fetchPullReviewerSummary(input: {
     ) {
       latestReviewByUser.set(reviewer, {
         state: normalizedState,
+        avatarUrl: normalizeAvatarUrl(review.user?.avatar_url),
         submittedAt: review.submitted_at ?? null,
         index,
       });
     }
   });
 
-  const completedReviews = Array.from(latestReviewByUser.entries())
+  const completedReviews: CompletedReview[] = Array.from(
+    latestReviewByUser.entries(),
+  )
     .map(([login, review]) => ({
       login,
+      avatarUrl: review.avatarUrl,
       state: review.state,
     }))
     .sort((left, right) => left.login.localeCompare(right.login));
 
   return {
     status: "ok" as const,
-    requestedUsers: pull.requested_reviewers.map((reviewer) => reviewer.login),
+    requestedUsers: pull.requested_reviewers.map((reviewer) => ({
+      login: reviewer.login,
+      avatarUrl: normalizeAvatarUrl(reviewer.avatar_url),
+    })),
     requestedTeams: pull.requested_teams.map((team) => team.slug),
     completedReviews,
   };

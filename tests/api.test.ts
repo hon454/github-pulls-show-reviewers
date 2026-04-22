@@ -134,9 +134,9 @@ describe("fetchPullReviewerSummary", () => {
 
     expect(summary).toEqual({
       status: "ok",
-      requestedUsers: ["alice"],
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
       requestedTeams: ["platform"],
-      completedReviews: [{ login: "bob", state: "APPROVED" }],
+      completedReviews: [{ login: "bob", avatarUrl: null, state: "APPROVED" }],
     });
 
     const firstHeaders = fetchMock.mock.calls[0]?.[1]?.headers;
@@ -171,6 +171,102 @@ describe("fetchPullReviewerSummary", () => {
     });
 
     expect(summary.status).toBe("ok");
+  });
+
+  it("returns avatarUrl for requested reviewers and completed reviews", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [
+              { login: "alice", avatar_url: "https://avatars.githubusercontent.com/u/1?v=4" },
+            ],
+            requested_teams: [{ slug: "platform" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: {
+                login: "bob",
+                avatar_url: "https://avatars.githubusercontent.com/u/2?v=4",
+              },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4" },
+    ]);
+    expect(summary.completedReviews).toEqual([
+      {
+        login: "bob",
+        avatarUrl: "https://avatars.githubusercontent.com/u/2?v=4",
+        state: "APPROVED",
+      },
+    ]);
+  });
+
+  it("coerces missing, null, empty, and invalid avatar_url values to null without failing the payload", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [
+              { login: "alice" }, // missing
+              { login: "bella", avatar_url: null },
+              { login: "carol", avatar_url: "" },
+              { login: "dora", avatar_url: "garbage" },
+              {
+                login: "eve",
+                avatar_url: "https://avatars.githubusercontent.com/u/9?v=4",
+              },
+            ],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: null },
+      { login: "bella", avatarUrl: null },
+      { login: "carol", avatarUrl: null },
+      { login: "dora", avatarUrl: null },
+      {
+        login: "eve",
+        avatarUrl: "https://avatars.githubusercontent.com/u/9?v=4",
+      },
+    ]);
   });
 
   it("reports the exact reviews endpoint when review history access is denied", async () => {
@@ -218,6 +314,51 @@ describe("fetchPullReviewerSummary", () => {
       expect(message).not.toContain("repo scope");
       expect(message).not.toContain("SSO");
     }
+  });
+
+  it("rejects non-http(s) avatar_url schemes (javascript:, data:, file:) as null", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [
+              { login: "alice", avatar_url: "javascript:alert(1)" },
+              { login: "bella", avatar_url: "data:text/html,<script>alert(1)</script>" },
+              { login: "carol", avatar_url: "file:///etc/passwd" },
+              {
+                login: "dora",
+                avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+              },
+            ],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: null },
+      { login: "bella", avatarUrl: null },
+      { login: "carol", avatarUrl: null },
+      {
+        login: "dora",
+        avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      },
+    ]);
   });
 });
 

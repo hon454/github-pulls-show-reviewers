@@ -6,6 +6,7 @@ import { listAccounts, type Account } from "../../src/storage/accounts";
 import { AccountsList } from "./components/AccountsList";
 import { AddAccountPanel } from "./components/AddAccountPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { DisplaySettingsPanel } from "./components/DisplaySettingsPanel";
 import { useDeviceFlowController } from "./device-flow-controller";
 
 export function OptionsPage() {
@@ -94,6 +95,8 @@ export function OptionsPage() {
             </button>
           )}
         </section>
+
+        <DisplaySettingsPanel />
 
         <DiagnosticsPanel />
 
