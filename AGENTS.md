@@ -105,10 +105,15 @@ Before running `gh pr create`, confirm the body matches
 [`.github/pull_request_template.md`](./.github/pull_request_template.md):
 every PR body must include `## Summary`, `## Why`, `## Changes`,
 `## Impact`, `## Testing`, `## Breaking Changes`, and
-`## Related Issues`. Sections that do not apply still belong in the
-body — mark them "None", "N/A", or "not applicable" so reviewers
-see they were considered. `gh pr create --body` bypasses GitHub's
-template auto-population, so the template must be applied manually.
+`## Related Issues`. For `## Impact`, `## Testing`, and
+`## Breaking Changes`, sections that do not apply still belong in
+the body — mark them "None", "N/A", or "not applicable" so
+reviewers see they were considered. `## Related Issues` is not
+one of those optional sections; it must always carry one of
+`Resolves #123`, `Part of #123`, or `No issue: <reason>` per the
+[Issue linkage](./docs/guidelines/pr-guideline.md#issue-linkage)
+rules. `gh pr create --body` bypasses GitHub's template
+auto-population, so the template must be applied manually.
 
 ## Review Standard
 

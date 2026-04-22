@@ -24,8 +24,12 @@ Breaking PRs also include a `Breaking Changes` section in the body.
 Every PR uses the same expanded template, populated by
 [`.github/pull_request_template.md`](../../.github/pull_request_template.md).
 Sections that do not apply to a given PR should still be present:
-leave a short "None", "N/A", or "not applicable" so the reviewer
-knows the author considered the section.
+for `## Impact`, `## Testing`, and `## Breaking Changes`, leave a
+short "None", "N/A", or "not applicable" so the reviewer knows the
+author considered the section. `## Summary`, `## Why`, and
+`## Changes` always carry content, and `## Related Issues` always
+carries one of the forms listed under [Issue linkage](#issue-linkage)
+— `Resolves`, `Part of`, or `No issue: <reason>` — never "None".
 
     ## Summary
 
