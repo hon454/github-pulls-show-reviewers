@@ -48,7 +48,28 @@ async function renderOptionsPage() {
   });
 }
 
+async function renderOptionsPageInStrictMode() {
+  vi.resetModules();
+  document.body.innerHTML = '<div id="root"></div>';
+  const [{ createRoot }, { StrictMode }, { OptionsPage }] = await Promise.all([
+    import("react-dom/client"),
+    import("react"),
+    import("../entrypoints/options/options-page"),
+  ]);
+  await act(async () => {
+    createRoot(document.getElementById("root")!).render(
+      createElement(StrictMode, null, createElement(OptionsPage)),
+    );
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 beforeEach(() => {
+  // `vi.mock` factory results are cached across `vi.resetModules()` in
+  // this file (module cache is reset but factory outputs are reused), so
+  // auth mock call history leaks between tests unless cleared here.
+  vi.clearAllMocks();
   listAccountsMock.mockReset();
   listAccountsMock.mockResolvedValue([]);
 });
@@ -195,5 +216,35 @@ describe("OptionsPage", () => {
     expect(
       document.querySelector('[data-testid="accounts-add"]'),
     ).not.toBeNull();
+  });
+
+  it("does not start the device flow twice under React StrictMode", async () => {
+    await renderOptionsPageInStrictMode();
+
+    const auth = await import("../src/github/auth");
+    const initiateDeviceFlow =
+      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>;
+    initiateDeviceFlow.mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 5,
+    });
+
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '[data-testid="accounts-add"]',
+    );
+    expect(addButton).not.toBeNull();
+
+    await act(async () => {
+      addButton!.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(initiateDeviceFlow).toHaveBeenCalledTimes(1);
   });
 });
