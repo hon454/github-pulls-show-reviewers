@@ -58,6 +58,7 @@ export function OptionsPage() {
                 setShowAddPanel(false);
                 await reload();
               }}
+              onCancel={() => setShowAddPanel(false)}
             />
           ) : (
             <button

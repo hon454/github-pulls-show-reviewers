@@ -117,4 +117,36 @@ describe("OptionsPage", () => {
       document.querySelector('[data-testid="options-config-warning"]'),
     ).not.toBeNull();
   });
+
+  it("auto-starts the device flow when the add-account panel opens", async () => {
+    await renderOptionsPage();
+
+    const auth = await import("../src/github/auth");
+    const initiateDeviceFlow =
+      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>;
+    initiateDeviceFlow.mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 5,
+    });
+
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '[data-testid="accounts-add"]',
+    );
+    expect(addButton).not.toBeNull();
+
+    await act(async () => {
+      addButton!.click();
+      await Promise.resolve();
+    });
+
+    expect(initiateDeviceFlow).toHaveBeenCalledTimes(1);
+    expect(
+      document.querySelector('[data-testid="add-account-start"]'),
+    ).toBeNull();
+  });
 });
