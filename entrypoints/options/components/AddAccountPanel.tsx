@@ -1,32 +1,19 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { type CSSProperties } from "react";
 
-import { getGitHubAppConfig } from "../../../src/config/github-app";
-import type { Account } from "../../../src/storage/accounts";
-
-import { useDeviceFlowController } from "../device-flow-controller";
+import type { DeviceFlowController } from "../device-flow-controller";
 
 type Props = {
-  onConnected: (account: Account) => void;
+  controller: DeviceFlowController;
   onCancel: () => void;
 };
 
-export function AddAccountPanel({ onConnected, onCancel }: Props) {
-  const appConfig = getGitHubAppConfig();
-  const controller = useDeviceFlowController({
-    clientId: appConfig.clientId,
-    onConnected,
-  });
+export function AddAccountPanel({ controller, onCancel }: Props) {
   const { state } = controller;
 
-  const startedRef = useRef(false);
-  // Start the flow exactly once on mount; ref guards against re-firing because `controller` identity churns on every render.
-  useEffect(() => {
-    if (startedRef.current) {
-      return;
-    }
-    startedRef.current = true;
-    controller.start();
-  }, [controller]);
+  const handleCancel = () => {
+    controller.cancel();
+    onCancel();
+  };
 
   if (state.phase === "idle" || state.phase === "initiating") {
     return <div style={styles.panel}>Requesting device code...</div>;
@@ -62,14 +49,7 @@ export function AddAccountPanel({ onConnected, onCancel }: Props) {
         <p style={styles.hint}>
           Code expires at {new Date(state.expiresAt).toLocaleTimeString()}.
         </p>
-        <button
-          type="button"
-          onClick={() => {
-            controller.cancel();
-            onCancel();
-          }}
-          style={styles.secondaryButton}
-        >
+        <button type="button" onClick={handleCancel} style={styles.secondaryButton}>
           Cancel
         </button>
       </div>
@@ -115,14 +95,7 @@ export function AddAccountPanel({ onConnected, onCancel }: Props) {
       <p>
         Could not complete sign-in: {state.message} ({state.code}).
       </p>
-      <button
-        type="button"
-        onClick={() => {
-          controller.cancel();
-          onCancel();
-        }}
-        style={styles.secondaryButton}
-      >
+      <button type="button" onClick={handleCancel} style={styles.secondaryButton}>
         Close
       </button>
     </div>

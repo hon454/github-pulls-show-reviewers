@@ -6,6 +6,7 @@ import { listAccounts, type Account } from "../../src/storage/accounts";
 import { AccountsList } from "./components/AccountsList";
 import { AddAccountPanel } from "./components/AddAccountPanel";
 import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
+import { useDeviceFlowController } from "./device-flow-controller";
 
 export function OptionsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -21,6 +22,27 @@ export function OptionsPage() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  const handleConnected = useCallback(async () => {
+    setShowAddPanel(false);
+    await reload();
+  }, [reload]);
+
+  // Controller is owned by the parent so it survives AddAccountPanel's
+  // simulated remount under StrictMode and so start() is only ever called
+  // from a user-driven click handler, never from a useEffect that
+  // StrictMode double-invokes.
+  const controller = useDeviceFlowController({
+    clientId: appConfig?.clientId ?? "",
+    onConnected: handleConnected,
+  });
+
+  const openAddPanel = () => {
+    setShowAddPanel(true);
+    if (controller.state.phase === "idle") {
+      controller.start();
+    }
+  };
 
   return (
     <main style={styles.page}>
@@ -40,7 +62,7 @@ export function OptionsPage() {
             onChange={reload}
             onReauthenticate={() => {
               if (appConfig) {
-                setShowAddPanel(true);
+                openAddPanel();
               }
             }}
           />
@@ -54,17 +76,14 @@ export function OptionsPage() {
             </div>
           ) : showAddPanel ? (
             <AddAccountPanel
-              onConnected={async () => {
-                setShowAddPanel(false);
-                await reload();
-              }}
+              controller={controller}
               onCancel={() => setShowAddPanel(false)}
             />
           ) : (
             <button
               type="button"
               style={styles.primaryButton}
-              onClick={() => setShowAddPanel(true)}
+              onClick={openAddPanel}
               data-testid="accounts-add"
             >
               + Add another account
