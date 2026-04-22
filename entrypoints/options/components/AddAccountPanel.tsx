@@ -19,6 +19,7 @@ export function AddAccountPanel({ onConnected, onCancel }: Props) {
   const { state } = controller;
 
   const startedRef = useRef(false);
+  // Start the flow exactly once on mount; ref guards against re-firing because `controller` identity churns on every render.
   useEffect(() => {
     if (startedRef.current) {
       return;
