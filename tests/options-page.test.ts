@@ -218,6 +218,63 @@ describe("OptionsPage", () => {
     ).not.toBeNull();
   });
 
+  it("restarts the device flow when reopening the add-account panel after a successful connection", async () => {
+    await renderOptionsPage();
+
+    const auth = await import("../src/github/auth");
+    const initiateDeviceFlow =
+      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>;
+    const pollForAccessToken =
+      auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>;
+    const fetchAuthenticatedUser =
+      auth.fetchAuthenticatedUser as unknown as ReturnType<typeof vi.fn>;
+    const fetchUserInstallations =
+      auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>;
+
+    initiateDeviceFlow.mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 0,
+    });
+    pollForAccessToken.mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_abc",
+    });
+    fetchAuthenticatedUser.mockResolvedValue({
+      login: "hon454",
+      avatarUrl: null,
+    });
+    fetchUserInstallations.mockResolvedValue([]);
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(initiateDeviceFlow).toHaveBeenCalledTimes(1);
+    expect(
+      document.querySelector('[data-testid="accounts-add"]'),
+    ).not.toBeNull();
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+    });
+
+    expect(initiateDeviceFlow).toHaveBeenCalledTimes(2);
+  });
+
   it("does not start the device flow twice under React StrictMode", async () => {
     await renderOptionsPageInStrictMode();
 

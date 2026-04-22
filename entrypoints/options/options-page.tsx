@@ -39,7 +39,11 @@ export function OptionsPage() {
 
   const openAddPanel = () => {
     setShowAddPanel(true);
-    if (controller.state.phase === "idle") {
+    const inFlight =
+      controller.state.phase === "initiating" ||
+      controller.state.phase === "waiting" ||
+      controller.state.phase === "fetching_installations";
+    if (!inFlight) {
       controller.start();
     }
   };
