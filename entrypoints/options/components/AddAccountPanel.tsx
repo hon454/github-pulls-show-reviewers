@@ -1,38 +1,21 @@
 import { type CSSProperties } from "react";
 
-import { getGitHubAppConfig } from "../../../src/config/github-app";
-import type { Account } from "../../../src/storage/accounts";
-
-import { useDeviceFlowController } from "../device-flow-controller";
+import type { DeviceFlowController } from "../device-flow-controller";
 
 type Props = {
-  onConnected: (account: Account) => void;
+  controller: DeviceFlowController;
+  onCancel: () => void;
 };
 
-export function AddAccountPanel({ onConnected }: Props) {
-  const appConfig = getGitHubAppConfig();
-  const controller = useDeviceFlowController({
-    clientId: appConfig.clientId,
-    onConnected,
-  });
+export function AddAccountPanel({ controller, onCancel }: Props) {
   const { state } = controller;
 
-  if (state.phase === "idle") {
-    return (
-      <div style={styles.panel}>
-        <button
-          type="button"
-          data-testid="add-account-start"
-          onClick={controller.start}
-          style={styles.primaryButton}
-        >
-          Add account
-        </button>
-      </div>
-    );
-  }
+  const handleCancel = () => {
+    controller.cancel();
+    onCancel();
+  };
 
-  if (state.phase === "initiating") {
+  if (state.phase === "idle" || state.phase === "initiating") {
     return <div style={styles.panel}>Requesting device code...</div>;
   }
 
@@ -66,7 +49,7 @@ export function AddAccountPanel({ onConnected }: Props) {
         <p style={styles.hint}>
           Code expires at {new Date(state.expiresAt).toLocaleTimeString()}.
         </p>
-        <button type="button" onClick={controller.cancel} style={styles.secondaryButton}>
+        <button type="button" onClick={handleCancel} style={styles.secondaryButton}>
           Cancel
         </button>
       </div>
@@ -112,7 +95,7 @@ export function AddAccountPanel({ onConnected }: Props) {
       <p>
         Could not complete sign-in: {state.message} ({state.code}).
       </p>
-      <button type="button" onClick={controller.cancel} style={styles.secondaryButton}>
+      <button type="button" onClick={handleCancel} style={styles.secondaryButton}>
         Close
       </button>
     </div>

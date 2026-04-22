@@ -84,8 +84,10 @@ This extension is intentionally narrow. Manual verification should stay focused 
 3. If this build was intentionally packaged without the GitHub App config,
    confirm the page shows the explicit configuration warning instead of the
    sign-in controls.
-4. Otherwise, click **Add account** and complete the device flow with an account where the
-   GitHub App is installed on **All repositories**.
+4. Otherwise, click **+ Add another account**; the panel opens and
+   requests a device code automatically. Complete the device flow
+   with an account where the GitHub App is installed on
+   **All repositories**.
 5. Visit a private PR list in that account's namespace.
 6. Confirm reviewer chips render for every row without an uncovered-org banner.
 
