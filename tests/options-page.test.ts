@@ -11,6 +11,18 @@ type AccountsModuleType = typeof AccountsModule;
 
 const listAccountsMock = vi.fn<() => Promise<Account[]>>(async () => []);
 
+const getPreferencesMock = vi.fn(async () => ({
+  version: 1 as const,
+  showStateBadge: true,
+  showReviewerName: false,
+}));
+const updatePreferencesMock = vi.fn(async (patch: Record<string, unknown>) => ({
+  version: 1 as const,
+  showStateBadge: true,
+  showReviewerName: false,
+  ...patch,
+}));
+
 vi.mock("../src/storage/accounts", async (importActual) => {
   const actual = await importActual<AccountsModuleType>();
   return {
@@ -22,6 +34,18 @@ vi.mock("../src/storage/accounts", async (importActual) => {
     resolveAccountForRepo: vi.fn(async () => null),
   };
 });
+
+vi.mock("../src/storage/preferences", () => ({
+  getPreferences: getPreferencesMock,
+  updatePreferences: updatePreferencesMock,
+  DEFAULT_PREFERENCES: {
+    version: 1,
+    showStateBadge: true,
+    showReviewerName: false,
+  },
+  isPreferencesChange: () => false,
+  isAccountsChange: () => false,
+}));
 
 vi.mock("../src/github/auth", () => ({
   initiateDeviceFlow: vi.fn(),
@@ -72,6 +96,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   listAccountsMock.mockReset();
   listAccountsMock.mockResolvedValue([]);
+  getPreferencesMock.mockClear();
+  updatePreferencesMock.mockClear();
+  getPreferencesMock.mockResolvedValue({
+    version: 1,
+    showStateBadge: true,
+    showReviewerName: false,
+  });
 });
 
 afterEach(() => {
@@ -303,5 +334,44 @@ describe("OptionsPage", () => {
     });
 
     expect(initiateDeviceFlow).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the display settings panel with both checkboxes", async () => {
+    await renderOptionsPage();
+    expect(
+      document.querySelector('[data-testid="prefs-show-state-badge"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="prefs-show-reviewer-name"]'),
+    ).not.toBeNull();
+  });
+
+  it("reflects stored preferences in checkbox state on mount", async () => {
+    getPreferencesMock.mockResolvedValueOnce({
+      version: 1,
+      showStateBadge: false,
+      showReviewerName: true,
+    });
+    await renderOptionsPage();
+    const badgeCheckbox = document.querySelector<HTMLInputElement>(
+      '[data-testid="prefs-show-state-badge"]',
+    )!;
+    const nameCheckbox = document.querySelector<HTMLInputElement>(
+      '[data-testid="prefs-show-reviewer-name"]',
+    )!;
+    expect(badgeCheckbox.checked).toBe(false);
+    expect(nameCheckbox.checked).toBe(true);
+  });
+
+  it("calls updatePreferences when a checkbox is toggled", async () => {
+    await renderOptionsPage();
+    const badgeCheckbox = document.querySelector<HTMLInputElement>(
+      '[data-testid="prefs-show-state-badge"]',
+    )!;
+    await act(async () => {
+      badgeCheckbox.click();
+      await Promise.resolve();
+    });
+    expect(updatePreferencesMock).toHaveBeenCalledWith({ showStateBadge: false });
   });
 });
