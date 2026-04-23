@@ -20,7 +20,7 @@
 4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
 5. Fetch reviewer data from GitHub only when the cache is cold. Use the
    matched account's token, or no token if none matches.
-6. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip (border = attention signal, badge = latest review state); requested teams keep the text chip shape.
+6. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the prior state badge. Requested teams keep the text chip shape.
 7. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text.
 8. Re-run row processing when GitHub mutates the page or performs SPA navigation.

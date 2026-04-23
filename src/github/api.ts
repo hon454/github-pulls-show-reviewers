@@ -221,10 +221,18 @@ export async function fetchPullReviewerSummary(input: {
 
   const pull = pullSchema.parse(await pullResponse.json());
   const reviews = reviewsSchema.parse(await reviewsResponse.json());
-  const latestReviewByUser = new Map<
+  const latestNonCommentByUser = new Map<
     string,
     {
-      state: ReviewState;
+      state: Exclude<ReviewState, "COMMENTED">;
+      avatarUrl: string | null;
+      submittedAt: string | null;
+      index: number;
+    }
+  >();
+  const latestCommentByUser = new Map<
+    string,
+    {
       avatarUrl: string | null;
       submittedAt: string | null;
       index: number;
@@ -243,12 +251,27 @@ export async function fetchPullReviewerSummary(input: {
       return;
     }
 
-    const existingReview = latestReviewByUser.get(reviewer);
+    if (normalizedState === "COMMENTED") {
+      const existing = latestCommentByUser.get(reviewer);
+      if (
+        existing == null ||
+        isNewerReview(review.submitted_at ?? null, index, existing)
+      ) {
+        latestCommentByUser.set(reviewer, {
+          avatarUrl: normalizeAvatarUrl(review.user?.avatar_url),
+          submittedAt: review.submitted_at ?? null,
+          index,
+        });
+      }
+      return;
+    }
+
+    const existing = latestNonCommentByUser.get(reviewer);
     if (
-      existingReview == null ||
-      isNewerReview(review.submitted_at ?? null, index, existingReview)
+      existing == null ||
+      isNewerReview(review.submitted_at ?? null, index, existing)
     ) {
-      latestReviewByUser.set(reviewer, {
+      latestNonCommentByUser.set(reviewer, {
         state: normalizedState,
         avatarUrl: normalizeAvatarUrl(review.user?.avatar_url),
         submittedAt: review.submitted_at ?? null,
@@ -257,14 +280,28 @@ export async function fetchPullReviewerSummary(input: {
     }
   });
 
-  const completedReviews: CompletedReview[] = Array.from(
-    latestReviewByUser.entries(),
-  )
-    .map(([login, review]) => ({
-      login,
-      avatarUrl: review.avatarUrl,
-      state: review.state,
-    }))
+  const reviewerLogins = new Set<string>([
+    ...latestNonCommentByUser.keys(),
+    ...latestCommentByUser.keys(),
+  ]);
+
+  const completedReviews: CompletedReview[] = Array.from(reviewerLogins)
+    .map((login) => {
+      const nonComment = latestNonCommentByUser.get(login);
+      if (nonComment != null) {
+        return {
+          login,
+          avatarUrl: nonComment.avatarUrl,
+          state: nonComment.state as ReviewState,
+        };
+      }
+      const comment = latestCommentByUser.get(login)!;
+      return {
+        login,
+        avatarUrl: comment.avatarUrl,
+        state: "COMMENTED" as ReviewState,
+      };
+    })
     .sort((left, right) => left.login.localeCompare(right.login));
 
   return {

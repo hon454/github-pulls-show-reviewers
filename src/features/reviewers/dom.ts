@@ -6,8 +6,23 @@ import { githubSelectors } from "../../github/selectors";
 const ROOT_ATTRIBUTE = "data-ghpsr-root";
 const STYLE_ATTRIBUTE = "data-ghpsr-style";
 
-type BorderTone = "requested" | "approved" | "changes-requested";
-type BadgeTone = "approved" | "changes-requested" | "commented" | "dismissed";
+type RingTone =
+  | "requested"
+  | "approved"
+  | "changes-requested"
+  | "commented"
+  | "dismissed";
+type BadgeIcon =
+  | "approved"
+  | "changes-requested"
+  | "commented"
+  | "dismissed"
+  | "refresh";
+
+type ReviewerDisplay = {
+  ringTone: RingTone;
+  badgeIcon: BadgeIcon | null;
+};
 
 type RenderReviewersOptions = {
   showStateBadge: boolean;
@@ -69,6 +84,8 @@ export function ensureReviewerStyles(): void {
     .ghpsr-avatar--border-requested         { --ghpsr-border-color: #0969da; }
     .ghpsr-avatar--border-approved          { --ghpsr-border-color: #2ea043; }
     .ghpsr-avatar--border-changes-requested { --ghpsr-border-color: #cf222e; }
+    .ghpsr-avatar--border-commented         { --ghpsr-border-color: #6e7781; }
+    .ghpsr-avatar--border-dismissed         { --ghpsr-border-color: #8250df; }
 
     .ghpsr-badge {
       position: absolute;
@@ -90,6 +107,7 @@ export function ensureReviewerStyles(): void {
     .ghpsr-badge--changes-requested { --ghpsr-badge-color: #cf222e; }
     .ghpsr-badge--commented         { --ghpsr-badge-color: #6e7781; }
     .ghpsr-badge--dismissed         { --ghpsr-badge-color: #8250df; }
+    .ghpsr-badge--refresh           { --ghpsr-badge-color: #0969da; }
 
     .ghpsr-pill {
       display: inline-flex;
@@ -119,6 +137,8 @@ export function ensureReviewerStyles(): void {
     .ghpsr-pill--requested         { --ghpsr-pill-bg: var(--bgColor-accent-muted,  #ddf4ff); --ghpsr-pill-fg: var(--fgColor-accent,  #0969da); }
     .ghpsr-pill--approved          { --ghpsr-pill-bg: var(--bgColor-success-muted, #dafbe1); --ghpsr-pill-fg: var(--fgColor-success, #1a7f37); }
     .ghpsr-pill--changes-requested { --ghpsr-pill-bg: var(--bgColor-danger-muted,  #ffebe9); --ghpsr-pill-fg: var(--fgColor-danger,  #cf222e); }
+    .ghpsr-pill--commented         { --ghpsr-pill-bg: var(--bgColor-neutral-muted, #eaeef2); --ghpsr-pill-fg: var(--fgColor-muted,    #57606a); }
+    .ghpsr-pill--dismissed         { --ghpsr-pill-bg: var(--bgColor-done-muted,    #fbefff); --ghpsr-pill-fg: var(--fgColor-done,     #8250df); }
 
     .ghpsr-chip {
       display: inline-flex;
@@ -232,24 +252,23 @@ function createUserNode(
   entry: Extract<ReviewerEntry, { kind: "user" }>,
   options: RenderReviewersOptions,
 ): HTMLElement {
-  const borderTone = resolveBorderTone(entry);
-  const badgeTone = entry.state ? resolveBadgeTone(entry.state) : null;
+  const display = resolveDisplay(entry);
   const stateLabel = resolveStateLabel(entry);
   const titleText = `@${entry.login} · ${stateLabel}`;
   const ariaText = `@${entry.login}, ${stateLabel}`;
 
   if (options.showReviewerName) {
     const pill = document.createElement("a");
-    pill.className = `ghpsr-pill ghpsr-pill--${borderTone}`;
+    pill.className = `ghpsr-pill ghpsr-pill--${display.ringTone}`;
     pill.href = entry.href;
     pill.title = titleText;
     pill.setAttribute("aria-label", ariaText);
 
     const avatarWrap = document.createElement("span");
-    avatarWrap.className = `ghpsr-avatar ghpsr-avatar--small ghpsr-avatar--border-${borderTone}`;
+    avatarWrap.className = `ghpsr-avatar ghpsr-avatar--small ghpsr-avatar--border-${display.ringTone}`;
     attachAvatarImage(avatarWrap, entry, 18);
-    if (options.showStateBadge && badgeTone) {
-      avatarWrap.append(createBadgeNode(badgeTone, true));
+    if (options.showStateBadge && display.badgeIcon != null) {
+      avatarWrap.append(createBadgeNode(display.badgeIcon, true));
     }
 
     const name = document.createElement("span");
@@ -261,13 +280,13 @@ function createUserNode(
   }
 
   const link = document.createElement("a");
-  link.className = `ghpsr-avatar ghpsr-avatar--border-${borderTone}`;
+  link.className = `ghpsr-avatar ghpsr-avatar--border-${display.ringTone}`;
   link.href = entry.href;
   link.title = titleText;
   link.setAttribute("aria-label", ariaText);
   attachAvatarImage(link, entry, 24);
-  if (options.showStateBadge && badgeTone) {
-    link.append(createBadgeNode(badgeTone, false));
+  if (options.showStateBadge && display.badgeIcon != null) {
+    link.append(createBadgeNode(display.badgeIcon, false));
   }
   return link;
 }
@@ -294,36 +313,50 @@ function attachAvatarImage(
   container.append(img);
 }
 
-function createBadgeNode(tone: BadgeTone, small: boolean): HTMLElement {
+function createBadgeNode(icon: BadgeIcon, small: boolean): HTMLElement {
   const badge = document.createElement("span");
   badge.className = small
-    ? `ghpsr-badge ghpsr-badge--small ghpsr-badge--${tone}`
-    : `ghpsr-badge ghpsr-badge--${tone}`;
+    ? `ghpsr-badge ghpsr-badge--small ghpsr-badge--${icon}`
+    : `ghpsr-badge ghpsr-badge--${icon}`;
   badge.setAttribute("aria-hidden", "true");
-  badge.innerHTML = selectIconMarkup(tone);
+  badge.innerHTML = selectIconMarkup(icon);
   return badge;
 }
 
-function selectIconMarkup(tone: BadgeTone): string {
-  if (tone === "approved") return STATE_ICONS.approved;
-  if (tone === "changes-requested") return STATE_ICONS.changesRequested;
-  if (tone === "commented") return STATE_ICONS.commented;
-  return STATE_ICONS.dismissed;
+function selectIconMarkup(icon: BadgeIcon): string {
+  if (icon === "approved") return STATE_ICONS.approved;
+  if (icon === "changes-requested") return STATE_ICONS.changesRequested;
+  if (icon === "commented") return STATE_ICONS.commented;
+  if (icon === "dismissed") return STATE_ICONS.dismissed;
+  return STATE_ICONS.refresh;
 }
 
-function resolveBorderTone(
+function resolveDisplay(
   entry: Extract<ReviewerEntry, { kind: "user" }>,
-): BorderTone {
-  if (entry.isRequested) return "requested";
-  if (entry.state === "CHANGES_REQUESTED") return "changes-requested";
-  return "approved";
-}
-
-function resolveBadgeTone(state: ReviewState): BadgeTone {
-  if (state === "APPROVED") return "approved";
-  if (state === "CHANGES_REQUESTED") return "changes-requested";
-  if (state === "COMMENTED") return "commented";
-  return "dismissed";
+): ReviewerDisplay {
+  if (entry.isRequested) {
+    const hasEvidence =
+      entry.state === "APPROVED" ||
+      entry.state === "CHANGES_REQUESTED" ||
+      entry.state === "DISMISSED";
+    return {
+      ringTone: "requested",
+      badgeIcon: hasEvidence ? "refresh" : null,
+    };
+  }
+  switch (entry.state) {
+    case "APPROVED":
+      return { ringTone: "approved", badgeIcon: "approved" };
+    case "CHANGES_REQUESTED":
+      return { ringTone: "changes-requested", badgeIcon: "changes-requested" };
+    case "COMMENTED":
+      return { ringTone: "commented", badgeIcon: "commented" };
+    case "DISMISSED":
+      return { ringTone: "dismissed", badgeIcon: "dismissed" };
+    default:
+      // (false, null) is excluded by the view-model, but stay defensive.
+      return { ringTone: "requested", badgeIcon: null };
+  }
 }
 
 function resolveStateLabel(

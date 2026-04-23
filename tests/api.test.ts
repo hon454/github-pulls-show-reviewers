@@ -360,6 +360,221 @@ describe("fetchPullReviewerSummary", () => {
       },
     ]);
   });
+
+  it("keeps CHANGES_REQUESTED when a later COMMENTED review is submitted by the same reviewer", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "CHANGES_REQUESTED",
+              submitted_at: "2026-04-22T08:23:41Z",
+              user: { login: "ryumiel", avatar_url: null },
+            },
+            {
+              state: "COMMENTED",
+              submitted_at: "2026-04-22T09:49:05Z",
+              user: { login: "ryumiel", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.completedReviews).toEqual([
+      { login: "ryumiel", avatarUrl: null, state: "CHANGES_REQUESTED" },
+    ]);
+  });
+
+  it("keeps APPROVED when a later COMMENTED review is submitted by the same reviewer", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: { login: "bob", avatar_url: null },
+            },
+            {
+              state: "COMMENTED",
+              submitted_at: "2026-04-22T12:00:00Z",
+              user: { login: "bob", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.completedReviews).toEqual([
+      { login: "bob", avatarUrl: null, state: "APPROVED" },
+    ]);
+  });
+
+  it("keeps DISMISSED when a later COMMENTED review is submitted by the same reviewer", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "DISMISSED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: { login: "carol", avatar_url: null },
+            },
+            {
+              state: "COMMENTED",
+              submitted_at: "2026-04-22T12:00:00Z",
+              user: { login: "carol", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.completedReviews).toEqual([
+      { login: "carol", avatarUrl: null, state: "DISMISSED" },
+    ]);
+  });
+
+  it("picks the latest COMMENTED when a reviewer has only COMMENTED reviews", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "COMMENTED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: { login: "dkfhddla", avatar_url: "https://a" },
+            },
+            {
+              state: "COMMENTED",
+              submitted_at: "2026-04-22T12:00:00Z",
+              user: { login: "dkfhddla", avatar_url: "https://b" },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.completedReviews).toEqual([
+      { login: "dkfhddla", avatarUrl: "https://b", state: "COMMENTED" },
+    ]);
+  });
+
+  it("picks the latest non-COMMENTED review when multiple non-comment reviews exist", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "CHANGES_REQUESTED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: { login: "eve", avatar_url: null },
+            },
+            {
+              state: "APPROVED",
+              submitted_at: "2026-04-21T12:00:00Z",
+              user: { login: "eve", avatar_url: null },
+            },
+            {
+              state: "COMMENTED",
+              submitted_at: "2026-04-22T12:00:00Z",
+              user: { login: "eve", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.completedReviews).toEqual([
+      { login: "eve", avatarUrl: null, state: "APPROVED" },
+    ]);
+  });
 });
 
 describe("validateGitHubRepositoryAccess", () => {

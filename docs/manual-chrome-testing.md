@@ -64,7 +64,8 @@ This extension is intentionally narrow. Manual verification should stay focused 
 
 - Requested reviewers render inline on PR rows.
 - Requested teams render inline on PR rows.
-- Completed review state renders from each reviewer's latest visible review.
+- Completed review state prefers the latest non-`COMMENTED` review for each reviewer, and falls back to the latest `COMMENTED` review only when no non-comment review exists.
+- A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the old state badge.
 - No unrelated PR dashboard data appears.
 - Display preference changes should rerender from cache rather than refetch reviewer API data.
 
@@ -170,7 +171,9 @@ Before considering a manual check complete, verify at least these cases:
 
 - Reviewer chips appear on a normal PR list row.
 - A requested team is shown with the expected team label format.
-- A completed review shows the latest visible state for that reviewer.
+- A reviewer with `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` followed by a later `COMMENTED` review still renders the non-comment state.
+- A reviewer with only `COMMENTED` reviews renders the latest `COMMENTED` state.
+- A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence renders the refresh badge.
 - Toggling **Show reviewer names** rerenders the current PR list without extra reviewer API requests.
 - GitHub SPA navigation still leaves reviewer chips visible after moving between PR list views.
 - Reloading the page does not duplicate reviewer UI on the same row.

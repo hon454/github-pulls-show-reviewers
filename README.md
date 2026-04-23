@@ -27,7 +27,9 @@ Core behavior:
 
 - Show requested user reviewers on PR list rows
 - Show requested team reviewers on PR list rows
-- Show each reviewer's latest completed review state
+- Show each reviewer's latest completed review state, preferring the latest
+  non-`COMMENTED` review when one exists and otherwise falling back to the
+  latest `COMMENTED` review
 - Keep rendering deterministic with pure view-model helpers and centralized selectors
 - Reuse per-page cache entries to avoid duplicate row fetches
 - Re-run safely across GitHub SPA navigation and DOM mutations
