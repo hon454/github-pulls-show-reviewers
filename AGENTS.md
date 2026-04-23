@@ -56,8 +56,6 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - Update `README.md` and `docs/implementation-notes.md` when MVP behavior or scope changes.
 - Keep review-state semantics explicit. If review states are shown, document which GitHub states are included and how they are mapped in the UI.
 - Prefer fixture-backed regression coverage for GitHub DOM behavior and reserve placeholder end-to-end tests for bootstrapping only.
-- Never force-add ignored files. `git add -f` is prohibited in this repository.
-- Treat ignored files as non-trackable workspace artifacts. Do not convert them into tracked files unless the maintainer first changes the ignore rules in a normal reviewed change.
 
 ## Workflow
 
