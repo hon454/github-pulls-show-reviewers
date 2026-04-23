@@ -20,8 +20,10 @@ vi.mock("../src/github/auth", () => ({
   fetchInstallationRepositories: vi.fn(),
 }));
 
+const addAccountMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+
 vi.mock("../src/storage/accounts", () => ({
-  addAccount: vi.fn().mockResolvedValue(undefined),
+  addAccount: addAccountMock,
   replaceInstallations: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -29,6 +31,7 @@ const auth = await import("../src/github/auth");
 
 beforeEach(() => {
   vi.useFakeTimers();
+  addAccountMock.mockClear();
 });
 
 afterEach(() => {
@@ -63,6 +66,9 @@ describe("useDeviceFlowController", () => {
     (auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       status: "success",
       accessToken: "ghu_token",
+      refreshToken: "ghr_token",
+      expiresAt: 1_000_000,
+      refreshTokenExpiresAt: 2_000_000,
     });
     (auth.fetchAuthenticatedUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       login: "hon454",
@@ -89,6 +95,14 @@ describe("useDeviceFlowController", () => {
 
     expect(onConnected).toHaveBeenCalled();
     expect(result.current.state.phase).toBe("connected");
+
+    expect(addAccountMock).toHaveBeenCalledTimes(1);
+    expect(addAccountMock.mock.calls[0][0]).toMatchObject({
+      token: "ghu_token",
+      refreshToken: "ghr_token",
+      expiresAt: 1_000_000,
+      refreshTokenExpiresAt: 2_000_000,
+    });
   });
 
   it("bumps the interval on slow_down", async () => {
@@ -223,6 +237,9 @@ describe("useDeviceFlowController", () => {
     (auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       status: "success",
       accessToken: "ghu_token",
+      refreshToken: "ghr_token",
+      expiresAt: 1_000_000,
+      refreshTokenExpiresAt: 2_000_000,
     });
     (auth.fetchAuthenticatedUser as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       () =>

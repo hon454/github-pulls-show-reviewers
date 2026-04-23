@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const PREFERENCES_KEY = "preferences";
 const SETTINGS_KEY = "settings";
+const ACCOUNT_KEY_PREFIX = "account:";
 
 const preferencesSchema = z.object({
   version: z.literal(1),
@@ -43,5 +44,7 @@ export function isPreferencesChange(
 export function isAccountsChange(
   changes: Record<string, StorageChange>,
 ): boolean {
-  return SETTINGS_KEY in changes;
+  return Object.keys(changes).some(
+    (key) => key === SETTINGS_KEY || key.startsWith(ACCOUNT_KEY_PREFIX),
+  );
 }

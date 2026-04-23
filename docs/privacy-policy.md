@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-04-22
+Last updated: 2026-04-23
 
 `GitHub Pulls Show Reviewers` is a Chrome extension that shows requested reviewers, requested teams, and completed review state directly inside GitHub pull request list pages.
 
@@ -12,24 +12,26 @@ To provide its reviewer visibility feature, the extension may access:
 
 - GitHub repository and pull request context from the current page, including repository owner/name, pull request numbers, and visible metadata needed to place reviewer chips in the list UI.
 - Reviewer-related metadata returned by GitHub's REST API, including requested reviewers, requested teams, and review states.
-- User-to-server access tokens issued by GitHub after you sign in with our
-  GitHub App (requested permission: `Pull requests: Read`). Tokens are
-  long-lived and revocable from
+- User-to-server access tokens and refresh tokens issued by GitHub after you
+  sign in with our GitHub App (requested permission: `Pull requests: Read`).
+  These credentials are revocable from
   [github.com/settings/applications](https://github.com/settings/applications).
 
 ## How data is used
 
 - GitHub page context is used locally to determine which repository and pull requests are visible on the current page.
 - Reviewer metadata is requested from GitHub's API and rendered inline on the GitHub pull request list page.
-- The GitHub App token is used only to authenticate requests to GitHub for private repository access.
+- The GitHub App credentials are used only to authenticate requests to GitHub for private repository access and to refresh expired access tokens.
 
 ## Storage and retention
 
-- Connected accounts are stored locally in `browser.storage.local` under a
-  single `settings` key. Each record contains the GitHub login, avatar URL,
-  user-to-server access token, creation timestamp, a cached list of GitHub App
-  installations, and a revocation flag. Entries live there until the user
-  removes the account.
+- Connected accounts are stored locally in `browser.storage.local`. The
+  `settings` key stores the account id list, and per-account records are split
+  across `account:profile:*`, `account:auth:*`, and
+  `account:installations:*` keys. These records contain the GitHub login,
+  avatar URL, creation timestamp, user-to-server access token, refresh token,
+  token expiry timestamps, cached GitHub App installations, and invalidation
+  state. Entries live there until the user removes the account.
 - Display preferences are stored locally in `browser.storage.local` under a
   separate `preferences` key. That record currently stores whether review-state
   badges stay visible and whether reviewer names expand into text pills. The

@@ -8,15 +8,25 @@ function createBrowserMock() {
     if (typeof key === "string") {
       return key in storage ? { [key]: storage[key] } : {};
     }
+    if (Array.isArray(key)) {
+      return Object.fromEntries(
+        key.filter((entry) => entry in storage).map((entry) => [entry, storage[entry]]),
+      );
+    }
     return { ...storage };
   });
   const set = vi.fn(async (items: StorageShape) => {
     storage = { ...storage, ...items };
   });
+  const remove = vi.fn(async (keys: string | string[]) => {
+    for (const key of Array.isArray(keys) ? keys : [keys]) {
+      delete storage[key];
+    }
+  });
   return {
     browser: {
       storage: {
-        local: { get, set },
+        local: { get, set, remove },
       },
     },
     reset() {
@@ -39,15 +49,15 @@ afterEach(() => {
 });
 
 describe("accounts storage", () => {
-  it("returns an empty v2 settings shape when storage is empty", async () => {
+  it("returns an empty v4 settings shape when storage is empty", async () => {
     const { getSettings } = await import("../src/storage/accounts");
     await expect(getSettings()).resolves.toEqual({
-      version: 2,
-      accounts: [],
+      version: 4,
+      accountIds: [],
     });
   });
 
-  it("overwrites legacy tokenEntries payloads with an empty v2 shape", async () => {
+  it("overwrites legacy tokenEntries payloads with an empty v4 shape", async () => {
     browserMock.browser.storage.local.get.mockResolvedValueOnce({
       settings: {
         tokenEntries: [
@@ -57,8 +67,8 @@ describe("accounts storage", () => {
     });
     const { getSettings } = await import("../src/storage/accounts");
     await expect(getSettings()).resolves.toEqual({
-      version: 2,
-      accounts: [],
+      version: 4,
+      accountIds: [],
     });
   });
 
@@ -74,10 +84,26 @@ describe("accounts storage", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     const accounts = await listAccounts();
     expect(accounts).toHaveLength(1);
     expect(accounts[0].login).toBe("hon454");
+    expect(browserMock.browser.storage.local.set).toHaveBeenCalledWith({
+      settings: { version: 4, accountIds: ["acc-1"] },
+      "account:profile:acc-1": expect.objectContaining({
+        id: "acc-1",
+        login: "hon454",
+      }),
+      "account:auth:acc-1": expect.objectContaining({
+        token: "ghu_abc",
+      }),
+      "account:installations:acc-1": expect.objectContaining({
+        installations: [],
+      }),
+    });
   });
 
   it("removeAccount drops the matching id", async () => {
@@ -94,6 +120,9 @@ describe("accounts storage", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     await removeAccount("acc-1");
     await expect(listAccounts()).resolves.toEqual([]);
@@ -113,6 +142,9 @@ describe("accounts storage", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     await replaceInstallations("acc-1", [
       {
@@ -142,6 +174,9 @@ describe("accounts storage", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     await markAccountInvalidated("acc-1", "revoked");
     const [account] = await listAccounts();
@@ -152,23 +187,108 @@ describe("accounts storage", () => {
   it("rejects malformed account payloads at read time by resetting to empty", async () => {
     browserMock.browser.storage.local.get.mockResolvedValueOnce({
       settings: {
-        version: 2,
+        version: 4,
         accounts: [{ id: 123, login: 456 }],
       },
     });
     const { getSettings } = await import("../src/storage/accounts");
     await expect(getSettings()).resolves.toEqual({
-      version: 2,
-      accounts: [],
+      version: 4,
+      accountIds: [],
     });
   });
 });
 
 describe("resolveAccountForRepo", () => {
   async function seedAccounts(accounts: unknown[]) {
-    browserMock.browser.storage.local.get.mockResolvedValue({
-      settings: { version: 2, accounts },
-    });
+    const storage = Object.fromEntries(
+      accounts.flatMap((account) => {
+        const typed = account as {
+          id: string;
+          login: string;
+          avatarUrl: string | null;
+          token: string;
+          createdAt: number;
+          installations: unknown[];
+          installationsRefreshedAt: number;
+          invalidated: boolean;
+          invalidatedReason: string | null;
+          refreshToken: string | null;
+          expiresAt: number | null;
+          refreshTokenExpiresAt: number | null;
+        };
+        return [
+          [
+            `account:profile:${typed.id}`,
+            {
+              id: typed.id,
+              login: typed.login,
+              avatarUrl: typed.avatarUrl,
+              createdAt: typed.createdAt,
+            },
+          ],
+          [
+            `account:auth:${typed.id}`,
+            {
+              token: typed.token,
+              invalidated: typed.invalidated,
+              invalidatedReason: typed.invalidatedReason,
+              refreshToken: typed.refreshToken,
+              expiresAt: typed.expiresAt,
+              refreshTokenExpiresAt: typed.refreshTokenExpiresAt,
+            },
+          ],
+          [
+            `account:installations:${typed.id}`,
+            {
+              installations: typed.installations,
+              installationsRefreshedAt: typed.installationsRefreshedAt,
+            },
+          ],
+        ];
+      }),
+    );
+    browserMock.browser.storage.local.get.mockImplementation(
+      async (key?: string | string[] | Record<string, unknown>) => {
+        if (typeof key === "string") {
+          if (key === "settings") {
+            return {
+              settings: {
+                version: 4,
+                accountIds: accounts.map((account) => (account as { id: string }).id),
+              },
+            };
+          }
+          return key in storage ? { [key]: storage[key] } : {};
+        }
+        if (Array.isArray(key)) {
+          return Object.fromEntries(
+            key
+              .filter((entry) =>
+                entry === "settings" || entry in storage,
+              )
+              .map((entry) =>
+                entry === "settings"
+                  ? [
+                      "settings",
+                      {
+                        version: 4,
+                        accountIds: accounts.map((account) => (account as { id: string }).id),
+                      },
+                    ]
+                  : [entry, storage[entry]],
+              ),
+          );
+        }
+        return {
+          settings: {
+            version: 4,
+            accountIds: accounts.map((account) => (account as { id: string }).id),
+          },
+          ...storage,
+        };
+      },
+    );
   }
 
   function makeAccount(overrides: Partial<Record<string, unknown>> = {}) {
@@ -182,6 +302,9 @@ describe("resolveAccountForRepo", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
       ...overrides,
     };
   }

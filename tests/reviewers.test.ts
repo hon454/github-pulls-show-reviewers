@@ -6,8 +6,10 @@ import type * as PreferencesModule from "../src/storage/preferences";
 
 const fetchPullReviewerSummaryMock = vi.fn();
 const resolveAccountForRepoMock = vi.fn();
+const getAccountByIdMock = vi.fn();
 const markAccountInvalidatedMock = vi.fn();
 const getPreferencesMock = vi.fn();
+const runtimeSendMessageMock = vi.fn();
 
 vi.mock("../src/github/api", () => ({
   fetchPullReviewerSummary: fetchPullReviewerSummaryMock,
@@ -15,6 +17,7 @@ vi.mock("../src/github/api", () => ({
 
 vi.mock("../src/storage/accounts", () => ({
   resolveAccountForRepo: resolveAccountForRepoMock,
+  getAccountById: getAccountByIdMock,
   markAccountInvalidated: markAccountInvalidatedMock,
 }));
 
@@ -55,8 +58,10 @@ beforeEach(() => {
   vi.resetModules();
   fetchPullReviewerSummaryMock.mockReset();
   resolveAccountForRepoMock.mockReset();
+  getAccountByIdMock.mockReset();
   markAccountInvalidatedMock.mockReset();
   getPreferencesMock.mockReset();
+  runtimeSendMessageMock.mockReset();
   getPreferencesMock.mockResolvedValue({
     version: 1,
     showStateBadge: true,
@@ -73,6 +78,9 @@ beforeEach(() => {
         }),
         removeListener: vi.fn(),
       },
+    },
+    runtime: {
+      sendMessage: runtimeSendMessageMock,
     },
   });
 
@@ -93,11 +101,12 @@ afterEach(() => {
 });
 
 describe("bootReviewerListPage", () => {
-  it("invalidates the matched account when GitHub rejects it with 401", async () => {
+  it("marks the account revoked on 401 when there is no refresh token", async () => {
     resolveAccountForRepoMock.mockResolvedValue({
       id: "acc-1",
       login: "hon454",
       token: "ghu_abc",
+      refreshToken: null,
     });
     fetchPullReviewerSummaryMock.mockRejectedValue({ status: 401 });
 
@@ -108,6 +117,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
 
     expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
+    expect(runtimeSendMessageMock).not.toHaveBeenCalled();
   });
 
   it("rerenders on preferences change without refetching reviewer data", async () => {
@@ -182,5 +192,118 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
 
     expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes the access token on 401 and retries with the new token", async () => {
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+
+    resolveAccountForRepoMock
+      .mockResolvedValueOnce({
+        id: "acc-1",
+        login: "hon454",
+        token: "ghu_old",
+        refreshToken: "ghr_old",
+      });
+    getAccountByIdMock.mockResolvedValueOnce({
+      id: "acc-1",
+      login: "hon454",
+      token: "ghu_new",
+      refreshToken: "ghr_new",
+    });
+
+    fetchPullReviewerSummaryMock
+      .mockRejectedValueOnce({ status: 401 })
+      .mockResolvedValueOnce(summary);
+
+    runtimeSendMessageMock.mockResolvedValueOnce({ ok: true, token: "ghu_new" });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(runtimeSendMessageMock).toHaveBeenCalledWith({
+      type: "refreshAccessToken",
+      accountId: "acc-1",
+    });
+    expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(2);
+    expect(fetchPullReviewerSummaryMock.mock.calls[1][0]).toMatchObject({
+      githubToken: "ghu_new",
+    });
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate when the BG refresh returns terminal=true (BG already marked the account)", async () => {
+    resolveAccountForRepoMock.mockResolvedValue({
+      id: "acc-1",
+      login: "hon454",
+      token: "ghu_old",
+      refreshToken: "ghr_old",
+    });
+    fetchPullReviewerSummaryMock.mockRejectedValue({ status: 401 });
+    runtimeSendMessageMock.mockResolvedValueOnce({ ok: false, terminal: true });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+  });
+
+  it("does not invalidate on a transient refresh failure", async () => {
+    resolveAccountForRepoMock.mockResolvedValue({
+      id: "acc-1",
+      login: "hon454",
+      token: "ghu_old",
+      refreshToken: "ghr_old",
+    });
+    fetchPullReviewerSummaryMock.mockRejectedValue({ status: 401 });
+    runtimeSendMessageMock.mockResolvedValueOnce({ ok: false, terminal: false });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+  });
+
+  it("marks the account revoked when the retry after refresh also returns 401", async () => {
+    resolveAccountForRepoMock
+      .mockResolvedValueOnce({
+        id: "acc-1",
+        login: "hon454",
+        token: "ghu_old",
+        refreshToken: "ghr_old",
+      });
+    getAccountByIdMock.mockResolvedValueOnce({
+      id: "acc-1",
+      login: "hon454",
+      token: "ghu_new",
+      refreshToken: "ghr_new",
+    });
+    fetchPullReviewerSummaryMock
+      .mockRejectedValueOnce({ status: 401 })
+      .mockRejectedValueOnce({ status: 401 });
+    runtimeSendMessageMock.mockResolvedValueOnce({ ok: true, token: "ghu_new" });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
   });
 });

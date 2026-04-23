@@ -10,6 +10,8 @@ type AccountsModuleType = typeof AccountsModule;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const listAccountsMock = vi.fn<() => Promise<Account[]>>(async () => []);
+const getAccountByIdMock = vi.fn<() => Promise<Account | null>>(async () => null);
+const replaceInstallationsMock = vi.fn(async () => {});
 
 const getPreferencesMock = vi.fn(async () => ({
   version: 1 as const,
@@ -30,7 +32,8 @@ vi.mock("../src/storage/accounts", async (importActual) => {
     listAccounts: listAccountsMock,
     addAccount: vi.fn(async () => {}),
     removeAccount: vi.fn(async () => {}),
-    replaceInstallations: vi.fn(async () => {}),
+    replaceInstallations: replaceInstallationsMock,
+    getAccountById: getAccountByIdMock,
     resolveAccountForRepo: vi.fn(async () => null),
   };
 });
@@ -95,13 +98,21 @@ beforeEach(() => {
   // auth mock call history leaks between tests unless cleared here.
   vi.clearAllMocks();
   listAccountsMock.mockReset();
+  getAccountByIdMock.mockReset();
+  replaceInstallationsMock.mockReset();
   listAccountsMock.mockResolvedValue([]);
+  getAccountByIdMock.mockResolvedValue(null);
   getPreferencesMock.mockClear();
   updatePreferencesMock.mockClear();
   getPreferencesMock.mockResolvedValue({
     version: 1,
     showStateBadge: true,
     showReviewerName: false,
+  });
+  vi.stubGlobal("browser", {
+    runtime: {
+      sendMessage: vi.fn(),
+    },
   });
 });
 
@@ -149,12 +160,96 @@ describe("OptionsPage", () => {
         installationsRefreshedAt: 1,
         invalidated: false,
         invalidatedReason: null,
+        refreshToken: null,
+        expiresAt: null,
+        refreshTokenExpiresAt: null,
       },
     ]);
     await renderOptionsPage();
     expect(
       document.querySelector('[data-testid="account-card-hon454"]'),
     ).not.toBeNull();
+  });
+
+  it("refreshes installations after a 401 by requesting a new access token", async () => {
+    const account: Account = {
+      id: "acc",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_old",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: "ghr_old",
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    };
+    listAccountsMock.mockResolvedValue([account]);
+    getAccountByIdMock.mockResolvedValue({
+      ...account,
+      token: "ghu_new",
+      refreshToken: "ghr_new",
+    });
+
+    await renderOptionsPage();
+
+    const auth = await import("../src/github/auth");
+    const fetchUserInstallations =
+      auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>;
+    const fetchInstallationRepositories =
+      auth.fetchInstallationRepositories as unknown as ReturnType<typeof vi.fn>;
+
+    fetchUserInstallations
+      .mockRejectedValueOnce(new Error("GET /user/installations failed with status 401."))
+      .mockResolvedValueOnce([
+        {
+          id: 42,
+          account: { login: "cinev", type: "Organization", avatarUrl: null },
+          repositorySelection: "selected",
+        },
+      ]);
+    fetchInstallationRepositories.mockResolvedValueOnce(["cinev/shotloom"]);
+
+    const sendMessageMock = vi.fn().mockResolvedValue({ ok: true, token: "ghu_new" });
+    vi.stubGlobal("browser", {
+      runtime: {
+        sendMessage: sendMessageMock,
+      },
+    });
+
+    const refreshButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.trim() === "Refresh installations");
+    expect(refreshButton).toBeDefined();
+
+    await act(async () => {
+      refreshButton!.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(sendMessageMock).toHaveBeenCalledWith({
+      type: "refreshAccessToken",
+      accountId: "acc",
+    });
+    expect(fetchUserInstallations).toHaveBeenCalledTimes(2);
+    expect(fetchUserInstallations.mock.calls[1][0]).toMatchObject({
+      token: "ghu_new",
+    });
+    expect(fetchInstallationRepositories).toHaveBeenCalledWith({
+      token: "ghu_new",
+      installationId: 42,
+    });
+    expect(replaceInstallationsMock).toHaveBeenCalledWith("acc", [
+      {
+        id: 42,
+        account: { login: "cinev", type: "Organization", avatarUrl: null },
+        repositorySelection: "selected",
+        repoFullNames: ["cinev/shotloom"],
+      },
+    ]);
   });
 
   it("shows a configuration warning instead of blanking the page when production config is missing", async () => {

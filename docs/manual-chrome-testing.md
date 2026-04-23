@@ -122,6 +122,27 @@ This extension is intentionally narrow. Manual verification should stay focused 
 4. Open the options page; confirm the account card shows the invalidated
    styling and a **Sign in again** button.
 
+### Expired access token with valid refresh token
+
+1. Sign in with a private-repository account and confirm reviewer chips render.
+2. Open `chrome.storage.local` in the extension's service worker DevTools.
+3. Replace the stored `account:auth:<id>.token` value with a known-bad token
+   while keeping `refreshToken` intact.
+4. Reload the private PR list.
+5. Confirm reviewer chips still render and the extension performs exactly one
+   refresh-token exchange against `https://github.com/login/oauth/access_token`.
+6. Open the options page and click **Refresh installations**.
+7. Confirm the installation refresh also succeeds without requiring a fresh
+   sign-in.
+
+### Expired access token with invalid refresh token
+
+1. Starting from the previous scenario, also corrupt
+   `account:auth:<id>.refreshToken`.
+2. Reload the private PR list.
+3. Confirm the account is marked invalidated with
+   `invalidatedReason: "refresh_failed"` and the UI prompts for sign-in again.
+
 ### Unauthenticated rate limit
 
 1. Sign out of every account in the options page.

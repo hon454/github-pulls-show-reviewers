@@ -1,5 +1,6 @@
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
+import { retryWithAccountRefresh } from "../../auth/account-token-refresh";
 import {
   buildReviewerCacheKey,
   clearReviewerCache,
@@ -9,7 +10,7 @@ import {
 import { fetchPullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
-import { markAccountInvalidated, resolveAccountForRepo, type Account } from "../../storage/accounts";
+import { resolveAccountForRepo, type Account } from "../../storage/accounts";
 import {
   DEFAULT_PREFERENCES,
   getPreferences,
@@ -96,22 +97,16 @@ export function bootReviewerListPage(
 
     const request = (async () => {
       const account = await resolveAccountForRepo(route.owner, route.repo);
-      const githubToken = account?.token ?? null;
 
       try {
-        const summary = await fetchPullReviewerSummary({
+        const summary = await fetchWithRefresh({
+          account,
           owner: route.owner,
           repo: route.repo,
           pullNumber,
-          githubToken,
         });
         setCachedReviewerSummary(cacheKey, summary);
       } catch (error) {
-        const invalidationReason =
-          account == null ? null : getAccountInvalidationReason(error);
-        if (account != null && invalidationReason != null) {
-          await markAccountInvalidated(account.id, invalidationReason);
-        }
         mount.replaceChildren();
         mount.removeAttribute("title");
         options?.onRowFailure?.({
@@ -206,28 +201,22 @@ export function bootReviewerListPage(
   });
 }
 
-function getAccountInvalidationReason(
-  error: unknown,
-): "revoked" | "expired" | "unknown" | null {
-  return extractStatus(error) === 401 ? "revoked" : null;
-}
+async function fetchWithRefresh(args: {
+  account: Account | null;
+  owner: string;
+  repo: string;
+  pullNumber: string;
+}): Promise<Awaited<ReturnType<typeof fetchPullReviewerSummary>>> {
+  const { account, owner, repo, pullNumber } = args;
 
-function extractStatus(error: unknown): number | null {
-  if (error && typeof error === "object" && "status" in error) {
-    const value = (error as { status: unknown }).status;
-    return typeof value === "number" ? value : null;
-  }
-
-  if (
-    error &&
-    typeof error === "object" &&
-    "failures" in error &&
-    Array.isArray((error as { failures: unknown }).failures)
-  ) {
-    const first = (error as { failures: Array<{ status?: number }> })
-      .failures[0];
-    return typeof first?.status === "number" ? first.status : null;
-  }
-
-  return null;
+  return retryWithAccountRefresh({
+    account,
+    execute: async (token) =>
+      fetchPullReviewerSummary({
+      owner,
+      repo,
+      pullNumber,
+      githubToken: token,
+    }),
+  });
 }

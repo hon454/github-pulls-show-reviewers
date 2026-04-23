@@ -61,7 +61,32 @@ describe("pollForAccessToken", () => {
       clientId: "Iv1.test",
       deviceCode: "abc",
     });
-    expect(result).toEqual({ status: "success", accessToken: "ghu_exampletoken" });
+    expect(result).toEqual({
+      status: "success",
+      accessToken: "ghu_exampletoken",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+  });
+
+  it("captures refresh fields and computes absolute expiry timestamps when present", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-23T00:00:00.000Z"));
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(fixture("refresh-token-success.json")),
+    );
+    const result = await pollForAccessToken({
+      clientId: "Iv1.test",
+      deviceCode: "abc",
+    });
+    expect(result).toEqual({
+      status: "success",
+      accessToken: "ghu_newaccess",
+      refreshToken: "ghr_newrefresh",
+      expiresAt: Date.UTC(2026, 3, 23, 0, 0, 0) + 28_800_000,
+      refreshTokenExpiresAt: Date.UTC(2026, 3, 23, 0, 0, 0) + 15_897_600_000,
+    });
   });
 
   it("returns a pending status when authorization_pending", async () => {

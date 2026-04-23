@@ -1,5 +1,6 @@
 import { type CSSProperties } from "react";
 
+import { retryWithAccountRefresh } from "../../../src/auth/account-token-refresh";
 import {
   fetchInstallationRepositories,
   fetchUserInstallations,
@@ -19,23 +20,30 @@ type Props = {
 
 export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
   async function handleRefresh(account: Account) {
-    const apiInstallations = await fetchUserInstallations({
-      token: account.token,
+    const installations = await retryWithAccountRefresh({
+      account,
+      execute: async (token) => {
+        if (token == null) {
+          throw new Error("Account token is required to refresh installations.");
+        }
+
+        const apiInstallations = await fetchUserInstallations({ token });
+        return Promise.all(
+          apiInstallations.map(async (installation): Promise<Installation> => ({
+            id: installation.id,
+            account: installation.account,
+            repositorySelection: installation.repositorySelection,
+            repoFullNames:
+              installation.repositorySelection === "selected"
+                ? await fetchInstallationRepositories({
+                    token,
+                    installationId: installation.id,
+                  })
+                : null,
+          })),
+        );
+      },
     });
-    const installations: Installation[] = await Promise.all(
-      apiInstallations.map(async (installation) => ({
-        id: installation.id,
-        account: installation.account,
-        repositorySelection: installation.repositorySelection,
-        repoFullNames:
-          installation.repositorySelection === "selected"
-            ? await fetchInstallationRepositories({
-                token: account.token,
-                installationId: installation.id,
-              })
-            : null,
-      })),
-    );
     await replaceInstallations(account.id, installations);
     await onChange();
   }
