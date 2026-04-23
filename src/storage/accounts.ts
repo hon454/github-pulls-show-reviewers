@@ -380,6 +380,9 @@ export async function replaceInstallations(
   const result = await browser.storage.local.get(accountInstallationsKey(accountId));
   const parsed = accountInstallationsSchema.safeParse(result[accountInstallationsKey(accountId)]);
   if (!parsed.success) {
+    console.warn(
+      `[accounts] replaceInstallations skipped for ${accountId}: stored installations record is missing or malformed.`,
+    );
     return;
   }
 
@@ -398,6 +401,9 @@ export async function markAccountInvalidated(
   const result = await browser.storage.local.get(accountAuthKey(accountId));
   const parsed = accountAuthSchema.safeParse(result[accountAuthKey(accountId)]);
   if (!parsed.success) {
+    console.warn(
+      `[accounts] markAccountInvalidated skipped for ${accountId}: stored auth record is missing or malformed.`,
+    );
     return;
   }
 
@@ -422,6 +428,9 @@ export async function updateAccountTokens(
   const result = await browser.storage.local.get(accountAuthKey(accountId));
   const parsed = accountAuthSchema.safeParse(result[accountAuthKey(accountId)]);
   if (!parsed.success) {
+    console.warn(
+      `[accounts] updateAccountTokens skipped for ${accountId}: stored auth record is missing or malformed.`,
+    );
     return;
   }
 
