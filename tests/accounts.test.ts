@@ -184,6 +184,67 @@ describe("accounts storage", () => {
     expect(account.invalidatedReason).toBe("revoked");
   });
 
+  it("markAccountInvalidated warns and skips when the stored auth record is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { markAccountInvalidated } = await import(
+      "../src/storage/accounts"
+    );
+    await markAccountInvalidated("missing-acc", "revoked");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("missing-acc");
+    expect(warnSpy.mock.calls[0][0]).toContain("markAccountInvalidated");
+    // Nothing should land in storage for a missing record.
+    const stored = await browser.storage.local.get();
+    expect(Object.keys(stored)).not.toContain("account:auth:missing-acc");
+  });
+
+  it("markAccountInvalidated warns and skips when the stored auth record is malformed", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await browser.storage.local.set({
+      "account:auth:bad-acc": {
+        token: 123,
+      },
+    });
+    const { markAccountInvalidated } = await import(
+      "../src/storage/accounts"
+    );
+    await markAccountInvalidated("bad-acc", "revoked");
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("bad-acc");
+    expect(warnSpy.mock.calls[0][0]).toContain("markAccountInvalidated");
+    const stored = await browser.storage.local.get();
+    expect(stored["account:auth:bad-acc"]).toEqual({
+      token: 123,
+    });
+  });
+
+  it("updateAccountTokens warns and skips when the stored auth record is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { updateAccountTokens } = await import("../src/storage/accounts");
+    await updateAccountTokens("missing-acc", {
+      token: "ghu_new",
+      refreshToken: "ghr_new",
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("updateAccountTokens");
+    const stored = await browser.storage.local.get();
+    expect(Object.keys(stored)).not.toContain("account:auth:missing-acc");
+  });
+
+  it("replaceInstallations warns and skips when the stored installations record is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { replaceInstallations } = await import("../src/storage/accounts");
+    await replaceInstallations("missing-acc", []);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][0]).toContain("replaceInstallations");
+    const stored = await browser.storage.local.get();
+    expect(Object.keys(stored)).not.toContain(
+      "account:installations:missing-acc",
+    );
+  });
+
   it("upsertAccountByLogin replaces an existing invalidated account when login matches", async () => {
     const { addAccount, upsertAccountByLogin, listAccounts } = await import(
       "../src/storage/accounts"
