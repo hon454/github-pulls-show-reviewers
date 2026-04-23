@@ -69,6 +69,8 @@ export function ensureReviewerStyles(): void {
     .ghpsr-avatar--border-requested         { --ghpsr-border-color: #0969da; }
     .ghpsr-avatar--border-approved          { --ghpsr-border-color: #2ea043; }
     .ghpsr-avatar--border-changes-requested { --ghpsr-border-color: #cf222e; }
+    .ghpsr-avatar--border-commented         { --ghpsr-border-color: #6e7781; }
+    .ghpsr-avatar--border-dismissed         { --ghpsr-border-color: #8250df; }
 
     .ghpsr-badge {
       position: absolute;
@@ -90,6 +92,7 @@ export function ensureReviewerStyles(): void {
     .ghpsr-badge--changes-requested { --ghpsr-badge-color: #cf222e; }
     .ghpsr-badge--commented         { --ghpsr-badge-color: #6e7781; }
     .ghpsr-badge--dismissed         { --ghpsr-badge-color: #8250df; }
+    .ghpsr-badge--refresh           { --ghpsr-badge-color: #0969da; }
 
     .ghpsr-pill {
       display: inline-flex;
@@ -119,6 +122,8 @@ export function ensureReviewerStyles(): void {
     .ghpsr-pill--requested         { --ghpsr-pill-bg: var(--bgColor-accent-muted,  #ddf4ff); --ghpsr-pill-fg: var(--fgColor-accent,  #0969da); }
     .ghpsr-pill--approved          { --ghpsr-pill-bg: var(--bgColor-success-muted, #dafbe1); --ghpsr-pill-fg: var(--fgColor-success, #1a7f37); }
     .ghpsr-pill--changes-requested { --ghpsr-pill-bg: var(--bgColor-danger-muted,  #ffebe9); --ghpsr-pill-fg: var(--fgColor-danger,  #cf222e); }
+    .ghpsr-pill--commented         { --ghpsr-pill-bg: var(--bgColor-neutral-muted, #eaeef2); --ghpsr-pill-fg: var(--fgColor-muted,    #57606a); }
+    .ghpsr-pill--dismissed         { --ghpsr-pill-bg: var(--bgColor-done-muted,    #fbefff); --ghpsr-pill-fg: var(--fgColor-done,     #8250df); }
 
     .ghpsr-chip {
       display: inline-flex;
