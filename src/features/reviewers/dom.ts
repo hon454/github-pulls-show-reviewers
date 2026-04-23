@@ -5,6 +5,7 @@ import { githubSelectors } from "../../github/selectors";
 
 const ROOT_ATTRIBUTE = "data-ghpsr-root";
 const STYLE_ATTRIBUTE = "data-ghpsr-style";
+const RENDERED_ATTRIBUTE = "data-ghpsr-rendered";
 
 type RingTone =
   | "requested"
@@ -211,6 +212,11 @@ export function renderLoading(mount: HTMLElement): void {
   node.textContent = "Loading reviewers...";
   mount.replaceChildren(node);
   mount.removeAttribute("title");
+  mount.removeAttribute(RENDERED_ATTRIBUTE);
+}
+
+export function mountHasRenderedChips(mount: HTMLElement): boolean {
+  return mount.getAttribute(RENDERED_ATTRIBUTE) === "1";
 }
 
 export function renderReviewers(
@@ -221,6 +227,7 @@ export function renderReviewers(
   if (entries.length === 0) {
     mount.replaceChildren();
     mount.removeAttribute("title");
+    mount.removeAttribute(RENDERED_ATTRIBUTE);
     return;
   }
 
@@ -238,6 +245,7 @@ export function renderReviewers(
   }
   mount.replaceChildren(...nodes);
   mount.removeAttribute("title");
+  mount.setAttribute(RENDERED_ATTRIBUTE, "1");
 }
 
 function createTeamNode(entry: Extract<ReviewerEntry, { kind: "team" }>): HTMLElement {

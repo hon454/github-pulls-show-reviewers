@@ -23,6 +23,7 @@ import {
   ensureReviewerMount,
   ensureReviewerStyles,
   extractPullNumber,
+  mountHasRenderedChips,
   renderLoading,
   renderReviewers,
 } from "./dom";
@@ -98,7 +99,16 @@ export function bootReviewerListPage(
 
     const existingRequest = inflightRequests.get(cacheKey);
     if (existingRequest) {
-      renderLoading(mount);
+      // Option (a): if another caller already cached the summary for this
+      // key, render it immediately instead of flashing the loading text.
+      // This also covers the race where the cache has just been set but the
+      // inflight entry has not been deleted yet.
+      const existingSummary = getCachedReviewerSummary(cacheKey);
+      if (existingSummary) {
+        await renderSummaryForMount(mount, route, existingSummary);
+      } else if (!mountHasRenderedChips(mount)) {
+        renderLoading(mount);
+      }
       try {
         await existingRequest.promise;
       } catch {
@@ -108,7 +118,9 @@ export function bootReviewerListPage(
       return;
     }
 
-    renderLoading(mount);
+    if (!mountHasRenderedChips(mount)) {
+      renderLoading(mount);
+    }
 
     const controller = new AbortController();
     const request: InflightRequest = {

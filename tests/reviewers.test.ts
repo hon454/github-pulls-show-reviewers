@@ -278,6 +278,39 @@ describe("bootReviewerListPage", () => {
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 
+  it("does not flash loading text on a cache-hit re-render", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+
+    // Pre-seed the cache before bootReviewerListPage runs so processRow hits
+    // the cache branch on the very first call.
+    const { buildReviewerCacheKey, setCachedReviewerSummary, clearReviewerCache } =
+      await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      buildReviewerCacheKey("cinev", "shotloom", "42"),
+      summary,
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(fetchPullReviewerSummaryMock).not.toHaveBeenCalled();
+    // The row should render reviewer chips straight from cache; no loading text.
+    expect(document.body.textContent).not.toContain("Loading reviewers");
+    expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
+
+    clearReviewerCache();
+  });
+
   it("aborts in-flight summary fetches on storage (accounts) change and drops the late result", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
