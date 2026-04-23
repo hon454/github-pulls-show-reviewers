@@ -104,6 +104,32 @@ describe("selectAccountsDueForRefresh", () => {
 
     expect(selectAccountsDueForRefresh(accounts, now, threshold)).toEqual([]);
   });
+
+  it("includes accounts where expiresAt equals now", () => {
+    const accounts: Account[] = [
+      makeAccount({
+        id: "expires-at-now",
+        expiresAt: now,
+        refreshTokenExpiresAt: now + 7 * 24 * 60 * 60 * 1_000,
+      }),
+    ];
+
+    expect(selectAccountsDueForRefresh(accounts, now, threshold)).toEqual([
+      "expires-at-now",
+    ]);
+  });
+
+  it("skips accounts where expiresAt - now equals the threshold exactly", () => {
+    const accounts: Account[] = [
+      makeAccount({
+        id: "exact-threshold",
+        expiresAt: now + threshold,
+        refreshTokenExpiresAt: now + 7 * 24 * 60 * 60 * 1_000,
+      }),
+    ];
+
+    expect(selectAccountsDueForRefresh(accounts, now, threshold)).toEqual([]);
+  });
 });
 
 describe("selectAccountsWithExpiredRefreshToken", () => {
@@ -132,6 +158,19 @@ describe("selectAccountsWithExpiredRefreshToken", () => {
     ];
 
     expect(selectAccountsWithExpiredRefreshToken(accounts, now)).toEqual([]);
+  });
+
+  it("includes accounts where refreshTokenExpiresAt equals now", () => {
+    const accounts: Account[] = [
+      makeAccount({
+        id: "refresh-at-now",
+        refreshTokenExpiresAt: now,
+      }),
+    ];
+
+    expect(selectAccountsWithExpiredRefreshToken(accounts, now)).toEqual([
+      "refresh-at-now",
+    ]);
   });
 });
 
