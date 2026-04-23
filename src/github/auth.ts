@@ -82,6 +82,9 @@ const accessTokenResponseSchema = z.union([
     access_token: z.string(),
     token_type: z.string(),
     scope: z.string().optional(),
+    expires_in: z.number().optional(),
+    refresh_token: z.string().optional(),
+    refresh_token_expires_in: z.number().optional(),
   }),
   z.object({
     error: z.string(),
@@ -91,7 +94,13 @@ const accessTokenResponseSchema = z.union([
 ]);
 
 export type AccessTokenPollResult =
-  | { status: "success"; accessToken: string }
+  | {
+      status: "success";
+      accessToken: string;
+      refreshToken: string | null;
+      expiresAt: number | null;
+      refreshTokenExpiresAt: number | null;
+    }
   | { status: "pending" }
   | { status: "slow_down"; interval: number };
 
@@ -137,7 +146,20 @@ export async function pollForAccessToken(input: {
   }
 
   if ("access_token" in payload.data) {
-    return { status: "success", accessToken: payload.data.access_token };
+    const now = Date.now();
+    return {
+      status: "success",
+      accessToken: payload.data.access_token,
+      refreshToken: payload.data.refresh_token ?? null,
+      expiresAt:
+        typeof payload.data.expires_in === "number"
+          ? now + payload.data.expires_in * 1000
+          : null,
+      refreshTokenExpiresAt:
+        typeof payload.data.refresh_token_expires_in === "number"
+          ? now + payload.data.refresh_token_expires_in * 1000
+          : null,
+    };
   }
 
   if (payload.data.error === "authorization_pending") {
