@@ -1,14 +1,25 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as GithubApiModule from "../src/github/api";
+import { CANCELED_REQUEST_TTL_MS } from "../src/background/reviewer-fetch";
 
-const refreshAccountTokenMock = vi.fn();
-const fetchPullReviewerSummaryMock = vi.fn();
-const getAccountByIdMock = vi.fn();
-const markAccountInvalidatedMock = vi.fn();
-const createRefreshCoordinatorMock = vi.fn(() => ({
+const {
+  refreshAccountTokenMock,
+  fetchPullReviewerSummaryMock,
+  getAccountByIdMock,
+  markAccountInvalidatedMock,
+  createRefreshCoordinatorMock,
+  getGitHubAppConfigMock,
+} = vi.hoisted(() => ({
+  refreshAccountTokenMock: vi.fn(),
+  fetchPullReviewerSummaryMock: vi.fn(),
+  getAccountByIdMock: vi.fn(),
+  markAccountInvalidatedMock: vi.fn(),
+  createRefreshCoordinatorMock: vi.fn(),
+  getGitHubAppConfigMock: vi.fn(() => ({ clientId: "test-client-id" })),
+}));
+createRefreshCoordinatorMock.mockImplementation(() => ({
   refreshAccountToken: refreshAccountTokenMock,
 }));
-const getGitHubAppConfigMock = vi.fn(() => ({ clientId: "test-client-id" }));
 
 vi.mock("../src/auth/refresh-coordinator", () => ({
   createRefreshCoordinator: createRefreshCoordinatorMock,
@@ -397,10 +408,14 @@ describe("background runtime.onMessage handler", () => {
     expect(signal.aborted).toBe(true);
   });
 
-  it("prunes TTL-expired queued cancels when a later cancel arrives", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      const baseTime = 1_700_000_000_000;
+  describe("prunes TTL-expired queued cancels", () => {
+    const baseTime = 1_700_000_000_000;
+    const pastTtl = baseTime + CANCELED_REQUEST_TTL_MS + 1_000;
+
+    async function setupTtlScenario(): Promise<{
+      listener: MessageListener;
+      getCapturedSignal: () => AbortSignal;
+    }> {
       vi.setSystemTime(new Date(baseTime));
       const listener = await bootBackground();
       getAccountByIdMock.mockResolvedValue({
@@ -423,92 +438,65 @@ describe("background runtime.onMessage handler", () => {
         () => {},
       );
 
-      // Advance past the 60s TTL. A subsequent cancel must prune `req-stale`.
-      vi.setSystemTime(new Date(baseTime + 61_000));
+      return {
+        listener,
+        getCapturedSignal: () => {
+          if (capturedSignal == null) {
+            throw new Error("expected background fetch signal");
+          }
+          return capturedSignal;
+        },
+      };
+    }
+
+    function dispatchStaleFetch(listener: MessageListener): void {
+      void listener(
+        {
+          type: "fetchPullReviewerSummary",
+          requestId: "req-stale",
+          owner: "cinev",
+          repo: "shotloom",
+          pullNumber: "42",
+          accountId: "acc-1",
+        },
+        { id: SELF_RUNTIME_ID },
+        () => {},
+      );
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("prunes when a later cancel arrives past the TTL", async () => {
+      const { listener, getCapturedSignal } = await setupTtlScenario();
+
+      vi.setSystemTime(new Date(pastTtl));
       listener(
         { type: "cancelPullReviewerSummary", requestId: "req-other" },
         { id: SELF_RUNTIME_ID },
         () => {},
       );
 
-      void listener(
-        {
-          type: "fetchPullReviewerSummary",
-          requestId: "req-stale",
-          owner: "cinev",
-          repo: "shotloom",
-          pullNumber: "42",
-          accountId: "acc-1",
-        },
-        { id: SELF_RUNTIME_ID },
-        () => {},
-      );
+      dispatchStaleFetch(listener);
 
       await flushMicrotasks();
-      expect(capturedSignal).not.toBeNull();
-      const signal = capturedSignal as AbortSignal | null;
-      if (signal == null) {
-        throw new Error("expected background fetch signal");
-      }
-      expect(signal.aborted).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+      expect(getCapturedSignal().aborted).toBe(false);
+    });
 
-  it("prunes TTL-expired queued cancels on fetch entry even without another cancel", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      const baseTime = 1_700_000_000_000;
-      vi.setSystemTime(new Date(baseTime));
-      const listener = await bootBackground();
-      getAccountByIdMock.mockResolvedValue({
-        id: "acc-1",
-        token: "ghu_old",
-        refreshToken: "ghr_old",
-      });
+    it("prunes on fetch entry even without another cancel", async () => {
+      const { listener, getCapturedSignal } = await setupTtlScenario();
 
-      let capturedSignal: AbortSignal | null = null;
-      fetchPullReviewerSummaryMock.mockImplementationOnce(
-        (input: { signal?: AbortSignal }) => {
-          capturedSignal = input.signal ?? null;
-          return new Promise(() => {});
-        },
-      );
-
-      listener(
-        { type: "cancelPullReviewerSummary", requestId: "req-stale" },
-        { id: SELF_RUNTIME_ID },
-        () => {},
-      );
-
-      // Advance past the 60s TTL without another cancel. The fetch itself
-      // must prune the stale entry and run normally.
-      vi.setSystemTime(new Date(baseTime + 61_000));
-
-      void listener(
-        {
-          type: "fetchPullReviewerSummary",
-          requestId: "req-stale",
-          owner: "cinev",
-          repo: "shotloom",
-          pullNumber: "42",
-          accountId: "acc-1",
-        },
-        { id: SELF_RUNTIME_ID },
-        () => {},
-      );
+      vi.setSystemTime(new Date(pastTtl));
+      dispatchStaleFetch(listener);
 
       await flushMicrotasks();
-      expect(capturedSignal).not.toBeNull();
-      const signal = capturedSignal as AbortSignal | null;
-      if (signal == null) {
-        throw new Error("expected background fetch signal");
-      }
-      expect(signal.aborted).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
+      expect(getCapturedSignal().aborted).toBe(false);
+    });
   });
 
   it("consumes a queued cancel when it arrives before the reviewer fetch message", async () => {

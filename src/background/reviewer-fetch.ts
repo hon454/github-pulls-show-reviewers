@@ -7,6 +7,8 @@ import {
   type FetchPullReviewerSummaryResponse,
 } from "../runtime/reviewer-fetch";
 
+export const CANCELED_REQUEST_TTL_MS = 60_000;
+
 export type ReviewerFetchService = {
   cancelRequest(requestId: string): void;
   handleFetchMessage(
@@ -22,9 +24,8 @@ export function createReviewerFetchService(input: {
   const canceledRequestIds = new Map<string, number>();
 
   function pruneCanceledRequestIds(now: number): void {
-    const maxAgeMs = 60_000;
     for (const [requestId, createdAt] of canceledRequestIds) {
-      if (now - createdAt > maxAgeMs) {
+      if (now - createdAt > CANCELED_REQUEST_TTL_MS) {
         canceledRequestIds.delete(requestId);
       }
     }
@@ -45,6 +46,8 @@ export function createReviewerFetchService(input: {
     async handleFetchMessage(
       message: FetchPullReviewerSummaryMessage,
     ): Promise<FetchPullReviewerSummaryResponse> {
+      // Prune on both cancel and fetch entry so the TTL applies symmetrically
+      // even when a cancel's matching fetch never arrives.
       pruneCanceledRequestIds(Date.now());
 
       const controller = new AbortController();
