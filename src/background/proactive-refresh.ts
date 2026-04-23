@@ -11,6 +11,22 @@ export type ProactiveRefreshService = {
   handleAlarmFire(alarmName: string): Promise<void>;
 };
 
+/**
+ * Select account ids whose access token should be proactively refreshed.
+ *
+ * Rules:
+ * - Skip invalidated accounts.
+ * - Skip accounts without a refreshToken (nothing to refresh with).
+ * - Skip accounts without an expiresAt (legacy tokens with no known
+ *   expiry, treated as long-lived).
+ * - Skip accounts whose refreshTokenExpiresAt is already in the past;
+ *   those are terminal and are handled by
+ *   selectAccountsWithExpiredRefreshToken instead.
+ * - Already-expired access tokens (expiresAt <= now) are INTENTIONALLY
+ *   included. The reactive 401 path might not fire soon enough — e.g.
+ *   the user closed every GitHub tab — so the proactive alarm still
+ *   tries to pre-warm the token.
+ */
 export function selectAccountsDueForRefresh(
   accounts: Account[],
   now: number,
@@ -31,6 +47,12 @@ export function selectAccountsDueForRefresh(
   return dueIds;
 }
 
+/**
+ * Select account ids whose refresh token itself has already expired.
+ * These cannot be recovered without a fresh OAuth device-flow login,
+ * so the proactive path marks them invalidated immediately rather than
+ * burning a network call guaranteed to fail.
+ */
 export function selectAccountsWithExpiredRefreshToken(
   accounts: Account[],
   now: number,
