@@ -53,6 +53,8 @@ pnpm verify:release
 7. Run `pnpm zip` after the checks above are green and the package is ready for inspection or submission.
 8. Manually load `.output/chrome-mv3` in Chrome and confirm the options page never renders as a blank white screen; if the GitHub App build config is missing, it must show an explicit configuration warning instead.
 
+To build or zip locally with the same GitHub App environment the release workflow uses, run `pnpm build:release` or `pnpm zip:release`. Both wrap the regular `pnpm build` / `pnpm zip` commands and source the repository's GitHub Actions `vars` via [scripts/load-github-app-env.sh](../scripts/load-github-app-env.sh), so a maintainer no longer needs to keep a personal `.env.local` with the production client ID. The script relies on `gh` being authenticated for this repository.
+
 Expected release gate behavior:
 
 - `ci.yml` currently runs `pnpm typecheck` on pushes to `main` and pull requests.
