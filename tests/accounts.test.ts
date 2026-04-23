@@ -184,6 +184,143 @@ describe("accounts storage", () => {
     expect(account.invalidatedReason).toBe("revoked");
   });
 
+  it("upsertAccountByLogin replaces an existing invalidated account when login matches", async () => {
+    const { addAccount, upsertAccountByLogin, listAccounts } = await import(
+      "../src/storage/accounts"
+    );
+
+    await addAccount({
+      id: "acc-original",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_old",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: true,
+      invalidatedReason: "revoked",
+      refreshToken: "ghr_old",
+      expiresAt: 100,
+      refreshTokenExpiresAt: 200,
+    });
+
+    const result = await upsertAccountByLogin({
+      login: "hon454",
+      avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      token: "ghu_new",
+      refreshToken: "ghr_new",
+      expiresAt: 999,
+      refreshTokenExpiresAt: 9999,
+      installations: [
+        {
+          id: 42,
+          account: { login: "hon454", type: "User", avatarUrl: null },
+          repositorySelection: "all",
+          repoFullNames: null,
+        },
+      ],
+      newAccountId: "acc-should-be-ignored",
+      now: 500,
+    });
+
+    // Same id + same createdAt; token/refresh refreshed; invalidated cleared.
+    expect(result.id).toBe("acc-original");
+    expect(result.createdAt).toBe(1);
+    expect(result.token).toBe("ghu_new");
+    expect(result.refreshToken).toBe("ghr_new");
+    expect(result.invalidated).toBe(false);
+    expect(result.invalidatedReason).toBeNull();
+    expect(result.installations).toHaveLength(1);
+    expect(result.installationsRefreshedAt).toBe(500);
+
+    const accounts = await listAccounts();
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0].id).toBe("acc-original");
+  });
+
+  it("upsertAccountByLogin is case-insensitive on login", async () => {
+    const { addAccount, upsertAccountByLogin, listAccounts } = await import(
+      "../src/storage/accounts"
+    );
+
+    await addAccount({
+      id: "acc-mixed",
+      login: "Hon454",
+      avatarUrl: null,
+      token: "ghu_old",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+
+    const result = await upsertAccountByLogin({
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_new",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+      installations: [],
+      newAccountId: "acc-should-be-ignored",
+      now: 500,
+    });
+
+    expect(result.id).toBe("acc-mixed");
+    // Login casing updates to what GitHub returned.
+    expect(result.login).toBe("hon454");
+
+    const accounts = await listAccounts();
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0].id).toBe("acc-mixed");
+  });
+
+  it("upsertAccountByLogin appends when login is new", async () => {
+    const { addAccount, upsertAccountByLogin, listAccounts } = await import(
+      "../src/storage/accounts"
+    );
+
+    await addAccount({
+      id: "acc-existing",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_existing",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+
+    const result = await upsertAccountByLogin({
+      login: "another-user",
+      avatarUrl: null,
+      token: "ghu_new",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+      installations: [],
+      newAccountId: "acc-new",
+      now: 500,
+    });
+
+    expect(result.id).toBe("acc-new");
+    expect(result.login).toBe("another-user");
+
+    const accounts = await listAccounts();
+    expect(accounts).toHaveLength(2);
+    expect(accounts.map((a) => a.id).sort()).toEqual(
+      ["acc-existing", "acc-new"].sort(),
+    );
+  });
+
   it("rejects malformed account payloads at read time by resetting to empty", async () => {
     browserMock.browser.storage.local.get.mockResolvedValueOnce({
       settings: {

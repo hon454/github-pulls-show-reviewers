@@ -262,6 +262,84 @@ export async function addAccount(account: Account): Promise<void> {
   await writeAccounts(next, [account]);
 }
 
+/**
+ * Upsert an account by GitHub login (case-insensitive).
+ *
+ * If an account with the same login already exists, reuse its id and
+ * createdAt but swap in the freshly obtained auth (token, refreshToken,
+ * expiresAt, refreshTokenExpiresAt) and installations snapshot. The
+ * invalidated flag is cleared so the account becomes active again.
+ *
+ * If no account matches the login, append as a new account.
+ *
+ * Returns the resulting Account (either the updated existing one or the
+ * newly appended one).
+ */
+export async function upsertAccountByLogin(input: {
+  login: string;
+  avatarUrl: string | null;
+  token: string;
+  refreshToken: string | null;
+  expiresAt: number | null;
+  refreshTokenExpiresAt: number | null;
+  installations: Installation[];
+  newAccountId: string;
+  now: number;
+}): Promise<Account> {
+  const existing = await findAccountByLogin(input.login);
+
+  if (existing != null) {
+    const updated: Account = {
+      ...existing,
+      // Keep id + createdAt. Refresh the login casing from the fresh
+      // GitHub profile so subsequent lookups match what GitHub returns.
+      login: input.login,
+      avatarUrl: input.avatarUrl,
+      token: input.token,
+      refreshToken: input.refreshToken,
+      expiresAt: input.expiresAt,
+      refreshTokenExpiresAt: input.refreshTokenExpiresAt,
+      invalidated: false,
+      invalidatedReason: null,
+      installations: input.installations,
+      installationsRefreshedAt: input.now,
+    };
+
+    // Preserve the account's position in the accountIds ordering.
+    const settings = await getSettings();
+    await writeAccounts(settings, [updated]);
+    return updated;
+  }
+
+  const account: Account = {
+    id: input.newAccountId,
+    login: input.login,
+    avatarUrl: input.avatarUrl,
+    createdAt: input.now,
+    token: input.token,
+    refreshToken: input.refreshToken,
+    expiresAt: input.expiresAt,
+    refreshTokenExpiresAt: input.refreshTokenExpiresAt,
+    invalidated: false,
+    invalidatedReason: null,
+    installations: input.installations,
+    installationsRefreshedAt: input.now,
+  };
+  await addAccount(account);
+  return account;
+}
+
+async function findAccountByLogin(login: string): Promise<Account | null> {
+  const normalized = login.toLowerCase();
+  const accounts = await listAccounts();
+  for (const account of accounts) {
+    if (account.login.toLowerCase() === normalized) {
+      return account;
+    }
+  }
+  return null;
+}
+
 export async function removeAccount(id: string): Promise<void> {
   const settings = await getSettings();
   const next: ExtensionSettings = {

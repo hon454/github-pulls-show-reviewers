@@ -121,6 +121,10 @@ This extension is intentionally narrow. Manual verification should stay focused 
    in again.
 4. Open the options page; confirm the account card shows the invalidated
    styling and a **Sign in again** button.
+5. Click **Sign in again** and complete the device flow with the same GitHub
+   account. Confirm the invalidated card is replaced in place — there should
+   still be exactly one card for that login, with the same position in the
+   list, not a new second card with a duplicate login.
 
 ### Expired access token with valid refresh token
 

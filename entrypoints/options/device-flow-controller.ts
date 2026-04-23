@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  addAccount,
+  upsertAccountByLogin,
   type Account,
   type Installation,
 } from "../../src/storage/accounts";
@@ -215,21 +215,17 @@ async function completeAccountConnect(
   if (isCancelled()) {
     return false;
   }
-  const account: Account = {
-    id: globalThis.crypto.randomUUID(),
+  const account = await upsertAccountByLogin({
     login: user.login,
     avatarUrl: user.avatarUrl,
     token: poll.accessToken,
-    createdAt: Date.now(),
-    installations,
-    installationsRefreshedAt: Date.now(),
-    invalidated: false,
-    invalidatedReason: null,
     refreshToken: poll.refreshToken,
     expiresAt: poll.expiresAt,
     refreshTokenExpiresAt: poll.refreshTokenExpiresAt,
-  };
-  await addAccount(account);
+    installations,
+    newAccountId: globalThis.crypto.randomUUID(),
+    now: Date.now(),
+  });
   if (isCancelled()) {
     return false;
   }

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PullReviewerSummary } from "../src/github/api";
+import type * as GithubApiModule from "../src/github/api";
 import type * as PreferencesModule from "../src/storage/preferences";
 
 const fetchPullReviewerSummaryMock = vi.fn();
@@ -12,7 +13,7 @@ const getPreferencesMock = vi.fn();
 const runtimeSendMessageMock = vi.fn();
 
 vi.mock("../src/github/api", async () => {
-  const actual = await vi.importActual<typeof import("../src/github/api")>(
+  const actual = await vi.importActual<typeof GithubApiModule>(
     "../src/github/api",
   );
   return {
