@@ -268,7 +268,9 @@ export async function addAccount(account: Account): Promise<void> {
  * If an account with the same login already exists, reuse its id and
  * createdAt but swap in the freshly obtained auth (token, refreshToken,
  * expiresAt, refreshTokenExpiresAt) and installations snapshot. The
- * invalidated flag is cleared so the account becomes active again.
+ * invalidated flag is cleared so the account becomes active again. If
+ * duplicate records already exist for the login, preserve the earliest
+ * matching record and drop the extras.
  *
  * If no account matches the login, append as a new account.
  *
@@ -286,7 +288,8 @@ export async function upsertAccountByLogin(input: {
   newAccountId: string;
   now: number;
 }): Promise<Account> {
-  const existing = await findAccountByLogin(input.login);
+  const { settings, matches } = await findAccountsByLogin(input.login);
+  const existing = matches[0] ?? null;
 
   if (existing != null) {
     const updated: Account = {
@@ -305,9 +308,22 @@ export async function upsertAccountByLogin(input: {
       installationsRefreshedAt: input.now,
     };
 
-    // Preserve the account's position in the accountIds ordering.
-    const settings = await getSettings();
-    await writeAccounts(settings, [updated]);
+    const duplicateIds = matches.slice(1).map((account) => account.id);
+    const nextSettings: ExtensionSettings =
+      duplicateIds.length === 0
+        ? settings
+        : {
+            version: 4,
+            accountIds: settings.accountIds.filter((id) => !duplicateIds.includes(id)),
+          };
+
+    // Preserve the retained account's position in the accountIds ordering.
+    await writeAccounts(nextSettings, [updated]);
+    if (duplicateIds.length > 0) {
+      await browser.storage.local.remove(
+        duplicateIds.flatMap((accountId) => accountStorageKeys(accountId)),
+      );
+    }
     return updated;
   }
 
@@ -329,15 +345,22 @@ export async function upsertAccountByLogin(input: {
   return account;
 }
 
-async function findAccountByLogin(login: string): Promise<Account | null> {
-  const normalized = login.toLowerCase();
-  const accounts = await listAccounts();
-  for (const account of accounts) {
-    if (account.login.toLowerCase() === normalized) {
-      return account;
-    }
+async function findAccountsByLogin(login: string): Promise<{
+  settings: ExtensionSettings;
+  matches: Account[];
+}> {
+  let settings = await getSettings();
+  const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
+  if (validIds.length !== settings.accountIds.length) {
+    settings = { version: 4, accountIds: validIds };
+    await writeSettings(settings);
   }
-  return null;
+
+  const normalized = login.toLowerCase();
+  return {
+    settings,
+    matches: accounts.filter((account) => account.login.toLowerCase() === normalized),
+  };
 }
 
 export async function removeAccount(id: string): Promise<void> {

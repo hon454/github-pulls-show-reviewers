@@ -321,6 +321,60 @@ describe("accounts storage", () => {
     );
   });
 
+  it("upsertAccountByLogin collapses duplicate matching logins into one record", async () => {
+    const { addAccount, upsertAccountByLogin, listAccounts } = await import(
+      "../src/storage/accounts"
+    );
+
+    await addAccount({
+      id: "acc-original",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_old_1",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: true,
+      invalidatedReason: "revoked",
+      refreshToken: "ghr_old_1",
+      expiresAt: 100,
+      refreshTokenExpiresAt: 200,
+    });
+    await addAccount({
+      id: "acc-ghost",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_old_2",
+      createdAt: 2,
+      installations: [],
+      installationsRefreshedAt: 2,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: "ghr_old_2",
+      expiresAt: 101,
+      refreshTokenExpiresAt: 201,
+    });
+
+    const result = await upsertAccountByLogin({
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_new",
+      refreshToken: "ghr_new",
+      expiresAt: 999,
+      refreshTokenExpiresAt: 9999,
+      installations: [],
+      newAccountId: "acc-should-be-ignored",
+      now: 500,
+    });
+
+    expect(result.id).toBe("acc-original");
+
+    const accounts = await listAccounts();
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0].id).toBe("acc-original");
+    expect(accounts[0].token).toBe("ghu_new");
+  });
+
   it("rejects malformed account payloads at read time by resetting to empty", async () => {
     browserMock.browser.storage.local.get.mockResolvedValueOnce({
       settings: {
