@@ -106,6 +106,13 @@ proactive and reactive paths race.
 
 ## Revisit trigger
 
+The "5 accounts" threshold below is not arbitrary: at an empirical
+refresh-endpoint latency of ~1–2s per account, a single fire with 5 eligible
+accounts consumes ~5–10s of the ~30s SW-alive window (roughly one-third).
+Beyond that, the margin for storage writes and one-off stalls shrinks fast,
+and the three triggers below start correlating (account count → per-fire
+time → observed failures).
+
 Move to per-account alarms (new ADR superseding this one) if any of the
 following is observed:
 
