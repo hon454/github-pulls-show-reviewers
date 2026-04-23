@@ -5,4 +5,14 @@ export default defineConfig({
   use: {
     headless: true,
   },
+  projects: [
+    {
+      name: "default",
+      testIgnore: ["**/capture-cws-assets.spec.ts"],
+    },
+    {
+      name: "capture",
+      testMatch: ["**/capture-cws-assets.spec.ts"],
+    },
+  ],
 });

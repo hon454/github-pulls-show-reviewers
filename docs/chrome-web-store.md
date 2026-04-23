@@ -58,6 +58,7 @@ Expected release gate behavior:
 - `ci.yml` currently runs `pnpm typecheck` on pushes to `main` and pull requests.
 - `release.yml` installs Playwright Chromium, re-runs `pnpm verify:release`, and then runs `pnpm zip`.
 - `release.yml` does not generate Chrome Web Store screenshots, so `pnpm cws:assets` remains a manual pre-submission step when visuals change.
+- `pnpm test:e2e` no longer mutates `docs/chrome-web-store-assets/`; the screenshot capture spec is scoped to a separate `capture` Playwright project that only `pnpm cws:assets` runs.
 
 ## Manual Chrome Web Store submission checklist
 
