@@ -135,6 +135,9 @@ This extension is intentionally narrow. Manual verification should stay focused 
 4. Reload the private PR list.
 5. Confirm reviewer chips still render and the extension performs exactly one
    refresh-token exchange against `https://github.com/login/oauth/access_token`.
+   The reviewer fetch now retries from the background worker, so this check
+   belongs in the extension service worker DevTools rather than the page
+   DevTools alone.
 6. Open the options page and click **Refresh installations**.
 7. Confirm the installation refresh also succeeds without requiring a fresh
    sign-in.
@@ -219,8 +222,11 @@ If the extension appears loaded but does not work:
 - Refresh the GitHub page after reloading.
 - Open the `Errors` button on the extension card in `chrome://extensions` if Chrome reports runtime issues.
 - For content-script debugging, inspect the target GitHub page in DevTools and check the console for extension-related errors.
+- For authenticated reviewer-fetch debugging, also inspect the extension
+  service worker DevTools because the private-repository GitHub fetch and
+  refresh-retry path now run there.
 
 If reviewer data is missing only on private repositories:
 
 - Re-check that the signed-in account has the GitHub App installed for the target repository.
-- Use the options page diagnostics to confirm the same GitHub API paths used by the content script can be reached.
+- Use the options page diagnostics to confirm the same GitHub API paths used by the background reviewer fetch can be reached.

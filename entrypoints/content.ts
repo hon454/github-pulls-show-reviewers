@@ -5,9 +5,9 @@ import {
 import { bootReviewerListPage } from "../src/features/reviewers";
 import { parsePullListRoute } from "../src/github/routes";
 import {
-  GitHubApiError,
-  GitHubPullRequestEndpointsError,
-} from "../src/github/api";
+  type ReviewerFetchFailure,
+  extractReviewerFetchFailures,
+} from "../src/runtime/reviewer-fetch";
 
 export default defineContentScript({
   matches: ["https://github.com/*/*"],
@@ -104,12 +104,6 @@ function classifyRowFailure(
   return { rateLimited: false, uncovered: false };
 }
 
-function collectApiFailures(error: unknown): GitHubApiError[] {
-  if (error instanceof GitHubPullRequestEndpointsError) {
-    return error.failures;
-  }
-  if (error instanceof GitHubApiError) {
-    return [error];
-  }
-  return [];
+function collectApiFailures(error: unknown): ReviewerFetchFailure[] {
+  return extractReviewerFetchFailures(error);
 }

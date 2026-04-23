@@ -1,9 +1,17 @@
 import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
+import { createReviewerFetchService } from "../src/background/reviewer-fetch";
 import { getGitHubAppConfig } from "../src/config/github-app";
+import {
+  isCancelPullReviewerSummaryMessage,
+  isFetchPullReviewerSummaryMessage,
+} from "../src/runtime/reviewer-fetch";
 
 export default defineBackground(() => {
   const coordinator = createRefreshCoordinator({
     getClientId: () => getGitHubAppConfig().clientId,
+  });
+  const reviewerFetchService = createReviewerFetchService({
+    refreshCoordinator: coordinator,
   });
 
   browser.runtime.onInstalled.addListener((details) => {
@@ -45,6 +53,13 @@ export default defineBackground(() => {
         return coordinator.refreshAccountToken(
           (message as { accountId: string }).accountId,
         );
+      }
+      if (isFetchPullReviewerSummaryMessage(message)) {
+        return reviewerFetchService.handleFetchMessage(message);
+      }
+      if (isCancelPullReviewerSummaryMessage(message)) {
+        reviewerFetchService.cancelRequest(message.requestId);
+        return undefined;
       }
       return undefined;
     },

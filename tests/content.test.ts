@@ -207,5 +207,27 @@ describe("content entrypoint", () => {
       expect(aggregator.reportUncoveredOwner).toHaveBeenCalledWith("cinev");
       expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
     });
+
+    it("classifies serialized reviewer-fetch failures the same way as GitHubApiError instances", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: {
+          kind: "github-endpoints",
+          status: 404,
+          failures: [
+            { status: 404, endpoint: "/repos/cinev/shotloom/pulls/42" },
+            { status: 403, endpoint: "/repos/cinev/shotloom/pulls/42/reviews" },
+          ],
+        },
+      });
+
+      expect(aggregator.reportUncoveredOwner).toHaveBeenCalledWith("cinev");
+      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
+    });
   });
 });

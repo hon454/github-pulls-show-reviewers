@@ -3,30 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import type { PullReviewerSummary } from "../src/github/api";
-import type * as GithubApiModule from "../src/github/api";
 import type * as PreferencesModule from "../src/storage/preferences";
 
-const fetchPullReviewerSummaryMock = vi.fn();
 const resolveAccountForRepoMock = vi.fn();
-const getAccountByIdMock = vi.fn();
-const markAccountInvalidatedMock = vi.fn();
 const getPreferencesMock = vi.fn();
 const runtimeSendMessageMock = vi.fn();
 
-vi.mock("../src/github/api", async () => {
-  const actual = await vi.importActual<typeof GithubApiModule>(
-    "../src/github/api",
-  );
-  return {
-    ...actual,
-    fetchPullReviewerSummary: fetchPullReviewerSummaryMock,
-  };
-});
-
 vi.mock("../src/storage/accounts", () => ({
   resolveAccountForRepo: resolveAccountForRepoMock,
-  getAccountById: getAccountByIdMock,
-  markAccountInvalidated: markAccountInvalidatedMock,
 }));
 
 vi.mock("../src/storage/preferences", async () => {
@@ -81,10 +65,7 @@ function getRegisteredListener(
 
 beforeEach(() => {
   vi.resetModules();
-  fetchPullReviewerSummaryMock.mockReset();
   resolveAccountForRepoMock.mockReset();
-  getAccountByIdMock.mockReset();
-  markAccountInvalidatedMock.mockReset();
   getPreferencesMock.mockReset();
   runtimeSendMessageMock.mockReset();
   getPreferencesMock.mockResolvedValue({
@@ -126,25 +107,6 @@ afterEach(() => {
 });
 
 describe("bootReviewerListPage", () => {
-  it("marks the account revoked on 401 when there is no refresh token", async () => {
-    resolveAccountForRepoMock.mockResolvedValue({
-      id: "acc-1",
-      login: "hon454",
-      token: "ghu_abc",
-      refreshToken: null,
-    });
-    fetchPullReviewerSummaryMock.mockRejectedValue({ status: 401 });
-
-    const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx());
-
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
-    expect(runtimeSendMessageMock).not.toHaveBeenCalled();
-  });
-
   it("rerenders on preferences change without refetching reviewer data", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
     const summary: PullReviewerSummary = {
@@ -153,14 +115,14 @@ describe("bootReviewerListPage", () => {
       requestedTeams: [],
       completedReviews: [],
     };
-    fetchPullReviewerSummaryMock.mockResolvedValue(summary);
+    runtimeSendMessageMock.mockResolvedValue({ ok: true, summary });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
 
     await flushMicrotasks();
     await flushMicrotasks();
-    expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(1);
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
     expect(document.querySelector("a.ghpsr-pill")).toBeNull();
     expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
 
@@ -182,7 +144,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(1);
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
     expect(document.querySelector("a.ghpsr-pill")).not.toBeNull();
   });
 
@@ -194,14 +156,14 @@ describe("bootReviewerListPage", () => {
       requestedTeams: [],
       completedReviews: [],
     };
-    fetchPullReviewerSummaryMock.mockResolvedValue(summary);
+    runtimeSendMessageMock.mockResolvedValue({ ok: true, summary });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
 
     await flushMicrotasks();
     await flushMicrotasks();
-    expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(1);
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
 
     capturedStorageListener!(
       {
@@ -216,10 +178,10 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(2);
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(2);
   });
 
-  it("refreshes the access token on 401 and retries with the new token", async () => {
+  it("sends reviewer fetch requests through the background runtime contract", async () => {
     const summary: PullReviewerSummary = {
       status: "ok",
       requestedUsers: [],
@@ -227,53 +189,13 @@ describe("bootReviewerListPage", () => {
       completedReviews: [],
     };
 
-    resolveAccountForRepoMock
-      .mockResolvedValueOnce({
-        id: "acc-1",
-        login: "hon454",
-        token: "ghu_old",
-        refreshToken: "ghr_old",
-      });
-    getAccountByIdMock.mockResolvedValueOnce({
-      id: "acc-1",
-      login: "hon454",
-      token: "ghu_new",
-      refreshToken: "ghr_new",
-    });
-
-    fetchPullReviewerSummaryMock
-      .mockRejectedValueOnce({ status: 401 })
-      .mockResolvedValueOnce(summary);
-
-    runtimeSendMessageMock.mockResolvedValueOnce({ ok: true, token: "ghu_new" });
-
-    const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx());
-
-    await flushMicrotasks();
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    expect(runtimeSendMessageMock).toHaveBeenCalledWith({
-      type: "refreshAccessToken",
-      accountId: "acc-1",
-    });
-    expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(2);
-    expect(fetchPullReviewerSummaryMock.mock.calls[1][0]).toMatchObject({
-      githubToken: "ghu_new",
-    });
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
-  });
-
-  it("does not invalidate when the BG refresh returns terminal=true (BG already marked the account)", async () => {
-    resolveAccountForRepoMock.mockResolvedValue({
+    resolveAccountForRepoMock.mockResolvedValueOnce({
       id: "acc-1",
       login: "hon454",
       token: "ghu_old",
       refreshToken: "ghr_old",
     });
-    fetchPullReviewerSummaryMock.mockRejectedValue({ status: 401 });
-    runtimeSendMessageMock.mockResolvedValueOnce({ ok: false, terminal: true });
+    runtimeSendMessageMock.mockResolvedValueOnce({ ok: true, summary });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
@@ -281,26 +203,17 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
-  });
-
-  it("does not invalidate on a transient refresh failure", async () => {
-    resolveAccountForRepoMock.mockResolvedValue({
-      id: "acc-1",
-      login: "hon454",
-      token: "ghu_old",
-      refreshToken: "ghr_old",
-    });
-    fetchPullReviewerSummaryMock.mockRejectedValue({ status: 401 });
-    runtimeSendMessageMock.mockResolvedValueOnce({ ok: false, terminal: false });
-
-    const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx());
-
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+    expect(runtimeSendMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "fetchPullReviewerSummary",
+        owner: "cinev",
+        repo: "shotloom",
+        pullNumber: "42",
+        accountId: "acc-1",
+        requestId: expect.any(String),
+      }),
+    );
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not flash loading text on a cache-hit re-render", async () => {
@@ -328,7 +241,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(fetchPullReviewerSummaryMock).not.toHaveBeenCalled();
+    expect(runtimeSendMessageMock).not.toHaveBeenCalled();
     // The row should render reviewer chips straight from cache; no loading text.
     expect(document.body.textContent).not.toContain("Loading reviewers");
     expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
@@ -339,25 +252,22 @@ describe("bootReviewerListPage", () => {
   it("aborts in-flight summary fetches on storage (accounts) change and drops the late result", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
-    // Capture the signal so we can assert abort() is called by the boot code.
-    let capturedSignal: AbortSignal | null = null;
     let resolveFetch: ((summary: PullReviewerSummary) => void) | null = null;
-    fetchPullReviewerSummaryMock.mockImplementationOnce(
-      (input: { signal?: AbortSignal }) => {
-        capturedSignal = input.signal ?? null;
-        return new Promise<PullReviewerSummary>((resolve) => {
-          resolveFetch = resolve;
-        });
-      },
-    );
+    runtimeSendMessageMock
+      .mockImplementationOnce(
+        () =>
+        new Promise<{ ok: true; summary: PullReviewerSummary }>((resolve) => {
+          resolveFetch = (summary) => resolve({ ok: true, summary });
+        }),
+      )
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(() => new Promise<void>(() => {}));
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
 
     await flushMicrotasks();
     await flushMicrotasks();
-    expect(capturedSignal).not.toBeNull();
-    expect(capturedSignal!.aborted).toBe(false);
 
     capturedStorageListener!(
       {
@@ -370,7 +280,6 @@ describe("bootReviewerListPage", () => {
     );
 
     await flushMicrotasks();
-    expect(capturedSignal!.aborted).toBe(true);
 
     // The stale fetch resolves AFTER the abort — it must not poison the cache
     // and must not render anything into the mount.
@@ -380,14 +289,19 @@ describe("bootReviewerListPage", () => {
       requestedTeams: [],
       completedReviews: [],
     };
-    // Second fetch (triggered by the storage change) also pends — no render.
-    fetchPullReviewerSummaryMock.mockImplementationOnce(
-      () => new Promise<PullReviewerSummary>(() => {}),
-    );
     resolveFetch!(latePayload);
 
     await flushMicrotasks();
     await flushMicrotasks();
+
+    expect(runtimeSendMessageMock.mock.calls[1]?.[0]).toMatchObject({
+      type: "cancelPullReviewerSummary",
+      requestId: expect.any(String),
+    });
+    expect(runtimeSendMessageMock.mock.calls[2]?.[0]).toMatchObject({
+      type: "fetchPullReviewerSummary",
+      requestId: expect.any(String),
+    });
 
     // The aborted fetch must not have written its summary into the cache.
     // Easiest proxy: the mount should still show the loading text from the
@@ -399,11 +313,14 @@ describe("bootReviewerListPage", () => {
 
   it("shows loading again after a failed refetch clears a previously rendered row", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
-    fetchPullReviewerSummaryMock.mockResolvedValueOnce({
-      status: "ok",
-      requestedUsers: [{ login: "alice", avatarUrl: null }],
-      requestedTeams: [],
-      completedReviews: [],
+    runtimeSendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      summary: {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
     });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
@@ -413,7 +330,10 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
 
-    fetchPullReviewerSummaryMock.mockRejectedValueOnce(new Error("boom"));
+    runtimeSendMessageMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: "unknown", status: null, message: "boom" },
+    });
     capturedStorageListener!(
       {
         settings: {
@@ -429,8 +349,8 @@ describe("bootReviewerListPage", () => {
     expect(document.body.textContent).not.toContain("alice");
     expect(document.body.textContent).not.toContain("Loading reviewers");
 
-    fetchPullReviewerSummaryMock.mockImplementationOnce(
-      () => new Promise<PullReviewerSummary>(() => {}),
+    runtimeSendMessageMock.mockImplementationOnce(
+      () => new Promise<never>(() => {}),
     );
     capturedStorageListener!(
       {
@@ -450,13 +370,9 @@ describe("bootReviewerListPage", () => {
   it("aborts in-flight summary fetches when navigation leaves the pull-list route", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
-    let capturedSignal: AbortSignal | null = null;
-    fetchPullReviewerSummaryMock.mockImplementationOnce(
-      (input: { signal?: AbortSignal }) => {
-        capturedSignal = input.signal ?? null;
-        return new Promise<PullReviewerSummary>(() => {});
-      },
-    );
+    runtimeSendMessageMock
+      .mockImplementationOnce(() => new Promise<void>(() => {}))
+      .mockResolvedValueOnce(undefined);
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     const ctx = makeCtx();
@@ -464,43 +380,15 @@ describe("bootReviewerListPage", () => {
 
     await flushMicrotasks();
     await flushMicrotasks();
-    expect(capturedSignal).not.toBeNull();
-    expect(capturedSignal!.aborted).toBe(false);
 
     window.history.replaceState({}, "", "/cinev/shotloom/pull/42");
     getRegisteredListener(ctx, "wxt:locationchange")?.();
 
     await flushMicrotasks();
 
-    expect(capturedSignal!.aborted).toBe(true);
-  });
-
-  it("marks the account revoked when the retry after refresh also returns 401", async () => {
-    resolveAccountForRepoMock
-      .mockResolvedValueOnce({
-        id: "acc-1",
-        login: "hon454",
-        token: "ghu_old",
-        refreshToken: "ghr_old",
-      });
-    getAccountByIdMock.mockResolvedValueOnce({
-      id: "acc-1",
-      login: "hon454",
-      token: "ghu_new",
-      refreshToken: "ghr_new",
+    expect(runtimeSendMessageMock.mock.calls[1]?.[0]).toMatchObject({
+      type: "cancelPullReviewerSummary",
+      requestId: expect.any(String),
     });
-    fetchPullReviewerSummaryMock
-      .mockRejectedValueOnce({ status: 401 })
-      .mockRejectedValueOnce({ status: 401 });
-    runtimeSendMessageMock.mockResolvedValueOnce({ ok: true, token: "ghu_new" });
-
-    const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx());
-
-    await flushMicrotasks();
-    await flushMicrotasks();
-    await flushMicrotasks();
-
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
   });
 });

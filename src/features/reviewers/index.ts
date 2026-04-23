@@ -1,15 +1,18 @@
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
-import { retryWithAccountRefresh } from "../../auth/account-token-refresh";
 import {
   buildReviewerCacheKey,
   clearReviewerCache,
   getCachedReviewerSummary,
   setCachedReviewerSummary,
 } from "../../cache/reviewer-cache";
-import { fetchPullReviewerSummary } from "../../github/api";
+import type { PullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
+import {
+  ReviewerFetchRuntimeError,
+  type FetchPullReviewerSummaryResponse,
+} from "../../runtime/reviewer-fetch";
 import { resolveAccountForRepo, type Account } from "../../storage/accounts";
 import {
   DEFAULT_PREFERENCES,
@@ -255,21 +258,53 @@ async function fetchWithRefresh(args: {
   owner: string;
   repo: string;
   pullNumber: string;
-  signal?: AbortSignal;
-}): Promise<Awaited<ReturnType<typeof fetchPullReviewerSummary>>> {
+  signal: AbortSignal;
+}): Promise<PullReviewerSummary> {
   const { account, owner, repo, pullNumber, signal } = args;
 
-  return retryWithAccountRefresh({
-    account,
-    execute: async (token) =>
-      fetchPullReviewerSummary({
-        owner,
-        repo,
-        pullNumber,
-        githubToken: token,
-        signal,
-      }),
+  if (signal.aborted) {
+    throw createAbortError();
+  }
+
+  const requestId = createReviewerFetchRequestId();
+  const responsePromise = browser.runtime.sendMessage({
+    type: "fetchPullReviewerSummary",
+    requestId,
+    owner,
+    repo,
+    pullNumber,
+    accountId: account?.id ?? null,
+  }) as Promise<FetchPullReviewerSummaryResponse | undefined>;
+
+  const abortListenerController = new AbortController();
+  const abortPromise = new Promise<never>((_, reject) => {
+    const onAbort = () => {
+      void browser.runtime
+        .sendMessage({
+          type: "cancelPullReviewerSummary",
+          requestId,
+        })
+        .catch(() => undefined);
+      reject(createAbortError());
+    };
+
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+
+    signal.addEventListener("abort", onAbort, {
+      once: true,
+      signal: abortListenerController.signal,
+    });
   });
+
+  try {
+    const response = await Promise.race([responsePromise, abortPromise]);
+    return unwrapReviewerFetchResponse(response);
+  } finally {
+    abortListenerController.abort();
+  }
 }
 
 function isAbortError(error: unknown): boolean {
@@ -285,4 +320,42 @@ function isAbortError(error: unknown): boolean {
     return true;
   }
   return false;
+}
+
+function unwrapReviewerFetchResponse(
+  response: FetchPullReviewerSummaryResponse | undefined,
+): PullReviewerSummary {
+  if (response?.ok === true) {
+    return response.summary;
+  }
+
+  if (response?.ok === false) {
+    throw new ReviewerFetchRuntimeError(response.error);
+  }
+
+  throw new Error("Background reviewer fetch failed.");
+}
+
+let reviewerFetchRequestCounter = 0;
+
+function createReviewerFetchRequestId(): string {
+  if (
+    typeof globalThis.crypto !== "undefined" &&
+    typeof globalThis.crypto.randomUUID === "function"
+  ) {
+    return `reviewer-fetch-${globalThis.crypto.randomUUID()}`;
+  }
+
+  reviewerFetchRequestCounter += 1;
+  return `reviewer-fetch-${Date.now()}-${reviewerFetchRequestCounter}`;
+}
+
+function createAbortError(): Error {
+  if (typeof DOMException === "function") {
+    return new DOMException("The operation was aborted.", "AbortError");
+  }
+
+  const error = new Error("The operation was aborted.");
+  error.name = "AbortError";
+  return error;
 }
