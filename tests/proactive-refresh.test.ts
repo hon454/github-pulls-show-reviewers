@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { RefreshOutcome } from "../src/auth/refresh-coordinator";
 import {
   createProactiveRefreshService,
   selectAccountsDueForRefresh,
@@ -141,7 +142,7 @@ describe("createProactiveRefreshService", () => {
   >();
   const listAccountsMock = vi.fn<() => Promise<Account[]>>();
   const refreshAccountTokenMock =
-    vi.fn<(accountId: string) => Promise<{ ok: true; token: string }>>();
+    vi.fn<(accountId: string) => Promise<RefreshOutcome>>();
   const markAccountInvalidatedMock =
     vi.fn<(accountId: string, reason: "expired") => Promise<void>>();
 
@@ -151,7 +152,9 @@ describe("createProactiveRefreshService", () => {
     alarmsGetMock.mockResolvedValue(undefined);
     listAccountsMock.mockReset();
     refreshAccountTokenMock.mockReset();
-    refreshAccountTokenMock.mockResolvedValue({ ok: true, token: "t" });
+    refreshAccountTokenMock.mockResolvedValue(
+      { ok: true, token: "t" } satisfies RefreshOutcome,
+    );
     markAccountInvalidatedMock.mockReset();
     markAccountInvalidatedMock.mockResolvedValue(undefined);
     vi.stubGlobal("browser", {
@@ -244,6 +247,9 @@ describe("createProactiveRefreshService", () => {
   });
 
   it("handleAlarmFire continues when one account refresh rejects", async () => {
+    // Defensive coverage: Promise.allSettled insulates us even if a future
+    // change breaks the coordinator contract and lets a rejection escape.
+    // In current production code, refreshAccountToken always resolves.
     const now = 1_700_000_000_000;
     const futureRefresh = now + 60 * 60 * 1_000;
     listAccountsMock.mockResolvedValue([
@@ -267,6 +273,32 @@ describe("createProactiveRefreshService", () => {
       service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME),
     ).resolves.toBeUndefined();
     expect(refreshAccountTokenMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("handleAlarmFire continues when the coordinator returns a terminal failure for one account", async () => {
+    const now = 1_700_000_000_000;
+    const futureRefresh = now + 60 * 60 * 1_000;
+    listAccountsMock.mockResolvedValue([
+      makeAccount({
+        id: "acc-a",
+        expiresAt: now + 1,
+        refreshTokenExpiresAt: futureRefresh,
+      }),
+      makeAccount({
+        id: "acc-b",
+        expiresAt: now + 1,
+        refreshTokenExpiresAt: futureRefresh,
+      }),
+    ]);
+    refreshAccountTokenMock.mockResolvedValueOnce({ ok: false, terminal: true });
+    refreshAccountTokenMock.mockResolvedValueOnce({ ok: true, token: "t" });
+
+    const service = buildService(now);
+    await service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME);
+
+    expect(refreshAccountTokenMock).toHaveBeenCalledTimes(2);
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-a");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-b");
   });
 
   it("handleAlarmFire invalidates accounts whose refresh token has expired", async () => {
