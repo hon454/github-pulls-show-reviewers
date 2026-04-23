@@ -258,11 +258,11 @@ async function fetchWithRefresh(args: {
   owner: string;
   repo: string;
   pullNumber: string;
-  signal?: AbortSignal;
+  signal: AbortSignal;
 }): Promise<PullReviewerSummary> {
   const { account, owner, repo, pullNumber, signal } = args;
 
-  if (signal?.aborted) {
+  if (signal.aborted) {
     throw createAbortError();
   }
 
@@ -276,11 +276,7 @@ async function fetchWithRefresh(args: {
     accountId: account?.id ?? null,
   }) as Promise<FetchPullReviewerSummaryResponse | undefined>;
 
-  if (signal == null) {
-    return unwrapReviewerFetchResponse(await responsePromise);
-  }
-
-  let removeAbortListener: (() => void) | null = null;
+  const abortListenerController = new AbortController();
   const abortPromise = new Promise<never>((_, reject) => {
     const onAbort = () => {
       void browser.runtime
@@ -297,18 +293,17 @@ async function fetchWithRefresh(args: {
       return;
     }
 
-    signal.addEventListener("abort", onAbort, { once: true });
-    removeAbortListener = () => signal.removeEventListener("abort", onAbort);
+    signal.addEventListener("abort", onAbort, {
+      once: true,
+      signal: abortListenerController.signal,
+    });
   });
 
   try {
     const response = await Promise.race([responsePromise, abortPromise]);
     return unwrapReviewerFetchResponse(response);
   } finally {
-    const cleanup = removeAbortListener as (() => void) | null;
-    if (cleanup != null) {
-      cleanup();
-    }
+    abortListenerController.abort();
   }
 }
 
@@ -344,6 +339,13 @@ function unwrapReviewerFetchResponse(
 let reviewerFetchRequestCounter = 0;
 
 function createReviewerFetchRequestId(): string {
+  if (
+    typeof globalThis.crypto !== "undefined" &&
+    typeof globalThis.crypto.randomUUID === "function"
+  ) {
+    return `reviewer-fetch-${globalThis.crypto.randomUUID()}`;
+  }
+
   reviewerFetchRequestCounter += 1;
   return `reviewer-fetch-${Date.now()}-${reviewerFetchRequestCounter}`;
 }

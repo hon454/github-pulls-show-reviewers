@@ -44,6 +44,10 @@ const SELF_RUNTIME_ID = "self-extension-id";
 
 let capturedMessageListener: MessageListener | null;
 
+function flushMicrotasks() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 beforeEach(() => {
   vi.resetModules();
   refreshAccountTokenMock.mockReset();
@@ -372,7 +376,7 @@ describe("background runtime.onMessage handler", () => {
       () => {},
     );
 
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(capturedSignal).not.toBeNull();
     const signal = capturedSignal as AbortSignal | null;
     if (signal == null) {
@@ -390,6 +394,54 @@ describe("background runtime.onMessage handler", () => {
     );
 
     expect(cancelResult).toBeUndefined();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("consumes a queued cancel when it arrives before the reviewer fetch message", async () => {
+    const listener = await bootBackground();
+    getAccountByIdMock.mockResolvedValue({
+      id: "acc-1",
+      token: "ghu_old",
+      refreshToken: "ghr_old",
+    });
+
+    let capturedSignal: AbortSignal | null = null;
+    fetchPullReviewerSummaryMock.mockImplementationOnce(
+      (input: { signal?: AbortSignal }) => {
+        capturedSignal = input.signal ?? null;
+        return new Promise(() => {});
+      },
+    );
+
+    const cancelResult = listener(
+      {
+        type: "cancelPullReviewerSummary",
+        requestId: "req-pre-cancel",
+      },
+      { id: SELF_RUNTIME_ID },
+      () => {},
+    );
+    expect(cancelResult).toBeUndefined();
+
+    void listener(
+      {
+        type: "fetchPullReviewerSummary",
+        requestId: "req-pre-cancel",
+        owner: "cinev",
+        repo: "shotloom",
+        pullNumber: "42",
+        accountId: "acc-1",
+      },
+      { id: SELF_RUNTIME_ID },
+      () => {},
+    );
+
+    await flushMicrotasks();
+    expect(capturedSignal).not.toBeNull();
+    const signal = capturedSignal as AbortSignal | null;
+    if (signal == null) {
+      throw new Error("expected background fetch signal");
+    }
     expect(signal.aborted).toBe(true);
   });
 });

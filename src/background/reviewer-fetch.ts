@@ -19,12 +19,28 @@ export function createReviewerFetchService(input: {
 }): ReviewerFetchService {
   const { refreshCoordinator } = input;
   const inFlightControllers = new Map<string, AbortController>();
-  const canceledRequestIds = new Set<string>();
+  const canceledRequestIds = new Map<string, number>();
+
+  function pruneCanceledRequestIds(now: number): void {
+    const maxAgeMs = 60_000;
+    for (const [requestId, createdAt] of canceledRequestIds) {
+      if (now - createdAt > maxAgeMs) {
+        canceledRequestIds.delete(requestId);
+      }
+    }
+  }
 
   return {
     cancelRequest(requestId: string): void {
-      canceledRequestIds.add(requestId);
-      inFlightControllers.get(requestId)?.abort();
+      const controller = inFlightControllers.get(requestId);
+      if (controller != null) {
+        controller.abort();
+        return;
+      }
+
+      const now = Date.now();
+      pruneCanceledRequestIds(now);
+      canceledRequestIds.set(requestId, now);
     },
     async handleFetchMessage(
       message: FetchPullReviewerSummaryMessage,
@@ -32,7 +48,7 @@ export function createReviewerFetchService(input: {
       const controller = new AbortController();
       inFlightControllers.set(message.requestId, controller);
 
-      if (canceledRequestIds.has(message.requestId)) {
+      if (canceledRequestIds.delete(message.requestId)) {
         controller.abort();
       }
 
@@ -92,7 +108,6 @@ export function createReviewerFetchService(input: {
         }
       } finally {
         inFlightControllers.delete(message.requestId);
-        canceledRequestIds.delete(message.requestId);
       }
     },
   };
