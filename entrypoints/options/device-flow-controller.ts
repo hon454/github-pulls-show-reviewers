@@ -105,7 +105,7 @@ export function useDeviceFlowController(input: {
             }
             setState({ phase: "fetching_installations" });
             const connected = await completeAccountConnect(
-              result.accessToken,
+              result,
               input.onConnected,
               () => cancelledRef.current,
             );
@@ -178,24 +178,29 @@ export function useDeviceFlowController(input: {
 }
 
 async function completeAccountConnect(
-  accessToken: string,
+  poll: {
+    accessToken: string;
+    refreshToken: string | null;
+    expiresAt: number | null;
+    refreshTokenExpiresAt: number | null;
+  },
   onConnected: (account: Account) => void,
   isCancelled: () => boolean,
 ): Promise<boolean> {
   if (isCancelled()) {
     return false;
   }
-  const user = await fetchAuthenticatedUser({ token: accessToken });
+  const user = await fetchAuthenticatedUser({ token: poll.accessToken });
   if (isCancelled()) {
     return false;
   }
-  const apiInstallations = await fetchUserInstallations({ token: accessToken });
+  const apiInstallations = await fetchUserInstallations({ token: poll.accessToken });
   const installations: Installation[] = await Promise.all(
     apiInstallations.map(async (installation) => {
       const repoFullNames =
         installation.repositorySelection === "selected"
           ? await fetchInstallationRepositories({
-              token: accessToken,
+              token: poll.accessToken,
               installationId: installation.id,
             })
           : null;
@@ -214,12 +219,15 @@ async function completeAccountConnect(
     id: globalThis.crypto.randomUUID(),
     login: user.login,
     avatarUrl: user.avatarUrl,
-    token: accessToken,
+    token: poll.accessToken,
     createdAt: Date.now(),
     installations,
     installationsRefreshedAt: Date.now(),
     invalidated: false,
     invalidatedReason: null,
+    refreshToken: poll.refreshToken,
+    expiresAt: poll.expiresAt,
+    refreshTokenExpiresAt: poll.refreshTokenExpiresAt,
   };
   await addAccount(account);
   if (isCancelled()) {
