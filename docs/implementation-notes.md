@@ -55,7 +55,7 @@
 | No signed-in account | 403 with rate-limit signal                   | Unauthenticated rate limit exhausted                                        |
 | No signed-in account | 404 / 401 / private-like 403                 | Repository behaves like a private or permission-gated resource              |
 | Matched account    | 401 on a repository endpoint, refresh succeeds | Access token was expired — refreshed transparently via the background script |
-| Matched account    | 401 with no stored refresh token              | Pre-v3 account or refresh token never issued — marked `revoked`, sign in again |
+| Matched account    | 401 with no stored refresh token              | Pre-v4 account or refresh token never issued — marked `revoked`, sign in again |
 | Matched account    | 401 then refresh returns `bad_refresh_token`  | Refresh token rejected — marked `refresh_failed`, sign in again from the options page |
 | Matched account    | 401 then refresh succeeds then 401 again      | New access token rejected (app revoked or scope changed) — marked `revoked`, sign in again |
 | Matched account    | 403 / 404 without rate-limit signal           | Installation does not cover this repository — install the GitHub App on the owner |

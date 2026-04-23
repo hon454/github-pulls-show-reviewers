@@ -55,8 +55,10 @@ This repository intentionally stays narrow.
 - **Public repositories** continue to work without signing in. See
   [ADR 0001](docs/adr/0001-keep-no-token-support-for-public-repositories.md).
 - **Private repositories** require signing in with GitHub through our GitHub App.
-  Click **Add account** on the options page and complete the OAuth Device Flow
-  (enter the short code on github.com, approve, come back to the options tab).
+  Click **+ Add another account** on the options page and complete the OAuth
+  Device Flow (enter the short code on github.com, approve, come back to the
+  options tab). The device code is issued automatically when the add-account
+  panel opens, so you do not need to click a separate request-code button.
   The App only requests `Pull requests: Read`. For organization-owned private
   repositories, an organization owner may need to install the GitHub App first.
 - **Multiple accounts** are supported. Add a personal account and a work

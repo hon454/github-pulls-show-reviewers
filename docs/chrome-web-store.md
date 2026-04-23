@@ -21,7 +21,7 @@ Detailed description:
 
 `GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds a single inline Reviewers section with requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
 
-`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, lets users toggle reviewer names and state badges from the options page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only performs read operations.`
+`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, lets users toggle reviewer names and state badges from the options page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only reads repository data; the only POST requests are to GitHub's OAuth device-flow endpoints for sign-in and access-token refresh.`
 
 ## Release workflow
 
@@ -53,11 +53,14 @@ pnpm verify:release
 7. Run `pnpm zip` after the checks above are green and the package is ready for inspection or submission.
 8. Manually load `.output/chrome-mv3` in Chrome and confirm the options page never renders as a blank white screen; if the GitHub App build config is missing, it must show an explicit configuration warning instead.
 
+To build or zip locally with the same GitHub App environment the release workflow uses, run `pnpm build:release` or `pnpm zip:release`. Both wrap the regular `pnpm build` / `pnpm zip` commands and source the repository's GitHub Actions `vars` via [scripts/load-github-app-env.sh](../scripts/load-github-app-env.sh), so a maintainer no longer needs to keep a personal `.env.local` with the production client ID. The script relies on `gh` being authenticated for this repository.
+
 Expected release gate behavior:
 
 - `ci.yml` currently runs `pnpm typecheck` on pushes to `main` and pull requests.
 - `release.yml` installs Playwright Chromium, re-runs `pnpm verify:release`, and then runs `pnpm zip`.
 - `release.yml` does not generate Chrome Web Store screenshots, so `pnpm cws:assets` remains a manual pre-submission step when visuals change.
+- `pnpm test:e2e` no longer mutates `docs/chrome-web-store-assets/`; the screenshot capture spec is scoped to a separate `capture` Playwright project that only `pnpm cws:assets` runs.
 
 ## Manual Chrome Web Store submission checklist
 
