@@ -278,6 +278,67 @@ describe("bootReviewerListPage", () => {
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 
+  it("aborts in-flight summary fetches on storage (accounts) change and drops the late result", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    // Capture the signal so we can assert abort() is called by the boot code.
+    let capturedSignal: AbortSignal | null = null;
+    let resolveFetch: ((summary: PullReviewerSummary) => void) | null = null;
+    fetchPullReviewerSummaryMock.mockImplementationOnce(
+      (input: { signal?: AbortSignal }) => {
+        capturedSignal = input.signal ?? null;
+        return new Promise<PullReviewerSummary>((resolve) => {
+          resolveFetch = resolve;
+        });
+      },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(capturedSignal).not.toBeNull();
+    expect(capturedSignal!.aborted).toBe(false);
+
+    capturedStorageListener!(
+      {
+        settings: {
+          oldValue: { version: 4, accountIds: [] },
+          newValue: { version: 4, accountIds: ["acc-1"] },
+        },
+      },
+      "local",
+    );
+
+    await flushMicrotasks();
+    expect(capturedSignal!.aborted).toBe(true);
+
+    // The stale fetch resolves AFTER the abort — it must not poison the cache
+    // and must not render anything into the mount.
+    const latePayload: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [{ login: "ghost", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+    // Second fetch (triggered by the storage change) also pends — no render.
+    fetchPullReviewerSummaryMock.mockImplementationOnce(
+      () => new Promise<PullReviewerSummary>(() => {}),
+    );
+    resolveFetch!(latePayload);
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // The aborted fetch must not have written its summary into the cache.
+    // Easiest proxy: the mount should still show the loading text from the
+    // second (pending) fetch, not a rendered reviewer for "ghost".
+    expect(document.body.textContent).not.toContain("ghost");
+    // Nothing should have rendered the reviewer chip for the aborted login.
+    expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
+  });
+
   it("marks the account revoked when the retry after refresh also returns 401", async () => {
     resolveAccountForRepoMock
       .mockResolvedValueOnce({
