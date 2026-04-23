@@ -149,6 +149,9 @@ describe("OptionsPage", () => {
         installationsRefreshedAt: 1,
         invalidated: false,
         invalidatedReason: null,
+        refreshToken: null,
+        expiresAt: null,
+        refreshTokenExpiresAt: null,
       },
     ]);
     await renderOptionsPage();

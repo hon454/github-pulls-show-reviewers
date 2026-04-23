@@ -74,6 +74,9 @@ describe("accounts storage", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     const accounts = await listAccounts();
     expect(accounts).toHaveLength(1);
@@ -94,6 +97,9 @@ describe("accounts storage", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     await removeAccount("acc-1");
     await expect(listAccounts()).resolves.toEqual([]);
@@ -113,6 +119,9 @@ describe("accounts storage", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     await replaceInstallations("acc-1", [
       {
@@ -142,6 +151,9 @@ describe("accounts storage", () => {
       installationsRefreshedAt: 1,
       invalidated: false,
       invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     await markAccountInvalidated("acc-1", "revoked");
     const [account] = await listAccounts();
