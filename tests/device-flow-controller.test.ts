@@ -20,10 +20,37 @@ vi.mock("../src/github/auth", () => ({
   fetchInstallationRepositories: vi.fn(),
 }));
 
-const addAccountMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const upsertAccountByLoginMock = vi.hoisted(() =>
+  vi.fn(
+    async (input: {
+      login: string;
+      avatarUrl: string | null;
+      token: string;
+      refreshToken: string | null;
+      expiresAt: number | null;
+      refreshTokenExpiresAt: number | null;
+      installations: unknown[];
+      newAccountId: string;
+      now: number;
+    }) => ({
+      id: input.newAccountId,
+      login: input.login,
+      avatarUrl: input.avatarUrl,
+      createdAt: input.now,
+      token: input.token,
+      refreshToken: input.refreshToken,
+      expiresAt: input.expiresAt,
+      refreshTokenExpiresAt: input.refreshTokenExpiresAt,
+      installations: input.installations,
+      installationsRefreshedAt: input.now,
+      invalidated: false,
+      invalidatedReason: null,
+    }),
+  ),
+);
 
 vi.mock("../src/storage/accounts", () => ({
-  addAccount: addAccountMock,
+  upsertAccountByLogin: upsertAccountByLoginMock,
   replaceInstallations: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -31,7 +58,7 @@ const auth = await import("../src/github/auth");
 
 beforeEach(() => {
   vi.useFakeTimers();
-  addAccountMock.mockClear();
+  upsertAccountByLoginMock.mockClear();
 });
 
 afterEach(() => {
@@ -96,8 +123,9 @@ describe("useDeviceFlowController", () => {
     expect(onConnected).toHaveBeenCalled();
     expect(result.current.state.phase).toBe("connected");
 
-    expect(addAccountMock).toHaveBeenCalledTimes(1);
-    expect(addAccountMock.mock.calls[0][0]).toMatchObject({
+    expect(upsertAccountByLoginMock).toHaveBeenCalledTimes(1);
+    expect(upsertAccountByLoginMock.mock.calls[0][0]).toMatchObject({
+      login: "hon454",
       token: "ghu_token",
       refreshToken: "ghr_token",
       expiresAt: 1_000_000,

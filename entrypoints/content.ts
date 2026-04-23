@@ -4,6 +4,10 @@ import {
 } from "../src/features/access-banner";
 import { bootReviewerListPage } from "../src/features/reviewers";
 import { parsePullListRoute } from "../src/github/routes";
+import {
+  GitHubApiError,
+  GitHubPullRequestEndpointsError,
+} from "../src/github/api";
 
 export default defineContentScript({
   matches: ["https://github.com/*/*"],
@@ -31,16 +35,21 @@ export default defineContentScript({
             if (aggregator == null) {
               return;
             }
-            const status = extractStatus(error);
-            if (status === 429 || (account == null && status === 403)) {
+
+            const signals = classifyRowFailure(error, account);
+            if (signals.rateLimited) {
               aggregator.reportUnauthRateLimit();
               return;
             }
-            if (status === 404 || status === 403 || account == null) {
+            if (signals.uncovered) {
               aggregator.reportUncoveredOwner(owner);
               return;
             }
-            // 401 and other errors — still flag uncovered so the banner can guide the user.
+            // Fallback for errors we cannot attribute (schema drift, network
+            // failure, aborted fetch, etc.). We keep the existing behavior and
+            // flag the owner as uncovered so the banner still guides the user
+            // toward App installation — doing nothing here would leave the row
+            // blank with no explanation.
             aggregator.reportUncoveredOwner(owner);
           },
         });
@@ -56,20 +65,51 @@ export default defineContentScript({
   },
 });
 
-function extractStatus(error: unknown): number | null {
-  if (error && typeof error === "object" && "status" in error) {
-    const value = (error as { status: unknown }).status;
-    return typeof value === "number" ? value : null;
+type RowFailureClassification = {
+  rateLimited: boolean;
+  uncovered: boolean;
+};
+
+function classifyRowFailure(
+  error: unknown,
+  account: { id?: string } | null,
+): RowFailureClassification {
+  const failures = collectApiFailures(error);
+
+  // With no authenticated account, any 403 indicates the unauthenticated
+  // tier was rejected — treat as the unauth rate-limit case so the banner
+  // invites the user to sign in. Any explicit 429 is always rate-limited.
+  const rateLimited = failures.some(
+    (failure) =>
+      failure.status === 429 ||
+      (account == null && failure.status === 403),
+  );
+  if (rateLimited) {
+    return { rateLimited: true, uncovered: false };
   }
-  if (
-    error &&
-    typeof error === "object" &&
-    "failures" in error &&
-    Array.isArray((error as { failures: unknown }).failures)
-  ) {
-    const first = (error as { failures: Array<{ status?: number }> })
-      .failures[0];
-    return typeof first?.status === "number" ? first.status : null;
+
+  const uncovered = failures.some(
+    (failure) => failure.status === 404 || failure.status === 403,
+  );
+  if (uncovered) {
+    return { rateLimited: false, uncovered: true };
   }
-  return null;
+
+  // No signed-in account at all: the row failure is effectively an
+  // access-gate signal, not a server-side coverage problem.
+  if (account == null) {
+    return { rateLimited: false, uncovered: true };
+  }
+
+  return { rateLimited: false, uncovered: false };
+}
+
+function collectApiFailures(error: unknown): GitHubApiError[] {
+  if (error instanceof GitHubPullRequestEndpointsError) {
+    return error.failures;
+  }
+  if (error instanceof GitHubApiError) {
+    return [error];
+  }
+  return [];
 }

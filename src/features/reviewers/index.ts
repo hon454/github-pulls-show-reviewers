@@ -20,9 +20,11 @@ import {
 } from "../../storage/preferences";
 
 import {
+  clearRenderedReviewerState,
   ensureReviewerMount,
   ensureReviewerStyles,
   extractPullNumber,
+  mountHasRenderedChips,
   renderLoading,
   renderReviewers,
 } from "./dom";
@@ -45,8 +47,19 @@ export function bootReviewerListPage(
 
   let currentRoute = parsePullListRoute(window.location.pathname);
   let currentHref = window.location.href;
-  const inflightRequests = new Map<string, Promise<void>>();
+  type InflightRequest = {
+    promise: Promise<void>;
+    controller: AbortController;
+  };
+  const inflightRequests = new Map<string, InflightRequest>();
   let cachedPreferences: Promise<Preferences> | null = null;
+
+  function abortInflightRequests(): void {
+    for (const request of inflightRequests.values()) {
+      request.controller.abort();
+    }
+    inflightRequests.clear();
+  }
 
   function readPreferences(): Promise<Preferences> {
     if (cachedPreferences == null) {
@@ -87,15 +100,32 @@ export function bootReviewerListPage(
 
     const existingRequest = inflightRequests.get(cacheKey);
     if (existingRequest) {
-      renderLoading(mount);
-      await existingRequest;
+      // Option (a): if another caller already cached the summary for this
+      // key, render it immediately instead of flashing the loading text.
+      // This also covers the race where the cache has just been set but the
+      // inflight entry has not been deleted yet.
+      const existingSummary = getCachedReviewerSummary(cacheKey);
+      if (existingSummary) {
+        await renderSummaryForMount(mount, route, existingSummary);
+      } else if (!mountHasRenderedChips(mount)) {
+        renderLoading(mount);
+      }
+      try {
+        await existingRequest.promise;
+      } catch {
+        // Existing request errors are reported via its own onRowFailure; swallow here.
+      }
       await renderSummaryForMount(mount, route, getCachedReviewerSummary(cacheKey));
       return;
     }
 
-    renderLoading(mount);
+    if (!mountHasRenderedChips(mount)) {
+      renderLoading(mount);
+    }
 
-    const request = (async () => {
+    const controller = new AbortController();
+    let request: InflightRequest | null = null;
+    const promise = (async () => {
       const account = await resolveAccountForRepo(route.owner, route.repo);
 
       try {
@@ -104,11 +134,19 @@ export function bootReviewerListPage(
           owner: route.owner,
           repo: route.repo,
           pullNumber,
+          signal: controller.signal,
         });
+        if (controller.signal.aborted) {
+          return;
+        }
         setCachedReviewerSummary(cacheKey, summary);
       } catch (error) {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
         mount.replaceChildren();
         mount.removeAttribute("title");
+        clearRenderedReviewerState(mount);
         options?.onRowFailure?.({
           owner: route.owner,
           repo: route.repo,
@@ -116,12 +154,24 @@ export function bootReviewerListPage(
           error,
         });
       } finally {
-        inflightRequests.delete(cacheKey);
+        // Only delete if this is still the tracked request for that key.
+        if (request != null && inflightRequests.get(cacheKey) === request) {
+          inflightRequests.delete(cacheKey);
+        }
       }
     })();
+    request = { controller, promise };
 
     inflightRequests.set(cacheKey, request);
-    await request;
+    try {
+      await request.promise;
+    } catch {
+      // Errors are handled inside the async block; nothing to do here.
+    }
+
+    if (controller.signal.aborted) {
+      return;
+    }
 
     await renderSummaryForMount(mount, route, getCachedReviewerSummary(cacheKey));
   }
@@ -140,14 +190,13 @@ export function bootReviewerListPage(
     currentHref = nextHref;
     const previousRoute = currentRoute;
     currentRoute = parsePullListRoute(window.location.pathname);
+    abortInflightRequests();
 
     if (
-      previousRoute &&
-      currentRoute &&
-      (previousRoute.owner !== currentRoute.owner || previousRoute.repo !== currentRoute.repo)
+      previousRoute?.owner !== currentRoute?.owner ||
+      previousRoute?.repo !== currentRoute?.repo
     ) {
       clearReviewerCache();
-      inflightRequests.clear();
     }
 
     processRows();
@@ -188,7 +237,7 @@ export function bootReviewerListPage(
 
     if (isAccountsChange(changes)) {
       clearReviewerCache();
-      inflightRequests.clear();
+      abortInflightRequests();
       processRows();
     }
   };
@@ -206,17 +255,34 @@ async function fetchWithRefresh(args: {
   owner: string;
   repo: string;
   pullNumber: string;
+  signal?: AbortSignal;
 }): Promise<Awaited<ReturnType<typeof fetchPullReviewerSummary>>> {
-  const { account, owner, repo, pullNumber } = args;
+  const { account, owner, repo, pullNumber, signal } = args;
 
   return retryWithAccountRefresh({
     account,
     execute: async (token) =>
       fetchPullReviewerSummary({
-      owner,
-      repo,
-      pullNumber,
-      githubToken: token,
-    }),
+        owner,
+        repo,
+        pullNumber,
+        githubToken: token,
+        signal,
+      }),
   });
+}
+
+function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return true;
+  }
+  if (
+    error != null &&
+    typeof error === "object" &&
+    "name" in error &&
+    (error as { name: unknown }).name === "AbortError"
+  ) {
+    return true;
+  }
+  return false;
 }

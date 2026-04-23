@@ -151,6 +151,49 @@ export class GitHubPullRequestEndpointsError extends Error {
   }
 }
 
+export class GitHubApiSchemaError extends Error {
+  constructor(
+    public readonly endpoint: GitHubEndpointDescriptor,
+    public readonly issues?: unknown,
+  ) {
+    super(
+      `GitHub returned an unexpected response shape for ${endpoint.method} ${endpoint.path}.`,
+    );
+    this.name = "GitHubApiSchemaError";
+  }
+}
+
+export function extractGitHubApiStatus(error: unknown): number | null {
+  if (error instanceof GitHubApiError) {
+    return error.status;
+  }
+  if (error instanceof GitHubPullRequestEndpointsError) {
+    const first = error.failures[0];
+    return first?.status ?? null;
+  }
+  if (error && typeof error === "object" && "status" in error) {
+    const value = (error as { status: unknown }).status;
+    return typeof value === "number" ? value : null;
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "failures" in error &&
+    Array.isArray((error as { failures: unknown }).failures)
+  ) {
+    const first = (error as { failures: Array<{ status?: number }> })
+      .failures[0];
+    return typeof first?.status === "number" ? first.status : null;
+  }
+  if (error instanceof Error) {
+    const match = /status (\d+)/i.exec(error.message);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+  return null;
+}
+
 const errorResponseSchema = z
   .object({
     message: z.string().optional(),
@@ -169,6 +212,10 @@ export function describeGitHubApiError(
 
   if (error instanceof GitHubApiError) {
     return describeGitHubEndpointError(error, auth);
+  }
+
+  if (error instanceof GitHubApiSchemaError) {
+    return error.message;
   }
 
   if (error instanceof Error) {
@@ -219,8 +266,16 @@ export async function fetchPullReviewerSummary(input: {
     throw new GitHubPullRequestEndpointsError(failures);
   }
 
-  const pull = pullSchema.parse(await pullResponse.json());
-  const reviews = reviewsSchema.parse(await reviewsResponse.json());
+  const pullParsed = pullSchema.safeParse(await pullResponse.json());
+  if (!pullParsed.success) {
+    throw new GitHubApiSchemaError(pullEndpoint, pullParsed.error.issues);
+  }
+  const reviewsParsed = reviewsSchema.safeParse(await reviewsResponse.json());
+  if (!reviewsParsed.success) {
+    throw new GitHubApiSchemaError(reviewsEndpoint, reviewsParsed.error.issues);
+  }
+  const pull = pullParsed.data;
+  const reviews = reviewsParsed.data;
   const latestNonCommentByUser = new Map<
     string,
     {

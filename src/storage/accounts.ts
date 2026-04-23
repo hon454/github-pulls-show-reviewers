@@ -262,6 +262,107 @@ export async function addAccount(account: Account): Promise<void> {
   await writeAccounts(next, [account]);
 }
 
+/**
+ * Upsert an account by GitHub login (case-insensitive).
+ *
+ * If an account with the same login already exists, reuse its id and
+ * createdAt but swap in the freshly obtained auth (token, refreshToken,
+ * expiresAt, refreshTokenExpiresAt) and installations snapshot. The
+ * invalidated flag is cleared so the account becomes active again. If
+ * duplicate records already exist for the login, preserve the earliest
+ * matching record and drop the extras.
+ *
+ * If no account matches the login, append as a new account.
+ *
+ * Returns the resulting Account (either the updated existing one or the
+ * newly appended one).
+ */
+export async function upsertAccountByLogin(input: {
+  login: string;
+  avatarUrl: string | null;
+  token: string;
+  refreshToken: string | null;
+  expiresAt: number | null;
+  refreshTokenExpiresAt: number | null;
+  installations: Installation[];
+  newAccountId: string;
+  now: number;
+}): Promise<Account> {
+  const { settings, matches } = await findAccountsByLogin(input.login);
+  const existing = matches[0] ?? null;
+
+  if (existing != null) {
+    const updated: Account = {
+      ...existing,
+      // Keep id + createdAt. Refresh the login casing from the fresh
+      // GitHub profile so subsequent lookups match what GitHub returns.
+      login: input.login,
+      avatarUrl: input.avatarUrl,
+      token: input.token,
+      refreshToken: input.refreshToken,
+      expiresAt: input.expiresAt,
+      refreshTokenExpiresAt: input.refreshTokenExpiresAt,
+      invalidated: false,
+      invalidatedReason: null,
+      installations: input.installations,
+      installationsRefreshedAt: input.now,
+    };
+
+    const duplicateIds = matches.slice(1).map((account) => account.id);
+    const nextSettings: ExtensionSettings =
+      duplicateIds.length === 0
+        ? settings
+        : {
+            version: 4,
+            accountIds: settings.accountIds.filter((id) => !duplicateIds.includes(id)),
+          };
+
+    // Preserve the retained account's position in the accountIds ordering.
+    await writeAccounts(nextSettings, [updated]);
+    if (duplicateIds.length > 0) {
+      await browser.storage.local.remove(
+        duplicateIds.flatMap((accountId) => accountStorageKeys(accountId)),
+      );
+    }
+    return updated;
+  }
+
+  const account: Account = {
+    id: input.newAccountId,
+    login: input.login,
+    avatarUrl: input.avatarUrl,
+    createdAt: input.now,
+    token: input.token,
+    refreshToken: input.refreshToken,
+    expiresAt: input.expiresAt,
+    refreshTokenExpiresAt: input.refreshTokenExpiresAt,
+    invalidated: false,
+    invalidatedReason: null,
+    installations: input.installations,
+    installationsRefreshedAt: input.now,
+  };
+  await addAccount(account);
+  return account;
+}
+
+async function findAccountsByLogin(login: string): Promise<{
+  settings: ExtensionSettings;
+  matches: Account[];
+}> {
+  let settings = await getSettings();
+  const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
+  if (validIds.length !== settings.accountIds.length) {
+    settings = { version: 4, accountIds: validIds };
+    await writeSettings(settings);
+  }
+
+  const normalized = login.toLowerCase();
+  return {
+    settings,
+    matches: accounts.filter((account) => account.login.toLowerCase() === normalized),
+  };
+}
+
 export async function removeAccount(id: string): Promise<void> {
   const settings = await getSettings();
   const next: ExtensionSettings = {
