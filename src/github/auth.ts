@@ -186,6 +186,112 @@ export async function pollForAccessToken(input: {
   );
 }
 
+export type RefreshTokenErrorKind = "terminal" | "transient";
+
+export class RefreshTokenError extends Error {
+  constructor(
+    public readonly kind: RefreshTokenErrorKind,
+    public readonly code: string,
+    message?: string,
+  ) {
+    super(message ?? `Refresh token error: ${code}`);
+    this.name = "RefreshTokenError";
+  }
+}
+
+const TERMINAL_REFRESH_ERRORS = new Set<string>([
+  "bad_refresh_token",
+  "unauthorized_client",
+  "invalid_grant",
+  "unsupported_grant_type",
+]);
+
+export type RefreshTokenResult = {
+  accessToken: string;
+  refreshToken: string | null;
+  expiresAt: number | null;
+  refreshTokenExpiresAt: number | null;
+};
+
+export async function refreshAccessToken(input: {
+  clientId: string;
+  refreshToken: string;
+  signal?: AbortSignal;
+}): Promise<RefreshTokenResult> {
+  let response: Response;
+  try {
+    response = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        client_id: input.clientId,
+        grant_type: "refresh_token",
+        refresh_token: input.refreshToken,
+      }).toString(),
+      signal: input.signal,
+    });
+  } catch (cause) {
+    throw new RefreshTokenError(
+      "transient",
+      "network_error",
+      cause instanceof Error ? cause.message : undefined,
+    );
+  }
+
+  if (!response.ok) {
+    throw new RefreshTokenError(
+      "transient",
+      "network_error",
+      `Refresh request failed with status ${response.status}.`,
+    );
+  }
+
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch (cause) {
+    throw new RefreshTokenError(
+      "transient",
+      "invalid_response",
+      cause instanceof Error ? cause.message : undefined,
+    );
+  }
+
+  const parsed = accessTokenResponseSchema.safeParse(json);
+  if (!parsed.success) {
+    throw new RefreshTokenError(
+      "transient",
+      "invalid_response",
+      "Malformed refresh-token response.",
+    );
+  }
+
+  if ("access_token" in parsed.data) {
+    const now = Date.now();
+    return {
+      accessToken: parsed.data.access_token,
+      refreshToken: parsed.data.refresh_token ?? null,
+      expiresAt:
+        typeof parsed.data.expires_in === "number"
+          ? now + parsed.data.expires_in * 1000
+          : null,
+      refreshTokenExpiresAt:
+        typeof parsed.data.refresh_token_expires_in === "number"
+          ? now + parsed.data.refresh_token_expires_in * 1000
+          : null,
+    };
+  }
+
+  const code = parsed.data.error;
+  const kind: RefreshTokenErrorKind = TERMINAL_REFRESH_ERRORS.has(code)
+    ? "terminal"
+    : "transient";
+  throw new RefreshTokenError(kind, code, parsed.data.error_description);
+}
+
 function createAuthHeaders(token: string): Headers {
   return new Headers({
     Accept: "application/vnd.github+json",
