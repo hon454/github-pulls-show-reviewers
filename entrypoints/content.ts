@@ -2,7 +2,7 @@ import { bootAccessBanner } from "../src/features/access-banner";
 import { bootReviewerListPage } from "../src/features/reviewers";
 
 export default defineContentScript({
-  matches: ["https://github.com/*/*"],
+  matches: ["https://github.com/*/*/pulls*"],
   runAt: "document_idle",
   main(ctx) {
     let aggregator = bootAccessBanner(ctx);

@@ -34,6 +34,11 @@ afterEach(() => {
 });
 
 describe("content entrypoint", () => {
+  it("narrows its content-script match pattern to PR list routes", async () => {
+    const { default: content } = await import("../entrypoints/content");
+    expect(content.matches).toEqual(["https://github.com/*/*/pulls*"]);
+  });
+
   it("re-initializes the access banner when navigation enters a PR list", async () => {
     const aggregator = {
       reportUncoveredOwner: vi.fn(),
