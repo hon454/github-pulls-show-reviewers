@@ -241,35 +241,25 @@ export async function refreshAccessToken(input: {
     );
   }
 
-  if (!response.ok) {
-    throw new RefreshTokenError(
-      "transient",
-      "network_error",
-      `Refresh request failed with status ${response.status}.`,
-    );
-  }
-
-  let json: unknown;
+  let json: unknown = null;
+  let readJsonError: unknown = null;
   try {
     json = await response.json();
   } catch (cause) {
-    throw new RefreshTokenError(
-      "transient",
-      "invalid_response",
-      cause instanceof Error ? cause.message : undefined,
-    );
+    readJsonError = cause;
   }
 
   const parsed = accessTokenResponseSchema.safeParse(json);
-  if (!parsed.success) {
-    throw new RefreshTokenError(
-      "transient",
-      "invalid_response",
-      "Malformed refresh-token response.",
-    );
-  }
 
-  if ("access_token" in parsed.data) {
+  if (parsed.success && "access_token" in parsed.data) {
+    if (!response.ok) {
+      // Success envelope on a non-2xx response is unexpected; treat as transient.
+      throw new RefreshTokenError(
+        "transient",
+        "invalid_response",
+        `Refresh succeeded with status ${response.status} but the response was unexpected.`,
+      );
+    }
     const now = Date.now();
     return {
       accessToken: parsed.data.access_token,
@@ -285,11 +275,35 @@ export async function refreshAccessToken(input: {
     };
   }
 
-  const code = parsed.data.error;
-  const kind: RefreshTokenErrorKind = TERMINAL_REFRESH_ERRORS.has(code)
-    ? "terminal"
-    : "transient";
-  throw new RefreshTokenError(kind, code, parsed.data.error_description);
+  if (parsed.success && "error" in parsed.data) {
+    const code = parsed.data.error;
+    const kind: RefreshTokenErrorKind = TERMINAL_REFRESH_ERRORS.has(code)
+      ? "terminal"
+      : "transient";
+    throw new RefreshTokenError(kind, code, parsed.data.error_description);
+  }
+
+  if (!response.ok) {
+    // HTTP 400/401 on refresh_token grant indicate bad client credentials or an
+    // invalid/revoked refresh token per OAuth2 and GitHub App device-flow docs.
+    const kind: RefreshTokenErrorKind =
+      response.status === 400 || response.status === 401
+        ? "terminal"
+        : "transient";
+    throw new RefreshTokenError(
+      kind,
+      "http_error",
+      `Refresh request failed with status ${response.status}.`,
+    );
+  }
+
+  throw new RefreshTokenError(
+    "transient",
+    "invalid_response",
+    readJsonError instanceof Error
+      ? readJsonError.message
+      : "Malformed refresh-token response.",
+  );
 }
 
 function createAuthHeaders(token: string): Headers {

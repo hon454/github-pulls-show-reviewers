@@ -1,6 +1,6 @@
 # ADR 0003: GitHub App + Device Flow
 
-- Status: Accepted
+- Status: Accepted — token lifecycle amended by [ADR 0004](./0004-github-app-token-refresh.md)
 - Date: 2026-04-21
 
 ## Context
@@ -57,6 +57,9 @@ Ship a maintainer-owned GitHub App plus OAuth Device Flow.
 - User-to-server tokens have no refresh in a pure-client setting (the refresh
   endpoint requires a client secret). Users sign in again when a token is
   revoked — detected lazily and surfaced through the banner and options page.
+  *(Amended by [ADR 0004](./0004-github-app-token-refresh.md): GitHub's
+  device-flow refresh grant does work without a client secret; the extension
+  now exchanges refresh tokens in the service worker before invalidating.)*
 
 ### Neutral
 

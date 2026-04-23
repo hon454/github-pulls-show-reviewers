@@ -83,6 +83,62 @@ describe("refreshAccessToken", () => {
     });
   });
 
+  it("throws RefreshTokenError(terminal) when a 4xx body carries a terminal OAuth error", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse(fixture("refresh-token-bad.json"), 401),
+    );
+
+    await expect(
+      refreshAccessToken({ clientId: "Iv1.test", refreshToken: "ghr_old" }),
+    ).rejects.toMatchObject({
+      name: "RefreshTokenError",
+      kind: "terminal",
+      code: "bad_refresh_token",
+    });
+  });
+
+  it("throws RefreshTokenError(terminal) for HTTP 400 without a parseable body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("bad request", { status: 400 }),
+    );
+
+    await expect(
+      refreshAccessToken({ clientId: "Iv1.test", refreshToken: "ghr_old" }),
+    ).rejects.toMatchObject({
+      name: "RefreshTokenError",
+      kind: "terminal",
+      code: "http_error",
+    });
+  });
+
+  it("throws RefreshTokenError(terminal) for HTTP 401 without a parseable body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("unauthorized", { status: 401 }),
+    );
+
+    await expect(
+      refreshAccessToken({ clientId: "Iv1.test", refreshToken: "ghr_old" }),
+    ).rejects.toMatchObject({
+      name: "RefreshTokenError",
+      kind: "terminal",
+      code: "http_error",
+    });
+  });
+
+  it("throws RefreshTokenError(transient) for HTTP 429 (rate limit)", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response("slow down", { status: 429 }),
+    );
+
+    await expect(
+      refreshAccessToken({ clientId: "Iv1.test", refreshToken: "ghr_old" }),
+    ).rejects.toMatchObject({
+      name: "RefreshTokenError",
+      kind: "transient",
+      code: "http_error",
+    });
+  });
+
   it("throws RefreshTokenError(transient) when fetch itself rejects", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValueOnce(new Error("offline"));
 
