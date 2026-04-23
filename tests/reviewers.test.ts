@@ -11,9 +11,15 @@ const markAccountInvalidatedMock = vi.fn();
 const getPreferencesMock = vi.fn();
 const runtimeSendMessageMock = vi.fn();
 
-vi.mock("../src/github/api", () => ({
-  fetchPullReviewerSummary: fetchPullReviewerSummaryMock,
-}));
+vi.mock("../src/github/api", async () => {
+  const actual = await vi.importActual<typeof import("../src/github/api")>(
+    "../src/github/api",
+  );
+  return {
+    ...actual,
+    fetchPullReviewerSummary: fetchPullReviewerSummaryMock,
+  };
+});
 
 vi.mock("../src/storage/accounts", () => ({
   resolveAccountForRepo: resolveAccountForRepoMock,

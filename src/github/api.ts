@@ -163,6 +163,37 @@ export class GitHubApiSchemaError extends Error {
   }
 }
 
+export function extractGitHubApiStatus(error: unknown): number | null {
+  if (error instanceof GitHubApiError) {
+    return error.status;
+  }
+  if (error instanceof GitHubPullRequestEndpointsError) {
+    const first = error.failures[0];
+    return first?.status ?? null;
+  }
+  if (error && typeof error === "object" && "status" in error) {
+    const value = (error as { status: unknown }).status;
+    return typeof value === "number" ? value : null;
+  }
+  if (
+    error &&
+    typeof error === "object" &&
+    "failures" in error &&
+    Array.isArray((error as { failures: unknown }).failures)
+  ) {
+    const first = (error as { failures: Array<{ status?: number }> })
+      .failures[0];
+    return typeof first?.status === "number" ? first.status : null;
+  }
+  if (error instanceof Error) {
+    const match = /status (\d+)/i.exec(error.message);
+    if (match) {
+      return Number(match[1]);
+    }
+  }
+  return null;
+}
+
 const errorResponseSchema = z
   .object({
     message: z.string().optional(),

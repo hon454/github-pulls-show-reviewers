@@ -1,4 +1,5 @@
 import {
+  extractGitHubApiStatus,
   validateGitHubRepositoryAccess,
   type RepositoryValidationResult,
 } from "../github/api";
@@ -7,32 +8,6 @@ import {
   markAccountInvalidated,
   type Account,
 } from "../storage/accounts";
-
-function extractStatus(error: unknown): number | null {
-  if (error && typeof error === "object" && "status" in error) {
-    const value = (error as { status: unknown }).status;
-    return typeof value === "number" ? value : null;
-  }
-
-  if (
-    error &&
-    typeof error === "object" &&
-    "failures" in error &&
-    Array.isArray((error as { failures: unknown }).failures)
-  ) {
-    const first = (error as { failures: Array<{ status?: number }> }).failures[0];
-    return typeof first?.status === "number" ? first.status : null;
-  }
-
-  if (error instanceof Error) {
-    const match = /status (\d+)/i.exec(error.message);
-    if (match) {
-      return Number(match[1]);
-    }
-  }
-
-  return null;
-}
 
 export async function validateRepositoryAccessWithAccount(input: {
   account: Account;
@@ -82,7 +57,7 @@ export async function retryWithAccountRefresh<T>(input: {
   try {
     return await execute(account?.token ?? null);
   } catch (error) {
-    if (extractStatus(error) !== 401 || account == null) {
+    if (extractGitHubApiStatus(error) !== 401 || account == null) {
       throw error;
     }
 
@@ -107,7 +82,7 @@ export async function retryWithAccountRefresh<T>(input: {
     try {
       return await execute(refreshed?.token ?? outcome.token);
     } catch (retryError) {
-      if (extractStatus(retryError) === 401) {
+      if (extractGitHubApiStatus(retryError) === 401) {
         await markAccountInvalidated(account.id, "revoked");
       }
       throw retryError;
