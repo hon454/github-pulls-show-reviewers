@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from "react";
 
+import { validateRepositoryAccessWithAccount } from "../../../src/auth/account-token-refresh";
 import { validateGitHubRepositoryAccess } from "../../../src/github/api";
 import {
   resolveAccountForRepo,
@@ -37,7 +38,10 @@ export function DiagnosticsPanel() {
         });
         return;
       }
-      const result = await validateGitHubRepositoryAccess(account, trimmed);
+      const result = await validateRepositoryAccessWithAccount({
+        account,
+        repository: trimmed,
+      });
       setStatus({ tone: result.ok ? "success" : "error", message: result.message });
     } finally {
       setBusy(false);

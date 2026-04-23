@@ -134,6 +134,10 @@ This extension is intentionally narrow. Manual verification should stay focused 
 6. Open the options page and click **Refresh installations**.
 7. Confirm the installation refresh also succeeds without requiring a fresh
    sign-in.
+8. In the options page, enter a covered repository and click
+   **Check matched account**. Confirm diagnostics reports success — it uses
+   the same refresh path as the runtime, so a stale access token must not
+   produce a false negative here.
 
 ### Expired access token with invalid refresh token
 
