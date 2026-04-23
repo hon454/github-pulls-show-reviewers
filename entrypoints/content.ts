@@ -4,7 +4,10 @@ import {
 } from "../src/features/access-banner";
 import { bootReviewerListPage } from "../src/features/reviewers";
 import { parsePullListRoute } from "../src/github/routes";
-import { extractReviewerFetchFailures } from "../src/runtime/reviewer-fetch";
+import {
+  type ReviewerFetchFailure,
+  extractReviewerFetchFailures,
+} from "../src/runtime/reviewer-fetch";
 
 export default defineContentScript({
   matches: ["https://github.com/*/*"],
@@ -67,10 +70,6 @@ type RowFailureClassification = {
   uncovered: boolean;
 };
 
-type ApiFailure = {
-  status: number;
-};
-
 function classifyRowFailure(
   error: unknown,
   account: { id?: string } | null,
@@ -105,6 +104,6 @@ function classifyRowFailure(
   return { rateLimited: false, uncovered: false };
 }
 
-function collectApiFailures(error: unknown): ApiFailure[] {
+function collectApiFailures(error: unknown): ReviewerFetchFailure[] {
   return extractReviewerFetchFailures(error);
 }

@@ -8,10 +8,16 @@ import {
 
 export type FetchPullReviewerSummaryMessage = {
   type: "fetchPullReviewerSummary";
+  requestId: string;
   owner: string;
   repo: string;
   pullNumber: string;
   accountId: string | null;
+};
+
+export type CancelPullReviewerSummaryMessage = {
+  type: "cancelPullReviewerSummary";
+  requestId: string;
 };
 
 export type ReviewerFetchFailure = {
@@ -36,6 +42,13 @@ export type FetchPullReviewerSummaryResponse =
       error: ReviewerFetchErrorEnvelope;
     };
 
+export class ReviewerFetchRuntimeError extends Error {
+  constructor(public readonly envelope: ReviewerFetchErrorEnvelope) {
+    super(envelope.message ?? "Background reviewer fetch failed.");
+    this.name = "ReviewerFetchRuntimeError";
+  }
+}
+
 export function isFetchPullReviewerSummaryMessage(
   value: unknown,
 ): value is FetchPullReviewerSummaryMessage {
@@ -43,11 +56,23 @@ export function isFetchPullReviewerSummaryMessage(
     value != null &&
     typeof value === "object" &&
     (value as { type?: unknown }).type === "fetchPullReviewerSummary" &&
-    typeof (value as { owner?: unknown }).owner === "string" &&
-    typeof (value as { repo?: unknown }).repo === "string" &&
-    typeof (value as { pullNumber?: unknown }).pullNumber === "string" &&
+    hasNonEmptyString((value as { requestId?: unknown }).requestId) &&
+    hasNonEmptyString((value as { owner?: unknown }).owner) &&
+    hasNonEmptyString((value as { repo?: unknown }).repo) &&
+    hasNonEmptyString((value as { pullNumber?: unknown }).pullNumber) &&
     (((value as { accountId?: unknown }).accountId === null) ||
       typeof (value as { accountId?: unknown }).accountId === "string")
+  );
+}
+
+export function isCancelPullReviewerSummaryMessage(
+  value: unknown,
+): value is CancelPullReviewerSummaryMessage {
+  return (
+    value != null &&
+    typeof value === "object" &&
+    (value as { type?: unknown }).type === "cancelPullReviewerSummary" &&
+    hasNonEmptyString((value as { requestId?: unknown }).requestId)
   );
 }
 
@@ -105,6 +130,10 @@ export function serializeReviewerFetchError(
 export function extractReviewerFetchFailures(
   error: unknown,
 ): ReviewerFetchFailure[] {
+  if (error instanceof ReviewerFetchRuntimeError) {
+    return extractReviewerFetchFailures(error.envelope);
+  }
+
   if (error instanceof GitHubPullRequestEndpointsError) {
     return error.failures.map((failure) => ({
       status: failure.status,
@@ -154,4 +183,8 @@ export function extractReviewerFetchFailures(
   }
 
   return [];
+}
+
+function hasNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }

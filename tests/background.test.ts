@@ -135,10 +135,23 @@ describe("background runtime.onMessage handler", () => {
       { id: SELF_RUNTIME_ID },
       () => {},
     );
+    const emptyReviewerFetch = listener(
+      {
+        type: "fetchPullReviewerSummary",
+        requestId: "req-1",
+        owner: "",
+        repo: "shotloom",
+        pullNumber: "42",
+        accountId: null,
+      },
+      { id: SELF_RUNTIME_ID },
+      () => {},
+    );
 
     expect(missingAccountId).toBeUndefined();
     expect(wrongType).toBeUndefined();
     expect(notAnObject).toBeUndefined();
+    expect(emptyReviewerFetch).toBeUndefined();
     expect(refreshAccountTokenMock).not.toHaveBeenCalled();
   });
 
@@ -160,6 +173,7 @@ describe("background runtime.onMessage handler", () => {
     const result = listener(
       {
         type: "fetchPullReviewerSummary",
+        requestId: "req-1",
         owner: "cinev",
         repo: "shotloom",
         pullNumber: "42",
@@ -178,6 +192,7 @@ describe("background runtime.onMessage handler", () => {
       repo: "shotloom",
       pullNumber: "42",
       githubToken: "ghu_123",
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -207,6 +222,7 @@ describe("background runtime.onMessage handler", () => {
     const result = listener(
       {
         type: "fetchPullReviewerSummary",
+        requestId: "req-1",
         owner: "cinev",
         repo: "shotloom",
         pullNumber: "42",
@@ -228,6 +244,37 @@ describe("background runtime.onMessage handler", () => {
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 
+  it("returns the original error without invalidating when refresh is transiently unavailable", async () => {
+    const listener = await bootBackground();
+    getAccountByIdMock.mockResolvedValue({
+      id: "acc-1",
+      token: "ghu_old",
+      refreshToken: "ghr_old",
+    });
+    refreshAccountTokenMock.mockResolvedValueOnce({ ok: false, terminal: false });
+    fetchPullReviewerSummaryMock.mockRejectedValueOnce({ status: 401 });
+
+    const result = listener(
+      {
+        type: "fetchPullReviewerSummary",
+        requestId: "req-1",
+        owner: "cinev",
+        repo: "shotloom",
+        pullNumber: "42",
+        accountId: "acc-1",
+      },
+      { id: SELF_RUNTIME_ID },
+      () => {},
+    );
+
+    await expect(result as Promise<unknown>).resolves.toMatchObject({
+      ok: false,
+      error: { kind: "unknown", status: 401 },
+    });
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+  });
+
   it("marks the account revoked when reviewer fetch 401s without a refresh token", async () => {
     const listener = await bootBackground();
     getAccountByIdMock.mockResolvedValue({
@@ -240,6 +287,7 @@ describe("background runtime.onMessage handler", () => {
     const result = listener(
       {
         type: "fetchPullReviewerSummary",
+        requestId: "req-1",
         owner: "cinev",
         repo: "shotloom",
         pullNumber: "42",
@@ -277,6 +325,7 @@ describe("background runtime.onMessage handler", () => {
     const result = listener(
       {
         type: "fetchPullReviewerSummary",
+        requestId: "req-1",
         owner: "cinev",
         repo: "shotloom",
         pullNumber: "42",
@@ -292,5 +341,55 @@ describe("background runtime.onMessage handler", () => {
     });
     expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
     expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
+  });
+
+  it("aborts an in-flight reviewer fetch when a cancel message arrives", async () => {
+    const listener = await bootBackground();
+    getAccountByIdMock.mockResolvedValue({
+      id: "acc-1",
+      token: "ghu_old",
+      refreshToken: "ghr_old",
+    });
+
+    let capturedSignal: AbortSignal | null = null;
+    fetchPullReviewerSummaryMock.mockImplementationOnce(
+      (input: { signal?: AbortSignal }) => {
+        capturedSignal = input.signal ?? null;
+        return new Promise(() => {});
+      },
+    );
+
+    void listener(
+      {
+        type: "fetchPullReviewerSummary",
+        requestId: "req-cancel",
+        owner: "cinev",
+        repo: "shotloom",
+        pullNumber: "42",
+        accountId: "acc-1",
+      },
+      { id: SELF_RUNTIME_ID },
+      () => {},
+    );
+
+    await Promise.resolve();
+    expect(capturedSignal).not.toBeNull();
+    const signal = capturedSignal as AbortSignal | null;
+    if (signal == null) {
+      throw new Error("expected background fetch signal");
+    }
+    expect(signal.aborted).toBe(false);
+
+    const cancelResult = listener(
+      {
+        type: "cancelPullReviewerSummary",
+        requestId: "req-cancel",
+      },
+      { id: SELF_RUNTIME_ID },
+      () => {},
+    );
+
+    expect(cancelResult).toBeUndefined();
+    expect(signal.aborted).toBe(true);
   });
 });

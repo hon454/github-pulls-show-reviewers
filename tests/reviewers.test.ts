@@ -203,13 +203,16 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(runtimeSendMessageMock).toHaveBeenCalledWith({
-      type: "fetchPullReviewerSummary",
-      owner: "cinev",
-      repo: "shotloom",
-      pullNumber: "42",
-      accountId: "acc-1",
-    });
+    expect(runtimeSendMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "fetchPullReviewerSummary",
+        owner: "cinev",
+        repo: "shotloom",
+        pullNumber: "42",
+        accountId: "acc-1",
+        requestId: expect.any(String),
+      }),
+    );
     expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
   });
 
@@ -249,14 +252,16 @@ describe("bootReviewerListPage", () => {
   it("aborts in-flight summary fetches on storage (accounts) change and drops the late result", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
-    // Capture the signal so we can assert abort() is called by the boot code.
     let resolveFetch: ((summary: PullReviewerSummary) => void) | null = null;
-    runtimeSendMessageMock.mockImplementationOnce(
-      () =>
+    runtimeSendMessageMock
+      .mockImplementationOnce(
+        () =>
         new Promise<{ ok: true; summary: PullReviewerSummary }>((resolve) => {
           resolveFetch = (summary) => resolve({ ok: true, summary });
         }),
-    );
+      )
+      .mockResolvedValueOnce(undefined)
+      .mockImplementationOnce(() => new Promise<void>(() => {}));
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
@@ -284,14 +289,19 @@ describe("bootReviewerListPage", () => {
       requestedTeams: [],
       completedReviews: [],
     };
-    // Second fetch (triggered by the storage change) also pends — no render.
-    runtimeSendMessageMock.mockImplementationOnce(
-      () => new Promise<void>(() => {}),
-    );
     resolveFetch!(latePayload);
 
     await flushMicrotasks();
     await flushMicrotasks();
+
+    expect(runtimeSendMessageMock.mock.calls[1]?.[0]).toMatchObject({
+      type: "cancelPullReviewerSummary",
+      requestId: expect.any(String),
+    });
+    expect(runtimeSendMessageMock.mock.calls[2]?.[0]).toMatchObject({
+      type: "fetchPullReviewerSummary",
+      requestId: expect.any(String),
+    });
 
     // The aborted fetch must not have written its summary into the cache.
     // Easiest proxy: the mount should still show the loading text from the
@@ -306,10 +316,10 @@ describe("bootReviewerListPage", () => {
     runtimeSendMessageMock.mockResolvedValueOnce({
       ok: true,
       summary: {
-      status: "ok",
-      requestedUsers: [{ login: "alice", avatarUrl: null }],
-      requestedTeams: [],
-      completedReviews: [],
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
       },
     });
 
@@ -360,9 +370,9 @@ describe("bootReviewerListPage", () => {
   it("aborts in-flight summary fetches when navigation leaves the pull-list route", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
-    runtimeSendMessageMock.mockImplementationOnce(
-      () => new Promise<void>(() => {}),
-    );
+    runtimeSendMessageMock
+      .mockImplementationOnce(() => new Promise<void>(() => {}))
+      .mockResolvedValueOnce(undefined);
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     const ctx = makeCtx();
@@ -375,5 +385,10 @@ describe("bootReviewerListPage", () => {
     getRegisteredListener(ctx, "wxt:locationchange")?.();
 
     await flushMicrotasks();
+
+    expect(runtimeSendMessageMock.mock.calls[1]?.[0]).toMatchObject({
+      type: "cancelPullReviewerSummary",
+      requestId: expect.any(String),
+    });
   });
 });
