@@ -123,43 +123,42 @@ export function bootReviewerListPage(
     }
 
     const controller = new AbortController();
-    const request: InflightRequest = {
-      controller,
-      promise: (async () => {
-        const account = await resolveAccountForRepo(route.owner, route.repo);
+    let request: InflightRequest | null = null;
+    const promise = (async () => {
+      const account = await resolveAccountForRepo(route.owner, route.repo);
 
-        try {
-          const summary = await fetchWithRefresh({
-            account,
-            owner: route.owner,
-            repo: route.repo,
-            pullNumber,
-            signal: controller.signal,
-          });
-          if (controller.signal.aborted) {
-            return;
-          }
-          setCachedReviewerSummary(cacheKey, summary);
-        } catch (error) {
-          if (isAbortError(error) || controller.signal.aborted) {
-            return;
-          }
-          mount.replaceChildren();
-          mount.removeAttribute("title");
-          options?.onRowFailure?.({
-            owner: route.owner,
-            repo: route.repo,
-            account,
-            error,
-          });
-        } finally {
-          // Only delete if this is still the tracked request for that key.
-          if (inflightRequests.get(cacheKey) === request) {
-            inflightRequests.delete(cacheKey);
-          }
+      try {
+        const summary = await fetchWithRefresh({
+          account,
+          owner: route.owner,
+          repo: route.repo,
+          pullNumber,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) {
+          return;
         }
-      })(),
-    };
+        setCachedReviewerSummary(cacheKey, summary);
+      } catch (error) {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
+        }
+        mount.replaceChildren();
+        mount.removeAttribute("title");
+        options?.onRowFailure?.({
+          owner: route.owner,
+          repo: route.repo,
+          account,
+          error,
+        });
+      } finally {
+        // Only delete if this is still the tracked request for that key.
+        if (request != null && inflightRequests.get(cacheKey) === request) {
+          inflightRequests.delete(cacheKey);
+        }
+      }
+    })();
+    request = { controller, promise };
 
     inflightRequests.set(cacheKey, request);
     try {
