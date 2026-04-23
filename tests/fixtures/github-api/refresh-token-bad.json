@@ -1,0 +1,5 @@
+{
+  "error": "bad_refresh_token",
+  "error_description": "The refresh token is invalid.",
+  "error_uri": "https://docs.github.com/apps"
+}
