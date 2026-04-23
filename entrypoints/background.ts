@@ -1,10 +1,15 @@
 import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
+import { createProactiveRefreshService } from "../src/background/proactive-refresh";
 import { createReviewerFetchService } from "../src/background/reviewer-fetch";
 import { getGitHubAppConfig } from "../src/config/github-app";
 import {
   isCancelPullReviewerSummaryMessage,
   isFetchPullReviewerSummaryMessage,
 } from "../src/runtime/reviewer-fetch";
+import {
+  listAccounts,
+  markAccountInvalidated,
+} from "../src/storage/accounts";
 
 export default defineBackground(() => {
   const coordinator = createRefreshCoordinator({
@@ -12,6 +17,28 @@ export default defineBackground(() => {
   });
   const reviewerFetchService = createReviewerFetchService({
     refreshCoordinator: coordinator,
+  });
+  const proactiveRefreshService = createProactiveRefreshService({
+    refreshCoordinator: coordinator,
+    listAccounts,
+    markAccountInvalidated,
+    now: () => Date.now(),
+  });
+
+  proactiveRefreshService.scheduleAlarm().catch((error) => {
+    console.error(
+      "[GitHub Pulls Show Reviewers] Failed to schedule proactive refresh alarm.",
+      error,
+    );
+  });
+
+  browser.alarms.onAlarm.addListener((alarm) => {
+    proactiveRefreshService.handleAlarmFire(alarm.name).catch((error) => {
+      console.error(
+        "[GitHub Pulls Show Reviewers] Proactive refresh alarm failed.",
+        error,
+      );
+    });
   });
 
   browser.runtime.onInstalled.addListener((details) => {

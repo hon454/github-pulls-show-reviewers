@@ -1,11 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as GithubApiModule from "../src/github/api";
 import { CANCELED_REQUEST_TTL_MS } from "../src/background/reviewer-fetch";
+import {
+  PROACTIVE_REFRESH_ALARM_NAME,
+  PROACTIVE_REFRESH_PERIOD_MINUTES,
+  PROACTIVE_REFRESH_THRESHOLD_MS,
+} from "../src/config/proactive-refresh";
 
 const {
   refreshAccountTokenMock,
   fetchPullReviewerSummaryMock,
   getAccountByIdMock,
+  listAccountsMock,
   markAccountInvalidatedMock,
   createRefreshCoordinatorMock,
   getGitHubAppConfigMock,
@@ -13,6 +19,7 @@ const {
   refreshAccountTokenMock: vi.fn(),
   fetchPullReviewerSummaryMock: vi.fn(),
   getAccountByIdMock: vi.fn(),
+  listAccountsMock: vi.fn<() => Promise<unknown[]>>(),
   markAccountInvalidatedMock: vi.fn(),
   createRefreshCoordinatorMock: vi.fn(),
   getGitHubAppConfigMock: vi.fn(() => ({ clientId: "test-client-id" })),
@@ -31,6 +38,7 @@ vi.mock("../src/config/github-app", () => ({
 
 vi.mock("../src/storage/accounts", () => ({
   getAccountById: getAccountByIdMock,
+  listAccounts: listAccountsMock,
   markAccountInvalidated: markAccountInvalidatedMock,
 }));
 
@@ -59,16 +67,22 @@ function flushMicrotasks() {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+let capturedAlarmListener: ((alarm: { name: string }) => void) | null;
+const alarmsCreateMock = vi.fn(async () => undefined);
+
 beforeEach(() => {
   vi.resetModules();
   refreshAccountTokenMock.mockReset();
   fetchPullReviewerSummaryMock.mockReset();
   getAccountByIdMock.mockReset();
+  listAccountsMock.mockReset().mockResolvedValue([]);
   markAccountInvalidatedMock.mockReset();
   refreshAccountTokenMock.mockResolvedValue({ ok: true, token: "new-token" });
   createRefreshCoordinatorMock.mockClear();
   getGitHubAppConfigMock.mockClear();
+  alarmsCreateMock.mockClear();
   capturedMessageListener = null;
+  capturedAlarmListener = null;
 
   vi.stubGlobal("defineBackground", (main: () => void) => ({ main }));
   vi.stubGlobal("browser", {
@@ -84,6 +98,15 @@ beforeEach(() => {
     },
     action: {
       onClicked: { addListener: vi.fn() },
+    },
+    alarms: {
+      create: alarmsCreateMock,
+      get: vi.fn(async () => undefined),
+      onAlarm: {
+        addListener: vi.fn((listener: (alarm: { name: string }) => void) => {
+          capturedAlarmListener = listener;
+        }),
+      },
     },
   });
 });
@@ -545,5 +568,99 @@ describe("background runtime.onMessage handler", () => {
       throw new Error("expected background fetch signal");
     }
     expect(signal.aborted).toBe(true);
+  });
+});
+
+describe("background proactive refresh wiring", () => {
+  it("schedules the proactive refresh alarm on boot", async () => {
+    await bootBackground();
+
+    expect(alarmsCreateMock).toHaveBeenCalledWith(
+      PROACTIVE_REFRESH_ALARM_NAME,
+      { periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES },
+    );
+  });
+
+  it("refreshes eligible accounts when the proactive alarm fires", async () => {
+    const now = 1_700_000_000_000;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(now));
+    listAccountsMock.mockResolvedValue([
+      {
+        id: "acc-due",
+        login: "due",
+        avatarUrl: null,
+        token: "ghu",
+        createdAt: 1,
+        installations: [],
+        installationsRefreshedAt: 1,
+        invalidated: false,
+        invalidatedReason: null,
+        refreshToken: "ghr",
+        expiresAt: now + PROACTIVE_REFRESH_THRESHOLD_MS - 1_000,
+        refreshTokenExpiresAt: null,
+      },
+    ]);
+
+    await bootBackground();
+    if (capturedAlarmListener == null) {
+      throw new Error("background did not register an alarms.onAlarm listener");
+    }
+    capturedAlarmListener({ name: PROACTIVE_REFRESH_ALARM_NAME });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-due");
+    vi.useRealTimers();
+  });
+
+  it("ignores alarms that do not match the proactive refresh name", async () => {
+    await bootBackground();
+    if (capturedAlarmListener == null) {
+      throw new Error("background did not register an alarms.onAlarm listener");
+    }
+
+    capturedAlarmListener({ name: "unrelated-alarm" });
+    await flushMicrotasks();
+
+    expect(listAccountsMock).not.toHaveBeenCalled();
+    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("invalidates accounts whose refresh token has already expired", async () => {
+    const now = 1_700_000_000_000;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(now));
+    listAccountsMock.mockResolvedValue([
+      {
+        id: "acc-refresh-expired",
+        login: "expired-user",
+        avatarUrl: null,
+        token: "ghu",
+        createdAt: 1,
+        installations: [],
+        installationsRefreshedAt: 1,
+        invalidated: false,
+        invalidatedReason: null,
+        refreshToken: "ghr",
+        expiresAt: now + 60_000,
+        refreshTokenExpiresAt: now - 1,
+      },
+    ]);
+
+    await bootBackground();
+    if (capturedAlarmListener == null) {
+      throw new Error("background did not register an alarms.onAlarm listener");
+    }
+    capturedAlarmListener({ name: PROACTIVE_REFRESH_ALARM_NAME });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+      "acc-refresh-expired",
+      "expired",
+    );
+    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
