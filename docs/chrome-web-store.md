@@ -21,7 +21,7 @@ Detailed description:
 
 `GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds a single inline Reviewers section with requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
 
-`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, lets users toggle reviewer names and state badges from the options page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only performs read operations.`
+`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, lets users toggle reviewer names and state badges from the options page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only reads repository data; the only POST requests are to GitHub's OAuth device-flow endpoints for sign-in and access-token refresh.`
 
 ## Release workflow
 
