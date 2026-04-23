@@ -20,6 +20,7 @@ import {
 } from "../../storage/preferences";
 
 import {
+  clearRenderedReviewerState,
   ensureReviewerMount,
   ensureReviewerStyles,
   extractPullNumber,
@@ -145,6 +146,7 @@ export function bootReviewerListPage(
         }
         mount.replaceChildren();
         mount.removeAttribute("title");
+        clearRenderedReviewerState(mount);
         options?.onRowFailure?.({
           owner: route.owner,
           repo: route.repo,
@@ -188,14 +190,13 @@ export function bootReviewerListPage(
     currentHref = nextHref;
     const previousRoute = currentRoute;
     currentRoute = parsePullListRoute(window.location.pathname);
+    abortInflightRequests();
 
     if (
-      previousRoute &&
-      currentRoute &&
-      (previousRoute.owner !== currentRoute.owner || previousRoute.repo !== currentRoute.repo)
+      previousRoute?.owner !== currentRoute?.owner ||
+      previousRoute?.repo !== currentRoute?.repo
     ) {
       clearReviewerCache();
-      abortInflightRequests();
     }
 
     processRows();

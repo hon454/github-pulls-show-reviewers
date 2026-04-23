@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import type { PullReviewerSummary } from "../src/github/api";
 import type * as GithubApiModule from "../src/github/api";
@@ -51,14 +52,31 @@ type StorageListener = (
 let capturedStorageListener: StorageListener | null = null;
 let pendingTeardowns: Array<() => void>;
 
-function makeCtx() {
+type TestCtx = {
+  addEventListener: ReturnType<typeof vi.fn>;
+  setInterval: ReturnType<typeof vi.fn>;
+  onInvalidated: ReturnType<typeof vi.fn>;
+};
+
+function makeCtx(): TestCtx & ContentScriptContext {
   const teardowns: Array<() => void> = [];
   pendingTeardowns.push(() => teardowns.forEach((fn) => fn()));
   return {
     addEventListener: vi.fn(),
     setInterval: vi.fn(),
     onInvalidated: vi.fn((fn: () => void) => teardowns.push(fn)),
-  } as never;
+  } as TestCtx & ContentScriptContext;
+}
+
+function getRegisteredListener(
+  ctx: TestCtx & ContentScriptContext,
+  event: string,
+): (() => void) | undefined {
+  return (
+    (ctx.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, registeredEvent]) => registeredEvent === event,
+    )?.[2] as (() => void) | undefined
+  );
 }
 
 beforeEach(() => {
@@ -377,6 +395,84 @@ describe("bootReviewerListPage", () => {
     expect(document.body.textContent).not.toContain("ghost");
     // Nothing should have rendered the reviewer chip for the aborted login.
     expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
+  });
+
+  it("shows loading again after a failed refetch clears a previously rendered row", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    fetchPullReviewerSummaryMock.mockResolvedValueOnce({
+      status: "ok",
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
+
+    fetchPullReviewerSummaryMock.mockRejectedValueOnce(new Error("boom"));
+    capturedStorageListener!(
+      {
+        settings: {
+          oldValue: { version: 4, accountIds: [] },
+          newValue: { version: 4, accountIds: ["acc-1"] },
+        },
+      },
+      "local",
+    );
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(document.body.textContent).not.toContain("alice");
+    expect(document.body.textContent).not.toContain("Loading reviewers");
+
+    fetchPullReviewerSummaryMock.mockImplementationOnce(
+      () => new Promise<PullReviewerSummary>(() => {}),
+    );
+    capturedStorageListener!(
+      {
+        settings: {
+          oldValue: { version: 4, accountIds: ["acc-1"] },
+          newValue: { version: 4, accountIds: ["acc-2"] },
+        },
+      },
+      "local",
+    );
+
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("Loading reviewers");
+  });
+
+  it("aborts in-flight summary fetches when navigation leaves the pull-list route", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    let capturedSignal: AbortSignal | null = null;
+    fetchPullReviewerSummaryMock.mockImplementationOnce(
+      (input: { signal?: AbortSignal }) => {
+        capturedSignal = input.signal ?? null;
+        return new Promise<PullReviewerSummary>(() => {});
+      },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    const ctx = makeCtx();
+    bootReviewerListPage(ctx);
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(capturedSignal).not.toBeNull();
+    expect(capturedSignal!.aborted).toBe(false);
+
+    window.history.replaceState({}, "", "/cinev/shotloom/pull/42");
+    getRegisteredListener(ctx, "wxt:locationchange")?.();
+
+    await flushMicrotasks();
+
+    expect(capturedSignal!.aborted).toBe(true);
   });
 
   it("marks the account revoked when the retry after refresh also returns 401", async () => {

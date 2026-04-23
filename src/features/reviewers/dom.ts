@@ -212,11 +212,15 @@ export function renderLoading(mount: HTMLElement): void {
   node.textContent = "Loading reviewers...";
   mount.replaceChildren(node);
   mount.removeAttribute("title");
-  mount.removeAttribute(RENDERED_ATTRIBUTE);
+  clearRenderedReviewerState(mount);
 }
 
 export function mountHasRenderedChips(mount: HTMLElement): boolean {
   return mount.getAttribute(RENDERED_ATTRIBUTE) === "1";
+}
+
+export function clearRenderedReviewerState(mount: HTMLElement): void {
+  mount.removeAttribute(RENDERED_ATTRIBUTE);
 }
 
 export function renderReviewers(
@@ -227,7 +231,7 @@ export function renderReviewers(
   if (entries.length === 0) {
     mount.replaceChildren();
     mount.removeAttribute("title");
-    mount.removeAttribute(RENDERED_ATTRIBUTE);
+    clearRenderedReviewerState(mount);
     return;
   }
 
