@@ -34,6 +34,10 @@ export function createProactiveRefreshService(input: {
 }): ProactiveRefreshService {
   return {
     async scheduleAlarm(): Promise<void> {
+      const existing = await browser.alarms.get(PROACTIVE_REFRESH_ALARM_NAME);
+      if (existing?.periodInMinutes === PROACTIVE_REFRESH_PERIOD_MINUTES) {
+        return;
+      }
       await browser.alarms.create(PROACTIVE_REFRESH_ALARM_NAME, {
         periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES,
       });

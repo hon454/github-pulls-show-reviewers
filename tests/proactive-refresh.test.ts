@@ -82,17 +82,22 @@ describe("selectAccountsDueForRefresh", () => {
 
 describe("createProactiveRefreshService", () => {
   const alarmsCreateMock = vi.fn(async () => undefined);
+  const alarmsGetMock = vi.fn<
+    (name: string) => Promise<{ periodInMinutes?: number } | undefined>
+  >();
   const listAccountsMock = vi.fn<() => Promise<Account[]>>();
   const refreshAccountTokenMock =
     vi.fn<(accountId: string) => Promise<{ ok: true; token: string }>>();
 
   beforeEach(() => {
     alarmsCreateMock.mockClear();
+    alarmsGetMock.mockReset();
+    alarmsGetMock.mockResolvedValue(undefined);
     listAccountsMock.mockReset();
     refreshAccountTokenMock.mockReset();
     refreshAccountTokenMock.mockResolvedValue({ ok: true, token: "t" });
     vi.stubGlobal("browser", {
-      alarms: { create: alarmsCreateMock },
+      alarms: { create: alarmsCreateMock, get: alarmsGetMock },
     });
   });
 
@@ -104,7 +109,33 @@ describe("createProactiveRefreshService", () => {
     });
   }
 
-  it("scheduleAlarm registers the recurring alarm with the configured period", async () => {
+  it("scheduleAlarm creates the alarm when no existing alarm is registered", async () => {
+    alarmsGetMock.mockResolvedValue(undefined);
+    const service = buildService(1_700_000_000_000);
+
+    await service.scheduleAlarm();
+
+    expect(alarmsGetMock).toHaveBeenCalledWith(PROACTIVE_REFRESH_ALARM_NAME);
+    expect(alarmsCreateMock).toHaveBeenCalledWith(PROACTIVE_REFRESH_ALARM_NAME, {
+      periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES,
+    });
+  });
+
+  it("scheduleAlarm does not re-create an existing alarm that matches the configured period", async () => {
+    alarmsGetMock.mockResolvedValue({
+      periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES,
+    });
+    const service = buildService(1_700_000_000_000);
+
+    await service.scheduleAlarm();
+
+    expect(alarmsCreateMock).not.toHaveBeenCalled();
+  });
+
+  it("scheduleAlarm recreates the alarm when the existing period differs", async () => {
+    alarmsGetMock.mockResolvedValue({
+      periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES + 5,
+    });
     const service = buildService(1_700_000_000_000);
 
     await service.scheduleAlarm();

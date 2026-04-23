@@ -101,6 +101,7 @@ beforeEach(() => {
     },
     alarms: {
       create: alarmsCreateMock,
+      get: vi.fn(async () => undefined),
       onAlarm: {
         addListener: vi.fn((listener: (alarm: { name: string }) => void) => {
           capturedAlarmListener = listener;
