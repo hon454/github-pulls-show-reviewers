@@ -1,15 +1,15 @@
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
-import { retryWithAccountRefresh } from "../../auth/account-token-refresh";
 import {
   buildReviewerCacheKey,
   clearReviewerCache,
   getCachedReviewerSummary,
   setCachedReviewerSummary,
 } from "../../cache/reviewer-cache";
-import { fetchPullReviewerSummary } from "../../github/api";
+import type { PullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
+import type { FetchPullReviewerSummaryResponse } from "../../runtime/reviewer-fetch";
 import { resolveAccountForRepo, type Account } from "../../storage/accounts";
 import {
   DEFAULT_PREFERENCES,
@@ -256,20 +256,22 @@ async function fetchWithRefresh(args: {
   repo: string;
   pullNumber: string;
   signal?: AbortSignal;
-}): Promise<Awaited<ReturnType<typeof fetchPullReviewerSummary>>> {
-  const { account, owner, repo, pullNumber, signal } = args;
+}): Promise<PullReviewerSummary> {
+  const { account, owner, repo, pullNumber } = args;
 
-  return retryWithAccountRefresh({
-    account,
-    execute: async (token) =>
-      fetchPullReviewerSummary({
-        owner,
-        repo,
-        pullNumber,
-        githubToken: token,
-        signal,
-      }),
-  });
+  const response = (await browser.runtime.sendMessage({
+    type: "fetchPullReviewerSummary",
+    owner,
+    repo,
+    pullNumber,
+    accountId: account?.id ?? null,
+  })) as FetchPullReviewerSummaryResponse | undefined;
+
+  if (response?.ok === true) {
+    return response.summary;
+  }
+
+  throw response?.error ?? new Error("Background reviewer fetch failed.");
 }
 
 function isAbortError(error: unknown): boolean {

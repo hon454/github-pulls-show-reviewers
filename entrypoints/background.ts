@@ -1,5 +1,7 @@
 import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
+import { handleFetchPullReviewerSummaryMessage } from "../src/background/reviewer-fetch";
 import { getGitHubAppConfig } from "../src/config/github-app";
+import { isFetchPullReviewerSummaryMessage } from "../src/runtime/reviewer-fetch";
 
 export default defineBackground(() => {
   const coordinator = createRefreshCoordinator({
@@ -45,6 +47,12 @@ export default defineBackground(() => {
         return coordinator.refreshAccountToken(
           (message as { accountId: string }).accountId,
         );
+      }
+      if (isFetchPullReviewerSummaryMessage(message)) {
+        return handleFetchPullReviewerSummaryMessage({
+          message,
+          refreshCoordinator: coordinator,
+        });
       }
       return undefined;
     },
