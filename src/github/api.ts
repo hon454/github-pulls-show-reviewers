@@ -151,6 +151,18 @@ export class GitHubPullRequestEndpointsError extends Error {
   }
 }
 
+export class GitHubApiSchemaError extends Error {
+  constructor(
+    public readonly endpoint: GitHubEndpointDescriptor,
+    public readonly issues?: unknown,
+  ) {
+    super(
+      `GitHub returned an unexpected response shape for ${endpoint.method} ${endpoint.path}.`,
+    );
+    this.name = "GitHubApiSchemaError";
+  }
+}
+
 const errorResponseSchema = z
   .object({
     message: z.string().optional(),
@@ -169,6 +181,10 @@ export function describeGitHubApiError(
 
   if (error instanceof GitHubApiError) {
     return describeGitHubEndpointError(error, auth);
+  }
+
+  if (error instanceof GitHubApiSchemaError) {
+    return error.message;
   }
 
   if (error instanceof Error) {
@@ -219,8 +235,16 @@ export async function fetchPullReviewerSummary(input: {
     throw new GitHubPullRequestEndpointsError(failures);
   }
 
-  const pull = pullSchema.parse(await pullResponse.json());
-  const reviews = reviewsSchema.parse(await reviewsResponse.json());
+  const pullParsed = pullSchema.safeParse(await pullResponse.json());
+  if (!pullParsed.success) {
+    throw new GitHubApiSchemaError(pullEndpoint, pullParsed.error.issues);
+  }
+  const reviewsParsed = reviewsSchema.safeParse(await reviewsResponse.json());
+  if (!reviewsParsed.success) {
+    throw new GitHubApiSchemaError(reviewsEndpoint, reviewsParsed.error.issues);
+  }
+  const pull = pullParsed.data;
+  const reviews = reviewsParsed.data;
   const latestNonCommentByUser = new Map<
     string,
     {

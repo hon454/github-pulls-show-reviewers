@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   GitHubApiError,
+  GitHubApiSchemaError,
   fetchPullReviewerSummary,
   describeGitHubApiError,
   parseRepositoryReference,
@@ -527,6 +528,70 @@ describe("fetchPullReviewerSummary", () => {
     expect(summary.completedReviews).toEqual([
       { login: "dkfhddla", avatarUrl: "https://b", state: "COMMENTED" },
     ]);
+  });
+
+  it("throws GitHubApiSchemaError (not a bare ZodError) when the pull payload is malformed", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          // Missing required `user` field — violates pullSchema.
+          JSON.stringify({
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    await expect(
+      fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+      }),
+    ).rejects.toBeInstanceOf(GitHubApiSchemaError);
+
+    // describeGitHubApiError renders a helpful message rather than leaking a
+    // raw ZodError stack.
+    try {
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              requested_reviewers: [],
+              requested_teams: [],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+      });
+      throw new Error("Expected fetchPullReviewerSummary to reject.");
+    } catch (error) {
+      expect(error).toBeInstanceOf(GitHubApiSchemaError);
+      const message = describeGitHubApiError(error, { githubToken: null });
+      expect(message).toContain("unexpected response shape");
+      expect(message).toContain(
+        "/repos/hon454/github-pulls-show-reviewers/pulls/42",
+      );
+    }
   });
 
   it("picks the latest non-COMMENTED review when multiple non-comment reviews exist", async () => {
