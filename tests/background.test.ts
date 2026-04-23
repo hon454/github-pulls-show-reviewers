@@ -397,6 +397,120 @@ describe("background runtime.onMessage handler", () => {
     expect(signal.aborted).toBe(true);
   });
 
+  it("prunes TTL-expired queued cancels when a later cancel arrives", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const baseTime = 1_700_000_000_000;
+      vi.setSystemTime(new Date(baseTime));
+      const listener = await bootBackground();
+      getAccountByIdMock.mockResolvedValue({
+        id: "acc-1",
+        token: "ghu_old",
+        refreshToken: "ghr_old",
+      });
+
+      let capturedSignal: AbortSignal | null = null;
+      fetchPullReviewerSummaryMock.mockImplementationOnce(
+        (input: { signal?: AbortSignal }) => {
+          capturedSignal = input.signal ?? null;
+          return new Promise(() => {});
+        },
+      );
+
+      listener(
+        { type: "cancelPullReviewerSummary", requestId: "req-stale" },
+        { id: SELF_RUNTIME_ID },
+        () => {},
+      );
+
+      // Advance past the 60s TTL. A subsequent cancel must prune `req-stale`.
+      vi.setSystemTime(new Date(baseTime + 61_000));
+      listener(
+        { type: "cancelPullReviewerSummary", requestId: "req-other" },
+        { id: SELF_RUNTIME_ID },
+        () => {},
+      );
+
+      void listener(
+        {
+          type: "fetchPullReviewerSummary",
+          requestId: "req-stale",
+          owner: "cinev",
+          repo: "shotloom",
+          pullNumber: "42",
+          accountId: "acc-1",
+        },
+        { id: SELF_RUNTIME_ID },
+        () => {},
+      );
+
+      await flushMicrotasks();
+      expect(capturedSignal).not.toBeNull();
+      const signal = capturedSignal as AbortSignal | null;
+      if (signal == null) {
+        throw new Error("expected background fetch signal");
+      }
+      expect(signal.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("prunes TTL-expired queued cancels on fetch entry even without another cancel", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const baseTime = 1_700_000_000_000;
+      vi.setSystemTime(new Date(baseTime));
+      const listener = await bootBackground();
+      getAccountByIdMock.mockResolvedValue({
+        id: "acc-1",
+        token: "ghu_old",
+        refreshToken: "ghr_old",
+      });
+
+      let capturedSignal: AbortSignal | null = null;
+      fetchPullReviewerSummaryMock.mockImplementationOnce(
+        (input: { signal?: AbortSignal }) => {
+          capturedSignal = input.signal ?? null;
+          return new Promise(() => {});
+        },
+      );
+
+      listener(
+        { type: "cancelPullReviewerSummary", requestId: "req-stale" },
+        { id: SELF_RUNTIME_ID },
+        () => {},
+      );
+
+      // Advance past the 60s TTL without another cancel. The fetch itself
+      // must prune the stale entry and run normally.
+      vi.setSystemTime(new Date(baseTime + 61_000));
+
+      void listener(
+        {
+          type: "fetchPullReviewerSummary",
+          requestId: "req-stale",
+          owner: "cinev",
+          repo: "shotloom",
+          pullNumber: "42",
+          accountId: "acc-1",
+        },
+        { id: SELF_RUNTIME_ID },
+        () => {},
+      );
+
+      await flushMicrotasks();
+      expect(capturedSignal).not.toBeNull();
+      const signal = capturedSignal as AbortSignal | null;
+      if (signal == null) {
+        throw new Error("expected background fetch signal");
+      }
+      expect(signal.aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("consumes a queued cancel when it arrives before the reviewer fetch message", async () => {
     const listener = await bootBackground();
     getAccountByIdMock.mockResolvedValue({

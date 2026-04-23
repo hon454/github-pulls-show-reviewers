@@ -45,6 +45,8 @@ export function createReviewerFetchService(input: {
     async handleFetchMessage(
       message: FetchPullReviewerSummaryMessage,
     ): Promise<FetchPullReviewerSummaryResponse> {
+      pruneCanceledRequestIds(Date.now());
+
       const controller = new AbortController();
       inFlightControllers.set(message.requestId, controller);
 
