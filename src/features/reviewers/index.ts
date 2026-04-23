@@ -96,22 +96,16 @@ export function bootReviewerListPage(
 
     const request = (async () => {
       const account = await resolveAccountForRepo(route.owner, route.repo);
-      const githubToken = account?.token ?? null;
 
       try {
-        const summary = await fetchPullReviewerSummary({
+        const summary = await fetchWithRefresh({
+          account,
           owner: route.owner,
           repo: route.repo,
           pullNumber,
-          githubToken,
         });
         setCachedReviewerSummary(cacheKey, summary);
       } catch (error) {
-        const invalidationReason =
-          account == null ? null : getAccountInvalidationReason(error);
-        if (account != null && invalidationReason != null) {
-          await markAccountInvalidated(account.id, invalidationReason);
-        }
         mount.replaceChildren();
         mount.removeAttribute("title");
         options?.onRowFailure?.({
@@ -206,10 +200,58 @@ export function bootReviewerListPage(
   });
 }
 
-function getAccountInvalidationReason(
-  error: unknown,
-): "revoked" | "expired" | "unknown" | null {
-  return extractStatus(error) === 401 ? "revoked" : null;
+async function fetchWithRefresh(args: {
+  account: Account | null;
+  owner: string;
+  repo: string;
+  pullNumber: string;
+}): Promise<Awaited<ReturnType<typeof fetchPullReviewerSummary>>> {
+  const { account, owner, repo, pullNumber } = args;
+
+  try {
+    return await fetchPullReviewerSummary({
+      owner,
+      repo,
+      pullNumber,
+      githubToken: account?.token ?? null,
+    });
+  } catch (error) {
+    if (extractStatus(error) !== 401 || account == null) {
+      throw error;
+    }
+
+    if (account.refreshToken == null) {
+      await markAccountInvalidated(account.id, "revoked");
+      throw error;
+    }
+
+    const outcome = (await browser.runtime.sendMessage({
+      type: "refreshAccessToken",
+      accountId: account.id,
+    })) as
+      | { ok: true; token: string }
+      | { ok: false; terminal: boolean }
+      | undefined;
+
+    if (!outcome || outcome.ok !== true) {
+      throw error;
+    }
+
+    const refreshed = await resolveAccountForRepo(owner, repo);
+    try {
+      return await fetchPullReviewerSummary({
+        owner,
+        repo,
+        pullNumber,
+        githubToken: refreshed?.token ?? outcome.token,
+      });
+    } catch (retryError) {
+      if (extractStatus(retryError) === 401) {
+        await markAccountInvalidated(account.id, "revoked");
+      }
+      throw retryError;
+    }
+  }
 }
 
 function extractStatus(error: unknown): number | null {
