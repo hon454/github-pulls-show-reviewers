@@ -39,15 +39,15 @@ afterEach(() => {
 });
 
 describe("accounts storage", () => {
-  it("returns an empty v2 settings shape when storage is empty", async () => {
+  it("returns an empty v3 settings shape when storage is empty", async () => {
     const { getSettings } = await import("../src/storage/accounts");
     await expect(getSettings()).resolves.toEqual({
-      version: 2,
+      version: 3,
       accounts: [],
     });
   });
 
-  it("overwrites legacy tokenEntries payloads with an empty v2 shape", async () => {
+  it("overwrites legacy tokenEntries payloads with an empty v3 shape", async () => {
     browserMock.browser.storage.local.get.mockResolvedValueOnce({
       settings: {
         tokenEntries: [
@@ -57,7 +57,7 @@ describe("accounts storage", () => {
     });
     const { getSettings } = await import("../src/storage/accounts");
     await expect(getSettings()).resolves.toEqual({
-      version: 2,
+      version: 3,
       accounts: [],
     });
   });
@@ -152,13 +152,13 @@ describe("accounts storage", () => {
   it("rejects malformed account payloads at read time by resetting to empty", async () => {
     browserMock.browser.storage.local.get.mockResolvedValueOnce({
       settings: {
-        version: 2,
+        version: 3,
         accounts: [{ id: 123, login: 456 }],
       },
     });
     const { getSettings } = await import("../src/storage/accounts");
     await expect(getSettings()).resolves.toEqual({
-      version: 2,
+      version: 3,
       accounts: [],
     });
   });
@@ -167,7 +167,7 @@ describe("accounts storage", () => {
 describe("resolveAccountForRepo", () => {
   async function seedAccounts(accounts: unknown[]) {
     browserMock.browser.storage.local.get.mockResolvedValue({
-      settings: { version: 2, accounts },
+      settings: { version: 3, accounts },
     });
   }
 
