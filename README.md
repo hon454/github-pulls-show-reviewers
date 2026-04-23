@@ -60,9 +60,16 @@ This repository intentionally stays narrow.
 - **Multiple accounts** are supported. Add a personal account and a work
   account side-by-side; the content script resolves the right one per repo from
   each account's installations.
+- **Token expiry** is handled automatically. GitHub App user-to-server access
+  tokens expire after about 8 hours; the extension stores the refresh token at
+  sign-in and exchanges it for a new access token in the background when GitHub
+  returns 401. You stay signed in until the refresh token itself expires
+  (about 6 months) or the app is revoked.
 - **Revocation** happens on GitHub's
   [Applications page](https://github.com/settings/applications). Removing an
-  account from the options page only deletes the locally stored token.
+  account from the options page only deletes the locally stored token. If a
+  refresh attempt itself fails (`refresh_failed` on the options page), sign in
+  again to restore access.
 
 See [ADR 0003](docs/adr/0003-github-app-device-flow.md) for the rationale.
 
