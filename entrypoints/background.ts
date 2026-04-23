@@ -26,17 +26,27 @@ export default defineBackground(() => {
     });
   });
 
-  browser.runtime.onMessage.addListener((message: unknown) => {
-    if (
-      message != null &&
-      typeof message === "object" &&
-      (message as { type?: unknown }).type === "refreshAccessToken" &&
-      typeof (message as { accountId?: unknown }).accountId === "string"
-    ) {
-      return coordinator.refreshAccountToken(
-        (message as { accountId: string }).accountId,
-      );
-    }
-    return undefined;
-  });
+  browser.runtime.onMessage.addListener(
+    (message: unknown, sender: { id?: string } | undefined) => {
+      // Reject messages from other extensions or extension pages. Only
+      // components of this extension (content scripts, options page) are
+      // allowed to trigger a token refresh — otherwise a third party could
+      // ask us to refresh an arbitrary accountId and observe the returned
+      // token.
+      if (sender?.id !== browser.runtime.id) {
+        return undefined;
+      }
+      if (
+        message != null &&
+        typeof message === "object" &&
+        (message as { type?: unknown }).type === "refreshAccessToken" &&
+        typeof (message as { accountId?: unknown }).accountId === "string"
+      ) {
+        return coordinator.refreshAccountToken(
+          (message as { accountId: string }).accountId,
+        );
+      }
+      return undefined;
+    },
+  );
 });

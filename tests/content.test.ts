@@ -34,14 +34,18 @@ afterEach(() => {
 });
 
 describe("content entrypoint", () => {
-  it("re-initializes the access banner when navigation enters a PR list", async () => {
+  it("keeps a broad content-script match so same-document PR-list navigation stays supported", async () => {
+    const { default: content } = await import("../entrypoints/content");
+    expect(content.matches).toEqual(["https://github.com/*/*"]);
+  });
+
+  it("waits to boot PR-list features until navigation enters a PR list", async () => {
     const aggregator = {
       reportUncoveredOwner: vi.fn(),
       reportUnauthRateLimit: vi.fn(),
+      teardown: vi.fn(),
     };
-    bootAccessBannerMock
-      .mockReturnValueOnce(null)
-      .mockReturnValueOnce(aggregator);
+    bootAccessBannerMock.mockReturnValue(aggregator);
 
     const listeners = new Map<string, Listener[]>();
     const ctx = {
@@ -55,7 +59,8 @@ describe("content entrypoint", () => {
     const { default: content } = await import("../entrypoints/content");
     content.main(ctx as never);
 
-    expect(bootAccessBannerMock).toHaveBeenCalledTimes(1);
+    expect(bootAccessBannerMock).not.toHaveBeenCalled();
+    expect(bootReviewerListPageMock).not.toHaveBeenCalled();
 
     window.history.replaceState(
       {},
@@ -64,6 +69,7 @@ describe("content entrypoint", () => {
     );
     listeners.get("wxt:locationchange")?.forEach((listener) => listener());
 
-    expect(bootAccessBannerMock).toHaveBeenCalledTimes(2);
+    expect(bootAccessBannerMock).toHaveBeenCalledTimes(1);
+    expect(bootReviewerListPageMock).toHaveBeenCalledTimes(1);
   });
 });
