@@ -85,15 +85,15 @@ proactive and reactive paths race.
 - Terminal refresh-token failures surface promptly without a failed network
   call every 15 minutes.
 
-### Negative (known limitation)
+### Negative
 
-- `browser.alarms.onAlarm` listeners do not extend service-worker lifetime
-  for async work. `handleAlarmFire` completes multiple refreshes via
-  `Promise.allSettled`; at current product scale (few accounts, fast refresh
-  endpoint) the work fits comfortably inside the ~30s SW-alive window after
-  the event, but this is not a structural guarantee. A truncated run is
-  bounded-harm: the reactive refresh path still serves as the safety net,
-  and the next 15-minute alarm retries.
+- Known limitation: `browser.alarms.onAlarm` listeners do not extend
+  service-worker lifetime for async work. `handleAlarmFire` completes
+  multiple refreshes via `Promise.allSettled`; at current product scale (few
+  accounts, fast refresh endpoint) the work fits comfortably inside the ~30s
+  SW-alive window after the event, but this is not a structural guarantee.
+  A truncated run is bounded-harm: the reactive refresh path still serves as
+  the safety net, and the next 15-minute alarm retries.
 
 ### Neutral
 
