@@ -26,7 +26,7 @@ export default defineConfig({
       48: "/icon/48.png",
       128: "/icon/128.png",
     },
-    permissions: ["storage"],
+    permissions: ["storage", "alarms"],
     host_permissions: ["https://github.com/*", "https://api.github.com/*"],
     action: {
       default_title: "GitHub Pulls Show Reviewers — Open options",
