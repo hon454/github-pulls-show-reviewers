@@ -97,6 +97,9 @@ describe("storage change classification", () => {
     expect(isAccountsChange({ settings: { oldValue: undefined, newValue: {} } })).toBe(
       true,
     );
+    expect(
+      isAccountsChange({ "account:acc-1": { oldValue: undefined, newValue: {} } }),
+    ).toBe(true);
     expect(isAccountsChange({ preferences: { oldValue: undefined, newValue: {} } })).toBe(
       false,
     );

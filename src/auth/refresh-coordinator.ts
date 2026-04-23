@@ -3,7 +3,7 @@ import {
   RefreshTokenError,
 } from "../github/auth";
 import {
-  listAccounts,
+  getAccountById,
   markAccountInvalidated,
   updateAccountTokens,
 } from "../storage/accounts";
@@ -22,8 +22,7 @@ export function createRefreshCoordinator(input: {
   const inFlight = new Map<string, Promise<RefreshOutcome>>();
 
   async function run(accountId: string): Promise<RefreshOutcome> {
-    const accounts = await listAccounts();
-    const account = accounts.find((candidate) => candidate.id === accountId);
+    const account = await getAccountById(accountId);
     if (!account || account.refreshToken == null) {
       return { ok: false, terminal: true };
     }

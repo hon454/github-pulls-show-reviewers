@@ -10,13 +10,13 @@ import type { Account } from "../src/storage/accounts";
 
 type AuthModule = typeof authModule;
 
-const listAccountsMock = vi.hoisted(() => vi.fn());
+const getAccountByIdMock = vi.hoisted(() => vi.fn());
 const updateAccountTokensMock = vi.hoisted(() => vi.fn());
 const markAccountInvalidatedMock = vi.hoisted(() => vi.fn());
 const refreshAccessTokenMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../src/storage/accounts", () => ({
-  listAccounts: listAccountsMock,
+  getAccountById: getAccountByIdMock,
   updateAccountTokens: updateAccountTokensMock,
   markAccountInvalidated: markAccountInvalidatedMock,
 }));
@@ -48,7 +48,7 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
 }
 
 beforeEach(() => {
-  listAccountsMock.mockReset();
+  getAccountByIdMock.mockReset();
   updateAccountTokensMock.mockReset().mockResolvedValue(undefined);
   markAccountInvalidatedMock.mockReset().mockResolvedValue(undefined);
   refreshAccessTokenMock.mockReset();
@@ -60,7 +60,7 @@ afterEach(() => {
 
 describe("createRefreshCoordinator", () => {
   it("refreshes, updates storage, and returns the new token on success", async () => {
-    listAccountsMock.mockResolvedValue([makeAccount()]);
+    getAccountByIdMock.mockResolvedValue(makeAccount());
     const fresh: RefreshTokenResult = {
       accessToken: "ghu_new",
       refreshToken: "ghr_new",
@@ -83,7 +83,7 @@ describe("createRefreshCoordinator", () => {
   });
 
   it("dedupes concurrent calls for the same account into a single refresh", async () => {
-    listAccountsMock.mockResolvedValue([makeAccount()]);
+    getAccountByIdMock.mockResolvedValue(makeAccount());
     let resolveRefresh: (value: RefreshTokenResult) => void = () => {};
     refreshAccessTokenMock.mockImplementation(
       () =>
@@ -96,7 +96,7 @@ describe("createRefreshCoordinator", () => {
     const a = coordinator.refreshAccountToken("acc-1");
     const b = coordinator.refreshAccountToken("acc-1");
 
-    // Flush microtasks so listAccounts resolves and refreshAccessToken is called,
+    // Flush microtasks so getAccountById resolves and refreshAccessToken is called,
     // which populates resolveRefresh before we invoke it.
     await Promise.resolve();
     await Promise.resolve();
@@ -116,7 +116,7 @@ describe("createRefreshCoordinator", () => {
   });
 
   it("starts a fresh refresh after the previous one settles", async () => {
-    listAccountsMock.mockResolvedValue([makeAccount()]);
+    getAccountByIdMock.mockResolvedValue(makeAccount());
     refreshAccessTokenMock.mockResolvedValue({
       accessToken: "ghu_new",
       refreshToken: "ghr_new",
@@ -132,7 +132,7 @@ describe("createRefreshCoordinator", () => {
   });
 
   it("marks the account invalidated with refresh_failed on a terminal error", async () => {
-    listAccountsMock.mockResolvedValue([makeAccount()]);
+    getAccountByIdMock.mockResolvedValue(makeAccount());
     refreshAccessTokenMock.mockRejectedValue(
       new RefreshTokenError("terminal", "bad_refresh_token"),
     );
@@ -149,7 +149,7 @@ describe("createRefreshCoordinator", () => {
   });
 
   it("does NOT invalidate on a transient error", async () => {
-    listAccountsMock.mockResolvedValue([makeAccount()]);
+    getAccountByIdMock.mockResolvedValue(makeAccount());
     refreshAccessTokenMock.mockRejectedValue(
       new RefreshTokenError("transient", "network_error"),
     );
@@ -163,7 +163,7 @@ describe("createRefreshCoordinator", () => {
   });
 
   it("returns terminal=true without calling refresh when the account has no refresh token", async () => {
-    listAccountsMock.mockResolvedValue([makeAccount({ refreshToken: null })]);
+    getAccountByIdMock.mockResolvedValue(makeAccount({ refreshToken: null }));
 
     const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
     const outcome = await coordinator.refreshAccountToken("acc-1");
@@ -174,7 +174,7 @@ describe("createRefreshCoordinator", () => {
   });
 
   it("returns terminal=true when the account does not exist", async () => {
-    listAccountsMock.mockResolvedValue([]);
+    getAccountByIdMock.mockResolvedValue(null);
 
     const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
     const outcome = await coordinator.refreshAccountToken("missing");

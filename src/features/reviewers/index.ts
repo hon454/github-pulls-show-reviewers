@@ -1,5 +1,6 @@
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
+import { retryWithAccountRefresh } from "../../auth/account-token-refresh";
 import {
   buildReviewerCacheKey,
   clearReviewerCache,
@@ -9,7 +10,7 @@ import {
 import { fetchPullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
-import { markAccountInvalidated, resolveAccountForRepo, type Account } from "../../storage/accounts";
+import { resolveAccountForRepo, type Account } from "../../storage/accounts";
 import {
   DEFAULT_PREFERENCES,
   getPreferences,
@@ -208,68 +209,14 @@ async function fetchWithRefresh(args: {
 }): Promise<Awaited<ReturnType<typeof fetchPullReviewerSummary>>> {
   const { account, owner, repo, pullNumber } = args;
 
-  try {
-    return await fetchPullReviewerSummary({
+  return retryWithAccountRefresh({
+    account,
+    execute: async (token) =>
+      fetchPullReviewerSummary({
       owner,
       repo,
       pullNumber,
-      githubToken: account?.token ?? null,
-    });
-  } catch (error) {
-    if (extractStatus(error) !== 401 || account == null) {
-      throw error;
-    }
-
-    if (account.refreshToken == null) {
-      await markAccountInvalidated(account.id, "revoked");
-      throw error;
-    }
-
-    const outcome = (await browser.runtime.sendMessage({
-      type: "refreshAccessToken",
-      accountId: account.id,
-    })) as
-      | { ok: true; token: string }
-      | { ok: false; terminal: boolean }
-      | undefined;
-
-    if (!outcome || outcome.ok !== true) {
-      throw error;
-    }
-
-    const refreshed = await resolveAccountForRepo(owner, repo);
-    try {
-      return await fetchPullReviewerSummary({
-        owner,
-        repo,
-        pullNumber,
-        githubToken: refreshed?.token ?? outcome.token,
-      });
-    } catch (retryError) {
-      if (extractStatus(retryError) === 401) {
-        await markAccountInvalidated(account.id, "revoked");
-      }
-      throw retryError;
-    }
-  }
-}
-
-function extractStatus(error: unknown): number | null {
-  if (error && typeof error === "object" && "status" in error) {
-    const value = (error as { status: unknown }).status;
-    return typeof value === "number" ? value : null;
-  }
-
-  if (
-    error &&
-    typeof error === "object" &&
-    "failures" in error &&
-    Array.isArray((error as { failures: unknown }).failures)
-  ) {
-    const first = (error as { failures: Array<{ status?: number }> })
-      .failures[0];
-    return typeof first?.status === "number" ? first.status : null;
-  }
-
-  return null;
+      githubToken: token,
+    }),
+  });
 }

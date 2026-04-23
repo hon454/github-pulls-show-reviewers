@@ -6,10 +6,10 @@ import type * as PreferencesModule from "../src/storage/preferences";
 
 const fetchPullReviewerSummaryMock = vi.fn();
 const resolveAccountForRepoMock = vi.fn();
+const getAccountByIdMock = vi.fn();
 const markAccountInvalidatedMock = vi.fn();
 const getPreferencesMock = vi.fn();
 const runtimeSendMessageMock = vi.fn();
-const updateAccountTokensMock = vi.fn();
 
 vi.mock("../src/github/api", () => ({
   fetchPullReviewerSummary: fetchPullReviewerSummaryMock,
@@ -17,8 +17,8 @@ vi.mock("../src/github/api", () => ({
 
 vi.mock("../src/storage/accounts", () => ({
   resolveAccountForRepo: resolveAccountForRepoMock,
+  getAccountById: getAccountByIdMock,
   markAccountInvalidated: markAccountInvalidatedMock,
-  updateAccountTokens: updateAccountTokensMock,
 }));
 
 vi.mock("../src/storage/preferences", async () => {
@@ -58,10 +58,10 @@ beforeEach(() => {
   vi.resetModules();
   fetchPullReviewerSummaryMock.mockReset();
   resolveAccountForRepoMock.mockReset();
+  getAccountByIdMock.mockReset();
   markAccountInvalidatedMock.mockReset();
   getPreferencesMock.mockReset();
   runtimeSendMessageMock.mockReset();
-  updateAccountTokensMock.mockReset();
   getPreferencesMock.mockResolvedValue({
     version: 1,
     showStateBadge: true,
@@ -208,13 +208,13 @@ describe("bootReviewerListPage", () => {
         login: "hon454",
         token: "ghu_old",
         refreshToken: "ghr_old",
-      })
-      .mockResolvedValueOnce({
-        id: "acc-1",
-        login: "hon454",
-        token: "ghu_new",
-        refreshToken: "ghr_new",
       });
+    getAccountByIdMock.mockResolvedValueOnce({
+      id: "acc-1",
+      login: "hon454",
+      token: "ghu_new",
+      refreshToken: "ghr_new",
+    });
 
     fetchPullReviewerSummaryMock
       .mockRejectedValueOnce({ status: 401 })
@@ -285,13 +285,13 @@ describe("bootReviewerListPage", () => {
         login: "hon454",
         token: "ghu_old",
         refreshToken: "ghr_old",
-      })
-      .mockResolvedValueOnce({
-        id: "acc-1",
-        login: "hon454",
-        token: "ghu_new",
-        refreshToken: "ghr_new",
       });
+    getAccountByIdMock.mockResolvedValueOnce({
+      id: "acc-1",
+      login: "hon454",
+      token: "ghu_new",
+      refreshToken: "ghr_new",
+    });
     fetchPullReviewerSummaryMock
       .mockRejectedValueOnce({ status: 401 })
       .mockRejectedValueOnce({ status: 401 });

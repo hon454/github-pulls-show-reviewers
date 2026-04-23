@@ -1,6 +1,9 @@
 import { z } from "zod";
 
 const SETTINGS_KEY = "settings";
+const ACCOUNT_PROFILE_KEY_PREFIX = "account:profile:";
+const ACCOUNT_AUTH_KEY_PREFIX = "account:auth:";
+const ACCOUNT_INSTALLATIONS_KEY_PREFIX = "account:installations:";
 
 const installationSchema = z.object({
   id: z.number().int().positive(),
@@ -13,14 +16,15 @@ const installationSchema = z.object({
   repoFullNames: z.array(z.string()).nullable(),
 });
 
-const accountSchema = z.object({
+const accountProfileSchema = z.object({
   id: z.string(),
   login: z.string(),
   avatarUrl: z.string().url().nullable(),
-  token: z.string(),
   createdAt: z.number(),
-  installations: z.array(installationSchema),
-  installationsRefreshedAt: z.number(),
+});
+
+const accountAuthSchema = z.object({
+  token: z.string(),
   invalidated: z.boolean().default(false),
   invalidatedReason: z
     .enum(["revoked", "expired", "refresh_failed", "unknown"])
@@ -31,10 +35,21 @@ const accountSchema = z.object({
   refreshTokenExpiresAt: z.number().nullable().default(null),
 });
 
-const extensionSettingsSchemaV3 = z.object({
-  version: z.literal(3),
-  accounts: z.array(accountSchema),
+const accountInstallationsSchema = z.object({
+  installations: z.array(installationSchema),
+  installationsRefreshedAt: z.number(),
 });
+
+const accountSchema = accountProfileSchema
+  .merge(accountAuthSchema)
+  .merge(accountInstallationsSchema);
+
+const extensionSettingsSchemaV4 = z.object({
+  version: z.literal(4),
+  accountIds: z.array(z.string()),
+});
+
+const legacyAccountSchemaV3 = accountSchema;
 
 const legacyAccountSchemaV2 = z.object({
   id: z.string(),
@@ -51,6 +66,11 @@ const legacyAccountSchemaV2 = z.object({
     .default(null),
 });
 
+const extensionSettingsSchemaV3 = z.object({
+  version: z.literal(3),
+  accounts: z.array(legacyAccountSchemaV3),
+});
+
 const extensionSettingsSchemaV2 = z.object({
   version: z.literal(2),
   accounts: z.array(legacyAccountSchemaV2),
@@ -58,98 +78,235 @@ const extensionSettingsSchemaV2 = z.object({
 
 export type Installation = z.infer<typeof installationSchema>;
 export type Account = z.infer<typeof accountSchema>;
-export type ExtensionSettings = z.infer<typeof extensionSettingsSchemaV3>;
+export type ExtensionSettings = z.infer<typeof extensionSettingsSchemaV4>;
 
-const EMPTY_SETTINGS: ExtensionSettings = { version: 3, accounts: [] };
+const EMPTY_SETTINGS: ExtensionSettings = { version: 4, accountIds: [] };
 
-export async function getSettings(): Promise<ExtensionSettings> {
-  const result = await browser.storage.local.get(SETTINGS_KEY);
-  const raw = result[SETTINGS_KEY];
+function accountProfileKey(accountId: string): string {
+  return `${ACCOUNT_PROFILE_KEY_PREFIX}${accountId}`;
+}
 
-  const v3 = extensionSettingsSchemaV3.safeParse(raw);
-  if (v3.success) {
-    return v3.data;
+function accountAuthKey(accountId: string): string {
+  return `${ACCOUNT_AUTH_KEY_PREFIX}${accountId}`;
+}
+
+function accountInstallationsKey(accountId: string): string {
+  return `${ACCOUNT_INSTALLATIONS_KEY_PREFIX}${accountId}`;
+}
+
+function accountStorageKeys(accountId: string): [string, string, string] {
+  return [
+    accountProfileKey(accountId),
+    accountAuthKey(accountId),
+    accountInstallationsKey(accountId),
+  ];
+}
+
+function decomposeAccount(account: Account) {
+  return {
+    profile: {
+      id: account.id,
+      login: account.login,
+      avatarUrl: account.avatarUrl,
+      createdAt: account.createdAt,
+    },
+    auth: {
+      token: account.token,
+      invalidated: account.invalidated,
+      invalidatedReason: account.invalidatedReason,
+      refreshToken: account.refreshToken,
+      expiresAt: account.expiresAt,
+      refreshTokenExpiresAt: account.refreshTokenExpiresAt,
+    },
+    installations: {
+      installations: account.installations,
+      installationsRefreshedAt: account.installationsRefreshedAt,
+    },
+  };
+}
+
+function composeAccount(input: {
+  profile: unknown;
+  auth: unknown;
+  installations: unknown;
+}): Account | null {
+  const profile = accountProfileSchema.safeParse(input.profile);
+  const auth = accountAuthSchema.safeParse(input.auth);
+  const installations = accountInstallationsSchema.safeParse(input.installations);
+
+  if (!profile.success || !auth.success || !installations.success) {
+    return null;
   }
 
-  const v2 = extensionSettingsSchemaV2.safeParse(raw);
-  if (v2.success) {
-    const migrated: ExtensionSettings = {
-      version: 3,
-      accounts: v2.data.accounts.map((account) => ({
-        ...account,
-        refreshToken: null,
-        expiresAt: null,
-        refreshTokenExpiresAt: null,
-      })),
-    };
-    await writeSettings(migrated);
-    return migrated;
-  }
-
-  return EMPTY_SETTINGS;
+  return {
+    ...profile.data,
+    ...auth.data,
+    ...installations.data,
+  };
 }
 
 async function writeSettings(settings: ExtensionSettings): Promise<void> {
   await browser.storage.local.set({ [SETTINGS_KEY]: settings });
 }
 
+async function writeAccounts(
+  settings: ExtensionSettings,
+  accounts: Account[],
+): Promise<void> {
+  const payload: Record<string, unknown> = {
+    [SETTINGS_KEY]: settings,
+  };
+
+  for (const account of accounts) {
+    const fragments = decomposeAccount(account);
+    payload[accountProfileKey(account.id)] = fragments.profile;
+    payload[accountAuthKey(account.id)] = fragments.auth;
+    payload[accountInstallationsKey(account.id)] = fragments.installations;
+  }
+
+  await browser.storage.local.set(payload);
+}
+
+async function migrateAccounts(accounts: Account[]): Promise<ExtensionSettings> {
+  const settings: ExtensionSettings = {
+    version: 4,
+    accountIds: accounts.map((account) => account.id),
+  };
+  await writeAccounts(settings, accounts);
+  return settings;
+}
+
+async function loadAccountsByIds(accountIds: string[]): Promise<{
+  accounts: Account[];
+  validIds: string[];
+}> {
+  if (accountIds.length === 0) {
+    return { accounts: [], validIds: [] };
+  }
+
+  const result = await browser.storage.local.get(
+    accountIds.flatMap((accountId) => accountStorageKeys(accountId)),
+  );
+
+  const accounts: Account[] = [];
+  const validIds: string[] = [];
+  for (const accountId of accountIds) {
+    const account = composeAccount({
+      profile: result[accountProfileKey(accountId)],
+      auth: result[accountAuthKey(accountId)],
+      installations: result[accountInstallationsKey(accountId)],
+    });
+    if (account == null) {
+      continue;
+    }
+    accounts.push(account);
+    validIds.push(accountId);
+  }
+
+  return { accounts, validIds };
+}
+
+export async function getSettings(): Promise<ExtensionSettings> {
+  const result = await browser.storage.local.get(SETTINGS_KEY);
+  const raw = result[SETTINGS_KEY];
+
+  const v4 = extensionSettingsSchemaV4.safeParse(raw);
+  if (v4.success) {
+    return v4.data;
+  }
+
+  const v3 = extensionSettingsSchemaV3.safeParse(raw);
+  if (v3.success) {
+    return migrateAccounts(v3.data.accounts);
+  }
+
+  const v2 = extensionSettingsSchemaV2.safeParse(raw);
+  if (v2.success) {
+    return migrateAccounts(
+      v2.data.accounts.map((account) => ({
+        ...account,
+        refreshToken: null,
+        expiresAt: null,
+        refreshTokenExpiresAt: null,
+      })),
+    );
+  }
+
+  return EMPTY_SETTINGS;
+}
+
 export async function listAccounts(): Promise<Account[]> {
   const settings = await getSettings();
-  return [...settings.accounts].sort((a, b) => a.createdAt - b.createdAt);
+  const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
+  if (validIds.length !== settings.accountIds.length) {
+    await writeSettings({ version: 4, accountIds: validIds });
+  }
+  return [...accounts].sort((a, b) => a.createdAt - b.createdAt);
+}
+
+export async function getAccountById(accountId: string): Promise<Account | null> {
+  const result = await browser.storage.local.get(accountStorageKeys(accountId));
+  return composeAccount({
+    profile: result[accountProfileKey(accountId)],
+    auth: result[accountAuthKey(accountId)],
+    installations: result[accountInstallationsKey(accountId)],
+  });
 }
 
 export async function addAccount(account: Account): Promise<void> {
   const settings = await getSettings();
   const next: ExtensionSettings = {
-    version: 3,
-    accounts: [...settings.accounts, account],
+    version: 4,
+    accountIds: [...settings.accountIds.filter((id) => id !== account.id), account.id],
   };
-  await writeSettings(next);
+  await writeAccounts(next, [account]);
 }
 
 export async function removeAccount(id: string): Promise<void> {
   const settings = await getSettings();
   const next: ExtensionSettings = {
-    version: 3,
-    accounts: settings.accounts.filter((account) => account.id !== id),
+    version: 4,
+    accountIds: settings.accountIds.filter((accountId) => accountId !== id),
   };
   await writeSettings(next);
+  await browser.storage.local.remove(accountStorageKeys(id));
 }
 
 export async function replaceInstallations(
   accountId: string,
   installations: Installation[],
 ): Promise<void> {
-  const settings = await getSettings();
-  const next: ExtensionSettings = {
-    version: 3,
-    accounts: settings.accounts.map((account) =>
-      account.id === accountId
-        ? {
-            ...account,
-            installations,
-            installationsRefreshedAt: Date.now(),
-          }
-        : account,
-    ),
-  };
-  await writeSettings(next);
+  const result = await browser.storage.local.get(accountInstallationsKey(accountId));
+  const parsed = accountInstallationsSchema.safeParse(result[accountInstallationsKey(accountId)]);
+  if (!parsed.success) {
+    return;
+  }
+
+  await browser.storage.local.set({
+    [accountInstallationsKey(accountId)]: {
+      installations,
+      installationsRefreshedAt: Date.now(),
+    },
+  });
 }
 
 export async function markAccountInvalidated(
   accountId: string,
   reason: "revoked" | "expired" | "refresh_failed" | "unknown",
 ): Promise<void> {
-  const settings = await getSettings();
-  const next: ExtensionSettings = {
-    version: 3,
-    accounts: settings.accounts.map((account) =>
-      account.id === accountId
-        ? { ...account, invalidated: true, invalidatedReason: reason }
-        : account,
-    ),
-  };
-  await writeSettings(next);
+  const result = await browser.storage.local.get(accountAuthKey(accountId));
+  const parsed = accountAuthSchema.safeParse(result[accountAuthKey(accountId)]);
+  if (!parsed.success) {
+    return;
+  }
+
+  await browser.storage.local.set({
+    [accountAuthKey(accountId)]: {
+      ...parsed.data,
+      invalidated: true,
+      invalidatedReason: reason,
+    },
+  });
 }
 
 export async function updateAccountTokens(
@@ -161,22 +318,21 @@ export async function updateAccountTokens(
     refreshTokenExpiresAt: number | null;
   },
 ): Promise<void> {
-  const settings = await getSettings();
-  const next: ExtensionSettings = {
-    version: 3,
-    accounts: settings.accounts.map((account) =>
-      account.id === accountId
-        ? {
-            ...account,
-            token: tokens.token,
-            refreshToken: tokens.refreshToken,
-            expiresAt: tokens.expiresAt,
-            refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
-          }
-        : account,
-    ),
-  };
-  await writeSettings(next);
+  const result = await browser.storage.local.get(accountAuthKey(accountId));
+  const parsed = accountAuthSchema.safeParse(result[accountAuthKey(accountId)]);
+  if (!parsed.success) {
+    return;
+  }
+
+  await browser.storage.local.set({
+    [accountAuthKey(accountId)]: {
+      ...parsed.data,
+      token: tokens.token,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+      refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
+    },
+  });
 }
 
 export async function resolveAccountForRepo(
