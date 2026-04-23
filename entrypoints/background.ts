@@ -6,7 +6,10 @@ import {
   isCancelPullReviewerSummaryMessage,
   isFetchPullReviewerSummaryMessage,
 } from "../src/runtime/reviewer-fetch";
-import { listAccounts } from "../src/storage/accounts";
+import {
+  listAccounts,
+  markAccountInvalidated,
+} from "../src/storage/accounts";
 
 export default defineBackground(() => {
   const coordinator = createRefreshCoordinator({
@@ -18,6 +21,7 @@ export default defineBackground(() => {
   const proactiveRefreshService = createProactiveRefreshService({
     refreshCoordinator: coordinator,
     listAccounts,
+    markAccountInvalidated,
     now: () => Date.now(),
   });
 

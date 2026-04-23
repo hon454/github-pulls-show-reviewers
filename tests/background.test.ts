@@ -626,4 +626,41 @@ describe("background proactive refresh wiring", () => {
     expect(listAccountsMock).not.toHaveBeenCalled();
     expect(refreshAccountTokenMock).not.toHaveBeenCalled();
   });
+
+  it("invalidates accounts whose refresh token has already expired", async () => {
+    const now = 1_700_000_000_000;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(now));
+    listAccountsMock.mockResolvedValue([
+      {
+        id: "acc-refresh-expired",
+        login: "expired-user",
+        avatarUrl: null,
+        token: "ghu",
+        createdAt: 1,
+        installations: [],
+        installationsRefreshedAt: 1,
+        invalidated: false,
+        invalidatedReason: null,
+        refreshToken: "ghr",
+        expiresAt: now + 60_000,
+        refreshTokenExpiresAt: now - 1,
+      },
+    ]);
+
+    await bootBackground();
+    if (capturedAlarmListener == null) {
+      throw new Error("background did not register an alarms.onAlarm listener");
+    }
+    capturedAlarmListener({ name: PROACTIVE_REFRESH_ALARM_NAME });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+      "acc-refresh-expired",
+      "expired",
+    );
+    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });

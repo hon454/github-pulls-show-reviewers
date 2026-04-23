@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createProactiveRefreshService,
   selectAccountsDueForRefresh,
+  selectAccountsWithExpiredRefreshToken,
 } from "../src/background/proactive-refresh";
 import {
   PROACTIVE_REFRESH_ALARM_NAME,
@@ -35,15 +36,39 @@ describe("selectAccountsDueForRefresh", () => {
 
   it("selects accounts whose expiresAt is within the threshold window", () => {
     const accounts: Account[] = [
-      makeAccount({ id: "due-soon", expiresAt: now + threshold - 60_000 }),
-      makeAccount({ id: "already-expired", expiresAt: now - 1 }),
-      makeAccount({ id: "plenty-of-time", expiresAt: now + threshold + 60_000 }),
+      makeAccount({
+        id: "due-soon",
+        expiresAt: now + threshold - 60_000,
+        refreshTokenExpiresAt: now + 7 * 24 * 60 * 60 * 1_000,
+      }),
+      makeAccount({
+        id: "already-expired",
+        expiresAt: now - 1,
+        refreshTokenExpiresAt: now + 7 * 24 * 60 * 60 * 1_000,
+      }),
+      makeAccount({
+        id: "plenty-of-time",
+        expiresAt: now + threshold + 60_000,
+        refreshTokenExpiresAt: now + 7 * 24 * 60 * 60 * 1_000,
+      }),
     ];
 
     expect(selectAccountsDueForRefresh(accounts, now, threshold)).toEqual([
       "due-soon",
       "already-expired",
     ]);
+  });
+
+  it("skips accounts whose refreshTokenExpiresAt is in the past", () => {
+    const accounts: Account[] = [
+      makeAccount({
+        id: "refresh-expired",
+        expiresAt: now + 1,
+        refreshTokenExpiresAt: now - 1,
+      }),
+    ];
+
+    expect(selectAccountsDueForRefresh(accounts, now, threshold)).toEqual([]);
   });
 
   it("skips accounts without an expiresAt", () => {
@@ -80,6 +105,35 @@ describe("selectAccountsDueForRefresh", () => {
   });
 });
 
+describe("selectAccountsWithExpiredRefreshToken", () => {
+  const now = 1_700_000_000_000;
+
+  it("selects accounts whose refreshTokenExpiresAt is in the past", () => {
+    const accounts: Account[] = [
+      makeAccount({ id: "expired", refreshTokenExpiresAt: now - 1 }),
+      makeAccount({ id: "still-valid", refreshTokenExpiresAt: now + 60_000 }),
+      makeAccount({ id: "no-expiry", refreshTokenExpiresAt: null }),
+    ];
+
+    expect(selectAccountsWithExpiredRefreshToken(accounts, now)).toEqual([
+      "expired",
+    ]);
+  });
+
+  it("skips invalidated accounts even when refreshTokenExpiresAt is past", () => {
+    const accounts: Account[] = [
+      makeAccount({
+        id: "expired-invalidated",
+        invalidated: true,
+        invalidatedReason: "refresh_failed",
+        refreshTokenExpiresAt: now - 1,
+      }),
+    ];
+
+    expect(selectAccountsWithExpiredRefreshToken(accounts, now)).toEqual([]);
+  });
+});
+
 describe("createProactiveRefreshService", () => {
   const alarmsCreateMock = vi.fn(async () => undefined);
   const alarmsGetMock = vi.fn<
@@ -88,6 +142,8 @@ describe("createProactiveRefreshService", () => {
   const listAccountsMock = vi.fn<() => Promise<Account[]>>();
   const refreshAccountTokenMock =
     vi.fn<(accountId: string) => Promise<{ ok: true; token: string }>>();
+  const markAccountInvalidatedMock =
+    vi.fn<(accountId: string, reason: "expired") => Promise<void>>();
 
   beforeEach(() => {
     alarmsCreateMock.mockClear();
@@ -96,6 +152,8 @@ describe("createProactiveRefreshService", () => {
     listAccountsMock.mockReset();
     refreshAccountTokenMock.mockReset();
     refreshAccountTokenMock.mockResolvedValue({ ok: true, token: "t" });
+    markAccountInvalidatedMock.mockReset();
+    markAccountInvalidatedMock.mockResolvedValue(undefined);
     vi.stubGlobal("browser", {
       alarms: { create: alarmsCreateMock, get: alarmsGetMock },
     });
@@ -105,6 +163,7 @@ describe("createProactiveRefreshService", () => {
     return createProactiveRefreshService({
       refreshCoordinator: { refreshAccountToken: refreshAccountTokenMock },
       listAccounts: listAccountsMock,
+      markAccountInvalidated: markAccountInvalidatedMock,
       now: () => nowValue,
     });
   }
@@ -157,12 +216,22 @@ describe("createProactiveRefreshService", () => {
   it("handleAlarmFire refreshes every eligible account", async () => {
     const now = 1_700_000_000_000;
     const dueSoon = now + PROACTIVE_REFRESH_THRESHOLD_MS - 60_000;
+    const futureRefresh = now + 60 * 60 * 1_000;
     listAccountsMock.mockResolvedValue([
-      makeAccount({ id: "acc-a", expiresAt: dueSoon }),
-      makeAccount({ id: "acc-b", expiresAt: dueSoon }),
+      makeAccount({
+        id: "acc-a",
+        expiresAt: dueSoon,
+        refreshTokenExpiresAt: futureRefresh,
+      }),
+      makeAccount({
+        id: "acc-b",
+        expiresAt: dueSoon,
+        refreshTokenExpiresAt: futureRefresh,
+      }),
       makeAccount({
         id: "acc-skip",
         expiresAt: now + PROACTIVE_REFRESH_THRESHOLD_MS + 60_000,
+        refreshTokenExpiresAt: futureRefresh,
       }),
     ]);
 
@@ -176,9 +245,18 @@ describe("createProactiveRefreshService", () => {
 
   it("handleAlarmFire continues when one account refresh rejects", async () => {
     const now = 1_700_000_000_000;
+    const futureRefresh = now + 60 * 60 * 1_000;
     listAccountsMock.mockResolvedValue([
-      makeAccount({ id: "acc-a", expiresAt: now + 1 }),
-      makeAccount({ id: "acc-b", expiresAt: now + 1 }),
+      makeAccount({
+        id: "acc-a",
+        expiresAt: now + 1,
+        refreshTokenExpiresAt: futureRefresh,
+      }),
+      makeAccount({
+        id: "acc-b",
+        expiresAt: now + 1,
+        refreshTokenExpiresAt: futureRefresh,
+      }),
     ]);
     refreshAccountTokenMock.mockRejectedValueOnce(new Error("transient"));
     refreshAccountTokenMock.mockResolvedValueOnce({ ok: true, token: "t" });
@@ -189,5 +267,50 @@ describe("createProactiveRefreshService", () => {
       service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME),
     ).resolves.toBeUndefined();
     expect(refreshAccountTokenMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("handleAlarmFire invalidates accounts whose refresh token has expired", async () => {
+    const now = 1_700_000_000_000;
+    listAccountsMock.mockResolvedValue([
+      makeAccount({
+        id: "refresh-expired",
+        expiresAt: now + 60_000,
+        refreshTokenExpiresAt: now - 1,
+      }),
+    ]);
+
+    const service = buildService(now);
+    await service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME);
+
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+      "refresh-expired",
+      "expired",
+    );
+    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("handleAlarmFire processes refresh and invalidation concurrently", async () => {
+    const now = 1_700_000_000_000;
+    listAccountsMock.mockResolvedValue([
+      makeAccount({
+        id: "due",
+        expiresAt: now + PROACTIVE_REFRESH_THRESHOLD_MS - 1,
+        refreshTokenExpiresAt: now + 60 * 60 * 1_000,
+      }),
+      makeAccount({
+        id: "refresh-expired",
+        expiresAt: now + 60_000,
+        refreshTokenExpiresAt: now - 1,
+      }),
+    ]);
+
+    const service = buildService(now);
+    await service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME);
+
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("due");
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+      "refresh-expired",
+      "expired",
+    );
   });
 });

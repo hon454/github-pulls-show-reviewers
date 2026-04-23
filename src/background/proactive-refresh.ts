@@ -21,15 +21,37 @@ export function selectAccountsDueForRefresh(
     if (account.invalidated) continue;
     if (account.refreshToken == null) continue;
     if (account.expiresAt == null) continue;
+    if (
+      account.refreshTokenExpiresAt != null &&
+      account.refreshTokenExpiresAt <= now
+    ) continue;
     if (account.expiresAt - now >= thresholdMs) continue;
     dueIds.push(account.id);
   }
   return dueIds;
 }
 
+export function selectAccountsWithExpiredRefreshToken(
+  accounts: Account[],
+  now: number,
+): string[] {
+  const expiredIds: string[] = [];
+  for (const account of accounts) {
+    if (account.invalidated) continue;
+    if (account.refreshTokenExpiresAt == null) continue;
+    if (account.refreshTokenExpiresAt > now) continue;
+    expiredIds.push(account.id);
+  }
+  return expiredIds;
+}
+
 export function createProactiveRefreshService(input: {
   refreshCoordinator: RefreshCoordinator;
   listAccounts: () => Promise<Account[]>;
+  markAccountInvalidated: (
+    accountId: string,
+    reason: "expired",
+  ) => Promise<void>;
   now: () => number;
 }): ProactiveRefreshService {
   return {
@@ -47,18 +69,23 @@ export function createProactiveRefreshService(input: {
       if (alarmName !== PROACTIVE_REFRESH_ALARM_NAME) return;
 
       const accounts = await input.listAccounts();
+      const now = input.now();
       const dueIds = selectAccountsDueForRefresh(
         accounts,
-        input.now(),
+        now,
         PROACTIVE_REFRESH_THRESHOLD_MS,
       );
-      if (dueIds.length === 0) return;
+      const expiredIds = selectAccountsWithExpiredRefreshToken(accounts, now);
+      if (dueIds.length === 0 && expiredIds.length === 0) return;
 
-      await Promise.allSettled(
-        dueIds.map((accountId) =>
+      await Promise.allSettled([
+        ...dueIds.map((accountId) =>
           input.refreshCoordinator.refreshAccountToken(accountId),
         ),
-      );
+        ...expiredIds.map((accountId) =>
+          input.markAccountInvalidated(accountId, "expired"),
+        ),
+      ]);
     },
   };
 }
