@@ -170,3 +170,5 @@ The current MVP is already implemented around a few explicit constraints:
 - [Privacy policy draft](./docs/privacy-policy.md)
 - [ADR: Keep no-token support for public repositories](./docs/adr/0001-keep-no-token-support-for-public-repositories.md)
 - [ADR: Interim auth (superseded)](./docs/adr/0002-classic-pat-interim-auth.md)
+- [ADR: GitHub App + Device Flow](./docs/adr/0003-github-app-device-flow.md)
+- [ADR: GitHub App access token refresh](./docs/adr/0004-github-app-token-refresh.md)
