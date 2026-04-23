@@ -72,6 +72,18 @@ describe("selectAccountsDueForRefresh", () => {
     expect(selectAccountsDueForRefresh(accounts, now, threshold)).toEqual([]);
   });
 
+  it("skips accounts where refreshTokenExpiresAt equals now", () => {
+    const accounts: Account[] = [
+      makeAccount({
+        id: "refresh-at-now",
+        expiresAt: now + 1,
+        refreshTokenExpiresAt: now,
+      }),
+    ];
+
+    expect(selectAccountsDueForRefresh(accounts, now, threshold)).toEqual([]);
+  });
+
   it("skips accounts without an expiresAt", () => {
     const accounts: Account[] = [
       makeAccount({ id: "no-expiry", expiresAt: null }),
