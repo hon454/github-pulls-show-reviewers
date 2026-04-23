@@ -287,8 +287,10 @@ describe("createProactiveRefreshService", () => {
 
   it("handleAlarmFire continues when one account refresh rejects", async () => {
     // Defensive coverage: Promise.allSettled insulates us even if a future
-    // change breaks the coordinator contract and lets a rejection escape.
-    // In current production code, refreshAccountToken always resolves.
+    // change lets a rejection escape. refreshAccountToken wraps
+    // refreshAccessToken in try/catch, but storage I/O (getAccountById,
+    // updateAccountTokens, markAccountInvalidated) is outside that guard
+    // and can reject.
     const now = 1_700_000_000_000;
     const futureRefresh = now + 60 * 60 * 1_000;
     listAccountsMock.mockResolvedValue([
