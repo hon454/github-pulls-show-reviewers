@@ -60,6 +60,11 @@
 | Matched account    | 401 then refresh succeeds then 401 again      | New access token rejected (app revoked or scope changed) — marked `revoked`, sign in again |
 | Matched account    | 403 / 404 without rate-limit signal           | Installation does not cover this repository — install the GitHub App on the owner |
 
+## Proactive token refresh
+
+- A recurring `chrome.alarms` job (15-minute period, 30-minute refresh threshold) pre-warms access tokens before the reactive 401 path is needed, and invalidates accounts whose refresh token has already expired.
+- Design rationale, alternatives, and the revisit trigger live in [ADR 0005](./adr/0005-proactive-refresh.md).
+
 ## Next implementation targets
 
 - Collapse request volume further where practical.
