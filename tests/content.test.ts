@@ -54,6 +54,11 @@ async function bootContent(aggregator: Aggregator): Promise<{
   onRowFailure: (signal: RowFailure) => void;
 }> {
   bootAccessBannerMock.mockReturnValue(aggregator);
+  window.history.replaceState(
+    {},
+    "",
+    "/hon454/github-pulls-show-reviewers/pulls",
+  );
 
   let captured: BootReviewerOptions | undefined;
   bootReviewerListPageMock.mockImplementation(

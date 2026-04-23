@@ -35,16 +35,21 @@ export default defineContentScript({
             if (aggregator == null) {
               return;
             }
-            const status = extractStatus(error);
-            if (status === 429 || (account == null && status === 403)) {
+
+            const signals = classifyRowFailure(error, account);
+            if (signals.rateLimited) {
               aggregator.reportUnauthRateLimit();
               return;
             }
-            if (status === 404 || status === 403 || account == null) {
+            if (signals.uncovered) {
               aggregator.reportUncoveredOwner(owner);
               return;
             }
-            // 401 and other errors — still flag uncovered so the banner can guide the user.
+            // Fallback for errors we cannot attribute (schema drift, network
+            // failure, aborted fetch, etc.). We keep the existing behavior and
+            // flag the owner as uncovered so the banner still guides the user
+            // toward App installation — doing nothing here would leave the row
+            // blank with no explanation.
             aggregator.reportUncoveredOwner(owner);
           },
         });
