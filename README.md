@@ -15,7 +15,7 @@ On GitHub PR list pages, reviewer context is easy to miss. You often need to ope
 - Has anyone already reviewed?
 - Was the latest review an approval, comment, dismissal, or change request?
 
-This extension brings that information into the list itself with lightweight inline chips. By default it renders an avatar-first `Reviewers:` strip, and the options page can reveal reviewer names or hide the review-state badge without refetching data.
+This extension brings that information into the list itself with lightweight inline chips. By default it renders an avatar-first `Reviewers:` strip, and the options page can reveal reviewer names, hide the review-state badge, or let reviewer links include closed PRs without refetching data.
 
 ## What The Extension Shows
 
@@ -30,6 +30,8 @@ Core behavior:
 - Show each reviewer's latest completed review state, preferring the latest
   non-`COMMENTED` review when one exists and otherwise falling back to the
   latest `COMMENTED` review
+- Link reviewer chips to open PR searches by default, with an option to include
+  closed PRs in those searches
 - Keep rendering deterministic with pure view-model helpers and centralized selectors
 - Reuse per-page cache entries to avoid duplicate row fetches
 - Re-run safely across GitHub SPA navigation and DOM mutations
@@ -47,7 +49,7 @@ This repository intentionally stays narrow.
 
 - Reviewer visibility first
 - Requested reviewers, requested teams, and completed review state are in scope, surfaced as a single `Reviewers:` section with avatar + state-badge chips.
-- Display preferences let you hide the state badge or expand each user into an `@login` pill.
+- Display preferences let you hide the state badge, expand each user into an `@login` pill, or include closed PRs in reviewer-link searches.
 - Checks, mergeability, assignees, labels, and dashboard-style expansion are out of scope unless explicitly approved
 
 ## Authentication Model

@@ -29,7 +29,11 @@ describe("buildReviewers", () => {
           { login: "bob", avatarUrl: null },
         ],
         completedReviews: [
-          { login: "bob", avatarUrl: "https://example/b.png", state: "COMMENTED" },
+          {
+            login: "bob",
+            avatarUrl: "https://example/b.png",
+            state: "COMMENTED",
+          },
         ],
       }),
     );
@@ -75,7 +79,9 @@ describe("buildReviewers", () => {
       route,
       summary({
         requestedUsers: [],
-        completedReviews: [{ login: "alice", avatarUrl: null, state: "APPROVED" }],
+        completedReviews: [
+          { login: "alice", avatarUrl: null, state: "APPROVED" },
+        ],
       }),
     );
 
@@ -91,7 +97,9 @@ describe("buildReviewers", () => {
       route,
       summary({
         requestedUsers: [{ login: "alice", avatarUrl: null }],
-        completedReviews: [{ login: "alice", avatarUrl: null, state: "APPROVED" }],
+        completedReviews: [
+          { login: "alice", avatarUrl: null, state: "APPROVED" },
+        ],
       }),
     );
     expect(entries[0]).toMatchObject({
@@ -143,7 +151,11 @@ describe("buildReviewers", () => {
       }),
     );
 
-    expect(entries.map((entry) => entry.kind)).toEqual(["user", "team", "team"]);
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      "user",
+      "team",
+      "team",
+    ]);
     expect(
       entries
         .filter((entry) => entry.kind === "team")
@@ -168,7 +180,9 @@ describe("buildReviewers", () => {
     const entries = buildReviewers(
       route,
       summary({
-        completedReviews: [{ login: "bob", avatarUrl: null, state: "APPROVED" }],
+        completedReviews: [
+          { login: "bob", avatarUrl: null, state: "APPROVED" },
+        ],
       }),
     );
     const user = entries[0];
@@ -177,7 +191,7 @@ describe("buildReviewers", () => {
     expect(user.href).toContain("reviewed-by%3Abob");
   });
 
-  it("builds reviewed-by URLs when a reviewer has a state even if also re-requested", () => {
+  it("builds review-requested URLs for a re-requested reviewer with a prior comment", () => {
     const entries = buildReviewers(
       route,
       summary({
@@ -192,7 +206,62 @@ describe("buildReviewers", () => {
     if (user.kind !== "user") return;
     expect(user.isRequested).toBe(true);
     expect(user.state).toBe("COMMENTED");
-    expect(user.href).toContain("reviewed-by%3Acarol");
+    expect(user.href).toContain("review-requested%3Acarol");
+    expect(user.href).not.toContain("reviewed-by%3Acarol");
+  });
+
+  it("builds review-requested URLs for a refresh-badge reviewer (re-requested after approval)", () => {
+    const entries = buildReviewers(
+      route,
+      summary({
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        completedReviews: [
+          { login: "alice", avatarUrl: null, state: "APPROVED" },
+        ],
+      }),
+    );
+    const user = entries[0];
+    expect(user.kind).toBe("user");
+    if (user.kind !== "user") return;
+    expect(user.isRequested).toBe(true);
+    expect(user.state).toBe("APPROVED");
+    expect(user.href).toContain("review-requested%3Aalice");
+    expect(user.href).not.toContain("reviewed-by%3Aalice");
+  });
+
+  it("scopes reviewer URLs to open pull requests by default", () => {
+    const entries = buildReviewers(
+      route,
+      summary({
+        completedReviews: [
+          { login: "bob", avatarUrl: null, state: "APPROVED" },
+        ],
+        requestedTeams: ["platform"],
+      }),
+    );
+
+    for (const entry of entries) {
+      const query = new URL(entry.href).searchParams.get("q");
+      expect(query).toContain("is:pr is:open");
+    }
+  });
+
+  it("can build reviewer URLs without open-only scoping", () => {
+    const entries = buildReviewers(
+      route,
+      summary({
+        completedReviews: [
+          { login: "bob", avatarUrl: null, state: "APPROVED" },
+        ],
+        requestedTeams: ["platform"],
+      }),
+      { openPullsOnly: false },
+    );
+
+    for (const entry of entries) {
+      const query = new URL(entry.href).searchParams.get("q");
+      expect(query).not.toContain("is:open");
+    }
   });
 
   it("builds team-review-requested URLs scoped to the route owner", () => {
@@ -204,6 +273,18 @@ describe("buildReviewers", () => {
     expect(team.kind).toBe("team");
     if (team.kind !== "team") return;
     expect(team.href).toContain("team-review-requested%3Ahon454%2Fplatform");
+  });
+
+  it("does not mix user qualifiers into team URLs", () => {
+    const entries = buildReviewers(
+      route,
+      summary({ requestedTeams: ["platform"] }),
+    );
+    const team = entries[0];
+    if (team.kind !== "team") throw new Error("expected team entry");
+    const query = new URL(team.href).searchParams.get("q");
+    expect(query).not.toContain("review-requested:platform");
+    expect(query).not.toContain("reviewed-by:");
   });
 
   it("prefers the avatarUrl from the latest review when a login appears in both sources", () => {
