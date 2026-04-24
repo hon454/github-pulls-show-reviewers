@@ -140,7 +140,7 @@ pnpm verify:release
 6. Run `pnpm cws:assets` only when screenshots or store-facing visuals need to be regenerated.
 7. Run `pnpm zip` only after the checks above are green and you are ready to inspect or submit the packaged artifact.
 
-Release automation installs Playwright Chromium and re-runs `pnpm verify:release` before `pnpm zip`, but the regular PR CI is intentionally lighter. Do not treat a green PR check alone as release sign-off.
+PR CI runs the same `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` signals in parallel jobs. Release automation still runs `pnpm verify:release` as a single gate before `pnpm zip` on tag push, which is the authoritative release sign-off.
 
 ## Repository Map
 
