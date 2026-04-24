@@ -101,5 +101,5 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 Expected package path after `pnpm zip`:
 
 ```text
-.output/github-pulls-show-reviewers-1.4.0-chrome.zip
+.output/github-pulls-show-reviewers-1.4.1-chrome.zip
 ```

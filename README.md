@@ -66,9 +66,10 @@ This repository intentionally stays narrow.
   each account's installations.
 - **Token expiry** is handled automatically. GitHub App user-to-server access
   tokens expire after about 8 hours; the extension stores the refresh token at
-  sign-in and exchanges it for a new access token in the background when GitHub
-  returns 401. You stay signed in until the refresh token itself expires
-  (about 6 months) or the app is revoked.
+  sign-in, refreshes access tokens proactively in the background with
+  `chrome.alarms`, and still retries refresh on 401 as a fallback. You stay
+  signed in until the refresh token itself expires (about 6 months) or the app
+  is revoked.
 - **Revocation** happens on GitHub's
   [Applications page](https://github.com/settings/applications). Removing an
   account from the options page only deletes the locally stored token. If a
@@ -174,3 +175,4 @@ The current MVP is already implemented around a few explicit constraints:
 - [ADR: Interim auth (superseded)](./docs/adr/0002-classic-pat-interim-auth.md)
 - [ADR: GitHub App + Device Flow](./docs/adr/0003-github-app-device-flow.md)
 - [ADR: GitHub App access token refresh](./docs/adr/0004-github-app-token-refresh.md)
+- [ADR: Proactive access token refresh](./docs/adr/0005-proactive-refresh.md)

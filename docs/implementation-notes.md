@@ -35,7 +35,8 @@
 - The extension still depends on GitHub metadata DOM structure.
 - API requests are still one pull request plus one reviews request per uncached row.
 - Public-repository no-token access still depends on GitHub's unauthenticated REST availability and rate limits.
-- Legacy single-token settings are not migrated and must be re-added as scoped entries.
+- PAT-era single-token settings are not migrated; users must sign in again with
+  the GitHub App account flow.
 
 ## Display preferences
 

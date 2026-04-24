@@ -57,7 +57,9 @@ To build or zip locally with the same GitHub App environment the release workflo
 
 Expected release gate behavior:
 
-- `ci.yml` currently runs `pnpm typecheck` on pushes to `main` and pull requests.
+- `ci.yml` runs `pnpm lint`, `pnpm typecheck`, `pnpm test`, and
+  `pnpm test:e2e` on pushes to `main` and pull requests, split into parallel
+  fast-path and e2e jobs.
 - `release.yml` installs Playwright Chromium, re-runs `pnpm verify:release`, and then runs `pnpm zip`.
 - `release.yml` does not generate Chrome Web Store screenshots, so `pnpm cws:assets` remains a manual pre-submission step when visuals change.
 - `pnpm test:e2e` no longer mutates `docs/chrome-web-store-assets/`; the screenshot capture spec is scoped to a separate `capture` Playwright project that only `pnpm cws:assets` runs.
