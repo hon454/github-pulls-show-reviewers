@@ -62,7 +62,11 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onMessage.addListener(
-    (message: unknown, sender: { id?: string } | undefined) => {
+    (
+      message: unknown,
+      sender: { id?: string } | undefined,
+      sendResponse: (response?: unknown) => void,
+    ) => {
       // Reject messages from other extensions or extension pages. Only
       // components of this extension (content scripts, options page) are
       // allowed to trigger a token refresh — otherwise a third party could
@@ -71,18 +75,43 @@ export default defineBackground(() => {
       if (sender?.id !== browser.runtime.id) {
         return undefined;
       }
+      // Chrome MV3 does not reliably await a Promise returned from an
+      // `onMessage` listener. Returning `true` keeps the message channel
+      // open and `sendResponse` delivers the async result to the caller.
       if (
         message != null &&
         typeof message === "object" &&
         (message as { type?: unknown }).type === "refreshAccessToken" &&
         typeof (message as { accountId?: unknown }).accountId === "string"
       ) {
-        return coordinator.refreshAccountToken(
-          (message as { accountId: string }).accountId,
-        );
+        coordinator
+          .refreshAccountToken(
+            (message as { accountId: string }).accountId,
+          )
+          .then(
+            (outcome) => sendResponse(outcome),
+            (error) => {
+              console.error(
+                "[GitHub Pulls Show Reviewers] refreshAccountToken failed.",
+                error,
+              );
+              sendResponse(undefined);
+            },
+          );
+        return true;
       }
       if (isFetchPullReviewerSummaryMessage(message)) {
-        return reviewerFetchService.handleFetchMessage(message);
+        reviewerFetchService.handleFetchMessage(message).then(
+          (response) => sendResponse(response),
+          (error) => {
+            console.error(
+              "[GitHub Pulls Show Reviewers] Reviewer fetch handler crashed.",
+              error,
+            );
+            sendResponse(undefined);
+          },
+        );
+        return true;
       }
       if (isCancelPullReviewerSummaryMessage(message)) {
         reviewerFetchService.cancelRequest(message.requestId);
