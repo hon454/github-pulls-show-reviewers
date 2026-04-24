@@ -58,7 +58,7 @@ export function buildReviewers(
       avatarUrl,
       state,
       isRequested,
-      href: buildUserHref(route, login, state, options),
+      href: buildUserHref(route, login, options),
     });
   }
 
@@ -94,11 +94,9 @@ function rankUser(entry: Extract<ReviewerEntry, { kind: "user" }>): number {
 function buildUserHref(
   route: PullListRoute,
   login: string,
-  state: ReviewState | null,
   options: ReviewerLinkOptions,
 ): string {
-  const qualifier =
-    state != null ? `reviewed-by:${login}` : `review-requested:${login}`;
+  const qualifier = `(review-requested:${login} OR reviewed-by:${login})`;
   const query = buildPullsQuery(qualifier, options);
   return `https://github.com/${route.owner}/${route.repo}/pulls?q=${encodeURIComponent(query)}`;
 }
