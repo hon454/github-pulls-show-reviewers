@@ -163,7 +163,7 @@ describe("buildReviewers", () => {
     ).toEqual(["design", "platform"]);
   });
 
-  it("builds user URLs with a compound review-requested OR reviewed-by qualifier", () => {
+  it("builds review-requested URLs when isRequested is true", () => {
     const entries = buildReviewers(
       route,
       summary({
@@ -173,11 +173,10 @@ describe("buildReviewers", () => {
     const user = entries[0];
     expect(user.kind).toBe("user");
     if (user.kind !== "user") return;
-    const query = new URL(user.href).searchParams.get("q");
-    expect(query).toContain("(review-requested:alice OR reviewed-by:alice)");
+    expect(user.href).toContain("review-requested%3Aalice");
   });
 
-  it("uses the same compound qualifier for completed reviewers", () => {
+  it("builds reviewed-by URLs when isRequested is false", () => {
     const entries = buildReviewers(
       route,
       summary({
@@ -189,11 +188,10 @@ describe("buildReviewers", () => {
     const user = entries[0];
     expect(user.kind).toBe("user");
     if (user.kind !== "user") return;
-    const query = new URL(user.href).searchParams.get("q");
-    expect(query).toContain("(review-requested:bob OR reviewed-by:bob)");
+    expect(user.href).toContain("reviewed-by%3Abob");
   });
 
-  it("uses the same compound qualifier when a reviewer is both requested and completed", () => {
+  it("builds reviewed-by URLs when a reviewer has a state even if also re-requested", () => {
     const entries = buildReviewers(
       route,
       summary({
@@ -208,8 +206,7 @@ describe("buildReviewers", () => {
     if (user.kind !== "user") return;
     expect(user.isRequested).toBe(true);
     expect(user.state).toBe("COMMENTED");
-    const query = new URL(user.href).searchParams.get("q");
-    expect(query).toContain("(review-requested:carol OR reviewed-by:carol)");
+    expect(user.href).toContain("reviewed-by%3Acarol");
   });
 
   it("scopes reviewer URLs to open pull requests by default", () => {
@@ -258,7 +255,7 @@ describe("buildReviewers", () => {
     expect(team.href).toContain("team-review-requested%3Ahon454%2Fplatform");
   });
 
-  it("does not apply the user compound qualifier to team URLs", () => {
+  it("does not mix user qualifiers into team URLs", () => {
     const entries = buildReviewers(
       route,
       summary({ requestedTeams: ["platform"] }),
@@ -268,7 +265,6 @@ describe("buildReviewers", () => {
     const query = new URL(team.href).searchParams.get("q");
     expect(query).not.toContain("review-requested:platform");
     expect(query).not.toContain("reviewed-by:");
-    expect(query).not.toContain(" OR ");
   });
 
   it("prefers the avatarUrl from the latest review when a login appears in both sources", () => {

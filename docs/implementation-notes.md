@@ -25,7 +25,7 @@
    worker when the cache is cold. The background resolves the matched
    account's token (or no token if none matches), performs the GitHub REST
    calls, and returns the parsed summary or a typed error.
-6. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the prior state badge. Requested teams keep the text chip shape. User chip links emit a compound `(review-requested:<login> OR reviewed-by:<login>)` qualifier so clicking an avatar surfaces pending and completed reviews together; team chip links keep the single `team-review-requested:<owner>/<slug>` qualifier. Both are scoped with `is:open` by default.
+6. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the prior state badge. Requested teams keep the text chip shape. Reviewer chip links use `is:pr is:open` searches by default.
 7. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text.
 8. Re-run row processing when GitHub mutates the page or performs SPA navigation.
@@ -43,7 +43,7 @@
 - Stored under a separate `preferences` key in `browser.storage.local` (schema `version: 1`).
 - `showStateBadge` (default `true`) toggles the SVG state badge on each avatar.
 - `showReviewerName` (default `false`) switches each user chip between avatar-only and a rounded pill containing the avatar and `@login` text.
-- `openPullsOnly` (default `true`) keeps reviewer chip links scoped to open pull requests by prepending `is:open` to the search query. When disabled, the scope qualifier is omitted so closed and merged pull requests also appear in the filtered result.
+- `openPullsOnly` (default `true`) keeps reviewer chip links scoped to open pull requests. When disabled, links preserve the previous `is:pr <reviewer qualifier>` query so closed PRs can appear too.
 - Preference changes rerender without invalidating the per-row reviewer cache — no extra GitHub requests are triggered.
 
 ## Request volume decision
