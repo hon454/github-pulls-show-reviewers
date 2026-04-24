@@ -191,7 +191,7 @@ describe("buildReviewers", () => {
     expect(user.href).toContain("reviewed-by%3Abob");
   });
 
-  it("builds reviewed-by URLs when a reviewer has a state even if also re-requested", () => {
+  it("builds review-requested URLs for a re-requested reviewer with a prior comment", () => {
     const entries = buildReviewers(
       route,
       summary({
@@ -206,7 +206,27 @@ describe("buildReviewers", () => {
     if (user.kind !== "user") return;
     expect(user.isRequested).toBe(true);
     expect(user.state).toBe("COMMENTED");
-    expect(user.href).toContain("reviewed-by%3Acarol");
+    expect(user.href).toContain("review-requested%3Acarol");
+    expect(user.href).not.toContain("reviewed-by%3Acarol");
+  });
+
+  it("builds review-requested URLs for a refresh-badge reviewer (re-requested after approval)", () => {
+    const entries = buildReviewers(
+      route,
+      summary({
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        completedReviews: [
+          { login: "alice", avatarUrl: null, state: "APPROVED" },
+        ],
+      }),
+    );
+    const user = entries[0];
+    expect(user.kind).toBe("user");
+    if (user.kind !== "user") return;
+    expect(user.isRequested).toBe(true);
+    expect(user.state).toBe("APPROVED");
+    expect(user.href).toContain("review-requested%3Aalice");
+    expect(user.href).not.toContain("reviewed-by%3Aalice");
   });
 
   it("scopes reviewer URLs to open pull requests by default", () => {
