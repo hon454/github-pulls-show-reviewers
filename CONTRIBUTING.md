@@ -103,15 +103,6 @@ See the `Pre-release Test Workflow` section in
 tagging a release. For routine changes, `pnpm lint`,
 `pnpm typecheck`, and `pnpm test` are the minimum expected signals.
 
-## Release automation
-
-The end-to-end Chrome Web Store publishing pipeline, including GCP
-service account provisioning, GitHub Actions secret/variable
-registration, troubleshooting, and key rotation, is documented in
-[`docs/guidelines/release-automation-guideline.md`](./docs/guidelines/release-automation-guideline.md).
-Consult that guideline before touching `release.yml`, rotating the
-CWS service account key, or onboarding a new maintainer.
-
 ## Coding conventions
 
 - Prettier and ESLint are authoritative for formatting and lint.
