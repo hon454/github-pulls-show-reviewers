@@ -87,13 +87,20 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 1. Ensure the package version is the version you intend to submit. Tag names should follow `v<version>`, for example `v1.0.0`.
 2. Run `pnpm verify:release`.
 3. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
-4. Run `pnpm zip` only after the checks above pass.
-5. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
+4. Confirm the release workflow has Chrome Web Store API credentials configured:
+   `CWS_SERVICE_ACCOUNT_JSON` as a GitHub Actions secret, and
+   `CWS_PUBLISHER_ID` / `CWS_EXTENSION_ID` as GitHub Actions variables.
+5. Push the version tag. The release workflow runs `pnpm zip`, attaches the zip
+   to the GitHub Release, uploads it to Chrome Web Store, and submits it with
+   `DEFAULT_PUBLISH`.
 6. Attach the three screenshots listed above with the updated captions.
 7. Paste the short description, detailed description, and privacy policy URL.
 8. Fill in the privacy fields using the draft above, then reconcile every answer against the shipped permissions and network behavior.
-9. If you want review before launch, disable automatic publish and stage the release in the dashboard.
-10. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
+9. Chrome Web Store review still runs after API submission. With
+   `DEFAULT_PUBLISH`, approval publishes the update automatically using the
+   item's existing visibility settings.
+10. After approval, confirm the store version, Git tag, and GitHub Release are
+   aligned.
 11. Open the packaged extension's options page once before upload and confirm it never renders as a blank white screen. A missing GitHub App build config must surface the explicit configuration warning instead.
 
 ## Current package target
