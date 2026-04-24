@@ -48,9 +48,10 @@ Single purpose:
 
 Permission justification draft:
 
-- `storage`: stores locally the GitHub App accounts (one user-to-server token per account) so the user can access private repositories. It also stores the review-chip display preferences (`showStateBadge` and `showReviewerName`) under the local `preferences` key.
+- `storage`: stores locally the GitHub App accounts (user-to-server access token, refresh token, and token-expiry timestamps per account) so the user can access private repositories. It also stores the review-chip display preferences (`showStateBadge` and `showReviewerName`) under the local `preferences` key.
+- `alarms`: schedules a recurring 15-minute background task that refreshes GitHub App access tokens ahead of expiry. Without this, every eight-hour token lifetime would force the user to sign in again even while actively using the extension, and reviewer lookups on private repositories would stall until the next sign-in.
 - `https://github.com/*`: reads the current GitHub pull request list page to find repository context and render reviewer chips inline.
-- `https://api.github.com/*`: fetches requested reviewers, requested teams, and review history from GitHub's REST API.
+- `https://api.github.com/*`: fetches requested reviewers, requested teams, and review history from GitHub's REST API. Requests originate from the extension's background service worker; the access token never enters the content-script execution context.
 
 Remote code:
 `No, this extension does not execute remote code.`
@@ -100,5 +101,5 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 Expected package path after `pnpm zip`:
 
 ```text
-.output/github-pulls-show-reviewers-1.3.0-chrome.zip
+.output/github-pulls-show-reviewers-1.4.0-chrome.zip
 ```
