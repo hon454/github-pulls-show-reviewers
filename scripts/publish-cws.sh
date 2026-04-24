@@ -17,6 +17,10 @@ require_env() {
 }
 
 json_value() {
+  # Reads stdin as JSON, walks a dot-separated field path, and writes the final
+  # value to stdout. Numeric segments traverse arrays (e.g. `itemError.0.error_code`
+  # indexes the first element of the `itemError` array), because JS `value?.["0"]`
+  # matches array index 0.
   local field_path="$1"
   node -e '
 const fs = require("node:fs");
@@ -72,6 +76,10 @@ wait_for_upload() {
       echo "Chrome Web Store upload failed." >&2
       exit 1
       ;;
+    NOT_FOUND)
+      echo "Chrome Web Store upload not found (NOT_FOUND)." >&2
+      exit 1
+      ;;
     *)
       echo "Unexpected Chrome Web Store upload state: ${upload_state:-<empty>}" >&2
       exit 1
@@ -97,6 +105,10 @@ wait_for_upload() {
         ;;
       FAILED)
         echo "Chrome Web Store upload failed." >&2
+        exit 1
+        ;;
+      NOT_FOUND)
+        echo "Chrome Web Store upload not found (NOT_FOUND)." >&2
         exit 1
         ;;
       *)
@@ -145,12 +157,14 @@ publish_error_detail="$(printf '%s' "$publish_response" | json_value itemError.0
 publish_state="$(printf '%s' "$publish_response" | json_value state)"
 
 if [ -n "$publish_error_code" ] || [ -n "$publish_error_detail" ]; then
-  echo "Chrome Web Store publish failed: ${publish_error_code:-unknown_error} ${publish_error_detail:-}" >&2
+  echo "Chrome Web Store publish failed: ${publish_error_code:-${publish_error_detail:-unknown_error}} ${publish_error_detail:-}" >&2
   exit 1
 fi
 
+# ItemState enum values treated as successful publish submissions.
+# Reference: https://developer.chrome.com/docs/webstore/api/reference/rest/v2/ItemState
 case "$publish_state" in
-  OK | IN_REVIEW)
+  PENDING_REVIEW | STAGED | PUBLISHED | PUBLISHED_TO_TESTERS)
     echo "Chrome Web Store publish submitted with state: ${publish_state}."
     ;;
   "")

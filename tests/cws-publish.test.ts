@@ -36,7 +36,7 @@ case "$url" in
     printf '{"uploadState":"SUCCEEDED","crxVersion":"1.4.1"}'
     ;;
   *":publish")
-    printf '{"state":"IN_REVIEW"}'
+    printf '{"state":"PENDING_REVIEW"}'
     ;;
   *)
     echo "unexpected url: $url" >&2
@@ -98,7 +98,7 @@ case "$url" in
     fi
     ;;
   *":publish")
-    printf '{"state":"IN_REVIEW"}'
+    printf '{"state":"PENDING_REVIEW"}'
     ;;
   *)
     echo "unexpected url: $url" >&2
@@ -147,7 +147,7 @@ case "$url" in
     printf '{}'
     ;;
   *":publish")
-    printf '{"state":"IN_REVIEW"}'
+    printf '{"state":"PENDING_REVIEW"}'
     ;;
   *)
     echo "unexpected url: $url" >&2
@@ -293,6 +293,95 @@ esac
 
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("publish response missing state");
+  });
+
+  it.each(["STAGED", "PUBLISHED", "PUBLISHED_TO_TESTERS"])(
+    "accepts %s as a successful publish state",
+    async (successState) => {
+      const tempDir = await createTempDir();
+      await stageReleaseZip(tempDir);
+      const curlLogPath = path.join(tempDir, "curl.log");
+
+      await writeExecutable(
+        path.join(tempDir, "curl"),
+        `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$@" >> "$CURL_LOG"
+printf '%s\\n' '---' >> "$CURL_LOG"
+url="\${@: -1}"
+case "$url" in
+  *":upload")
+    printf '{"uploadState":"SUCCEEDED","crxVersion":"1.4.1"}'
+    ;;
+  *":publish")
+    printf '{"state":"${successState}"}'
+    ;;
+  *)
+    echo "unexpected url: $url" >&2
+    exit 22
+    ;;
+esac
+`,
+      );
+
+      const result = await runProcess("bash", [scriptPath], {
+        cwd: tempDir,
+        env: {
+          ...withPath(tempDir),
+          ...requiredCwsEnv(),
+          CURL_LOG: curlLogPath,
+        },
+      });
+
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain(`state: ${successState}`);
+    },
+  );
+
+  it("fails when fetchStatus returns NOT_FOUND", async () => {
+    const tempDir = await createTempDir();
+    await stageReleaseZip(tempDir);
+    const curlLogPath = path.join(tempDir, "curl.log");
+
+    await writeExecutable(
+      path.join(tempDir, "curl"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$@" >> "$CURL_LOG"
+printf '%s\\n' '---' >> "$CURL_LOG"
+url="\${@: -1}"
+case "$url" in
+  *":upload")
+    printf '{"uploadState":"IN_PROGRESS"}'
+    ;;
+  *":fetchStatus")
+    printf '{"lastAsyncUploadState":"NOT_FOUND"}'
+    ;;
+  *":publish")
+    printf '{"state":"PENDING_REVIEW"}'
+    ;;
+  *)
+    echo "unexpected url: $url" >&2
+    exit 22
+    ;;
+esac
+`,
+    );
+
+    const result = await runProcess("bash", [scriptPath], {
+      cwd: tempDir,
+      env: {
+        ...withPath(tempDir),
+        ...requiredCwsEnv(),
+        CWS_UPLOAD_POLL_SECONDS: "0",
+        CURL_LOG: curlLogPath,
+      },
+    });
+
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("NOT_FOUND");
+    const curlLog = await readFile(curlLogPath, "utf8");
+    expect(curlLog).not.toContain(":publish");
   });
 
   const missingEnvCases: Array<{
