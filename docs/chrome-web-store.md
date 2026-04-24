@@ -48,6 +48,11 @@ Chrome Web Store automation requires:
 - The service account email must be added to the publisher account in the
   Chrome Web Store Developer Dashboard.
 
+For the full provisioning walkthrough (GCP project, service account, IAM
+Credentials API, Token Creator role, CWS API access invite, secret/variable
+registration, troubleshooting, and key rotation) see
+[`docs/guidelines/release-automation-guideline.md`](./guidelines/release-automation-guideline.md).
+
 ## Pre-release test workflow
 
 Run these checks locally in order before you cut a tag or upload a package:
