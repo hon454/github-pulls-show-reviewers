@@ -6,8 +6,11 @@ on:
       - main
   pull_request:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
-  verify:
+  lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -18,4 +21,24 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
       - run: pnpm prepare
+      - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    env:
+      WXT_GITHUB_APP_CLIENT_ID: TESTING_CLIENT_ID
+      WXT_GITHUB_APP_SLUG: test-app
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm prepare
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e:build
+      - run: pnpm test:e2e:run
