@@ -594,6 +594,163 @@ describe("fetchPullReviewerSummary", () => {
     }
   });
 
+  it("follows Link: rel=\"next\" so a later-page review wins over first-page data", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "CHANGES_REQUESTED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: { login: "frank", avatar_url: null },
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2>; rel="next", <https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2>; rel="last"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-04-24T12:00:00Z",
+              user: { login: "frank", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary.completedReviews).toEqual([
+      { login: "frank", avatarUrl: null, state: "APPROVED" },
+    ]);
+
+    expect(fetchMock.mock.calls).toHaveLength(3);
+    const firstReviewsUrl = fetchMock.mock.calls[1]?.[0];
+    expect(String(firstReviewsUrl)).toContain("per_page=100");
+    const nextPageUrl = fetchMock.mock.calls[2]?.[0];
+    expect(String(nextPageUrl)).toContain("page=2");
+  });
+
+  it("forwards AbortSignal to every paginated reviews request", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2>; rel="next"',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+      signal: controller.signal,
+    });
+
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1]?.signal).toBe(controller.signal);
+    }
+  });
+
+  it("reports the reviews endpoint when a later page fails", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: { login: "hon454" },
+            requested_reviewers: [],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2>; rel="next"',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ message: "API rate limit exceeded" }),
+          {
+            status: 403,
+            headers: {
+              "Content-Type": "application/json",
+              "x-ratelimit-remaining": "0",
+              "x-ratelimit-limit": "60",
+            },
+          },
+        ),
+      );
+
+    try {
+      await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+      });
+      throw new Error("Expected fetchPullReviewerSummary to reject.");
+    } catch (error) {
+      const message = describeGitHubApiError(error, { githubToken: null });
+      expect(message).toContain(
+        "/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews",
+      );
+      expect(message).toContain("unauthenticated rate limit");
+    }
+  });
+
   it("picks the latest non-COMMENTED review when multiple non-comment reviews exist", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
