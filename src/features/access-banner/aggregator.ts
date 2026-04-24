@@ -1,4 +1,4 @@
-export type BannerRepo = { owner: string; name: string };
+export type BannerRepo = { readonly owner: string; readonly name: string };
 
 export type BannerState = {
   uncovered: boolean;
@@ -20,7 +20,10 @@ export function createBannerAggregator(options: {
   repo: BannerRepo;
 }): BannerAggregator {
   const dismissKey = `ghpsr:banner-dismissed:${options.pathname}`;
-  const repo = options.repo;
+  const repo: BannerRepo = {
+    owner: options.repo.owner,
+    name: options.repo.name,
+  };
   let uncovered = false;
   let unauthRateLimited = false;
   let dismissed = readDismissed(dismissKey);
@@ -86,11 +89,9 @@ function readDismissed(key: string): boolean {
   }
 }
 
-export function formatBannerMessage(state: {
-  uncovered: boolean;
-  unauthRateLimited: boolean;
-  repo: BannerRepo;
-}): string {
+export function formatBannerMessage(
+  state: Pick<BannerState, "uncovered" | "unauthRateLimited" | "repo">,
+): string {
   if (state.uncovered) {
     return `Add ${state.repo.owner}/${state.repo.name} to @${state.repo.owner}'s GitHub App installation to see reviewers on this page.`;
   }

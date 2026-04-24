@@ -6,7 +6,7 @@ import {
   formatBannerMessage,
 } from "../src/features/access-banner/aggregator";
 
-const TEST_REPO = { owner: "cinev", name: "shotloom" };
+const TEST_REPO = { owner: "cinev", name: "shotloom" } as const;
 
 beforeEach(() => {
   window.sessionStorage.clear();
@@ -102,7 +102,7 @@ describe("formatBannerMessage", () => {
     );
   });
 
-  it("prefers the uncovered message over the rate-limit message", () => {
+  it("uses the uncovered message when both flags are set", () => {
     const text = formatBannerMessage({
       uncovered: true,
       unauthRateLimited: true,

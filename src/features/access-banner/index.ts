@@ -19,6 +19,8 @@ export function bootAccessBanner(
   }
   const aggregator = createBannerAggregator({
     pathname: window.location.pathname,
+    // parsePullListRoute returns { owner, repo }; BannerRepo uses `name` to
+    // avoid the awkward `repo.repo` path when reading the state later.
     repo: { owner: route.owner, name: route.repo },
   });
 
