@@ -248,17 +248,17 @@ export async function fetchPullReviewerSummary(input: {
     input.pullNumber,
   );
   const pullUrl = `https://api.github.com${pullEndpoint.path}`;
-  const reviewUrl = `https://api.github.com${reviewsEndpoint.path}`;
+  const reviewsFirstPageUrl = `https://api.github.com${reviewsEndpoint.path}?per_page=100`;
 
-  const [pullResponse, reviewsResponse] = await Promise.all([
+  const [pullResponse, reviewsFirstResponse] = await Promise.all([
     fetch(pullUrl, { headers, signal: input.signal }),
-    fetch(reviewUrl, { headers, signal: input.signal }),
+    fetch(reviewsFirstPageUrl, { headers, signal: input.signal }),
   ]);
 
   const failures = (
     await Promise.all([
       createGitHubApiErrorFromResponse(pullResponse, pullEndpoint),
-      createGitHubApiErrorFromResponse(reviewsResponse, reviewsEndpoint),
+      createGitHubApiErrorFromResponse(reviewsFirstResponse, reviewsEndpoint),
     ])
   ).filter((failure): failure is GitHubApiError => failure != null);
 
@@ -270,12 +270,14 @@ export async function fetchPullReviewerSummary(input: {
   if (!pullParsed.success) {
     throw new GitHubApiSchemaError(pullEndpoint, pullParsed.error.issues);
   }
-  const reviewsParsed = reviewsSchema.safeParse(await reviewsResponse.json());
-  if (!reviewsParsed.success) {
-    throw new GitHubApiSchemaError(reviewsEndpoint, reviewsParsed.error.issues);
-  }
+
+  const reviews = await collectReviewsAcrossPages({
+    firstResponse: reviewsFirstResponse,
+    endpoint: reviewsEndpoint,
+    headers,
+    signal: input.signal,
+  });
   const pull = pullParsed.data;
-  const reviews = reviewsParsed.data;
   const latestNonCommentByUser = new Map<
     string,
     {
@@ -546,6 +548,61 @@ async function createGitHubApiError(
     endpoint,
     readRateLimitSnapshot(response),
   );
+}
+
+async function collectReviewsAcrossPages(params: {
+  firstResponse: Response;
+  endpoint: GitHubEndpointDescriptor;
+  headers: Headers;
+  signal?: AbortSignal;
+}): Promise<z.infer<typeof reviewsSchema>> {
+  const collected: z.infer<typeof reviewsSchema> = [];
+
+  let response = params.firstResponse;
+  while (true) {
+    const parsed = reviewsSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
+    }
+    collected.push(...parsed.data);
+
+    const nextUrl = parseNextPageUrl(response.headers.get("Link"));
+    if (nextUrl == null) {
+      return collected;
+    }
+
+    response = await fetch(nextUrl, {
+      headers: params.headers,
+      signal: params.signal,
+    });
+
+    const error = await createGitHubApiErrorFromResponse(
+      response,
+      params.endpoint,
+    );
+    if (error != null) {
+      throw new GitHubPullRequestEndpointsError([error]);
+    }
+  }
+}
+
+function parseNextPageUrl(linkHeader: string | null): string | null {
+  if (linkHeader == null) {
+    return null;
+  }
+
+  for (const segment of linkHeader.split(",")) {
+    const match = /<([^>]+)>\s*;\s*rel="([^"]+)"/.exec(segment.trim());
+    if (match == null) {
+      continue;
+    }
+    const rels = match[2].split(/\s+/);
+    if (rels.includes("next")) {
+      return match[1];
+    }
+  }
+
+  return null;
 }
 
 function normalizeReviewState(state: string): ReviewState | null {
