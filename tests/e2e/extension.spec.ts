@@ -219,7 +219,7 @@ async function routeReviewsApi(
   payload: object,
 ): Promise<void> {
   await context.route(
-    `https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/${pullNumber}/reviews`,
+    `https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/${pullNumber}/reviews**`,
     async (route) => {
       await route.fulfill({
         status: 200,
