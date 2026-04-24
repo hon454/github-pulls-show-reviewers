@@ -45,12 +45,14 @@ export default defineContentScript({
               aggregator.reportUncovered();
               return;
             }
-            // Fallback for errors we cannot attribute (schema drift, network
-            // failure, aborted fetch, etc.). We keep the existing behavior and
-            // flag the repo as uncovered so the banner still guides the user
-            // toward App installation — doing nothing here would leave the row
-            // blank with no explanation.
-            aggregator.reportUncovered();
+            // Unattributed failures (schema drift, network error, empty
+            // envelope, etc.) are not App-coverage problems. Showing the
+            // Configure access banner would be misleading guidance, so we
+            // log for diagnosis and leave the banner untouched.
+            console.warn(
+              "[ghpsr] Unclassified reviewer-fetch failure; banner suppressed.",
+              error,
+            );
           },
         });
       }
@@ -92,12 +94,6 @@ function classifyRowFailure(
     (failure) => failure.status === 404 || failure.status === 403,
   );
   if (uncovered) {
-    return { rateLimited: false, uncovered: true };
-  }
-
-  // No signed-in account at all: the row failure is effectively an
-  // access-gate signal, not a server-side coverage problem.
-  if (account == null) {
     return { rateLimited: false, uncovered: true };
   }
 

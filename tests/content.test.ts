@@ -191,12 +191,13 @@ describe("content entrypoint", () => {
       expect(aggregator.reportUncovered).not.toHaveBeenCalled();
     });
 
-    it("falls through to uncovered for non-GitHubApiError errors", async () => {
+    it("does not show any banner for unattributed errors (schema drift, network, etc.)", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
 
-      // e.g., a schema error or a generic network error: we can't classify
-      // but we still want the banner to give the user actionable guidance.
+      // A generic network error: we cannot attribute this to App coverage.
+      // The Configure access banner would be misleading guidance, so we stay
+      // silent and let the developer diagnose via console warnings.
       onRowFailure({
         owner: "cinev",
         repo: "shotloom",
@@ -204,7 +205,64 @@ describe("content entrypoint", () => {
         error: new Error("Network down"),
       });
 
-      expect(aggregator.reportUncovered).toHaveBeenCalledTimes(1);
+      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
+      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
+    });
+
+    it("does not show any banner for schema envelope failures", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: {
+          kind: "schema",
+          status: null,
+          message: "Response shape changed",
+        },
+      });
+
+      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
+      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
+    });
+
+    it("does not show any banner for unknown envelope failures", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: {
+          kind: "unknown",
+          status: null,
+          message: "Background fetch aborted",
+        },
+      });
+
+      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
+      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
+    });
+
+    it("does not show any banner for empty endpoint envelope failures", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: {
+          kind: "github-endpoints",
+          status: null,
+          failures: [],
+        },
+      });
+
+      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
       expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
     });
 
