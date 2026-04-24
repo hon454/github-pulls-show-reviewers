@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 type Aggregator = {
-  reportUncoveredOwner: ReturnType<typeof vi.fn>;
+  reportUncovered: ReturnType<typeof vi.fn>;
   reportUnauthRateLimit: ReturnType<typeof vi.fn>;
   teardown?: ReturnType<typeof vi.fn>;
 };
@@ -85,7 +85,7 @@ describe("content entrypoint", () => {
 
   it("waits to boot PR-list features until navigation enters a PR list", async () => {
     const aggregator = {
-      reportUncoveredOwner: vi.fn(),
+      reportUncovered: vi.fn(),
       reportUnauthRateLimit: vi.fn(),
       teardown: vi.fn(),
     };
@@ -120,7 +120,7 @@ describe("content entrypoint", () => {
   describe("onRowFailure banner classification", () => {
     function makeAggregator(): Aggregator {
       return {
-        reportUncoveredOwner: vi.fn(),
+        reportUncovered: vi.fn(),
         reportUnauthRateLimit: vi.fn(),
         teardown: vi.fn(),
       };
@@ -145,10 +145,10 @@ describe("content entrypoint", () => {
       });
 
       expect(aggregator.reportUnauthRateLimit).toHaveBeenCalledTimes(1);
-      expect(aggregator.reportUncoveredOwner).not.toHaveBeenCalled();
+      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
     });
 
-    it("treats mixed 404 + 403 with an account as uncovered-owner (no rate limit)", async () => {
+    it("treats mixed 404 + 403 with an account as uncovered (no rate limit)", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
@@ -166,7 +166,7 @@ describe("content entrypoint", () => {
         error,
       });
 
-      expect(aggregator.reportUncoveredOwner).toHaveBeenCalledWith("cinev");
+      expect(aggregator.reportUncovered).toHaveBeenCalledTimes(1);
       expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
     });
 
@@ -188,10 +188,10 @@ describe("content entrypoint", () => {
       });
 
       expect(aggregator.reportUnauthRateLimit).toHaveBeenCalledTimes(1);
-      expect(aggregator.reportUncoveredOwner).not.toHaveBeenCalled();
+      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
     });
 
-    it("falls through to uncovered-owner for non-GitHubApiError errors", async () => {
+    it("falls through to uncovered for non-GitHubApiError errors", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
 
@@ -204,7 +204,7 @@ describe("content entrypoint", () => {
         error: new Error("Network down"),
       });
 
-      expect(aggregator.reportUncoveredOwner).toHaveBeenCalledWith("cinev");
+      expect(aggregator.reportUncovered).toHaveBeenCalledTimes(1);
       expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
     });
 
@@ -226,7 +226,7 @@ describe("content entrypoint", () => {
         },
       });
 
-      expect(aggregator.reportUncoveredOwner).toHaveBeenCalledWith("cinev");
+      expect(aggregator.reportUncovered).toHaveBeenCalledTimes(1);
       expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
     });
   });

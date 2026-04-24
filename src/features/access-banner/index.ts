@@ -19,6 +19,7 @@ export function bootAccessBanner(
   }
   const aggregator = createBannerAggregator({
     pathname: window.location.pathname,
+    repo: { owner: route.owner, name: route.repo },
   });
 
   const optionsPageUrl = browser.runtime.getURL("/options.html");
