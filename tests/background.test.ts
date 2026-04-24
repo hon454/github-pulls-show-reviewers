@@ -56,7 +56,7 @@ type MessageSender = { id?: string };
 type MessageListener = (
   message: unknown,
   sender: MessageSender | undefined,
-  sendResponse: () => void,
+  sendResponse: (value?: unknown) => void,
 ) => unknown;
 
 const SELF_RUNTIME_ID = "self-extension-id";
@@ -65,6 +65,23 @@ let capturedMessageListener: MessageListener | null;
 
 function flushMicrotasks() {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+// Drives the listener through Chrome's `return true` + `sendResponse`
+// contract. The returned Promise resolves to whatever the listener routes
+// back to the caller — either the async `sendResponse` value or the sync
+// return for messages the listener does not handle.
+function callListener(
+  listener: MessageListener,
+  message: unknown,
+  sender: MessageSender | undefined,
+): Promise<unknown> {
+  return new Promise((resolve) => {
+    const keepOpen = listener(message, sender, resolve);
+    if (keepOpen !== true) {
+      resolve(keepOpen);
+    }
+  });
 }
 
 let capturedAlarmListener: ((alarm: { name: string }) => void) | null;
@@ -128,52 +145,62 @@ describe("background runtime.onMessage handler", () => {
   it("dispatches valid refresh messages that originate from this extension", async () => {
     const listener = await bootBackground();
 
-    const result = listener(
+    const response = await callListener(
+      listener,
+      { type: "refreshAccessToken", accountId: "acc-1" },
+      { id: SELF_RUNTIME_ID },
+    );
+
+    expect(refreshAccountTokenMock).toHaveBeenCalledTimes(1);
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
+    expect(response).toEqual({ ok: true, token: "new-token" });
+  });
+
+  it("keeps the message channel open for async dispatch", async () => {
+    const listener = await bootBackground();
+
+    const sync = listener(
       { type: "refreshAccessToken", accountId: "acc-1" },
       { id: SELF_RUNTIME_ID },
       () => {},
     );
 
-    expect(refreshAccountTokenMock).toHaveBeenCalledTimes(1);
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
-    await expect(result as Promise<unknown>).resolves.toEqual({
-      ok: true,
-      token: "new-token",
-    });
+    expect(sync).toBe(true);
   });
 
   it("rejects valid refresh messages from a different extension id", async () => {
     const listener = await bootBackground();
 
-    const result = listener(
+    const response = await callListener(
+      listener,
       { type: "refreshAccessToken", accountId: "acc-1" },
       { id: "some-other-extension-id" },
-      () => {},
     );
 
-    expect(result).toBeUndefined();
+    expect(response).toBeUndefined();
     expect(refreshAccountTokenMock).not.toHaveBeenCalled();
   });
 
   it("rejects malformed envelopes even when sent from this extension", async () => {
     const listener = await bootBackground();
 
-    const missingAccountId = listener(
+    const missingAccountId = await callListener(
+      listener,
       { type: "refreshAccessToken" },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
-    const wrongType = listener(
+    const wrongType = await callListener(
+      listener,
       { type: "somethingElse", accountId: "acc-1" },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
-    const notAnObject = listener(
+    const notAnObject = await callListener(
+      listener,
       "refreshAccessToken",
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
-    const emptyReviewerFetch = listener(
+    const emptyReviewerFetch = await callListener(
+      listener,
       {
         type: "fetchPullReviewerSummary",
         requestId: "req-1",
@@ -183,7 +210,6 @@ describe("background runtime.onMessage handler", () => {
         accountId: null,
       },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
 
     expect(missingAccountId).toBeUndefined();
@@ -208,7 +234,8 @@ describe("background runtime.onMessage handler", () => {
     });
     fetchPullReviewerSummaryMock.mockResolvedValue(summary);
 
-    const result = listener(
+    const response = await callListener(
+      listener,
       {
         type: "fetchPullReviewerSummary",
         requestId: "req-1",
@@ -218,13 +245,9 @@ describe("background runtime.onMessage handler", () => {
         accountId: "acc-1",
       },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
 
-    await expect(result as Promise<unknown>).resolves.toEqual({
-      ok: true,
-      summary,
-    });
+    expect(response).toEqual({ ok: true, summary });
     expect(fetchPullReviewerSummaryMock).toHaveBeenCalledWith({
       owner: "cinev",
       repo: "shotloom",
@@ -257,7 +280,8 @@ describe("background runtime.onMessage handler", () => {
       .mockRejectedValueOnce({ status: 401 })
       .mockResolvedValueOnce(summary);
 
-    const result = listener(
+    const response = await callListener(
+      listener,
       {
         type: "fetchPullReviewerSummary",
         requestId: "req-1",
@@ -267,13 +291,9 @@ describe("background runtime.onMessage handler", () => {
         accountId: "acc-1",
       },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
 
-    await expect(result as Promise<unknown>).resolves.toEqual({
-      ok: true,
-      summary,
-    });
+    expect(response).toEqual({ ok: true, summary });
     expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
     expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(2);
     expect(fetchPullReviewerSummaryMock.mock.calls[1][0]).toMatchObject({
@@ -292,7 +312,8 @@ describe("background runtime.onMessage handler", () => {
     refreshAccountTokenMock.mockResolvedValueOnce({ ok: false, terminal: false });
     fetchPullReviewerSummaryMock.mockRejectedValueOnce({ status: 401 });
 
-    const result = listener(
+    const response = await callListener(
+      listener,
       {
         type: "fetchPullReviewerSummary",
         requestId: "req-1",
@@ -302,10 +323,9 @@ describe("background runtime.onMessage handler", () => {
         accountId: "acc-1",
       },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
 
-    await expect(result as Promise<unknown>).resolves.toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { kind: "unknown", status: 401 },
     });
@@ -322,7 +342,8 @@ describe("background runtime.onMessage handler", () => {
     });
     fetchPullReviewerSummaryMock.mockRejectedValueOnce({ status: 401 });
 
-    const result = listener(
+    const response = await callListener(
+      listener,
       {
         type: "fetchPullReviewerSummary",
         requestId: "req-1",
@@ -332,10 +353,9 @@ describe("background runtime.onMessage handler", () => {
         accountId: "acc-1",
       },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
 
-    await expect(result as Promise<unknown>).resolves.toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { kind: "unknown", status: 401 },
     });
@@ -360,7 +380,8 @@ describe("background runtime.onMessage handler", () => {
       .mockRejectedValueOnce({ status: 401 })
       .mockRejectedValueOnce({ status: 401 });
 
-    const result = listener(
+    const response = await callListener(
+      listener,
       {
         type: "fetchPullReviewerSummary",
         requestId: "req-1",
@@ -370,10 +391,9 @@ describe("background runtime.onMessage handler", () => {
         accountId: "acc-1",
       },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
 
-    await expect(result as Promise<unknown>).resolves.toMatchObject({
+    expect(response).toMatchObject({
       ok: false,
       error: { kind: "unknown", status: 401 },
     });
@@ -418,13 +438,13 @@ describe("background runtime.onMessage handler", () => {
     }
     expect(signal.aborted).toBe(false);
 
-    const cancelResult = listener(
+    const cancelResult = await callListener(
+      listener,
       {
         type: "cancelPullReviewerSummary",
         requestId: "req-cancel",
       },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
 
     expect(cancelResult).toBeUndefined();
@@ -538,13 +558,13 @@ describe("background runtime.onMessage handler", () => {
       },
     );
 
-    const cancelResult = listener(
+    const cancelResult = await callListener(
+      listener,
       {
         type: "cancelPullReviewerSummary",
         requestId: "req-pre-cancel",
       },
       { id: SELF_RUNTIME_ID },
-      () => {},
     );
     expect(cancelResult).toBeUndefined();
 
