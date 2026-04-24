@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       - run: pnpm prepare
       - run: pnpm lint
       - run: pnpm typecheck
@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm install --frozen-lockfile
       - run: pnpm prepare
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e:build
