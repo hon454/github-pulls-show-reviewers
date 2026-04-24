@@ -96,8 +96,8 @@ function buildUserHref(
   login: string,
   options: ReviewerLinkOptions,
 ): string {
-  const qualifier = `(review-requested:${login} OR reviewed-by:${login})`;
-  const query = buildPullsQuery(qualifier, options);
+  const filter = `(review-requested:${login} OR reviewed-by:${login})`;
+  const query = buildPullsQuery(filter, options);
   return `https://github.com/${route.owner}/${route.repo}/pulls?q=${encodeURIComponent(query)}`;
 }
 
@@ -114,9 +114,9 @@ function buildTeamHref(
 }
 
 function buildPullsQuery(
-  qualifier: string,
+  filter: string,
   options: ReviewerLinkOptions,
 ): string {
-  const stateQualifier = options.openPullsOnly === false ? "" : " is:open";
-  return `is:pr${stateQualifier} ${qualifier}`;
+  const openFilter = options.openPullsOnly === false ? "" : " is:open";
+  return `is:pr${openFilter} ${filter}`;
 }

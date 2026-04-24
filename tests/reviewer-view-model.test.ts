@@ -258,6 +258,19 @@ describe("buildReviewers", () => {
     expect(team.href).toContain("team-review-requested%3Ahon454%2Fplatform");
   });
 
+  it("does not apply the user compound qualifier to team URLs", () => {
+    const entries = buildReviewers(
+      route,
+      summary({ requestedTeams: ["platform"] }),
+    );
+    const team = entries[0];
+    if (team.kind !== "team") throw new Error("expected team entry");
+    const query = new URL(team.href).searchParams.get("q");
+    expect(query).not.toContain("review-requested:platform");
+    expect(query).not.toContain("reviewed-by:");
+    expect(query).not.toContain(" OR ");
+  });
+
   it("prefers the avatarUrl from the latest review when a login appears in both sources", () => {
     const entries = buildReviewers(
       route,
