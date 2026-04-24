@@ -7,8 +7,11 @@
   its GitHub App installations (`all` or `selected` with explicit full names).
 - Device flow runs on the options page. Polling stops when the options tab
   closes; restarts are clean.
-- Content-script reviewer fetches resolve the covering account per repo via
-  the cached installations. No user-typed scope patterns.
+- Content scripts detect PR rows and dispatch a `fetchPullReviewerSummary`
+  message to the background service worker. The background resolves the
+  covering account per repo via the cached installations and performs the
+  GitHub REST calls, so access tokens never enter the content-script
+  execution context. No user-typed scope patterns.
 - Row-level failures render an empty reviewer slot. A page-level banner surfaces
   uncovered-org guidance and unauthenticated rate-limit hints.
 
@@ -18,8 +21,10 @@
 2. Find PR rows with centralized GitHub selectors.
 3. Extract the pull request number from the row id or primary pull request link.
 4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
-5. Fetch reviewer data from GitHub only when the cache is cold. Use the
-   matched account's token, or no token if none matches.
+5. Send a `fetchPullReviewerSummary` message to the background service
+   worker when the cache is cold. The background resolves the matched
+   account's token (or no token if none matches), performs the GitHub REST
+   calls, and returns the parsed summary or a typed error.
 6. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the prior state badge. Requested teams keep the text chip shape.
 7. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text.
