@@ -8,6 +8,7 @@ const preferencesSchema = z.object({
   version: z.literal(1),
   showStateBadge: z.boolean(),
   showReviewerName: z.boolean(),
+  openPullsOnly: z.boolean().default(true),
 });
 
 export type Preferences = z.infer<typeof preferencesSchema>;
@@ -16,6 +17,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   version: 1,
   showStateBadge: true,
   showReviewerName: false,
+  openPullsOnly: true,
 };
 
 export async function getPreferences(): Promise<Preferences> {

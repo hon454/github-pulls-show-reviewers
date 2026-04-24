@@ -78,7 +78,10 @@ export function bootReviewerListPage(
   ): Promise<void> {
     if (!summary) return;
     const preferences = await readPreferences();
-    renderReviewers(mount, buildReviewers(route, summary), {
+    const reviewers = buildReviewers(route, summary, {
+      openPullsOnly: preferences.openPullsOnly,
+    });
+    renderReviewers(mount, reviewers, {
       showStateBadge: preferences.showStateBadge,
       showReviewerName: preferences.showReviewerName,
     });

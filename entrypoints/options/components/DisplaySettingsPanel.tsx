@@ -8,7 +8,8 @@ import {
 } from "../../../src/storage/preferences";
 
 export function DisplaySettingsPanel() {
-  const [preferences, setPreferences] = useState<Preferences>(DEFAULT_PREFERENCES);
+  const [preferences, setPreferences] =
+    useState<Preferences>(DEFAULT_PREFERENCES);
 
   useEffect(() => {
     void (async () => {
@@ -49,6 +50,17 @@ export function DisplaySettingsPanel() {
         />
         <span>Show reviewer names</span>
       </label>
+      <label style={styles.row}>
+        <input
+          data-testid="prefs-open-pulls-only"
+          type="checkbox"
+          checked={preferences.openPullsOnly}
+          onChange={(event) =>
+            handleChange({ openPullsOnly: event.target.checked })
+          }
+        />
+        <span>Open pull requests only in reviewer links</span>
+      </label>
     </section>
   );
 }
@@ -60,7 +72,12 @@ const styles: Record<string, CSSProperties> = {
     borderTop: "1px solid rgba(34, 29, 24, 0.08)",
   },
   sectionTitle: { margin: 0, fontSize: 20 },
-  hint: { color: "#6e5f52", fontSize: 13, lineHeight: 1.6, margin: "8px 0 12px" },
+  hint: {
+    color: "#6e5f52",
+    fontSize: 13,
+    lineHeight: 1.6,
+    margin: "8px 0 12px",
+  },
   row: {
     display: "flex",
     alignItems: "center",

@@ -4,12 +4,14 @@ type StorageShape = Record<string, unknown>;
 
 function createBrowserMock() {
   let storage: StorageShape = {};
-  const get = vi.fn(async (key?: string | string[] | Record<string, unknown>) => {
-    if (typeof key === "string") {
-      return key in storage ? { [key]: storage[key] } : {};
-    }
-    return { ...storage };
-  });
+  const get = vi.fn(
+    async (key?: string | string[] | Record<string, unknown>) => {
+      if (typeof key === "string") {
+        return key in storage ? { [key]: storage[key] } : {};
+      }
+      return { ...storage };
+    },
+  );
   const set = vi.fn(async (items: StorageShape) => {
     storage = { ...storage, ...items };
   });
@@ -41,6 +43,7 @@ describe("preferences storage", () => {
       version: 1,
       showStateBadge: true,
       showReviewerName: false,
+      openPullsOnly: true,
     });
   });
 
@@ -53,18 +56,36 @@ describe("preferences storage", () => {
       version: 1,
       showStateBadge: true,
       showReviewerName: false,
+      openPullsOnly: true,
+    });
+  });
+
+  it("preserves old v1 display preferences while defaulting open-only links", async () => {
+    browserMock.browser.storage.local.get.mockResolvedValueOnce({
+      preferences: {
+        version: 1,
+        showStateBadge: false,
+        showReviewerName: true,
+      },
+    });
+    const { getPreferences } = await import("../src/storage/preferences");
+    await expect(getPreferences()).resolves.toEqual({
+      version: 1,
+      showStateBadge: false,
+      showReviewerName: true,
+      openPullsOnly: true,
     });
   });
 
   it("updatePreferences merges partial patches and preserves version", async () => {
-    const { updatePreferences, getPreferences } = await import(
-      "../src/storage/preferences"
-    );
+    const { updatePreferences, getPreferences } =
+      await import("../src/storage/preferences");
     const next = await updatePreferences({ showStateBadge: false });
     expect(next).toEqual({
       version: 1,
       showStateBadge: false,
       showReviewerName: false,
+      openPullsOnly: true,
     });
     await expect(getPreferences()).resolves.toEqual(next);
   });
@@ -77,31 +98,44 @@ describe("preferences storage", () => {
       version: 1,
       showStateBadge: false,
       showReviewerName: true,
+      openPullsOnly: true,
+    });
+  });
+
+  it("updates the open-only reviewer link preference", async () => {
+    const { updatePreferences } = await import("../src/storage/preferences");
+    const next = await updatePreferences({ openPullsOnly: false });
+    expect(next).toEqual({
+      version: 1,
+      showStateBadge: true,
+      showReviewerName: false,
+      openPullsOnly: false,
     });
   });
 });
 
 describe("storage change classification", () => {
   it("isPreferencesChange returns true when the preferences key is in the change map", async () => {
-    const { isPreferencesChange, isAccountsChange } = await import(
-      "../src/storage/preferences"
-    );
+    const { isPreferencesChange, isAccountsChange } =
+      await import("../src/storage/preferences");
     expect(
       isPreferencesChange({
         preferences: { oldValue: undefined, newValue: { version: 1 } },
       }),
     ).toBe(true);
-    expect(isPreferencesChange({ settings: { oldValue: undefined, newValue: {} } })).toBe(
-      false,
-    );
-    expect(isAccountsChange({ settings: { oldValue: undefined, newValue: {} } })).toBe(
-      true,
-    );
     expect(
-      isAccountsChange({ "account:acc-1": { oldValue: undefined, newValue: {} } }),
+      isPreferencesChange({ settings: { oldValue: undefined, newValue: {} } }),
+    ).toBe(false);
+    expect(
+      isAccountsChange({ settings: { oldValue: undefined, newValue: {} } }),
     ).toBe(true);
-    expect(isAccountsChange({ preferences: { oldValue: undefined, newValue: {} } })).toBe(
-      false,
-    );
+    expect(
+      isAccountsChange({
+        "account:acc-1": { oldValue: undefined, newValue: {} },
+      }),
+    ).toBe(true);
+    expect(
+      isAccountsChange({ preferences: { oldValue: undefined, newValue: {} } }),
+    ).toBe(false);
   });
 });

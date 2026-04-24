@@ -56,11 +56,9 @@ function getRegisteredListener(
   ctx: TestCtx & ContentScriptContext,
   event: string,
 ): (() => void) | undefined {
-  return (
-    (ctx.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
-      ([, registeredEvent]) => registeredEvent === event,
-    )?.[2] as (() => void) | undefined
-  );
+  return (ctx.addEventListener as ReturnType<typeof vi.fn>).mock.calls.find(
+    ([, registeredEvent]) => registeredEvent === event,
+  )?.[2] as (() => void) | undefined;
 }
 
 beforeEach(() => {
@@ -72,6 +70,7 @@ beforeEach(() => {
     version: 1,
     showStateBadge: true,
     showReviewerName: false,
+    openPullsOnly: true,
   });
   capturedStorageListener = null;
   pendingTeardowns = [];
@@ -130,12 +129,23 @@ describe("bootReviewerListPage", () => {
       version: 1,
       showStateBadge: true,
       showReviewerName: true,
+      openPullsOnly: true,
     });
     capturedStorageListener!(
       {
         preferences: {
-          oldValue: { version: 1, showStateBadge: true, showReviewerName: false },
-          newValue: { version: 1, showStateBadge: true, showReviewerName: true },
+          oldValue: {
+            version: 1,
+            showStateBadge: true,
+            showReviewerName: false,
+            openPullsOnly: true,
+          },
+          newValue: {
+            version: 1,
+            showStateBadge: true,
+            showReviewerName: true,
+            openPullsOnly: true,
+          },
         },
       },
       "local",
@@ -227,8 +237,11 @@ describe("bootReviewerListPage", () => {
 
     // Pre-seed the cache before bootReviewerListPage runs so processRow hits
     // the cache branch on the very first call.
-    const { buildReviewerCacheKey, setCachedReviewerSummary, clearReviewerCache } =
-      await import("../src/cache/reviewer-cache");
+    const {
+      buildReviewerCacheKey,
+      setCachedReviewerSummary,
+      clearReviewerCache,
+    } = await import("../src/cache/reviewer-cache");
     clearReviewerCache();
     setCachedReviewerSummary(
       buildReviewerCacheKey("cinev", "shotloom", "42"),
@@ -256,9 +269,9 @@ describe("bootReviewerListPage", () => {
     runtimeSendMessageMock
       .mockImplementationOnce(
         () =>
-        new Promise<{ ok: true; summary: PullReviewerSummary }>((resolve) => {
-          resolveFetch = (summary) => resolve({ ok: true, summary });
-        }),
+          new Promise<{ ok: true; summary: PullReviewerSummary }>((resolve) => {
+            resolveFetch = (summary) => resolve({ ok: true, summary });
+          }),
       )
       .mockResolvedValueOnce(undefined)
       .mockImplementationOnce(() => new Promise<void>(() => {}));

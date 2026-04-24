@@ -21,9 +21,14 @@ export type ReviewerEntry =
       href: string;
     };
 
+export type ReviewerLinkOptions = {
+  openPullsOnly?: boolean;
+};
+
 export function buildReviewers(
   route: PullListRoute,
   summary: PullReviewerSummary,
+  options: ReviewerLinkOptions = {},
 ): ReviewerEntry[] {
   const reviewedByLogin = new Map<string, CompletedReview>();
   for (const review of summary.completedReviews) {
@@ -53,7 +58,7 @@ export function buildReviewers(
       avatarUrl,
       state,
       isRequested,
-      href: buildUserHref(route, login, state),
+      href: buildUserHref(route, login, state, options),
     });
   }
 
@@ -70,7 +75,7 @@ export function buildReviewers(
     .map((slug) => ({
       kind: "team" as const,
       slug,
-      href: buildTeamHref(route, slug),
+      href: buildTeamHref(route, slug, options),
     }));
 
   return [...userEntries, ...teamEntries];
@@ -90,15 +95,30 @@ function buildUserHref(
   route: PullListRoute,
   login: string,
   state: ReviewState | null,
+  options: ReviewerLinkOptions,
 ): string {
-  const qualifier = state != null
-    ? `reviewed-by:${login}`
-    : `review-requested:${login}`;
-  const query = `is:pr ${qualifier}`;
+  const qualifier =
+    state != null ? `reviewed-by:${login}` : `review-requested:${login}`;
+  const query = buildPullsQuery(qualifier, options);
   return `https://github.com/${route.owner}/${route.repo}/pulls?q=${encodeURIComponent(query)}`;
 }
 
-function buildTeamHref(route: PullListRoute, slug: string): string {
-  const query = `is:pr team-review-requested:${route.owner}/${slug}`;
+function buildTeamHref(
+  route: PullListRoute,
+  slug: string,
+  options: ReviewerLinkOptions,
+): string {
+  const query = buildPullsQuery(
+    `team-review-requested:${route.owner}/${slug}`,
+    options,
+  );
   return `https://github.com/${route.owner}/${route.repo}/pulls?q=${encodeURIComponent(query)}`;
+}
+
+function buildPullsQuery(
+  qualifier: string,
+  options: ReviewerLinkOptions,
+): string {
+  const stateQualifier = options.openPullsOnly === false ? "" : " is:open";
+  return `is:pr${stateQualifier} ${qualifier}`;
 }

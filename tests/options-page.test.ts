@@ -7,21 +7,27 @@ import type * as AccountsModule from "../src/storage/accounts";
 
 type AccountsModuleType = typeof AccountsModule;
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const listAccountsMock = vi.fn<() => Promise<Account[]>>(async () => []);
-const getAccountByIdMock = vi.fn<() => Promise<Account | null>>(async () => null);
+const getAccountByIdMock = vi.fn<() => Promise<Account | null>>(
+  async () => null,
+);
 const replaceInstallationsMock = vi.fn(async () => {});
 
 const getPreferencesMock = vi.fn(async () => ({
   version: 1 as const,
   showStateBadge: true,
   showReviewerName: false,
+  openPullsOnly: true,
 }));
 const updatePreferencesMock = vi.fn(async (patch: Record<string, unknown>) => ({
   version: 1 as const,
   showStateBadge: true,
   showReviewerName: false,
+  openPullsOnly: true,
   ...patch,
 }));
 
@@ -59,6 +65,7 @@ vi.mock("../src/storage/preferences", () => ({
     version: 1,
     showStateBadge: true,
     showReviewerName: false,
+    openPullsOnly: true,
   },
   isPreferencesChange: () => false,
   isAccountsChange: () => false,
@@ -122,6 +129,7 @@ beforeEach(() => {
     version: 1,
     showStateBadge: true,
     showReviewerName: false,
+    openPullsOnly: true,
   });
   vi.stubGlobal("browser", {
     runtime: {
@@ -216,7 +224,9 @@ describe("OptionsPage", () => {
       auth.fetchInstallationRepositories as unknown as ReturnType<typeof vi.fn>;
 
     fetchUserInstallations
-      .mockRejectedValueOnce(new Error("GET /user/installations failed with status 401."))
+      .mockRejectedValueOnce(
+        new Error("GET /user/installations failed with status 401."),
+      )
       .mockResolvedValueOnce([
         {
           id: 42,
@@ -226,7 +236,9 @@ describe("OptionsPage", () => {
       ]);
     fetchInstallationRepositories.mockResolvedValueOnce(["cinev/shotloom"]);
 
-    const sendMessageMock = vi.fn().mockResolvedValue({ ok: true, token: "ghu_new" });
+    const sendMessageMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, token: "ghu_new" });
     vi.stubGlobal("browser", {
       runtime: {
         sendMessage: sendMessageMock,
@@ -283,8 +295,9 @@ describe("OptionsPage", () => {
     await renderOptionsPage();
 
     const auth = await import("../src/github/auth");
-    const initiateDeviceFlow =
-      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>;
+    const initiateDeviceFlow = auth.initiateDeviceFlow as unknown as ReturnType<
+      typeof vi.fn
+    >;
     initiateDeviceFlow.mockResolvedValue({
       deviceCode: "dc",
       userCode: "ABCD-EFGH",
@@ -315,7 +328,9 @@ describe("OptionsPage", () => {
     await renderOptionsPage();
 
     const auth = await import("../src/github/auth");
-    (auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (
+      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
       deviceCode: "dc",
       userCode: "ABCD-EFGH",
       verificationUri: "https://github.com/login/device",
@@ -324,7 +339,9 @@ describe("OptionsPage", () => {
       expiresIn: 900,
       interval: 5,
     });
-    (auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (
+      auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
       status: "pending",
     });
 
@@ -362,10 +379,12 @@ describe("OptionsPage", () => {
     await renderOptionsPage();
 
     const auth = await import("../src/github/auth");
-    const initiateDeviceFlow =
-      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>;
-    const pollForAccessToken =
-      auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>;
+    const initiateDeviceFlow = auth.initiateDeviceFlow as unknown as ReturnType<
+      typeof vi.fn
+    >;
+    const pollForAccessToken = auth.pollForAccessToken as unknown as ReturnType<
+      typeof vi.fn
+    >;
     const fetchAuthenticatedUser =
       auth.fetchAuthenticatedUser as unknown as ReturnType<typeof vi.fn>;
     const fetchUserInstallations =
@@ -419,8 +438,9 @@ describe("OptionsPage", () => {
     await renderOptionsPageInStrictMode();
 
     const auth = await import("../src/github/auth");
-    const initiateDeviceFlow =
-      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>;
+    const initiateDeviceFlow = auth.initiateDeviceFlow as unknown as ReturnType<
+      typeof vi.fn
+    >;
     initiateDeviceFlow.mockResolvedValue({
       deviceCode: "dc",
       userCode: "ABCD-EFGH",
@@ -445,13 +465,16 @@ describe("OptionsPage", () => {
     expect(initiateDeviceFlow).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the display settings panel with both checkboxes", async () => {
+  it("renders the display settings panel with all checkboxes", async () => {
     await renderOptionsPage();
     expect(
       document.querySelector('[data-testid="prefs-show-state-badge"]'),
     ).not.toBeNull();
     expect(
       document.querySelector('[data-testid="prefs-show-reviewer-name"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="prefs-open-pulls-only"]'),
     ).not.toBeNull();
   });
 
@@ -460,6 +483,7 @@ describe("OptionsPage", () => {
       version: 1,
       showStateBadge: false,
       showReviewerName: true,
+      openPullsOnly: false,
     });
     await renderOptionsPage();
     const badgeCheckbox = document.querySelector<HTMLInputElement>(
@@ -468,8 +492,12 @@ describe("OptionsPage", () => {
     const nameCheckbox = document.querySelector<HTMLInputElement>(
       '[data-testid="prefs-show-reviewer-name"]',
     )!;
+    const openOnlyCheckbox = document.querySelector<HTMLInputElement>(
+      '[data-testid="prefs-open-pulls-only"]',
+    )!;
     expect(badgeCheckbox.checked).toBe(false);
     expect(nameCheckbox.checked).toBe(true);
+    expect(openOnlyCheckbox.checked).toBe(false);
   });
 
   it("calls updatePreferences when a checkbox is toggled", async () => {
@@ -481,6 +509,8 @@ describe("OptionsPage", () => {
       badgeCheckbox.click();
       await Promise.resolve();
     });
-    expect(updatePreferencesMock).toHaveBeenCalledWith({ showStateBadge: false });
+    expect(updatePreferencesMock).toHaveBeenCalledWith({
+      showStateBadge: false,
+    });
   });
 });

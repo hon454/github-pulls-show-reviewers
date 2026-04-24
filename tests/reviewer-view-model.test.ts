@@ -29,7 +29,11 @@ describe("buildReviewers", () => {
           { login: "bob", avatarUrl: null },
         ],
         completedReviews: [
-          { login: "bob", avatarUrl: "https://example/b.png", state: "COMMENTED" },
+          {
+            login: "bob",
+            avatarUrl: "https://example/b.png",
+            state: "COMMENTED",
+          },
         ],
       }),
     );
@@ -75,7 +79,9 @@ describe("buildReviewers", () => {
       route,
       summary({
         requestedUsers: [],
-        completedReviews: [{ login: "alice", avatarUrl: null, state: "APPROVED" }],
+        completedReviews: [
+          { login: "alice", avatarUrl: null, state: "APPROVED" },
+        ],
       }),
     );
 
@@ -91,7 +97,9 @@ describe("buildReviewers", () => {
       route,
       summary({
         requestedUsers: [{ login: "alice", avatarUrl: null }],
-        completedReviews: [{ login: "alice", avatarUrl: null, state: "APPROVED" }],
+        completedReviews: [
+          { login: "alice", avatarUrl: null, state: "APPROVED" },
+        ],
       }),
     );
     expect(entries[0]).toMatchObject({
@@ -143,7 +151,11 @@ describe("buildReviewers", () => {
       }),
     );
 
-    expect(entries.map((entry) => entry.kind)).toEqual(["user", "team", "team"]);
+    expect(entries.map((entry) => entry.kind)).toEqual([
+      "user",
+      "team",
+      "team",
+    ]);
     expect(
       entries
         .filter((entry) => entry.kind === "team")
@@ -164,11 +176,48 @@ describe("buildReviewers", () => {
     expect(user.href).toContain("review-requested%3Aalice");
   });
 
+  it("scopes reviewer URLs to open pull requests by default", () => {
+    const entries = buildReviewers(
+      route,
+      summary({
+        completedReviews: [
+          { login: "bob", avatarUrl: null, state: "APPROVED" },
+        ],
+        requestedTeams: ["platform"],
+      }),
+    );
+
+    for (const entry of entries) {
+      const query = new URL(entry.href).searchParams.get("q");
+      expect(query).toContain("is:pr is:open");
+    }
+  });
+
+  it("can build reviewer URLs without open-only scoping", () => {
+    const entries = buildReviewers(
+      route,
+      summary({
+        completedReviews: [
+          { login: "bob", avatarUrl: null, state: "APPROVED" },
+        ],
+        requestedTeams: ["platform"],
+      }),
+      { openPullsOnly: false },
+    );
+
+    for (const entry of entries) {
+      const query = new URL(entry.href).searchParams.get("q");
+      expect(query).not.toContain("is:open");
+    }
+  });
+
   it("builds reviewed-by URLs when isRequested is false", () => {
     const entries = buildReviewers(
       route,
       summary({
-        completedReviews: [{ login: "bob", avatarUrl: null, state: "APPROVED" }],
+        completedReviews: [
+          { login: "bob", avatarUrl: null, state: "APPROVED" },
+        ],
       }),
     );
     const user = entries[0];
