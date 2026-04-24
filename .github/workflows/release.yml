@@ -83,7 +83,7 @@ jobs:
           generate_release_notes: true
 
       - name: Authenticate to Google for Chrome Web Store
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(steps.release_meta.outputs.tag, 'v')
         id: google_auth
         uses: google-github-actions/auth@v3
         with:
@@ -92,7 +92,7 @@ jobs:
           access_token_scopes: https://www.googleapis.com/auth/chromewebstore
 
       - name: Publish to Chrome Web Store
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(steps.release_meta.outputs.tag, 'v')
         env:
           CWS_ACCESS_TOKEN: ${{ steps.google_auth.outputs.access_token }}
           CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
