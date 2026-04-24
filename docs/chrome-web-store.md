@@ -79,7 +79,7 @@ Expected release gate behavior:
   automatically using the item's existing visibility settings.
 - `pnpm test:e2e` no longer mutates `docs/chrome-web-store-assets/`; the screenshot capture spec is scoped to a separate `capture` Playwright project that only `pnpm cws:assets` runs.
 
-## Chrome Web Store submission checklist
+## Release submission flow
 
 1. Run `pnpm icons:render` if the SVG icon changed.
 2. Run `pnpm verify:release`.

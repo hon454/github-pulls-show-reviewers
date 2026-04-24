@@ -93,14 +93,14 @@ wait_for_upload() {
       SUCCEEDED)
         return
         ;;
-      IN_PROGRESS | UPLOAD_IN_PROGRESS | "")
+      IN_PROGRESS | UPLOAD_IN_PROGRESS)
         ;;
       FAILED)
         echo "Chrome Web Store upload failed." >&2
         exit 1
         ;;
       *)
-        echo "Unexpected Chrome Web Store upload state: ${upload_state}" >&2
+        echo "Unexpected Chrome Web Store upload state: ${upload_state:-<empty>}" >&2
         exit 1
         ;;
     esac
@@ -140,6 +140,25 @@ publish_response="$(curl -fsS \
   -H "Content-Type: application/json" \
   --data '{"publishType":"DEFAULT_PUBLISH"}' \
   "https://chromewebstore.googleapis.com/v2/${api_name}:publish")"
+publish_error_code="$(printf '%s' "$publish_response" | json_value itemError.0.error_code)"
+publish_error_detail="$(printf '%s' "$publish_response" | json_value itemError.0.error_detail)"
 publish_state="$(printf '%s' "$publish_response" | json_value state)"
 
-echo "Chrome Web Store publish submitted with state: ${publish_state:-unknown}."
+if [ -n "$publish_error_code" ] || [ -n "$publish_error_detail" ]; then
+  echo "Chrome Web Store publish failed: ${publish_error_code:-unknown_error} ${publish_error_detail:-}" >&2
+  exit 1
+fi
+
+case "$publish_state" in
+  OK | IN_REVIEW)
+    echo "Chrome Web Store publish submitted with state: ${publish_state}."
+    ;;
+  "")
+    echo "Chrome Web Store publish response missing state." >&2
+    exit 1
+    ;;
+  *)
+    echo "Chrome Web Store publish returned unexpected state: ${publish_state}" >&2
+    exit 1
+    ;;
+esac
