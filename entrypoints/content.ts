@@ -28,7 +28,7 @@ export default defineContentScript({
       if (!reviewerListBooted) {
         reviewerListBooted = true;
         bootReviewerListPage(ctx, {
-          onRowFailure({ owner, account, error }) {
+          onRowFailure({ account, error }) {
             if (aggregator == null) {
               aggregator = bootAccessBanner(ctx);
             }
@@ -42,15 +42,15 @@ export default defineContentScript({
               return;
             }
             if (signals.uncovered) {
-              aggregator.reportUncoveredOwner(owner);
+              aggregator.reportUncovered();
               return;
             }
             // Fallback for errors we cannot attribute (schema drift, network
             // failure, aborted fetch, etc.). We keep the existing behavior and
-            // flag the owner as uncovered so the banner still guides the user
+            // flag the repo as uncovered so the banner still guides the user
             // toward App installation — doing nothing here would leave the row
             // blank with no explanation.
-            aggregator.reportUncoveredOwner(owner);
+            aggregator.reportUncovered();
           },
         });
       }

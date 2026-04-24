@@ -6,6 +6,8 @@ import {
   formatBannerMessage,
 } from "../src/features/access-banner/aggregator";
 
+const TEST_REPO = { owner: "cinev", name: "shotloom" } as const;
+
 beforeEach(() => {
   window.sessionStorage.clear();
 });
@@ -17,75 +19,116 @@ afterEach(() => {
 });
 
 describe("bannerAggregator", () => {
-  it("starts empty", () => {
-    const aggregator = createBannerAggregator({ pathname: "/cinev/shotloom/pulls" });
+  it("starts with uncovered=false and carries the repo", () => {
+    const aggregator = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
     expect(aggregator.getState()).toEqual({
-      uncoveredOrgs: [],
+      uncovered: false,
       unauthRateLimited: false,
       dismissed: false,
+      repo: TEST_REPO,
     });
   });
 
-  it("dedupes org entries case-insensitively", () => {
-    const aggregator = createBannerAggregator({ pathname: "/x/pulls" });
-    aggregator.reportUncoveredOwner("CINEV");
-    aggregator.reportUncoveredOwner("cinev");
-    aggregator.reportUncoveredOwner("cinev");
-    expect(aggregator.getState().uncoveredOrgs).toEqual(["cinev"]);
+  it("flips uncovered to true once reported and is idempotent", () => {
+    const aggregator = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
+    const listener = vi.fn();
+    aggregator.subscribe(listener);
+    listener.mockClear();
+
+    aggregator.reportUncovered();
+    aggregator.reportUncovered();
+    aggregator.reportUncovered();
+
+    expect(aggregator.getState().uncovered).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it("flags an unauth rate limit", () => {
-    const aggregator = createBannerAggregator({ pathname: "/x/pulls" });
+    const aggregator = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
     aggregator.reportUnauthRateLimit();
     expect(aggregator.getState().unauthRateLimited).toBe(true);
   });
 
   it("persists dismissal by pathname via sessionStorage", () => {
-    const first = createBannerAggregator({ pathname: "/cinev/shotloom/pulls" });
+    const first = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
     first.dismiss();
-    const second = createBannerAggregator({ pathname: "/cinev/shotloom/pulls" });
+    const second = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
     expect(second.getState().dismissed).toBe(true);
-    const other = createBannerAggregator({ pathname: "/other/repo/pulls" });
+    const other = createBannerAggregator({
+      pathname: "/other/repo/pulls",
+      repo: { owner: "other", name: "repo" },
+    });
     expect(other.getState().dismissed).toBe(false);
   });
 
   it("resets dismissal when the pathname changes", () => {
-    const first = createBannerAggregator({ pathname: "/cinev/shotloom/pulls" });
+    const first = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
     first.dismiss();
-    const second = createBannerAggregator({ pathname: "/cinev/landing/pulls" });
+    const second = createBannerAggregator({
+      pathname: "/cinev/landing/pulls",
+      repo: { owner: "cinev", name: "landing" },
+    });
     expect(second.getState().dismissed).toBe(false);
   });
 });
 
 describe("formatBannerMessage", () => {
-  it("formats a single uncovered org", () => {
+  it("names the repo and org when uncovered", () => {
     const text = formatBannerMessage({
-      uncoveredOrgs: ["cinev"],
+      uncovered: true,
       unauthRateLimited: false,
+      repo: TEST_REPO,
     });
     expect(text).toBe(
-      "Add GitHub App access to @cinev to see reviewers on this page.",
+      "Add cinev/shotloom to @cinev's GitHub App installation to see reviewers on this page.",
     );
   });
 
-  it("formats multiple uncovered orgs", () => {
+  it("uses the uncovered message when both flags are set", () => {
     const text = formatBannerMessage({
-      uncoveredOrgs: ["cinev", "acme", "beta"],
-      unauthRateLimited: false,
+      uncovered: true,
+      unauthRateLimited: true,
+      repo: TEST_REPO,
     });
     expect(text).toBe(
-      "Add GitHub App access to @cinev and 2 more organizations.",
+      "Add cinev/shotloom to @cinev's GitHub App installation to see reviewers on this page.",
     );
   });
 
   it("formats an unauth rate limit message when nothing else is reported", () => {
     const text = formatBannerMessage({
-      uncoveredOrgs: [],
+      uncovered: false,
       unauthRateLimited: true,
+      repo: TEST_REPO,
     });
-    expect(text).toBe(
-      "You hit GitHub's unauthenticated rate limit.",
-    );
+    expect(text).toBe("You hit GitHub's unauthenticated rate limit.");
+  });
+
+  it("returns an empty string when there is nothing to surface", () => {
+    const text = formatBannerMessage({
+      uncovered: false,
+      unauthRateLimited: false,
+      repo: TEST_REPO,
+    });
+    expect(text).toBe("");
   });
 });
 
@@ -101,11 +144,16 @@ describe("banner DOM", () => {
       optionsPageUrl: "chrome-extension://ext-id/options.html",
       onDismiss: () => {},
     });
-    banner.update({ uncoveredOrgs: [], unauthRateLimited: false, dismissed: false });
+    banner.update({
+      uncovered: false,
+      unauthRateLimited: false,
+      dismissed: false,
+      repo: TEST_REPO,
+    });
     expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
   });
 
-  it("inserts the banner when an uncovered org is reported", () => {
+  it("inserts a repo-aware banner with a Configure access link when uncovered", () => {
     document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
     const target = document.querySelector<HTMLElement>(".gh-header")!;
     const banner = mountBanner({
@@ -115,12 +163,43 @@ describe("banner DOM", () => {
       onDismiss: () => {},
     });
     banner.update({
-      uncoveredOrgs: ["cinev"],
+      uncovered: true,
       unauthRateLimited: false,
       dismissed: false,
+      repo: TEST_REPO,
     });
+
     const el = document.querySelector("[data-ghpsr-banner]");
-    expect(el?.textContent).toContain("@cinev");
+    expect(el?.textContent).toContain("cinev/shotloom");
+    expect(el?.textContent).toContain("@cinev's GitHub App installation");
+    const link = el?.querySelector("a");
+    expect(link?.textContent).toBe("Configure access");
+    expect(link?.getAttribute("href")).toBe(
+      "https://github.com/apps/test-app/installations/new",
+    );
+  });
+
+  it("renders a Sign in link for the unauth rate-limit state", () => {
+    document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
+    const target = document.querySelector<HTMLElement>(".gh-header")!;
+    const banner = mountBanner({
+      insertAfter: target,
+      installUrl: "https://github.com/apps/test-app/installations/new",
+      optionsPageUrl: "chrome-extension://ext-id/options.html",
+      onDismiss: () => {},
+    });
+    banner.update({
+      uncovered: false,
+      unauthRateLimited: true,
+      dismissed: false,
+      repo: TEST_REPO,
+    });
+
+    const link = document.querySelector("[data-ghpsr-banner] a");
+    expect(link?.textContent).toBe("Sign in");
+    expect(link?.getAttribute("href")).toBe(
+      "chrome-extension://ext-id/options.html",
+    );
   });
 
   it("removes the banner when dismissed", () => {
@@ -133,14 +212,16 @@ describe("banner DOM", () => {
       onDismiss: () => {},
     });
     banner.update({
-      uncoveredOrgs: ["cinev"],
+      uncovered: true,
       unauthRateLimited: false,
       dismissed: false,
+      repo: TEST_REPO,
     });
     banner.update({
-      uncoveredOrgs: ["cinev"],
+      uncovered: true,
       unauthRateLimited: false,
       dismissed: true,
+      repo: TEST_REPO,
     });
     expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
   });

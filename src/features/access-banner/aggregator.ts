@@ -1,31 +1,40 @@
+export type BannerRepo = { readonly owner: string; readonly name: string };
+
 export type BannerState = {
-  uncoveredOrgs: string[];
+  uncovered: boolean;
   unauthRateLimited: boolean;
   dismissed: boolean;
+  repo: BannerRepo;
 };
 
 export type BannerAggregator = {
   getState(): BannerState;
   subscribe(listener: (state: BannerState) => void): () => void;
-  reportUncoveredOwner(owner: string): void;
+  reportUncovered(): void;
   reportUnauthRateLimit(): void;
   dismiss(): void;
 };
 
 export function createBannerAggregator(options: {
   pathname: string;
+  repo: BannerRepo;
 }): BannerAggregator {
   const dismissKey = `ghpsr:banner-dismissed:${options.pathname}`;
-  const orgs = new Set<string>();
+  const repo: BannerRepo = {
+    owner: options.repo.owner,
+    name: options.repo.name,
+  };
+  let uncovered = false;
   let unauthRateLimited = false;
   let dismissed = readDismissed(dismissKey);
   const listeners = new Set<(state: BannerState) => void>();
 
   function snapshot(): BannerState {
     return {
-      uncoveredOrgs: [...orgs],
+      uncovered,
       unauthRateLimited,
       dismissed,
+      repo,
     };
   }
 
@@ -43,12 +52,11 @@ export function createBannerAggregator(options: {
         listeners.delete(listener);
       };
     },
-    reportUncoveredOwner(owner) {
-      const normalized = owner.toLowerCase();
-      if (orgs.has(normalized)) {
+    reportUncovered() {
+      if (uncovered) {
         return;
       }
-      orgs.add(normalized);
+      uncovered = true;
       emit();
     },
     reportUnauthRateLimit() {
@@ -81,16 +89,11 @@ function readDismissed(key: string): boolean {
   }
 }
 
-export function formatBannerMessage(state: {
-  uncoveredOrgs: string[];
-  unauthRateLimited: boolean;
-}): string {
-  if (state.uncoveredOrgs.length === 1) {
-    return `Add GitHub App access to @${state.uncoveredOrgs[0]} to see reviewers on this page.`;
-  }
-  if (state.uncoveredOrgs.length > 1) {
-    const [first, ...rest] = state.uncoveredOrgs;
-    return `Add GitHub App access to @${first} and ${rest.length} more organization${rest.length === 1 ? "" : "s"}.`;
+export function formatBannerMessage(
+  state: Pick<BannerState, "uncovered" | "unauthRateLimited" | "repo">,
+): string {
+  if (state.uncovered) {
+    return `Add ${state.repo.owner}/${state.repo.name} to @${state.repo.owner}'s GitHub App installation to see reviewers on this page.`;
   }
   if (state.unauthRateLimited) {
     return "You hit GitHub's unauthenticated rate limit.";

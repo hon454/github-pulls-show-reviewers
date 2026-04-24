@@ -18,8 +18,7 @@ export function mountBanner(input: {
 
   function render(state: BannerState): void {
     const visible =
-      !state.dismissed &&
-      (state.uncoveredOrgs.length > 0 || state.unauthRateLimited);
+      !state.dismissed && (state.uncovered || state.unauthRateLimited);
 
     if (!visible) {
       element?.remove();
@@ -50,14 +49,13 @@ export function mountBanner(input: {
     message.textContent = formatBannerMessage(state);
     element.append(message);
 
-    if (state.uncoveredOrgs.length > 0) {
-      const installLink = document.createElement("a");
-      installLink.href = input.installUrl;
-      installLink.target = "_blank";
-      installLink.rel = "noreferrer";
-      installLink.textContent =
-        state.uncoveredOrgs.length === 1 ? "Install" : "Manage access";
-      element.append(installLink);
+    if (state.uncovered) {
+      const configureLink = document.createElement("a");
+      configureLink.href = input.installUrl;
+      configureLink.target = "_blank";
+      configureLink.rel = "noreferrer";
+      configureLink.textContent = "Configure access";
+      element.append(configureLink);
     } else if (state.unauthRateLimited) {
       const signInLink = document.createElement("a");
       signInLink.href = input.optionsPageUrl;
