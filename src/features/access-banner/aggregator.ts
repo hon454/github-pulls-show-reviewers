@@ -1,8 +1,14 @@
 export type BannerRepo = { readonly owner: string; readonly name: string };
 
+export type BannerKind =
+  | "auth-expired"
+  | "app-uncovered"
+  | "auth-rate-limit"
+  | "unauth-rate-limit"
+  | "signin-required";
+
 export type BannerState = {
-  uncovered: boolean;
-  unauthRateLimited: boolean;
+  current: BannerKind | null;
   dismissed: boolean;
   repo: BannerRepo;
 };
@@ -10,32 +16,42 @@ export type BannerState = {
 export type BannerAggregator = {
   getState(): BannerState;
   subscribe(listener: (state: BannerState) => void): () => void;
-  reportUncovered(): void;
-  reportUnauthRateLimit(): void;
+  reportFailure(kind: BannerKind): void;
   dismiss(): void;
 };
+
+const PRIORITY: Record<BannerKind, number> = {
+  "auth-expired": 1,
+  "app-uncovered": 2,
+  "auth-rate-limit": 3,
+  "unauth-rate-limit": 4,
+  "signin-required": 5,
+};
+
+export function isHigherPriority(
+  candidate: BannerKind,
+  incumbent: BannerKind | null,
+): boolean {
+  if (incumbent == null) {
+    return true;
+  }
+  return PRIORITY[candidate] < PRIORITY[incumbent];
+}
 
 export function createBannerAggregator(options: {
   pathname: string;
   repo: BannerRepo;
 }): BannerAggregator {
-  const dismissKey = `ghpsr:banner-dismissed:${options.pathname}`;
   const repo: BannerRepo = {
     owner: options.repo.owner,
     name: options.repo.name,
   };
-  let uncovered = false;
-  let unauthRateLimited = false;
-  let dismissed = readDismissed(dismissKey);
+  let current: BannerKind | null = null;
+  let dismissed = readDismissed(options.pathname, current);
   const listeners = new Set<(state: BannerState) => void>();
 
   function snapshot(): BannerState {
-    return {
-      uncovered,
-      unauthRateLimited,
-      dismissed,
-      repo,
-    };
+    return { current, dismissed, repo };
   }
 
   function emit(): void {
@@ -52,27 +68,21 @@ export function createBannerAggregator(options: {
         listeners.delete(listener);
       };
     },
-    reportUncovered() {
-      if (uncovered) {
+    reportFailure(kind) {
+      if (!isHigherPriority(kind, current)) {
         return;
       }
-      uncovered = true;
-      emit();
-    },
-    reportUnauthRateLimit() {
-      if (unauthRateLimited) {
-        return;
-      }
-      unauthRateLimited = true;
+      current = kind;
+      dismissed = readDismissed(options.pathname, current);
       emit();
     },
     dismiss() {
-      if (dismissed) {
+      if (current == null || dismissed) {
         return;
       }
       dismissed = true;
       try {
-        window.sessionStorage.setItem(dismissKey, "1");
+        window.sessionStorage.setItem(dismissKey(options.pathname, current), "1");
       } catch {
         // sessionStorage access denied — ignore
       }
@@ -81,22 +91,36 @@ export function createBannerAggregator(options: {
   };
 }
 
-function readDismissed(key: string): boolean {
+function dismissKey(pathname: string, kind: BannerKind | null): string {
+  return `ghpsr:banner-dismissed:${pathname}:${kind ?? "none"}`;
+}
+
+function readDismissed(pathname: string, kind: BannerKind | null): boolean {
+  if (kind == null) {
+    return false;
+  }
   try {
-    return window.sessionStorage.getItem(key) === "1";
+    return window.sessionStorage.getItem(dismissKey(pathname, kind)) === "1";
   } catch {
     return false;
   }
 }
 
 export function formatBannerMessage(
-  state: Pick<BannerState, "uncovered" | "unauthRateLimited" | "repo">,
+  state: Pick<BannerState, "current" | "repo">,
 ): string {
-  if (state.uncovered) {
-    return `Add ${state.repo.owner}/${state.repo.name} to @${state.repo.owner}'s GitHub App installation to see reviewers on this page.`;
+  switch (state.current) {
+    case "auth-expired":
+      return "Your GitHub session expired. Sign in again to keep loading reviewers.";
+    case "app-uncovered":
+      return `Add ${state.repo.owner}/${state.repo.name} to @${state.repo.owner}'s GitHub App installation to see reviewers on this page.`;
+    case "auth-rate-limit":
+      return "GitHub's hourly request limit was reached. Reviewers will resume automatically when the limit resets.";
+    case "unauth-rate-limit":
+      return "GitHub's unauthenticated request limit (60/hr) was reached. Sign in to raise it to 5,000/hr.";
+    case "signin-required":
+      return "Sign in with GitHub to see reviewers on private repositories.";
+    case null:
+      return "";
   }
-  if (state.unauthRateLimited) {
-    return "You hit GitHub's unauthenticated rate limit.";
-  }
-  return "";
 }
