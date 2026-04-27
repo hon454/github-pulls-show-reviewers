@@ -1,5 +1,10 @@
 # GitHub Pulls Show Reviewers
 
+[![Chrome Web Store Version](https://img.shields.io/chrome-web-store/v/hoocgjopdboeghdkfjlkngkkpbiljggk?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/github-pulls-show-reviewe/hoocgjopdboeghdkfjlkngkkpbiljggk)
+[![Chrome Web Store Users](https://img.shields.io/chrome-web-store/users/hoocgjopdboeghdkfjlkngkkpbiljggk?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/github-pulls-show-reviewe/hoocgjopdboeghdkfjlkngkkpbiljggk)
+[![CI](https://github.com/hon454/github-pulls-show-reviewers/actions/workflows/ci.yml/badge.svg)](https://github.com/hon454/github-pulls-show-reviewers/actions/workflows/ci.yml)
+[![Manifest V3](https://img.shields.io/badge/Manifest%20V3-Chrome-34A853?logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
+
 > See requested reviewers, teams, and completed review state directly in GitHub pull request lists.
 
 `GitHub Pulls Show Reviewers` is a Chrome extension built for one narrow workflow: make reviewer visibility obvious on GitHub PR list pages without turning the page into a general PR dashboard.
@@ -19,8 +24,8 @@ This extension brings that information into the list itself with lightweight inl
 
 ## What The Extension Shows
 
-| Merged `Reviewers` section with state badges | Name-pill layout (optional) |
-| --- | --- |
+| Merged `Reviewers` section with state badges                                                   | Name-pill layout (optional)                                                                     |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | ![Merged reviewer chips](./docs/chrome-web-store-assets/01-pr-list-requested-and-reviewed.png) | ![Reviewer name-pill layout](./docs/chrome-web-store-assets/02-pr-list-mixed-review-states.png) |
 
 Core behavior:
