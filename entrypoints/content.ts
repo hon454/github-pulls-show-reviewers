@@ -99,10 +99,14 @@ function classifyFailure(
     return null;
   }
 
-  if (isRateLimited || failure.status === 403) {
+  if (isRateLimited) {
     return "unauth-rate-limit";
   }
-  if (failure.status === 404) {
+  if (
+    failure.status === 401 ||
+    failure.status === 403 ||
+    failure.status === 404
+  ) {
     return "signin-required";
   }
   return null;

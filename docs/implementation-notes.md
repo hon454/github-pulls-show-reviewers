@@ -63,8 +63,8 @@
 | Signed in     | 401 on any reviewer endpoint                              | `auth-expired`       | Sign in          |
 | Signed in     | 404 / 403 with no rate-limit signal                       | `app-uncovered`      | Configure access |
 | Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`               | `auth-rate-limit`    | (passive wait)   |
-| No account    | 403, 429, or any rate-limit signal                        | `unauth-rate-limit`  | Sign in          |
-| No account    | 404                                                       | `signin-required`    | Sign in          |
+| No account    | 429, or 403 with rate-limit signal                        | `unauth-rate-limit`  | Sign in          |
+| No account    | 401, 403, or 404 without rate-limit signal                | `signin-required`    | Sign in          |
 | Either        | Network / schema / unknown / empty endpoint envelope      | (silent, console.warn) | —             |
 
 Severity priority for cross-row resolution: `auth-expired` > `app-uncovered` >

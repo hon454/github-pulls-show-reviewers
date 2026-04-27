@@ -217,7 +217,31 @@ describe("content entrypoint", () => {
       expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
     });
 
-    it("emits unauth-rate-limit for no account + 403", async () => {
+    it("emits unauth-rate-limit for no account + 403 with rate-limit headers", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: null,
+        error: new GitHubPullRequestEndpointsError([
+          new GitHubApiError(403, undefined, undefined, {
+            limit: 60,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1,
+          }),
+        ]),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("unauth-rate-limit");
+    });
+
+    it("emits signin-required for no account + 403 without rate-limit signal", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
@@ -231,7 +255,24 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(403)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("unauth-rate-limit");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
+    });
+
+    it("emits signin-required for no account + 401", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: null,
+        error: new GitHubPullRequestEndpointsError([new GitHubApiError(401)]),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
     });
 
     it("emits unauth-rate-limit for no account + 429", async () => {
