@@ -91,7 +91,7 @@ This extension is intentionally narrow. Manual verification should stay focused 
    with an account where the GitHub App is installed on
    **All repositories**.
 5. Visit a private PR list in that account's namespace.
-6. Confirm reviewer chips render for every row without an uncovered-org banner.
+6. Confirm reviewer chips render for every row without an `app-uncovered` banner.
 
 ### Signed-in, selected-repos installation
 
@@ -103,7 +103,7 @@ This extension is intentionally narrow. Manual verification should stay focused 
 4. Visit a third repository in that org; confirm an empty reviewer slot per row
    and a banner prompting to add access.
 
-### Uncovered org banner
+### App-uncovered banner
 
 1. Sign in but do not install the App on `work-org`.
 2. Visit a `work-org` PR list.

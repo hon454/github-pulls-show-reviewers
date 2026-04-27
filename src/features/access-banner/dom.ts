@@ -1,4 +1,4 @@
-import type { BannerState } from "./aggregator";
+import type { BannerKind, BannerState } from "./aggregator";
 import { formatBannerMessage } from "./aggregator";
 
 const BANNER_ATTRIBUTE = "data-ghpsr-banner";
@@ -7,6 +7,27 @@ export type BannerMount = {
   update(state: BannerState): void;
   teardown(): void;
 };
+
+type CtaSpec =
+  | { kind: "link"; label: string; href: string }
+  | { kind: "none" };
+
+function ctaFor(
+  current: BannerKind,
+  installUrl: string,
+  optionsPageUrl: string,
+): CtaSpec {
+  switch (current) {
+    case "app-uncovered":
+      return { kind: "link", label: "Configure access", href: installUrl };
+    case "auth-expired":
+    case "unauth-rate-limit":
+    case "signin-required":
+      return { kind: "link", label: "Sign in", href: optionsPageUrl };
+    case "auth-rate-limit":
+      return { kind: "none" };
+  }
+}
 
 export function mountBanner(input: {
   insertAfter: HTMLElement;
@@ -17,10 +38,8 @@ export function mountBanner(input: {
   let element: HTMLElement | null = null;
 
   function render(state: BannerState): void {
-    const visible =
-      !state.dismissed && (state.uncovered || state.unauthRateLimited);
-
-    if (!visible) {
+    const current = state.current;
+    if (state.dismissed || current == null) {
       element?.remove();
       element = null;
       return;
@@ -49,20 +68,14 @@ export function mountBanner(input: {
     message.textContent = formatBannerMessage(state);
     element.append(message);
 
-    if (state.uncovered) {
-      const configureLink = document.createElement("a");
-      configureLink.href = input.installUrl;
-      configureLink.target = "_blank";
-      configureLink.rel = "noreferrer";
-      configureLink.textContent = "Configure access";
-      element.append(configureLink);
-    } else if (state.unauthRateLimited) {
-      const signInLink = document.createElement("a");
-      signInLink.href = input.optionsPageUrl;
-      signInLink.target = "_blank";
-      signInLink.rel = "noreferrer";
-      signInLink.textContent = "Sign in";
-      element.append(signInLink);
+    const cta = ctaFor(current, input.installUrl, input.optionsPageUrl);
+    if (cta.kind === "link") {
+      const link = document.createElement("a");
+      link.href = cta.href;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      link.textContent = cta.label;
+      element.append(link);
     }
 
     const dismissBtn = document.createElement("button");

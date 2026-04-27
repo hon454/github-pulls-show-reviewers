@@ -2,6 +2,8 @@ import {
   bootAccessBanner,
   type AccessBannerHandle,
 } from "../src/features/access-banner";
+import type { BannerKind } from "../src/features/access-banner/aggregator";
+import { isHigherPriority } from "../src/features/access-banner/aggregator";
 import { bootReviewerListPage } from "../src/features/reviewers";
 import { parsePullListRoute } from "../src/github/routes";
 import {
@@ -36,23 +38,15 @@ export default defineContentScript({
               return;
             }
 
-            const signals = classifyRowFailure(error, account);
-            if (signals.rateLimited) {
-              aggregator.reportUnauthRateLimit();
+            const kind = classifyRowFailure(error, account);
+            if (kind == null) {
+              console.warn(
+                "[ghpsr] Unclassified reviewer-fetch failure; banner suppressed.",
+                error,
+              );
               return;
             }
-            if (signals.uncovered) {
-              aggregator.reportUncovered();
-              return;
-            }
-            // Unattributed failures (schema drift, network error, empty
-            // envelope, etc.) are not App-coverage problems. Showing the
-            // Configure access banner would be misleading guidance, so we
-            // log for diagnosis and leave the banner untouched.
-            console.warn(
-              "[ghpsr] Unclassified reviewer-fetch failure; banner suppressed.",
-              error,
-            );
+            aggregator.reportFailure(kind);
           },
         });
       }
@@ -67,39 +61,53 @@ export default defineContentScript({
   },
 });
 
-type RowFailureClassification = {
-  rateLimited: boolean;
-  uncovered: boolean;
-};
-
 function classifyRowFailure(
   error: unknown,
   account: { id?: string } | null,
-): RowFailureClassification {
-  const failures = collectApiFailures(error);
-
-  // With no authenticated account, any 403 indicates the unauthenticated
-  // tier was rejected — treat as the unauth rate-limit case so the banner
-  // invites the user to sign in. Any explicit 429 is always rate-limited.
-  const rateLimited = failures.some(
-    (failure) =>
-      failure.status === 429 ||
-      (account == null && failure.status === 403),
-  );
-  if (rateLimited) {
-    return { rateLimited: true, uncovered: false };
+): BannerKind | null {
+  const failures = extractReviewerFetchFailures(error);
+  if (failures.length === 0) {
+    return null;
   }
 
-  const uncovered = failures.some(
-    (failure) => failure.status === 404 || failure.status === 403,
-  );
-  if (uncovered) {
-    return { rateLimited: false, uncovered: true };
+  let best: BannerKind | null = null;
+  for (const failure of failures) {
+    const kind = classifyFailure(failure, account);
+    if (kind != null && isHigherPriority(kind, best)) {
+      best = kind;
+    }
   }
-
-  return { rateLimited: false, uncovered: false };
+  return best;
 }
 
-function collectApiFailures(error: unknown): ReviewerFetchFailure[] {
-  return extractReviewerFetchFailures(error);
+function classifyFailure(
+  failure: ReviewerFetchFailure,
+  account: { id?: string } | null,
+): BannerKind | null {
+  const isRateLimited = failure.rateLimited || failure.status === 429;
+
+  if (account != null) {
+    if (failure.status === 401) {
+      return "auth-expired";
+    }
+    if (isRateLimited) {
+      return "auth-rate-limit";
+    }
+    if (failure.status === 404 || failure.status === 403) {
+      return "app-uncovered";
+    }
+    return null;
+  }
+
+  if (isRateLimited) {
+    return "unauth-rate-limit";
+  }
+  if (
+    failure.status === 401 ||
+    failure.status === 403 ||
+    failure.status === 404
+  ) {
+    return "signin-required";
+  }
+  return null;
 }

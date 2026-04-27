@@ -3,6 +3,7 @@ import {
   GitHubApiSchemaError,
   GitHubPullRequestEndpointsError,
   extractGitHubApiStatus,
+  isRateLimitError,
   type PullReviewerSummary,
 } from "../github/api";
 
@@ -23,6 +24,7 @@ export type CancelPullReviewerSummaryMessage = {
 export type ReviewerFetchFailure = {
   status: number;
   endpoint: string | null;
+  rateLimited: boolean;
 };
 
 export type ReviewerFetchErrorEnvelope = {
@@ -86,6 +88,7 @@ export function serializeReviewerFetchError(
       failures: error.failures.map((failure) => ({
         status: failure.status,
         endpoint: failure.endpoint?.path ?? null,
+        rateLimited: isRateLimitError(failure),
       })),
       message: error.message,
     };
@@ -99,6 +102,7 @@ export function serializeReviewerFetchError(
         {
           status: error.status,
           endpoint: error.endpoint?.path ?? null,
+          rateLimited: isRateLimitError(error),
         },
       ],
       message: error.message,
@@ -138,6 +142,7 @@ export function extractReviewerFetchFailures(
     return error.failures.map((failure) => ({
       status: failure.status,
       endpoint: failure.endpoint?.path ?? null,
+      rateLimited: isRateLimitError(failure),
     }));
   }
 
@@ -146,6 +151,7 @@ export function extractReviewerFetchFailures(
       {
         status: error.status,
         endpoint: error.endpoint?.path ?? null,
+        rateLimited: isRateLimitError(error),
       },
     ];
   }
@@ -156,15 +162,21 @@ export function extractReviewerFetchFailures(
     "failures" in error &&
     Array.isArray((error as { failures: unknown }).failures)
   ) {
-    return (error as { failures: Array<{ status?: unknown; endpoint?: unknown }> }).failures
+    return (
+      error as { failures: Array<{ status?: unknown; endpoint?: unknown; rateLimited?: unknown }> }
+    ).failures
       .filter(
-        (failure): failure is { status: number; endpoint?: string | null } =>
-          typeof failure?.status === "number",
+        (failure): failure is {
+          status: number;
+          endpoint?: string | null;
+          rateLimited?: boolean;
+        } => typeof failure?.status === "number",
       )
       .map((failure) => ({
         status: failure.status,
         endpoint:
           typeof failure.endpoint === "string" ? failure.endpoint : null,
+        rateLimited: failure.rateLimited === true,
       }));
   }
 
@@ -178,6 +190,7 @@ export function extractReviewerFetchFailures(
       {
         status: (error as { status: number }).status,
         endpoint: null,
+        rateLimited: false,
       },
     ];
   }

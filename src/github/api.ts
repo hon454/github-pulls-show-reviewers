@@ -778,7 +778,7 @@ function readHeaderNumber(headers: Headers, name: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function isRateLimitError(error: GitHubApiError): boolean {
+export function isRateLimitError(error: GitHubApiError): boolean {
   return (
     error.status === 429 ||
     error.rateLimit?.remaining === 0 ||
