@@ -7,6 +7,7 @@ import {
   GitHubApiSchemaError,
   fetchPullReviewerSummary,
   describeGitHubApiError,
+  isRateLimitError,
   parseRepositoryReference,
   validateGitHubRepositoryAccess,
 } from "../src/github/api";
@@ -96,6 +97,57 @@ describe("describeGitHubApiError", () => {
       owner: "hon454",
       repo: "github-pulls-show-reviewers",
     });
+  });
+});
+
+describe("isRateLimitError", () => {
+  it("returns true for HTTP 429", () => {
+    expect(isRateLimitError(new GitHubApiError(429))).toBe(true);
+  });
+
+  it("returns true when rateLimit.remaining is exhausted", () => {
+    const error = new GitHubApiError(403, undefined, undefined, {
+      limit: 60,
+      remaining: 0,
+      resource: "core",
+      resetAt: null,
+    });
+    expect(isRateLimitError(error)).toBe(true);
+  });
+
+  it('matches GitHub primary rate-limit message ("API rate limit exceeded …")', () => {
+    expect(
+      isRateLimitError(
+        new GitHubApiError(403, "API rate limit exceeded for 1.2.3.4"),
+      ),
+    ).toBe(true);
+  });
+
+  it('matches GitHub secondary rate-limit message ("… secondary rate limit …")', () => {
+    expect(
+      isRateLimitError(
+        new GitHubApiError(
+          403,
+          "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not match unrelated details that incidentally contain "rate limit"', () => {
+    expect(
+      isRateLimitError(
+        new GitHubApiError(403, "This endpoint has no rate limit applied"),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when no rate-limit signal is present", () => {
+    expect(
+      isRateLimitError(
+        new GitHubApiError(403, "Resource not accessible by integration"),
+      ),
+    ).toBe(false);
   });
 });
 
