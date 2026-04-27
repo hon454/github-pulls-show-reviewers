@@ -778,11 +778,17 @@ function readHeaderNumber(headers: Headers, name: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+// Matches GitHub's documented rate-limit error messages only:
+// - primary:   "API rate limit exceeded for …"
+// - secondary: "You have exceeded a secondary rate limit …"
+// Word boundaries prevent false positives like "no rate limit applied".
+const RATE_LIMIT_MESSAGE_PATTERN = /\b(?:api|secondary) rate limit\b/i;
+
 export function isRateLimitError(error: GitHubApiError): boolean {
   return (
     error.status === 429 ||
     error.rateLimit?.remaining === 0 ||
-    error.details?.toLowerCase().includes("rate limit") === true
+    (error.details != null && RATE_LIMIT_MESSAGE_PATTERN.test(error.details))
   );
 }
 
