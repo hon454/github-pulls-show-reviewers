@@ -34,8 +34,7 @@ afterEach(() => {
 });
 
 type Aggregator = {
-  reportUncovered: ReturnType<typeof vi.fn>;
-  reportUnauthRateLimit: ReturnType<typeof vi.fn>;
+  reportFailure: ReturnType<typeof vi.fn>;
   teardown?: ReturnType<typeof vi.fn>;
 };
 
@@ -85,8 +84,7 @@ describe("content entrypoint", () => {
 
   it("waits to boot PR-list features until navigation enters a PR list", async () => {
     const aggregator = {
-      reportUncovered: vi.fn(),
-      reportUnauthRateLimit: vi.fn(),
+      reportFailure: vi.fn(),
       teardown: vi.fn(),
     };
     bootAccessBannerMock.mockReturnValue(aggregator);
@@ -120,134 +118,199 @@ describe("content entrypoint", () => {
   describe("onRowFailure banner classification", () => {
     function makeAggregator(): Aggregator {
       return {
-        reportUncovered: vi.fn(),
-        reportUnauthRateLimit: vi.fn(),
+        reportFailure: vi.fn(),
         teardown: vi.fn(),
       };
     }
 
-    it("treats a 429 in any failure of a pull-request endpoints error as rate-limited", async () => {
+    it("emits auth-expired for account + 401", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
         "../src/github/api"
       );
 
-      const error = new GitHubPullRequestEndpointsError([
-        new GitHubApiError(404),
-        new GitHubApiError(429),
-      ]);
       onRowFailure({
         owner: "cinev",
         repo: "shotloom",
         account: { id: "acc-1" },
-        error,
+        error: new GitHubPullRequestEndpointsError([new GitHubApiError(401)]),
       });
 
-      expect(aggregator.reportUnauthRateLimit).toHaveBeenCalledTimes(1);
-      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-expired");
     });
 
-    it("treats mixed 404 + 403 with an account as uncovered (no rate limit)", async () => {
+    it("emits app-uncovered for account + 404 (no rate-limit signal)", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
         "../src/github/api"
       );
 
-      const error = new GitHubPullRequestEndpointsError([
-        new GitHubApiError(404),
-        new GitHubApiError(403),
-      ]);
       onRowFailure({
         owner: "cinev",
         repo: "shotloom",
         account: { id: "acc-1" },
-        error,
+        error: new GitHubPullRequestEndpointsError([new GitHubApiError(404)]),
       });
 
-      expect(aggregator.reportUncovered).toHaveBeenCalledTimes(1);
-      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("app-uncovered");
     });
 
-    it("treats a 403 without an account as unauthenticated rate-limit", async () => {
+    it("emits app-uncovered for account + 403 without rate-limit signal", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
         "../src/github/api"
       );
 
-      const error = new GitHubPullRequestEndpointsError([
-        new GitHubApiError(403),
-      ]);
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: new GitHubPullRequestEndpointsError([
+          new GitHubApiError(403, "forbidden"),
+        ]),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("app-uncovered");
+    });
+
+    it("emits auth-rate-limit for account + 403 with rate-limit headers", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: new GitHubPullRequestEndpointsError([
+          new GitHubApiError(403, undefined, undefined, {
+            limit: 5000,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1,
+          }),
+        ]),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
+    });
+
+    it("emits auth-rate-limit for account + 429", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: new GitHubPullRequestEndpointsError([new GitHubApiError(429)]),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
+    });
+
+    it("emits unauth-rate-limit for no account + 403", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
+
       onRowFailure({
         owner: "cinev",
         repo: "shotloom",
         account: null,
-        error,
+        error: new GitHubPullRequestEndpointsError([new GitHubApiError(403)]),
       });
 
-      expect(aggregator.reportUnauthRateLimit).toHaveBeenCalledTimes(1);
-      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("unauth-rate-limit");
     });
 
-    it("does not show any banner for unattributed errors (schema drift, network, etc.)", async () => {
+    it("emits unauth-rate-limit for no account + 429", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-
-      // A generic network error: we cannot attribute this to App coverage.
-      // The Configure access banner would be misleading guidance, so we stay
-      // silent and let the developer diagnose via console warnings.
-      onRowFailure({
-        owner: "cinev",
-        repo: "shotloom",
-        account: { id: "acc-1" },
-        error: new Error("Network down"),
-      });
-
-      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
-      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
-    });
-
-    it("does not show any banner for schema envelope failures", async () => {
-      const aggregator = makeAggregator();
-      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
 
       onRowFailure({
         owner: "cinev",
         repo: "shotloom",
-        account: { id: "acc-1" },
-        error: {
-          kind: "schema",
-          status: null,
-          message: "Response shape changed",
-        },
+        account: null,
+        error: new GitHubPullRequestEndpointsError([new GitHubApiError(429)]),
       });
 
-      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
-      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("unauth-rate-limit");
     });
 
-    it("does not show any banner for unknown envelope failures", async () => {
+    it("emits signin-required for no account + 404", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: null,
+        error: new GitHubPullRequestEndpointsError([new GitHubApiError(404)]),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
+    });
+
+    it("picks the highest-priority kind across mixed failures (auth-expired wins over app-uncovered)", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
 
       onRowFailure({
         owner: "cinev",
         repo: "shotloom",
         account: { id: "acc-1" },
-        error: {
-          kind: "unknown",
-          status: null,
-          message: "Background fetch aborted",
-        },
+        error: new GitHubPullRequestEndpointsError([
+          new GitHubApiError(404),
+          new GitHubApiError(401),
+        ]),
       });
 
-      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
-      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
+      expect(aggregator.reportFailure).toHaveBeenCalledTimes(1);
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-expired");
     });
 
-    it("does not show any banner for empty endpoint envelope failures", async () => {
+    it("does not emit any kind for unattributed errors (network, schema, unknown envelope, empty failures)", async () => {
+      const cases: unknown[] = [
+        new Error("Network down"),
+        { kind: "schema", status: null, message: "Response shape changed" },
+        { kind: "unknown", status: null, message: "Background fetch aborted" },
+        { kind: "github-endpoints", status: null, failures: [] },
+      ];
+
+      for (const error of cases) {
+        const aggregator = makeAggregator();
+        const { onRowFailure } = await bootContent(aggregator);
+        onRowFailure({
+          owner: "cinev",
+          repo: "shotloom",
+          account: { id: "acc-1" },
+          error,
+        });
+        expect(aggregator.reportFailure).not.toHaveBeenCalled();
+      }
+    });
+
+    it("classifies serialized envelope failures with rateLimited identical to live errors", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
 
@@ -257,35 +320,18 @@ describe("content entrypoint", () => {
         account: { id: "acc-1" },
         error: {
           kind: "github-endpoints",
-          status: null,
-          failures: [],
-        },
-      });
-
-      expect(aggregator.reportUncovered).not.toHaveBeenCalled();
-      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
-    });
-
-    it("classifies serialized reviewer-fetch failures the same way as GitHubApiError instances", async () => {
-      const aggregator = makeAggregator();
-      const { onRowFailure } = await bootContent(aggregator);
-
-      onRowFailure({
-        owner: "cinev",
-        repo: "shotloom",
-        account: { id: "acc-1" },
-        error: {
-          kind: "github-endpoints",
-          status: 404,
+          status: 403,
           failures: [
-            { status: 404, endpoint: "/repos/cinev/shotloom/pulls/42" },
-            { status: 403, endpoint: "/repos/cinev/shotloom/pulls/42/reviews" },
+            {
+              status: 403,
+              endpoint: "/repos/cinev/shotloom/pulls/42",
+              rateLimited: true,
+            },
           ],
         },
       });
 
-      expect(aggregator.reportUncovered).toHaveBeenCalledTimes(1);
-      expect(aggregator.reportUnauthRateLimit).not.toHaveBeenCalled();
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
     });
   });
 });
