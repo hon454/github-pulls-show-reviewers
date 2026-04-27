@@ -38,9 +38,8 @@ export function mountBanner(input: {
   let element: HTMLElement | null = null;
 
   function render(state: BannerState): void {
-    const visible = !state.dismissed && state.current != null;
-
-    if (!visible) {
+    const current = state.current;
+    if (state.dismissed || current == null) {
       element?.remove();
       element = null;
       return;
@@ -69,7 +68,7 @@ export function mountBanner(input: {
     message.textContent = formatBannerMessage(state);
     element.append(message);
 
-    const cta = ctaFor(state.current!, input.installUrl, input.optionsPageUrl);
+    const cta = ctaFor(current, input.installUrl, input.optionsPageUrl);
     if (cta.kind === "link") {
       const link = document.createElement("a");
       link.href = cta.href;
