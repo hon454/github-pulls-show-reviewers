@@ -13,7 +13,9 @@
   GitHub REST calls, so access tokens never enter the content-script
   execution context. No user-typed scope patterns.
 - Row-level failures render an empty reviewer slot. A page-level banner surfaces
-  uncovered-org guidance and unauthenticated rate-limit hints.
+  one of five guidance states — token expired, App not installed, auth rate
+  limit, unauthenticated rate limit, or sign-in required — chosen by severity
+  priority across all row failures on the page.
 
 ## Runtime flow
 
@@ -54,18 +56,23 @@
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
 - If request volume becomes the next real bottleneck after launch, the preferred follow-up is a page-level batch strategy on the existing REST path before considering a broader API migration.
 
-## Repository diagnostics matrix
+## Access banner classification
 
-| Mode               | Response pattern                              | Reported UX                                                                 |
-| ------------------ | --------------------------------------------- | --------------------------------------------------------------------------- |
-| No signed-in account | 200 for pulls list, pull detail, and reviews | Repository works on the public no-token path                                |
-| No signed-in account | 403 with rate-limit signal                   | Unauthenticated rate limit exhausted                                        |
-| No signed-in account | 404 / 401 / private-like 403                 | Repository behaves like a private or permission-gated resource              |
-| Matched account    | 401 on a repository endpoint, refresh succeeds | Access token was expired — refreshed transparently via the background script |
-| Matched account    | 401 with no stored refresh token              | Pre-v4 account or refresh token never issued — marked `revoked`, sign in again |
-| Matched account    | 401 then refresh returns `bad_refresh_token`  | Refresh token rejected — marked `refresh_failed`, sign in again from the options page |
-| Matched account    | 401 then refresh succeeds then 401 again      | New access token rejected (app revoked or scope changed) — marked `revoked`, sign in again |
-| Matched account    | 403 / 404 without rate-limit signal           | Installation does not cover this repository — install the GitHub App on the owner |
+| Account state | Failure pattern                                           | Banner kind          | CTA              |
+| ------------- | --------------------------------------------------------- | -------------------- | ---------------- |
+| Signed in     | 401 on any reviewer endpoint                              | `auth-expired`       | Sign in          |
+| Signed in     | 404 / 403 with no rate-limit signal                       | `app-uncovered`      | Configure access |
+| Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`               | `auth-rate-limit`    | (passive wait)   |
+| No account    | 403, 429, or any rate-limit signal                        | `unauth-rate-limit`  | Sign in          |
+| No account    | 404                                                       | `signin-required`    | Sign in          |
+| Either        | Network / schema / unknown / empty endpoint envelope      | (silent, console.warn) | —             |
+
+Severity priority for cross-row resolution: `auth-expired` > `app-uncovered` >
+`auth-rate-limit` > `unauth-rate-limit` > `signin-required`. The highest-priority
+kind seen on a page wins.
+
+Banner dismissal is keyed by `pathname + kind`, so dismissing one kind on a page
+does not suppress a later, higher-priority kind on the same page.
 
 ## Proactive token refresh
 
