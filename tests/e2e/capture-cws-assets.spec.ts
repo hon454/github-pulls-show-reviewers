@@ -343,6 +343,7 @@ async function assertFixtureCopy(page: Page): Promise<void> {
   await expect(page.locator(".repo")).toContainText(screenshotRepo.owner);
   await expect(page.locator(".repo")).toContainText(screenshotRepo.repo);
   await expect(page.getByRole("link", { name: fixturePrimaryTitle })).toBeVisible();
+  await expect(page.locator(".floating-help")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("CINEV");
   await expect(page.locator("body")).not.toContainText("shotloom");
 }
