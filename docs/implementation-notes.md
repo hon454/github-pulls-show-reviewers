@@ -100,6 +100,17 @@ snapshot is in-memory only — it is never persisted.
 - Collapse request volume further where practical.
 - Add more fixture-backed extension boot coverage for GitHub DOM variants.
 
+## End-to-end banner coverage
+
+- `tests/e2e/extension.spec.ts` covers two access-banner failure flows on the
+  packaged MV3 build using fixture HTML with a `<main>` mount target:
+  - Signed-out 429 with rate-limit headers — asserts the
+    `unauth-rate-limit` copy, the `Sign in` CTA, and the relative reset time.
+  - Signed-in 404 against a covered owner — seeds an account into
+    `chrome.storage.local` from a chrome-extension page, then asserts the
+    `app-uncovered` copy and the `Configure access` CTA pointing at the App
+    installation URL.
+
 ## Device flow
 
 - Polling lives on the options page because MV3 service workers unload on idle.
