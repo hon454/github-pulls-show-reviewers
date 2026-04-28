@@ -129,6 +129,91 @@ describe("bannerAggregator", () => {
     expect(b.getState().dismissed).toBe(false);
   });
 
+  it("carries the rate-limit snapshot when reportFailure is called with one", () => {
+    const aggregator = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
+    const snapshot = {
+      limit: 5000,
+      remaining: 0,
+      resource: "core",
+      resetAt: 1_700_000_300,
+    };
+    aggregator.reportFailure("auth-rate-limit", { rateLimit: snapshot });
+    expect(aggregator.getState()).toMatchObject({
+      current: "auth-rate-limit",
+      rateLimit: snapshot,
+    });
+  });
+
+  it("ignores info passed for non-rate-limit kinds", () => {
+    const aggregator = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
+    aggregator.reportFailure("auth-expired", {
+      rateLimit: { limit: 1, remaining: 0, resource: null, resetAt: null },
+    });
+    expect(aggregator.getState().rateLimit).toBeUndefined();
+  });
+
+  it("backfills the rate-limit snapshot when a later same-kind report carries one", () => {
+    const aggregator = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
+    aggregator.reportFailure("auth-rate-limit");
+    expect(aggregator.getState().rateLimit).toBeUndefined();
+    const snapshot = {
+      limit: 5000,
+      remaining: 0,
+      resource: "core",
+      resetAt: 1_700_000_300,
+    };
+    aggregator.reportFailure("auth-rate-limit", { rateLimit: snapshot });
+    expect(aggregator.getState().rateLimit).toEqual(snapshot);
+  });
+
+  it("keeps the first rate-limit snapshot when a later same-kind report has a different one", () => {
+    const aggregator = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
+    const first = {
+      limit: 5000,
+      remaining: 0,
+      resource: "core",
+      resetAt: 1_700_000_300,
+    };
+    const second = {
+      limit: 5000,
+      remaining: 1,
+      resource: "core",
+      resetAt: 1_700_001_000,
+    };
+    aggregator.reportFailure("auth-rate-limit", { rateLimit: first });
+    aggregator.reportFailure("auth-rate-limit", { rateLimit: second });
+    expect(aggregator.getState().rateLimit).toEqual(first);
+  });
+
+  it("clears the rate-limit snapshot when a higher-priority non-rate-limit kind takes over", () => {
+    const aggregator = createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
+    aggregator.reportFailure("auth-rate-limit", {
+      rateLimit: {
+        limit: 5000,
+        remaining: 0,
+        resource: "core",
+        resetAt: 1_700_000_300,
+      },
+    });
+    aggregator.reportFailure("auth-expired");
+    expect(aggregator.getState().rateLimit).toBeUndefined();
+  });
+
   it("re-reads dismissed from storage when current is upgraded to a kind dismissed earlier", () => {
     const seed = createBannerAggregator({
       pathname: "/cinev/shotloom/pulls",
@@ -178,7 +263,104 @@ describe("formatBannerMessage", () => {
     expect(
       formatBannerMessage({ current: "unauth-rate-limit", repo: TEST_REPO }),
     ).toBe(
-      "GitHub's unauthenticated request limit (60/hr) was reached. Sign in to raise it to 5,000/hr.",
+      "GitHub's unauthenticated request limit was reached. (60/hr unauthenticated cap) Sign in to raise it to 5,000/hr.",
+    );
+  });
+
+  it("includes used/limit details for auth-rate-limit when a snapshot is present", () => {
+    expect(
+      formatBannerMessage(
+        {
+          current: "auth-rate-limit",
+          repo: TEST_REPO,
+          rateLimit: {
+            limit: 5000,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1_700_000_300,
+          },
+        },
+        { now: () => 1_700_000_000 * 1000 }, // ~5 minutes before reset
+      ),
+    ).toBe(
+      "GitHub's hourly request limit was reached. (5000/5000 used) Reviewers will resume in about 5 minutes.",
+    );
+  });
+
+  it("includes used/limit details and reset time for unauth-rate-limit when a snapshot is present", () => {
+    expect(
+      formatBannerMessage(
+        {
+          current: "unauth-rate-limit",
+          repo: TEST_REPO,
+          rateLimit: {
+            limit: 60,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1_700_000_300,
+          },
+        },
+        { now: () => 1_700_000_000 * 1000 },
+      ),
+    ).toBe(
+      "GitHub's unauthenticated request limit was reached. (60/60 used) Sign in to raise it to 5,000/hr. Resets in about 5 minutes.",
+    );
+  });
+
+  it("falls back to the limit-only segment when only the reset time is missing", () => {
+    expect(
+      formatBannerMessage({
+        current: "auth-rate-limit",
+        repo: TEST_REPO,
+        rateLimit: {
+          limit: 5000,
+          remaining: 0,
+          resource: "core",
+          resetAt: null,
+        },
+      }),
+    ).toBe(
+      "GitHub's hourly request limit was reached. (5000/5000 used) Reviewers will resume automatically when the limit resets.",
+    );
+  });
+
+  it("falls back to the reset-time segment when limit/remaining are missing", () => {
+    expect(
+      formatBannerMessage(
+        {
+          current: "auth-rate-limit",
+          repo: TEST_REPO,
+          rateLimit: {
+            limit: null,
+            remaining: null,
+            resource: null,
+            resetAt: 1_700_003_600,
+          },
+        },
+        { now: () => 1_700_000_000 * 1000 }, // ~1 hour before reset
+      ),
+    ).toBe(
+      "GitHub's hourly request limit was reached. Reviewers will resume in about 1 hour.",
+    );
+  });
+
+  it("uses 'shortly' when the reset time is already in the past", () => {
+    expect(
+      formatBannerMessage(
+        {
+          current: "auth-rate-limit",
+          repo: TEST_REPO,
+          rateLimit: {
+            limit: null,
+            remaining: null,
+            resource: null,
+            resetAt: 1_699_999_000,
+          },
+        },
+        { now: () => 1_700_000_000 * 1000 },
+      ),
+    ).toBe(
+      "GitHub's hourly request limit was reached. Reviewers will resume shortly.",
     );
   });
 

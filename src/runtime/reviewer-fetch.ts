@@ -21,10 +21,18 @@ export type CancelPullReviewerSummaryMessage = {
   requestId: string;
 };
 
+export type ReviewerFetchRateLimitSnapshot = {
+  limit: number | null;
+  remaining: number | null;
+  resource: string | null;
+  resetAt: number | null;
+};
+
 export type ReviewerFetchFailure = {
   status: number;
   endpoint: string | null;
   rateLimited: boolean;
+  rateLimit?: ReviewerFetchRateLimitSnapshot;
 };
 
 export type ReviewerFetchErrorEnvelope = {
@@ -85,11 +93,7 @@ export function serializeReviewerFetchError(
     return {
       kind: "github-endpoints",
       status: extractGitHubApiStatus(error),
-      failures: error.failures.map((failure) => ({
-        status: failure.status,
-        endpoint: failure.endpoint?.path ?? null,
-        rateLimited: isRateLimitError(failure),
-      })),
+      failures: error.failures.map(toReviewerFetchFailure),
       message: error.message,
     };
   }
@@ -98,13 +102,7 @@ export function serializeReviewerFetchError(
     return {
       kind: "github-api",
       status: error.status,
-      failures: [
-        {
-          status: error.status,
-          endpoint: error.endpoint?.path ?? null,
-          rateLimited: isRateLimitError(error),
-        },
-      ],
+      failures: [toReviewerFetchFailure(error)],
       message: error.message,
     };
   }
@@ -139,21 +137,11 @@ export function extractReviewerFetchFailures(
   }
 
   if (error instanceof GitHubPullRequestEndpointsError) {
-    return error.failures.map((failure) => ({
-      status: failure.status,
-      endpoint: failure.endpoint?.path ?? null,
-      rateLimited: isRateLimitError(failure),
-    }));
+    return error.failures.map(toReviewerFetchFailure);
   }
 
   if (error instanceof GitHubApiError) {
-    return [
-      {
-        status: error.status,
-        endpoint: error.endpoint?.path ?? null,
-        rateLimited: isRateLimitError(error),
-      },
-    ];
+    return [toReviewerFetchFailure(error)];
   }
 
   if (
@@ -163,21 +151,33 @@ export function extractReviewerFetchFailures(
     Array.isArray((error as { failures: unknown }).failures)
   ) {
     return (
-      error as { failures: Array<{ status?: unknown; endpoint?: unknown; rateLimited?: unknown }> }
+      error as {
+        failures: Array<{
+          status?: unknown;
+          endpoint?: unknown;
+          rateLimited?: unknown;
+          rateLimit?: unknown;
+        }>;
+      }
     ).failures
       .filter(
         (failure): failure is {
           status: number;
           endpoint?: string | null;
           rateLimited?: boolean;
+          rateLimit?: unknown;
         } => typeof failure?.status === "number",
       )
-      .map((failure) => ({
-        status: failure.status,
-        endpoint:
-          typeof failure.endpoint === "string" ? failure.endpoint : null,
-        rateLimited: failure.rateLimited === true,
-      }));
+      .map((failure) => {
+        const base: ReviewerFetchFailure = {
+          status: failure.status,
+          endpoint:
+            typeof failure.endpoint === "string" ? failure.endpoint : null,
+          rateLimited: failure.rateLimited === true,
+        };
+        const rateLimit = parseRateLimitSnapshot(failure.rateLimit);
+        return rateLimit == null ? base : { ...base, rateLimit };
+      });
   }
 
   if (
@@ -196,6 +196,63 @@ export function extractReviewerFetchFailures(
   }
 
   return [];
+}
+
+function toReviewerFetchFailure(failure: GitHubApiError): ReviewerFetchFailure {
+  const base: ReviewerFetchFailure = {
+    status: failure.status,
+    endpoint: failure.endpoint?.path ?? null,
+    rateLimited: isRateLimitError(failure),
+  };
+  const rateLimit = readGitHubApiErrorRateLimit(failure);
+  return rateLimit == null ? base : { ...base, rateLimit };
+}
+
+function readGitHubApiErrorRateLimit(
+  failure: GitHubApiError,
+): ReviewerFetchRateLimitSnapshot | undefined {
+  const snapshot = failure.rateLimit;
+  if (snapshot == null) {
+    return undefined;
+  }
+  if (
+    snapshot.limit == null &&
+    snapshot.remaining == null &&
+    snapshot.resource == null &&
+    snapshot.resetAt == null
+  ) {
+    return undefined;
+  }
+  return {
+    limit: snapshot.limit,
+    remaining: snapshot.remaining,
+    resource: snapshot.resource,
+    resetAt: snapshot.resetAt,
+  };
+}
+
+function parseRateLimitSnapshot(
+  value: unknown,
+): ReviewerFetchRateLimitSnapshot | undefined {
+  if (value == null || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const candidate: ReviewerFetchRateLimitSnapshot = {
+    limit: typeof record.limit === "number" ? record.limit : null,
+    remaining: typeof record.remaining === "number" ? record.remaining : null,
+    resource: typeof record.resource === "string" ? record.resource : null,
+    resetAt: typeof record.resetAt === "number" ? record.resetAt : null,
+  };
+  if (
+    candidate.limit == null &&
+    candidate.remaining == null &&
+    candidate.resource == null &&
+    candidate.resetAt == null
+  ) {
+    return undefined;
+  }
+  return candidate;
 }
 
 function hasNonEmptyString(value: unknown): value is string {
