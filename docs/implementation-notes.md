@@ -78,8 +78,9 @@ For rate-limit kinds (`auth-rate-limit`, `unauth-rate-limit`), the GitHub
 response's `x-ratelimit-limit / -remaining / -reset / -resource` headers ride
 with the failure envelope (`ReviewerFetchFailure.rateLimit`) into the
 aggregator, so the banner can report `(used/limit)` and a relative reset
-time. Callers fall back to the static copy whenever the snapshot is missing
-or partial. The snapshot is in-memory only — it is never persisted.
+time. Callers fall back segment-by-segment: missing limit/remaining omits the
+usage clause, and a missing reset timestamp keeps the static reset copy. The
+snapshot is in-memory only — it is never persisted.
 
 ## Proactive token refresh
 

@@ -235,6 +235,38 @@ describe("content entrypoint", () => {
       });
     });
 
+    it("backfills rate-limit details from a later same-kind failure", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: new GitHubPullRequestEndpointsError([
+          new GitHubApiError(429),
+          new GitHubApiError(403, undefined, undefined, {
+            limit: 5000,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1,
+          }),
+        ]),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
+        rateLimit: {
+          limit: 5000,
+          remaining: 0,
+          resource: "core",
+          resetAt: 1,
+        },
+      });
+    });
+
     it("emits unauth-rate-limit with the response snapshot for no account + 403 + rate-limit headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);

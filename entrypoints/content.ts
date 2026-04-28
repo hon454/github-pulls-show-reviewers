@@ -82,16 +82,30 @@ function classifyRowFailure(
   for (const failure of failures) {
     const kind = classifyFailure(failure, account);
     if (kind == null) continue;
-    if (best != null && !isHigherPriority(kind, best.kind)) continue;
+    if (best != null && !isHigherPriority(kind, best.kind)) {
+      if (
+        kind === best.kind &&
+        isRateLimitKind(kind) &&
+        best.info?.rateLimit == null &&
+        failure.rateLimit != null
+      ) {
+        best = { kind, info: { rateLimit: failure.rateLimit } };
+      }
+      continue;
+    }
     best = {
       kind,
       info:
-        kind === "auth-rate-limit" || kind === "unauth-rate-limit"
+        isRateLimitKind(kind)
           ? { rateLimit: failure.rateLimit }
           : undefined,
     };
   }
   return best;
+}
+
+function isRateLimitKind(kind: BannerKind): boolean {
+  return kind === "auth-rate-limit" || kind === "unauth-rate-limit";
 }
 
 function classifyFailure(
