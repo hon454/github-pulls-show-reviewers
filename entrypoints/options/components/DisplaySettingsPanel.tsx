@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import {
   DEFAULT_PREFERENCES,
@@ -10,16 +10,47 @@ import {
 export function DisplaySettingsPanel() {
   const [preferences, setPreferences] =
     useState<Preferences>(DEFAULT_PREFERENCES);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<{
+    tone: "neutral" | "error";
+    message: string;
+  } | null>(null);
+  const busyRef = useRef(false);
 
   useEffect(() => {
     void (async () => {
-      setPreferences(await getPreferences());
+      try {
+        setPreferences(await getPreferences());
+      } catch (error) {
+        setStatus({
+          tone: "error",
+          message: `Could not load display settings. ${errorMessage(error)}`,
+        });
+      }
     })();
   }, []);
 
   async function handleChange(patch: Partial<Omit<Preferences, "version">>) {
-    const next = await updatePreferences(patch);
-    setPreferences(next);
+    if (busyRef.current) {
+      return;
+    }
+
+    busyRef.current = true;
+    setBusy(true);
+    setStatus({ tone: "neutral", message: "Saving display settings..." });
+    try {
+      const next = await updatePreferences(patch);
+      setPreferences(next);
+      setStatus(null);
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: `Could not save display settings. ${errorMessage(error)}`,
+      });
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
   }
 
   return (
@@ -33,8 +64,9 @@ export function DisplaySettingsPanel() {
           data-testid="prefs-show-state-badge"
           type="checkbox"
           checked={preferences.showStateBadge}
+          disabled={busy}
           onChange={(event) =>
-            handleChange({ showStateBadge: event.target.checked })
+            void handleChange({ showStateBadge: event.target.checked })
           }
         />
         <span>Show review state badge on avatars</span>
@@ -44,8 +76,9 @@ export function DisplaySettingsPanel() {
           data-testid="prefs-show-reviewer-name"
           type="checkbox"
           checked={preferences.showReviewerName}
+          disabled={busy}
           onChange={(event) =>
-            handleChange({ showReviewerName: event.target.checked })
+            void handleChange({ showReviewerName: event.target.checked })
           }
         />
         <span>Show reviewer names</span>
@@ -55,14 +88,34 @@ export function DisplaySettingsPanel() {
           data-testid="prefs-open-pulls-only"
           type="checkbox"
           checked={preferences.openPullsOnly}
+          disabled={busy}
           onChange={(event) =>
-            handleChange({ openPullsOnly: event.target.checked })
+            void handleChange({ openPullsOnly: event.target.checked })
           }
         />
         <span>Open pull requests only in reviewer links</span>
       </label>
+      {status ? (
+        <p
+          style={{
+            ...styles.status,
+            color: status.tone === "error" ? "#cf222e" : "#52463b",
+          }}
+          role="status"
+          aria-live="polite"
+          data-testid={status.tone === "error" ? "prefs-error" : "prefs-status"}
+        >
+          {status.message}
+        </p>
+      ) : null}
     </section>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : "Please try again.";
 }
 
 const styles: Record<string, CSSProperties> = {
@@ -86,5 +139,10 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 14,
     color: "#221d18",
     cursor: "pointer",
+  },
+  status: {
+    margin: "8px 0 0",
+    fontSize: 13,
+    lineHeight: 1.5,
   },
 };

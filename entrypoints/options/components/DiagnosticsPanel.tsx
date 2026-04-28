@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties } from "react";
 
 import { validateRepositoryAccessWithAccount } from "../../../src/auth/account-token-refresh";
 import { validateGitHubRepositoryAccess } from "../../../src/github/api";
@@ -16,6 +16,28 @@ export function DiagnosticsPanel() {
   const [status, setStatus] = useState<Status>(null);
   const [matchedAccount, setMatchedAccount] = useState<Account | null>(null);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+
+  async function runDiagnostic(execute: () => Promise<void>) {
+    if (busyRef.current) {
+      return;
+    }
+
+    busyRef.current = true;
+    setBusy(true);
+    setStatus({ tone: "neutral", message: "Running diagnostics..." });
+    try {
+      await execute();
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: `Could not run diagnostics. ${errorMessage(error)}`,
+      });
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
 
   async function runMatched() {
     const trimmed = repository.trim();
@@ -27,8 +49,7 @@ export function DiagnosticsPanel() {
       });
       return;
     }
-    setBusy(true);
-    try {
+    await runDiagnostic(async () => {
       const account = await resolveAccountForRepo(match[1], match[2]);
       setMatchedAccount(account);
       if (account == null) {
@@ -43,9 +64,7 @@ export function DiagnosticsPanel() {
         repository: trimmed,
       });
       setStatus({ tone: result.ok ? "success" : "error", message: result.message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   async function runNoToken() {
@@ -57,14 +76,11 @@ export function DiagnosticsPanel() {
       });
       return;
     }
-    setBusy(true);
     setMatchedAccount(null);
-    try {
+    await runDiagnostic(async () => {
       const result = await validateGitHubRepositoryAccess(null, trimmed);
       setStatus({ tone: result.ok ? "success" : "error", message: result.message });
-    } finally {
-      setBusy(false);
-    }
+    });
   }
 
   return (
@@ -102,12 +118,23 @@ export function DiagnosticsPanel() {
         <p style={styles.hint}>Matched account: @{matchedAccount.login}.</p>
       ) : null}
       {status ? (
-        <p style={{ ...styles.hint, color: toneColor(status.tone) }}>
+        <p
+          style={{ ...styles.hint, color: toneColor(status.tone) }}
+          role="status"
+          aria-live="polite"
+          data-testid="diagnostics-status"
+        >
           {status.message}
         </p>
       ) : null}
     </section>
   );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : "Please try again.";
 }
 
 function toneColor(tone: "neutral" | "success" | "error"): string {
