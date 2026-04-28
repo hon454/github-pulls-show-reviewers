@@ -28,6 +28,8 @@ This extension brings that information into the list itself with lightweight inl
 | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | ![Before and after reviewer chips](./docs/chrome-web-store-assets/01-pr-list-before-after.png) | ![Avatar-only reviewer state showcase](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png) |
 
+The screenshots are generated from a deterministic fictional GitHub-style pull request fixture, so store assets stay realistic without depending on live dummy pull requests or real project data.
+
 Core behavior:
 
 - Show requested user reviewers on PR list rows
