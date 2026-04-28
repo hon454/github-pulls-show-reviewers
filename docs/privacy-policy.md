@@ -53,4 +53,6 @@ To provide its reviewer visibility feature, the extension may access:
 
 ## Contact
 
-If you publish this extension, replace this section with the maintainer's support or privacy contact address before submitting to the Chrome Web Store.
+For privacy questions, support requests, or to report a concern about this
+extension, open an issue on the maintainer's public GitHub Issues tracker:
+<https://github.com/hon454/github-pulls-show-reviewers/issues>.
