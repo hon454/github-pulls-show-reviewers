@@ -12,11 +12,13 @@ const outputDir = path.join(projectRoot, "docs/chrome-web-store-assets");
 const pullsFixturePath = path.join(projectRoot, "tests/fixtures/github-pulls.html");
 
 const screenshotRepo = {
-  owner: "CINEV",
-  repo: "shotloom",
+  owner: "Northstar",
+  repo: "atlas-ui",
 } as const;
 const screenshotRepoFullName = `${screenshotRepo.owner}/${screenshotRepo.repo}`;
 const screenshotPullsUrl = `https://github.com/${screenshotRepoFullName}/pulls`;
+const fixturePrimaryTitle =
+  "feat(canvas): add alignment handles to selection overlay";
 
 type ReviewPayload = {
   state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED";
@@ -37,35 +39,36 @@ type PullScene = {
   expectedBadgeClasses: string[];
 };
 
-const avatarBase = "https://avatars.githubusercontent.com/u";
+const avatarBase = "https://avatars.example.test/reviewers";
+const avatarUrl = (login: string): string => `${avatarBase}/${login}.svg`;
 
 const avatarStateScenes: PullScene[] = [
   {
     pullNumber: "200",
     summary: {
-      user: { login: "hon454" },
+      user: { login: "mira" },
       requested_reviewers: [
-        { login: "alice", avatar_url: `${avatarBase}/1?v=4` },
+        { login: "ava", avatar_url: avatarUrl("ava") },
       ],
-      requested_teams: [{ slug: "engine" }],
+      requested_teams: [{ slug: "design-systems" }],
     },
     reviews: [
       {
         state: "APPROVED",
         submitted_at: "2026-04-20T12:00:00Z",
-        user: { login: "bob", avatar_url: `${avatarBase}/2?v=4` },
+        user: { login: "ben", avatar_url: avatarUrl("ben") },
       },
     ],
-    expectedLogins: ["alice", "bob"],
-    expectedTeamText: "Team: engine",
+    expectedLogins: ["ava", "ben"],
+    expectedTeamText: "Team: design-systems",
     expectedBadgeClasses: ["ghpsr-badge--approved"],
   },
   {
     pullNumber: "199",
     summary: {
-      user: { login: "hon454" },
+      user: { login: "mira" },
       requested_reviewers: [
-        { login: "mona", avatar_url: `${avatarBase}/3?v=4` },
+        { login: "mona", avatar_url: avatarUrl("mona") },
       ],
       requested_teams: [],
     },
@@ -76,7 +79,7 @@ const avatarStateScenes: PullScene[] = [
   {
     pullNumber: "198",
     summary: {
-      user: { login: "hon454" },
+      user: { login: "mira" },
       requested_reviewers: [],
       requested_teams: [],
     },
@@ -84,7 +87,7 @@ const avatarStateScenes: PullScene[] = [
       {
         state: "CHANGES_REQUESTED",
         submitted_at: "2026-04-20T12:05:00Z",
-        user: { login: "kian", avatar_url: `${avatarBase}/4?v=4` },
+        user: { login: "kian", avatar_url: avatarUrl("kian") },
       },
     ],
     expectedLogins: ["kian"],
@@ -93,9 +96,9 @@ const avatarStateScenes: PullScene[] = [
   {
     pullNumber: "197",
     summary: {
-      user: { login: "ryumiel" },
+      user: { login: "soren" },
       requested_reviewers: [
-        { login: "jules", avatar_url: `${avatarBase}/5?v=4` },
+        { login: "jules", avatar_url: avatarUrl("jules") },
       ],
       requested_teams: [],
     },
@@ -103,12 +106,12 @@ const avatarStateScenes: PullScene[] = [
       {
         state: "APPROVED",
         submitted_at: "2026-04-20T12:10:00Z",
-        user: { login: "jules", avatar_url: `${avatarBase}/5?v=4` },
+        user: { login: "jules", avatar_url: avatarUrl("jules") },
       },
       {
         state: "COMMENTED",
         submitted_at: "2026-04-20T12:15:00Z",
-        user: { login: "riley", avatar_url: `${avatarBase}/6?v=4` },
+        user: { login: "riley", avatar_url: avatarUrl("riley") },
       },
     ],
     expectedLogins: ["jules", "riley"],
@@ -117,9 +120,9 @@ const avatarStateScenes: PullScene[] = [
   {
     pullNumber: "192",
     summary: {
-      user: { login: "hon454" },
+      user: { login: "mira" },
       requested_reviewers: [
-        { login: "nara", avatar_url: `${avatarBase}/7?v=4` },
+        { login: "nara", avatar_url: avatarUrl("nara") },
       ],
       requested_teams: [],
     },
@@ -127,7 +130,7 @@ const avatarStateScenes: PullScene[] = [
       {
         state: "DISMISSED",
         submitted_at: "2026-04-20T12:20:00Z",
-        user: { login: "ori", avatar_url: `${avatarBase}/8?v=4` },
+        user: { login: "ori", avatar_url: avatarUrl("ori") },
       },
     ],
     expectedLogins: ["nara", "ori"],
@@ -136,7 +139,7 @@ const avatarStateScenes: PullScene[] = [
   {
     pullNumber: "187",
     summary: {
-      user: { login: "dkfhddla" },
+      user: { login: "devon" },
       requested_reviewers: [],
       requested_teams: [],
     },
@@ -144,7 +147,7 @@ const avatarStateScenes: PullScene[] = [
       {
         state: "APPROVED",
         submitted_at: "2026-04-20T12:25:00Z",
-        user: { login: "tess", avatar_url: `${avatarBase}/9?v=4` },
+        user: { login: "tess", avatar_url: avatarUrl("tess") },
       },
     ],
     expectedLogins: ["tess"],
@@ -153,9 +156,9 @@ const avatarStateScenes: PullScene[] = [
   {
     pullNumber: "186",
     summary: {
-      user: { login: "dkfhddla" },
+      user: { login: "devon" },
       requested_reviewers: [
-        { login: "sol", avatar_url: `${avatarBase}/10?v=4` },
+        { login: "sol", avatar_url: avatarUrl("sol") },
       ],
       requested_teams: [],
     },
@@ -166,7 +169,7 @@ const avatarStateScenes: PullScene[] = [
   {
     pullNumber: "185",
     summary: {
-      user: { login: "dkfhddla" },
+      user: { login: "devon" },
       requested_reviewers: [],
       requested_teams: [],
     },
@@ -174,7 +177,7 @@ const avatarStateScenes: PullScene[] = [
       {
         state: "COMMENTED",
         submitted_at: "2026-04-20T12:30:00Z",
-        user: { login: "park", avatar_url: `${avatarBase}/11?v=4` },
+        user: { login: "park", avatar_url: avatarUrl("park") },
       },
     ],
     expectedLogins: ["park"],
@@ -189,6 +192,7 @@ test("capture Chrome Web Store assets", async () => {
 
   await withExtensionContext(async (context, extensionId) => {
     await routePullsFixture(context);
+    await routeSyntheticAvatars(context);
     await captureBeforeAfterScreenshot(context);
     await captureAvatarStateShowcase(context);
     await captureOptionsScreenshot(context, extensionId);
@@ -253,6 +257,36 @@ async function routePullsFixture(
   });
 }
 
+async function routeSyntheticAvatars(
+  context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+): Promise<void> {
+  await context.route(`${avatarBase}/*.svg`, async (route) => {
+    const fileName = new URL(route.request().url()).pathname.split("/").pop() ?? "";
+    const login = fileName.replace(/\.svg$/, "") || "reviewer";
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: buildAvatarSvg(login),
+    });
+  });
+}
+
+function buildAvatarSvg(login: string): string {
+  const hue = hashLogin(login) % 360;
+  const initials = login
+    .split("-")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="hsl(${hue} 72% 64%)"/><stop offset="1" stop-color="hsl(${(hue + 48) % 360} 68% 48%)"/></linearGradient></defs><rect width="48" height="48" rx="24" fill="url(#g)"/><text x="24" y="29" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#fff">${initials}</text></svg>`;
+}
+
+function hashLogin(login: string): number {
+  return [...login].reduce((hash, char) => hash + char.charCodeAt(0), 0);
+}
+
 async function routeReviewerScenes(
   context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
   scenes: PullScene[],
@@ -305,6 +339,14 @@ async function assertReviewerScenes(page: Page, scenes: PullScene[]): Promise<vo
   }
 }
 
+async function assertFixtureCopy(page: Page): Promise<void> {
+  await expect(page.locator(".repo")).toContainText(screenshotRepo.owner);
+  await expect(page.locator(".repo")).toContainText(screenshotRepo.repo);
+  await expect(page.getByRole("link", { name: fixturePrimaryTitle })).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("CINEV");
+  await expect(page.locator("body")).not.toContainText("shotloom");
+}
+
 async function stabilizePullListForScreenshot(page: Page): Promise<void> {
   await page.addStyleTag({
     content: `
@@ -328,6 +370,7 @@ async function captureMockedBeforeScreenshot(
   try {
     await routePullsFixture(context);
     await page.goto(screenshotPullsUrl);
+    await assertFixtureCopy(page);
     await expect(page.locator(".ghpsr-root")).toHaveCount(0);
     await stabilizePullListForScreenshot(page);
     await page.screenshot({ path: filePath });
@@ -345,6 +388,7 @@ async function captureMockedAfterScreenshot(
   const page = await context.newPage();
   try {
     await page.goto(screenshotPullsUrl);
+    await assertFixtureCopy(page);
     await assertReviewerScenes(page, scenes);
     await stabilizePullListForScreenshot(page);
     await page.screenshot({ path: filePath });
@@ -456,7 +500,7 @@ async function captureOptionsScreenshot(
   await setPreference(context, extensionId, "showReviewerName", true);
 
   await context.route(
-    "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=1&state=all",
+    `https://api.github.com/repos/${screenshotRepoFullName}/pulls?per_page=1&state=all`,
     async (route) => {
       await route.fulfill({
         status: 200,
@@ -467,24 +511,24 @@ async function captureOptionsScreenshot(
   );
 
   await context.route(
-    "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42",
+    `https://api.github.com/repos/${screenshotRepoFullName}/pulls/42`,
     async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          user: { login: "hon454" },
+          user: { login: "mira" },
           requested_reviewers: [
-            { login: "alice", avatar_url: `${avatarBase}/1?v=4` },
+            { login: "ava", avatar_url: avatarUrl("ava") },
           ],
-          requested_teams: [{ slug: "platform" }],
+          requested_teams: [{ slug: "design-systems" }],
         }),
       });
     },
   );
 
   await context.route(
-    "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews**",
+    `https://api.github.com/repos/${screenshotRepoFullName}/pulls/42/reviews**`,
     async (route) => {
       await route.fulfill({
         status: 200,
@@ -493,7 +537,7 @@ async function captureOptionsScreenshot(
           {
             state: "APPROVED",
             submitted_at: "2026-04-20T09:00:00Z",
-            user: { login: "bob", avatar_url: `${avatarBase}/2?v=4` },
+            user: { login: "ben", avatar_url: avatarUrl("ben") },
           },
         ]),
       });
@@ -503,7 +547,7 @@ async function captureOptionsScreenshot(
   const page = await context.newPage();
   await page.goto(`chrome-extension://${extensionId}/options.html`);
   await expect(page.getByTestId("prefs-show-reviewer-name")).toBeChecked();
-  await page.getByTestId("diagnostics-repo").fill("hon454/github-pulls-show-reviewers");
+  await page.getByTestId("diagnostics-repo").fill(screenshotRepoFullName);
   await page.getByTestId("diagnostics-no-token").click();
   await expect(page.locator("body")).toContainText("without a token");
   await page.screenshot({
@@ -512,13 +556,13 @@ async function captureOptionsScreenshot(
   await page.close();
 
   await context.unroute(
-    "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=1&state=all",
+    `https://api.github.com/repos/${screenshotRepoFullName}/pulls?per_page=1&state=all`,
   );
   await context.unroute(
-    "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42",
+    `https://api.github.com/repos/${screenshotRepoFullName}/pulls/42`,
   );
   await context.unroute(
-    "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews**",
+    `https://api.github.com/repos/${screenshotRepoFullName}/pulls/42/reviews**`,
   );
 }
 
