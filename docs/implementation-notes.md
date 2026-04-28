@@ -79,6 +79,14 @@ does not suppress a later, higher-priority kind on the same page.
 - A recurring `chrome.alarms` job (15-minute period, 30-minute refresh threshold) pre-warms access tokens before the reactive 401 path is needed, and invalidates accounts whose refresh token has already expired.
 - Design rationale, alternatives, and the revisit trigger live in [ADR 0005](./adr/0005-proactive-refresh.md).
 
+## Stale GitHub App installation self-healing
+
+- `resolveAccountForRepo` reads the locally cached installations snapshot, so a repo added to an existing installation outside the extension can look uncovered until the next manual `Refresh installations` click.
+- `createSelfHealingAccountResolver` (`src/features/reviewers/account-resolution.ts`) wraps the resolution: when the cached lookup misses, it scans for accounts that own a `selected` installation on the same owner but do not list the repo, then sends a `refreshAccountInstallations` message to the background and re-runs the resolution.
+- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. Tokens never enter the content-script context.
+- Each candidate is refreshed at most once per page session. A successful refresh writes to `account:installations:*`, which the existing `accountsChange` storage listener uses to clear the row cache and re-render covered rows transparently.
+- Genuinely uncovered repos still flow into the `app-uncovered` / `signin-required` banner copy after the refresh attempt completes.
+
 ## Next implementation targets
 
 - Collapse request volume further where practical.
