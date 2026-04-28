@@ -56,6 +56,29 @@ describe("refreshAccessToken", () => {
     expect(body).toContain("refresh_token=ghr_old");
   });
 
+  it("returns null refresh fields when the success response omits refresh_token rotation", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({
+        access_token: "ghu_newaccess",
+        expires_in: 28800,
+        scope: "",
+        token_type: "bearer",
+      }),
+    );
+
+    const result = await refreshAccessToken({
+      clientId: "Iv1.test",
+      refreshToken: "ghr_old",
+    });
+
+    expect(result).toEqual({
+      accessToken: "ghu_newaccess",
+      refreshToken: null,
+      expiresAt: Date.UTC(2026, 3, 23, 0, 0, 0) + 28_800_000,
+      refreshTokenExpiresAt: null,
+    });
+  });
+
   it("throws RefreshTokenError(terminal) for bad_refresh_token", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(fixture("refresh-token-bad.json")),
