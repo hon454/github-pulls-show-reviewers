@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
+import { fireEvent } from "@testing-library/react";
 import { act, createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as GitHubApiModule from "../src/github/api";
 import type { Account } from "../src/storage/accounts";
 import type * as AccountsModule from "../src/storage/accounts";
 
 type AccountsModuleType = typeof AccountsModule;
+type GitHubApiModuleType = typeof GitHubApiModule;
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -15,7 +18,9 @@ const listAccountsMock = vi.fn<() => Promise<Account[]>>(async () => []);
 const getAccountByIdMock = vi.fn<() => Promise<Account | null>>(
   async () => null,
 );
+const removeAccountMock = vi.fn(async () => {});
 const replaceInstallationsMock = vi.fn(async () => {});
+const resolveAccountForRepoMock = vi.fn(async () => null);
 
 const getPreferencesMock = vi.fn(async () => ({
   version: 1 as const,
@@ -51,10 +56,10 @@ vi.mock("../src/storage/accounts", async (importActual) => {
       invalidated: false,
       invalidatedReason: null,
     })),
-    removeAccount: vi.fn(async () => {}),
+    removeAccount: removeAccountMock,
     replaceInstallations: replaceInstallationsMock,
     getAccountById: getAccountByIdMock,
-    resolveAccountForRepo: vi.fn(async () => null),
+    resolveAccountForRepo: resolveAccountForRepoMock,
   };
 });
 
@@ -78,6 +83,16 @@ vi.mock("../src/github/auth", () => ({
   fetchUserInstallations: vi.fn(),
   fetchInstallationRepositories: vi.fn(),
   DeviceFlowError: class extends Error {},
+}));
+
+const validateGitHubRepositoryAccessMock = vi.fn(async () => ({
+  ok: true,
+  message: "Repository is accessible.",
+}));
+
+vi.mock("../src/github/api", async (importActual) => ({
+  ...(await importActual<GitHubApiModuleType>()),
+  validateGitHubRepositoryAccess: validateGitHubRepositoryAccessMock,
 }));
 
 async function renderOptionsPage() {
@@ -120,9 +135,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   listAccountsMock.mockReset();
   getAccountByIdMock.mockReset();
+  removeAccountMock.mockReset();
   replaceInstallationsMock.mockReset();
+  resolveAccountForRepoMock.mockReset();
   listAccountsMock.mockResolvedValue([]);
   getAccountByIdMock.mockResolvedValue(null);
+  removeAccountMock.mockResolvedValue(undefined);
   getPreferencesMock.mockClear();
   updatePreferencesMock.mockClear();
   getPreferencesMock.mockResolvedValue({
@@ -130,6 +148,17 @@ beforeEach(() => {
     showStateBadge: true,
     showReviewerName: false,
     openPullsOnly: true,
+  });
+  updatePreferencesMock.mockResolvedValue({
+    version: 1,
+    showStateBadge: true,
+    showReviewerName: false,
+    openPullsOnly: true,
+  });
+  resolveAccountForRepoMock.mockResolvedValue(null);
+  validateGitHubRepositoryAccessMock.mockResolvedValue({
+    ok: true,
+    message: "Repository is accessible.",
   });
   vi.stubGlobal("browser", {
     runtime: {
@@ -276,6 +305,94 @@ describe("OptionsPage", () => {
         repoFullNames: ["cinev/shotloom"],
       },
     ]);
+  });
+
+  it("shows an inline error and re-enables account actions when refresh fails", async () => {
+    listAccountsMock.mockResolvedValue([
+      {
+        id: "acc",
+        login: "hon454",
+        avatarUrl: null,
+        token: "ghu_old",
+        createdAt: 1,
+        installations: [],
+        installationsRefreshedAt: 1,
+        invalidated: false,
+        invalidatedReason: null,
+        refreshToken: null,
+        expiresAt: null,
+        refreshTokenExpiresAt: null,
+      },
+    ]);
+    await renderOptionsPage();
+
+    const auth = await import("../src/github/auth");
+    const fetchUserInstallations =
+      auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>;
+    fetchUserInstallations.mockRejectedValueOnce(
+      new Error("GitHub API temporarily unavailable."),
+    );
+
+    const refreshButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.trim() === "Refresh installations");
+    expect(refreshButton).toBeDefined();
+
+    await act(async () => {
+      refreshButton!.click();
+      refreshButton!.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(fetchUserInstallations).toHaveBeenCalledTimes(1);
+    expect(refreshButton!.disabled).toBe(false);
+    expect(
+      document.querySelector('[data-testid="account-action-error-acc"]')
+        ?.textContent,
+    ).toContain("Could not refresh installations");
+  });
+
+  it("shows an inline error and prevents duplicate remove clicks while removing an account", async () => {
+    listAccountsMock.mockResolvedValue([
+      {
+        id: "acc",
+        login: "hon454",
+        avatarUrl: null,
+        token: "ghu_old",
+        createdAt: 1,
+        installations: [],
+        installationsRefreshedAt: 1,
+        invalidated: false,
+        invalidatedReason: null,
+        refreshToken: null,
+        expiresAt: null,
+        refreshTokenExpiresAt: null,
+      },
+    ]);
+    removeAccountMock.mockRejectedValueOnce(
+      new Error("Storage write failed."),
+    );
+    await renderOptionsPage();
+
+    const removeButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.trim() === "Remove");
+    expect(removeButton).toBeDefined();
+
+    await act(async () => {
+      removeButton!.click();
+      removeButton!.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(removeAccountMock).toHaveBeenCalledTimes(1);
+    expect(removeButton!.disabled).toBe(false);
+    expect(
+      document.querySelector('[data-testid="account-action-error-acc"]')
+        ?.textContent,
+    ).toContain("Could not remove account");
   });
 
   it("shows a configuration warning instead of blanking the page when production config is missing", async () => {
@@ -512,5 +629,63 @@ describe("OptionsPage", () => {
     expect(updatePreferencesMock).toHaveBeenCalledWith({
       showStateBadge: false,
     });
+  });
+
+  it("shows an inline error and reverts checkbox state when a preference update fails", async () => {
+    updatePreferencesMock.mockRejectedValueOnce(
+      new Error("Storage write failed."),
+    );
+    await renderOptionsPage();
+    const badgeCheckbox = document.querySelector<HTMLInputElement>(
+      '[data-testid="prefs-show-state-badge"]',
+    )!;
+
+    await act(async () => {
+      badgeCheckbox.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(updatePreferencesMock).toHaveBeenCalledWith({
+      showStateBadge: false,
+    });
+    expect(badgeCheckbox.checked).toBe(true);
+    expect(
+      document.querySelector('[data-testid="prefs-error"]')?.textContent,
+    ).toContain("Could not save display settings");
+  });
+
+  it("shows an inline diagnostics error and re-enables buttons when no-token validation throws", async () => {
+    validateGitHubRepositoryAccessMock.mockRejectedValueOnce(
+      new Error("Network offline."),
+    );
+    await renderOptionsPage();
+
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-testid="diagnostics-repo"]',
+    )!;
+    const noTokenButton = document.querySelector<HTMLButtonElement>(
+      '[data-testid="diagnostics-no-token"]',
+    )!;
+
+    await act(async () => {
+      fireEvent.change(input, {
+        target: { value: "hon454/github-pulls-show-reviewers" },
+      });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      noTokenButton.click();
+      noTokenButton.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
+    expect(noTokenButton.disabled).toBe(false);
+    expect(
+      document.querySelector('[data-testid="diagnostics-status"]')?.textContent,
+    ).toContain("Could not run diagnostics");
   });
 });
