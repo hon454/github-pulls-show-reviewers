@@ -82,6 +82,59 @@ describe("createRefreshCoordinator", () => {
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 
+  it("preserves the existing refresh token when the refresh response omits refresh_token", async () => {
+    getAccountByIdMock.mockResolvedValue(
+      makeAccount({
+        refreshToken: "ghr_old",
+        refreshTokenExpiresAt: 9_999_999,
+      }),
+    );
+    const fresh: RefreshTokenResult = {
+      accessToken: "ghu_new",
+      refreshToken: null,
+      expiresAt: 1234,
+      refreshTokenExpiresAt: null,
+    };
+    refreshAccessTokenMock.mockResolvedValue(fresh);
+
+    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
+    const outcome = await coordinator.refreshAccountToken("acc-1");
+
+    expect(outcome).toEqual({ ok: true, token: "ghu_new" });
+    expect(updateAccountTokensMock).toHaveBeenCalledWith("acc-1", {
+      token: "ghu_new",
+      refreshToken: "ghr_old",
+      expiresAt: 1234,
+      refreshTokenExpiresAt: 9_999_999,
+    });
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+  });
+
+  it("rotates the refresh token when the response includes a new one", async () => {
+    getAccountByIdMock.mockResolvedValue(
+      makeAccount({
+        refreshToken: "ghr_old",
+        refreshTokenExpiresAt: 1_000,
+      }),
+    );
+    refreshAccessTokenMock.mockResolvedValue({
+      accessToken: "ghu_new",
+      refreshToken: "ghr_rotated",
+      expiresAt: 2222,
+      refreshTokenExpiresAt: 5_000,
+    });
+
+    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
+    await coordinator.refreshAccountToken("acc-1");
+
+    expect(updateAccountTokensMock).toHaveBeenCalledWith("acc-1", {
+      token: "ghu_new",
+      refreshToken: "ghr_rotated",
+      expiresAt: 2222,
+      refreshTokenExpiresAt: 5_000,
+    });
+  });
+
   it("dedupes concurrent calls for the same account into a single refresh", async () => {
     getAccountByIdMock.mockResolvedValue(makeAccount());
     let resolveRefresh: (value: RefreshTokenResult) => void = () => {};

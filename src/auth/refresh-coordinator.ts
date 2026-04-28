@@ -32,11 +32,15 @@ export function createRefreshCoordinator(input: {
         clientId: input.getClientId(),
         refreshToken: account.refreshToken,
       });
+      // GitHub may omit refresh_token / refresh_token_expires_in on a successful
+      // refresh when no rotation occurred. Treat null as "no rotation" and
+      // preserve the existing stored values rather than clearing them.
       await updateAccountTokens(accountId, {
         token: result.accessToken,
-        refreshToken: result.refreshToken,
+        refreshToken: result.refreshToken ?? account.refreshToken,
         expiresAt: result.expiresAt,
-        refreshTokenExpiresAt: result.refreshTokenExpiresAt,
+        refreshTokenExpiresAt:
+          result.refreshTokenExpiresAt ?? account.refreshTokenExpiresAt,
       });
       return { ok: true, token: result.accessToken };
     } catch (error) {
