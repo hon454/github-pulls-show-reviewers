@@ -74,6 +74,14 @@ kind seen on a page wins.
 Banner dismissal is keyed by `pathname + kind`, so dismissing one kind on a page
 does not suppress a later, higher-priority kind on the same page.
 
+For rate-limit kinds (`auth-rate-limit`, `unauth-rate-limit`), the GitHub
+response's `x-ratelimit-limit / -remaining / -reset / -resource` headers ride
+with the failure envelope (`ReviewerFetchFailure.rateLimit`) into the
+aggregator, so the banner can report `(used/limit)` and a relative reset
+time. Callers fall back segment-by-segment: missing limit/remaining omits the
+usage clause, and a missing reset timestamp keeps the static reset copy. The
+snapshot is in-memory only — it is never persisted.
+
 ## Proactive token refresh
 
 - A recurring `chrome.alarms` job (15-minute period, 30-minute refresh threshold) pre-warms access tokens before the reactive 401 path is needed, and invalidates accounts whose refresh token has already expired.

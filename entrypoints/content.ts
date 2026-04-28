@@ -2,7 +2,10 @@ import {
   bootAccessBanner,
   type AccessBannerHandle,
 } from "../src/features/access-banner";
-import type { BannerKind } from "../src/features/access-banner/aggregator";
+import type {
+  BannerFailureInfo,
+  BannerKind,
+} from "../src/features/access-banner/aggregator";
 import { isHigherPriority } from "../src/features/access-banner/aggregator";
 import { bootReviewerListPage } from "../src/features/reviewers";
 import { parsePullListRoute } from "../src/github/routes";
@@ -38,15 +41,15 @@ export default defineContentScript({
               return;
             }
 
-            const kind = classifyRowFailure(error, account);
-            if (kind == null) {
+            const classified = classifyRowFailure(error, account);
+            if (classified == null) {
               console.warn(
                 "[ghpsr] Unclassified reviewer-fetch failure; banner suppressed.",
                 error,
               );
               return;
             }
-            aggregator.reportFailure(kind);
+            aggregator.reportFailure(classified.kind, classified.info);
           },
         });
       }
@@ -61,23 +64,48 @@ export default defineContentScript({
   },
 });
 
+type ClassifiedRowFailure = {
+  kind: BannerKind;
+  info?: BannerFailureInfo;
+};
+
 function classifyRowFailure(
   error: unknown,
   account: { id?: string } | null,
-): BannerKind | null {
+): ClassifiedRowFailure | null {
   const failures = extractReviewerFetchFailures(error);
   if (failures.length === 0) {
     return null;
   }
 
-  let best: BannerKind | null = null;
+  let best: ClassifiedRowFailure | null = null;
   for (const failure of failures) {
     const kind = classifyFailure(failure, account);
-    if (kind != null && isHigherPriority(kind, best)) {
-      best = kind;
+    if (kind == null) continue;
+    if (best != null && !isHigherPriority(kind, best.kind)) {
+      if (
+        kind === best.kind &&
+        isRateLimitKind(kind) &&
+        best.info?.rateLimit == null &&
+        failure.rateLimit != null
+      ) {
+        best = { kind, info: { rateLimit: failure.rateLimit } };
+      }
+      continue;
     }
+    best = {
+      kind,
+      info:
+        isRateLimitKind(kind)
+          ? { rateLimit: failure.rateLimit }
+          : undefined,
+    };
   }
   return best;
+}
+
+function isRateLimitKind(kind: BannerKind): boolean {
+  return kind === "auth-rate-limit" || kind === "unauth-rate-limit";
 }
 
 function classifyFailure(

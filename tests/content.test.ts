@@ -137,7 +137,10 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(401)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-expired");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "auth-expired",
+        undefined,
+      );
     });
 
     it("emits app-uncovered for account + 404 (no rate-limit signal)", async () => {
@@ -154,7 +157,10 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(404)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("app-uncovered");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "app-uncovered",
+        undefined,
+      );
     });
 
     it("emits app-uncovered for account + 403 without rate-limit signal", async () => {
@@ -173,10 +179,13 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("app-uncovered");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "app-uncovered",
+        undefined,
+      );
     });
 
-    it("emits auth-rate-limit for account + 403 with rate-limit headers", async () => {
+    it("emits auth-rate-limit with the response snapshot for account + 403 + rate-limit headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
@@ -197,10 +206,17 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
+        rateLimit: {
+          limit: 5000,
+          remaining: 0,
+          resource: "core",
+          resetAt: 1,
+        },
+      });
     });
 
-    it("emits auth-rate-limit for account + 429", async () => {
+    it("emits auth-rate-limit without a snapshot for account + 429 with no headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
@@ -214,10 +230,44 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(429)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
+        rateLimit: undefined,
+      });
     });
 
-    it("emits unauth-rate-limit for no account + 403 with rate-limit headers", async () => {
+    it("backfills rate-limit details from a later same-kind failure", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
+        "../src/github/api"
+      );
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: { id: "acc-1" },
+        error: new GitHubPullRequestEndpointsError([
+          new GitHubApiError(429),
+          new GitHubApiError(403, undefined, undefined, {
+            limit: 5000,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1,
+          }),
+        ]),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
+        rateLimit: {
+          limit: 5000,
+          remaining: 0,
+          resource: "core",
+          resetAt: 1,
+        },
+      });
+    });
+
+    it("emits unauth-rate-limit with the response snapshot for no account + 403 + rate-limit headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
@@ -238,7 +288,17 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("unauth-rate-limit");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "unauth-rate-limit",
+        {
+          rateLimit: {
+            limit: 60,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1,
+          },
+        },
+      );
     });
 
     it("emits signin-required for no account + 403 without rate-limit signal", async () => {
@@ -255,7 +315,10 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(403)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "signin-required",
+        undefined,
+      );
     });
 
     it("emits signin-required for no account + 401", async () => {
@@ -272,10 +335,13 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(401)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "signin-required",
+        undefined,
+      );
     });
 
-    it("emits unauth-rate-limit for no account + 429", async () => {
+    it("emits unauth-rate-limit without a snapshot for no account + 429 with no headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
       const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
@@ -289,7 +355,10 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(429)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("unauth-rate-limit");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "unauth-rate-limit",
+        { rateLimit: undefined },
+      );
     });
 
     it("emits signin-required for no account + 404", async () => {
@@ -306,7 +375,10 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(404)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "signin-required",
+        undefined,
+      );
     });
 
     it("picks the highest-priority kind across mixed failures (auth-expired wins over app-uncovered)", async () => {
@@ -327,7 +399,8 @@ describe("content entrypoint", () => {
       });
 
       expect(aggregator.reportFailure).toHaveBeenCalledTimes(1);
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-expired");
+      const [winningKind] = aggregator.reportFailure.mock.calls[0];
+      expect(winningKind).toBe("auth-expired");
     });
 
     it("does not emit any kind for unattributed errors (network, schema, unknown envelope, empty failures)", async () => {
@@ -367,12 +440,25 @@ describe("content entrypoint", () => {
               status: 403,
               endpoint: "/repos/cinev/shotloom/pulls/42",
               rateLimited: true,
+              rateLimit: {
+                limit: 5000,
+                remaining: 0,
+                resource: "core",
+                resetAt: 1_700_000_000,
+              },
             },
           ],
         },
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
+        rateLimit: {
+          limit: 5000,
+          remaining: 0,
+          resource: "core",
+          resetAt: 1_700_000_000,
+        },
+      });
     });
   });
 });
