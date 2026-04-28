@@ -26,10 +26,10 @@ Suggested language:
 
 Chrome's listing guidance expects at least one screenshot and recommends up to five. The current set is:
 
-- `01-pr-list-requested-and-reviewed.png`
-  Caption: `Merged Reviewers row with avatar chips and state badges.`
-- `02-pr-list-mixed-review-states.png`
-  Caption: `Optional name-pill layout when Show reviewer names is enabled.`
+- `01-pr-list-before-after.png`
+  Caption: `Before and after: reviewer chips added directly to the GitHub pull request list.`
+- `02-pr-list-avatar-state-showcase.png`
+  Caption: `Requested reviewers and completed review states shown as avatar chips with outlines and badges.`
 - `03-options-repository-check.png`
   Caption: `Display settings and repository diagnostics on the options page.`
 

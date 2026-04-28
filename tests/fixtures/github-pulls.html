@@ -1,21 +1,580 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-color-mode="dark" data-dark-theme="dark_dimmed">
   <head>
     <meta charset="UTF-8" />
-    <title>GitHub Pulls Fixture</title>
+    <title>CINEV/shotloom pull requests fixture</title>
+    <style>
+      :root {
+        --bgColor-default: #0d1117;
+        --bgColor-muted: #161b22;
+        --bgColor-inset: #010409;
+        --borderColor-default: #30363d;
+        --borderColor-muted: #21262d;
+        --fgColor-default: #e6edf3;
+        --fgColor-muted: #8b949e;
+        --fgColor-accent: #58a6ff;
+        --fgColor-success: #3fb950;
+        --fgColor-danger: #f85149;
+        --fgColor-done: #a371f7;
+        --fgColor-attention: #d29922;
+        --bgColor-accent-muted: rgba(56, 139, 253, 0.15);
+        --bgColor-success-muted: rgba(46, 160, 67, 0.15);
+        --bgColor-danger-muted: rgba(248, 81, 73, 0.16);
+        --bgColor-neutral-muted: rgba(110, 118, 129, 0.18);
+        --bgColor-done-muted: rgba(163, 113, 247, 0.16);
+        --bgColor-attention-muted: rgba(187, 128, 9, 0.18);
+        color-scheme: dark;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica,
+          Arial, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 720px;
+        background: var(--bgColor-default);
+        color: var(--fgColor-default);
+        font-size: 14px;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .shell {
+        width: 1280px;
+        min-height: 720px;
+        overflow: hidden;
+        background:
+          linear-gradient(180deg, rgba(13, 17, 23, 0.96), rgba(13, 17, 23, 0.98)),
+          var(--bgColor-default);
+      }
+
+      .topbar {
+        height: 86px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 24px 10px;
+        border-bottom: 1px solid var(--borderColor-default);
+        background: #010409;
+      }
+
+      .icon-button {
+        width: 28px;
+        height: 28px;
+        border: 1px solid var(--borderColor-default);
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--fgColor-muted);
+      }
+
+      .mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #f0f6fc;
+        color: #010409;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 16px;
+      }
+
+      .repo {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 15px;
+        min-width: 230px;
+      }
+
+      .repo-owner {
+        color: var(--fgColor-muted);
+      }
+
+      .repo-name {
+        font-weight: 700;
+      }
+
+      .search {
+        margin-left: auto;
+        width: 270px;
+        height: 34px;
+        border: 1px solid var(--borderColor-default);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        color: var(--fgColor-muted);
+        font-size: 15px;
+      }
+
+      .top-actions {
+        display: flex;
+        gap: 8px;
+      }
+
+      .avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f2cc8f, #e07a5f);
+        border: 1px solid var(--borderColor-default);
+      }
+
+      .tabs {
+        height: 52px;
+        display: flex;
+        align-items: end;
+        gap: 24px;
+        padding: 0 24px;
+        border-bottom: 1px solid var(--borderColor-default);
+        background: #010409;
+      }
+
+      .tab {
+        height: 52px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--fgColor-default);
+        font-weight: 600;
+        position: relative;
+      }
+
+      .tab-muted {
+        color: var(--fgColor-muted);
+        font-weight: 500;
+      }
+
+      .tab-active::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 2px;
+        background: #f78166;
+      }
+
+      .counter {
+        min-width: 20px;
+        height: 20px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 6px;
+        background: #30363d;
+        font-size: 12px;
+      }
+
+      .content {
+        padding: 22px 124px 40px;
+      }
+
+      .filters {
+        display: grid;
+        grid-template-columns: 1fr auto auto auto;
+        gap: 8px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+
+      .filter-input {
+        height: 34px;
+        border: 1px solid var(--borderColor-default);
+        border-radius: 6px;
+        display: flex;
+        overflow: hidden;
+        background: var(--bgColor-muted);
+      }
+
+      .filter-button {
+        width: 80px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-right: 1px solid var(--borderColor-default);
+        color: var(--fgColor-default);
+        font-weight: 600;
+      }
+
+      .query {
+        display: flex;
+        align-items: center;
+        flex: 1;
+        padding: 0 12px;
+        color: var(--fgColor-muted);
+        font-size: 15px;
+      }
+
+      .outline-button,
+      .green-button {
+        height: 34px;
+        border-radius: 6px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 14px;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+
+      .outline-button {
+        border: 1px solid var(--borderColor-default);
+        background: var(--bgColor-muted);
+      }
+
+      .green-button {
+        border: 1px solid rgba(46, 160, 67, 0.55);
+        background: #238636;
+        color: #fff;
+      }
+
+      .list {
+        border: 1px solid var(--borderColor-default);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--bgColor-default);
+      }
+
+      .list-header {
+        height: 46px;
+        display: grid;
+        grid-template-columns: 34px 1fr 92px 96px 108px 110px 102px 94px 76px;
+        gap: 12px;
+        align-items: center;
+        padding: 0 16px;
+        background: var(--bgColor-muted);
+        border-bottom: 1px solid var(--borderColor-default);
+        color: var(--fgColor-muted);
+        font-weight: 600;
+      }
+
+      .open-closed {
+        color: var(--fgColor-default);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 700;
+      }
+
+      .open-closed .closed {
+        color: var(--fgColor-muted);
+        font-weight: 500;
+        margin-left: 8px;
+      }
+
+      .js-navigation-container {
+        width: 100%;
+      }
+
+      .js-issue-row {
+        min-height: 58px;
+        display: grid;
+        grid-template-columns: 34px 1fr 80px 60px;
+        gap: 12px;
+        align-items: start;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--borderColor-default);
+        position: relative;
+      }
+
+      .js-issue-row:last-child {
+        border-bottom: 0;
+      }
+
+      .js-issue-row.selected::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #2f81f7;
+      }
+
+      .check {
+        width: 12px;
+        height: 12px;
+        border: 1px solid #6e7681;
+        border-radius: 3px;
+        margin-top: 6px;
+      }
+
+      .row-main {
+        min-width: 0;
+      }
+
+      .title-line {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+
+      .pull-icon {
+        color: #3fb950;
+        font-size: 16px;
+        flex: 0 0 auto;
+      }
+
+      .Link--primary {
+        color: var(--fgColor-default);
+        font-size: 16px;
+        line-height: 22px;
+        font-weight: 700;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .state-check {
+        color: #3fb950;
+        font-weight: 800;
+        flex: 0 0 auto;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #d29922;
+        flex: 0 0 auto;
+      }
+
+      .d-flex.mt-1.text-small.color-fg-muted {
+        margin-top: 5px;
+        color: var(--fgColor-muted);
+        font-size: 12px;
+        line-height: 18px;
+      }
+
+      .d-none.d-md-inline-flex {
+        display: inline-flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0;
+      }
+
+      .issue-meta-section {
+        margin-right: 8px;
+      }
+
+      .task {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        margin-right: 8px;
+      }
+
+      .task-ring {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 2px solid #2f81f7;
+      }
+
+      .right-avatar,
+      .comment {
+        align-self: center;
+        justify-self: end;
+      }
+
+      .right-avatar {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #f2cc8f;
+        border: 1px solid #6e7681;
+      }
+
+      .comment {
+        color: var(--fgColor-muted);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-weight: 600;
+      }
+
+      .comment-box {
+        width: 13px;
+        height: 11px;
+        border: 2px solid var(--fgColor-muted);
+        border-radius: 3px;
+      }
+
+      .floating-help {
+        position: fixed;
+        right: 28px;
+        bottom: 28px;
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: #e5533f;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      }
+
+      .ghpsr-root {
+        margin-left: 4px !important;
+      }
+    </style>
   </head>
   <body>
-    <div class="js-navigation-container js-active-navigation-container">
-      <div class="js-issue-row" id="issue_42">
-        <a class="Link--primary" href="/hon454/github-pulls-show-reviewers/pull/42">
-          Add reviewer chips
-        </a>
-        <div class="d-flex mt-1 text-small color-fg-muted">
-          <span class="d-none d-md-inline-flex">
-            <span class="issue-meta-section ml-2">#42 opened by hon454</span>
-          </span>
+    <div class="shell">
+      <header class="topbar">
+        <div class="icon-button">☰</div>
+        <div class="mark">●</div>
+        <div class="repo">
+          <span class="repo-owner">CINEV</span>
+          <span>/</span>
+          <span class="repo-name">shotloom</span>
+          <span style="color: var(--fgColor-muted)">🔒</span>
         </div>
-      </div>
+        <div class="search">⌕ Type <strong>/</strong> to search</div>
+        <div class="top-actions">
+          <div class="icon-button">＋</div>
+          <div class="icon-button">○</div>
+          <div class="icon-button">⑂</div>
+          <div class="icon-button">▣</div>
+        </div>
+        <div class="avatar"></div>
+      </header>
+
+      <nav class="tabs">
+        <div class="tab tab-muted">‹› Code</div>
+        <div class="tab tab-active">⑂ Pull requests <span class="counter">9</span></div>
+        <div class="tab tab-muted">☁ Agents</div>
+        <div class="tab tab-muted">▶ Actions</div>
+        <div class="tab tab-muted">♜ Security and quality</div>
+        <div class="tab tab-muted">⌁ Insights</div>
+        <div class="tab tab-muted">⚙ Settings</div>
+      </nav>
+
+      <main class="content">
+        <div class="filters">
+          <div class="filter-input">
+            <div class="filter-button">Filters ▾</div>
+            <div class="query">⌕&nbsp;&nbsp;is:pr is:open</div>
+          </div>
+          <div class="outline-button">◇ Labels <span class="counter">9</span></div>
+          <div class="outline-button">⚑ Milestones <span class="counter">0</span></div>
+          <div class="green-button">New pull request</div>
+        </div>
+
+        <section class="list">
+          <div class="list-header">
+            <div class="check"></div>
+            <div class="open-closed">⑂ 9 Open <span class="closed">✓ 188 Closed</span></div>
+            <div>Author ▾</div>
+            <div>Label ▾</div>
+            <div>Projects ▾</div>
+            <div>Milestones ▾</div>
+            <div>Reviews ▾</div>
+            <div>Assignee ▾</div>
+            <div>Sort ▾</div>
+          </div>
+
+          <div class="js-navigation-container js-active-navigation-container">
+            <div class="js-issue-row" id="issue_200">
+              <div class="check"></div>
+              <div class="row-main">
+                <div class="title-line"><span class="pull-icon">⑂</span><a class="Link--primary" href="/CINEV/shotloom/pull/200">refactor(engine): move manual viewport gizmo fallback into gizmo/manual</a><span class="dot"></span></div>
+                <div class="d-flex mt-1 text-small color-fg-muted"><span class="d-none d-md-inline-flex"><span class="issue-meta-section">#200 opened 15 minutes ago by hon454</span><span class="task"><span class="task-ring"></span>2 of 3 tasks</span></span></div>
+              </div>
+              <div class="right-avatar"></div>
+              <div class="comment"><span class="comment-box"></span>1</div>
+            </div>
+
+            <div class="js-issue-row" id="issue_199">
+              <div class="check"></div>
+              <div class="row-main">
+                <div class="title-line"><span class="pull-icon">⑂</span><a class="Link--primary" href="/CINEV/shotloom/pull/199">refactor(core): category-based display_name forbidden-char check (STL-229)</a><span class="state-check">✓</span></div>
+                <div class="d-flex mt-1 text-small color-fg-muted"><span class="d-none d-md-inline-flex"><span class="issue-meta-section">#199 opened 28 minutes ago by hon454</span><span class="task"><span class="task-ring"></span>2 of 3 tasks</span></span></div>
+              </div>
+              <div class="right-avatar"></div>
+              <div class="comment"><span class="comment-box"></span>3</div>
+            </div>
+
+            <div class="js-issue-row" id="issue_198">
+              <div class="check"></div>
+              <div class="row-main">
+                <div class="title-line"><span class="pull-icon">⑂</span><a class="Link--primary" href="/CINEV/shotloom/pull/198">feat(core,engine): reject control/format/bidi chars in display_name</a><span class="state-check">✓</span></div>
+                <div class="d-flex mt-1 text-small color-fg-muted"><span class="d-none d-md-inline-flex"><span class="issue-meta-section">#198 opened 1 hour ago by hon454 · Changes requested</span><span class="task"><span class="task-ring"></span>2 of 3 tasks</span></span></div>
+              </div>
+              <div class="right-avatar"></div>
+              <div class="comment"><span class="comment-box"></span>14</div>
+            </div>
+
+            <div class="js-issue-row selected" id="issue_197">
+              <div class="check"></div>
+              <div class="row-main">
+                <div class="title-line"><span class="pull-icon">⑂</span><a class="Link--primary" href="/CINEV/shotloom/pull/197">feat(bridge): reject SetShotDuration below last clip end</a><span class="state-check">✓</span></div>
+                <div class="d-flex mt-1 text-small color-fg-muted"><span class="d-none d-md-inline-flex"><span class="issue-meta-section">#197 opened 1 hour ago by ryumiel · Changes requested</span><span class="task"><span class="task-ring"></span>3 tasks done</span></span></div>
+              </div>
+              <div class="right-avatar"></div>
+              <div class="comment"><span class="comment-box"></span>16</div>
+            </div>
+
+            <div class="js-issue-row" id="issue_192">
+              <div class="check"></div>
+              <div class="row-main">
+                <div class="title-line"><span class="pull-icon">⑂</span><a class="Link--primary" href="/CINEV/shotloom/pull/192">feat(bridge,engine,editor): character display_name edit + spawn auto-suffix</a></div>
+                <div class="d-flex mt-1 text-small color-fg-muted"><span class="d-none d-md-inline-flex"><span class="issue-meta-section">#192 opened 6 hours ago by hon454 · Changes requested</span><span class="task"><span class="task-ring"></span>2 of 3 tasks</span></span></div>
+              </div>
+              <div class="right-avatar"></div>
+              <div class="comment"><span class="comment-box"></span>18</div>
+            </div>
+
+            <div class="js-issue-row selected" id="issue_187">
+              <div class="check"></div>
+              <div class="row-main">
+                <div class="title-line"><span class="pull-icon">⑂</span><a class="Link--primary" href="/CINEV/shotloom/pull/187">fix(animation): seed default assets with empty startup timeline</a><span class="state-check">✓</span></div>
+                <div class="d-flex mt-1 text-small color-fg-muted"><span class="d-none d-md-inline-flex"><span class="issue-meta-section">#187 opened yesterday by dkfhddla · Approved</span></span></div>
+              </div>
+              <div class="right-avatar"></div>
+              <div class="comment"><span class="comment-box"></span>16</div>
+            </div>
+
+            <div class="js-issue-row" id="issue_186">
+              <div class="check"></div>
+              <div class="row-main">
+                <div class="title-line"><span class="pull-icon">⑂</span><a class="Link--primary" href="/CINEV/shotloom/pull/186">fix(animation): evaluate authored motion preview during playback</a><span class="state-check">✓</span></div>
+                <div class="d-flex mt-1 text-small color-fg-muted"><span class="d-none d-md-inline-flex"><span class="issue-meta-section">#186 opened yesterday by dkfhddla</span></span></div>
+              </div>
+              <div class="right-avatar"></div>
+              <div class="comment"><span class="comment-box"></span>12</div>
+            </div>
+
+            <div class="js-issue-row" id="issue_185">
+              <div class="check"></div>
+              <div class="row-main">
+                <div class="title-line"><span class="pull-icon">⑂</span><a class="Link--primary" href="/CINEV/shotloom/pull/185">feat(timeline): create performance clips from animation assets</a><span class="state-check">✓</span></div>
+                <div class="d-flex mt-1 text-small color-fg-muted"><span class="d-none d-md-inline-flex"><span class="issue-meta-section">#185 opened yesterday by dkfhddla</span></span></div>
+              </div>
+              <div class="right-avatar"></div>
+              <div class="comment"><span class="comment-box"></span>5</div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <div class="floating-help">↗</div>
     </div>
   </body>
 </html>

@@ -8,8 +8,8 @@
 - Rebuild PNG assets with `pnpm icons:render`.
 - Chrome Web Store screenshots are generated under [chrome-web-store-assets/](./chrome-web-store-assets/) with `pnpm cws:assets`.
 - Current screenshot set:
-  - `01-pr-list-requested-and-reviewed.png` — merged `Reviewers` row with avatar chips and state badges
-  - `02-pr-list-mixed-review-states.png` — optional name-pill layout with reviewer names shown
+  - `01-pr-list-before-after.png` — before/after comparison showing GitHub's default PR list beside the extension-enhanced reviewer strip
+  - `02-pr-list-avatar-state-showcase.png` — default avatar-only reviewer chips with requested outlines and completed-review badges
   - `03-options-repository-check.png` — options page display settings and repository diagnostics
 
 ## Suggested listing copy
