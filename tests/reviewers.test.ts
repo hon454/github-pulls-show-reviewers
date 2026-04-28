@@ -6,11 +6,13 @@ import type { PullReviewerSummary } from "../src/github/api";
 import type * as PreferencesModule from "../src/storage/preferences";
 
 const resolveAccountForRepoMock = vi.fn();
+const listAccountsMock = vi.fn();
 const getPreferencesMock = vi.fn();
 const runtimeSendMessageMock = vi.fn();
 
 vi.mock("../src/storage/accounts", () => ({
   resolveAccountForRepo: resolveAccountForRepoMock,
+  listAccounts: listAccountsMock,
 }));
 
 vi.mock("../src/storage/preferences", async () => {
@@ -64,6 +66,7 @@ function getRegisteredListener(
 beforeEach(() => {
   vi.resetModules();
   resolveAccountForRepoMock.mockReset();
+  listAccountsMock.mockReset().mockResolvedValue([]);
   getPreferencesMock.mockReset();
   runtimeSendMessageMock.mockReset();
   getPreferencesMock.mockResolvedValue({

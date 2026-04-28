@@ -14,6 +14,8 @@ const {
   listAccountsMock,
   markAccountInvalidatedMock,
   createRefreshCoordinatorMock,
+  refreshAccountInstallationsMock,
+  createInstallationRefreshServiceMock,
   getGitHubAppConfigMock,
 } = vi.hoisted(() => ({
   refreshAccountTokenMock: vi.fn(),
@@ -22,14 +24,23 @@ const {
   listAccountsMock: vi.fn<() => Promise<unknown[]>>(),
   markAccountInvalidatedMock: vi.fn(),
   createRefreshCoordinatorMock: vi.fn(),
+  refreshAccountInstallationsMock: vi.fn(),
+  createInstallationRefreshServiceMock: vi.fn(),
   getGitHubAppConfigMock: vi.fn(() => ({ clientId: "test-client-id" })),
 }));
 createRefreshCoordinatorMock.mockImplementation(() => ({
   refreshAccountToken: refreshAccountTokenMock,
 }));
+createInstallationRefreshServiceMock.mockImplementation(() => ({
+  refreshAccountInstallations: refreshAccountInstallationsMock,
+}));
 
 vi.mock("../src/auth/refresh-coordinator", () => ({
   createRefreshCoordinator: createRefreshCoordinatorMock,
+}));
+
+vi.mock("../src/background/installation-refresh", () => ({
+  createInstallationRefreshService: createInstallationRefreshServiceMock,
 }));
 
 vi.mock("../src/config/github-app", () => ({
@@ -95,7 +106,9 @@ beforeEach(() => {
   listAccountsMock.mockReset().mockResolvedValue([]);
   markAccountInvalidatedMock.mockReset();
   refreshAccountTokenMock.mockResolvedValue({ ok: true, token: "new-token" });
+  refreshAccountInstallationsMock.mockReset().mockResolvedValue({ ok: true });
   createRefreshCoordinatorMock.mockClear();
+  createInstallationRefreshServiceMock.mockClear();
   getGitHubAppConfigMock.mockClear();
   alarmsCreateMock.mockClear();
   capturedMessageListener = null;
@@ -588,6 +601,70 @@ describe("background runtime.onMessage handler", () => {
       throw new Error("expected background fetch signal");
     }
     expect(signal.aborted).toBe(true);
+  });
+});
+
+describe("background refreshAccountInstallations dispatch", () => {
+  it("dispatches valid refresh-installations messages from this extension", async () => {
+    const listener = await bootBackground();
+
+    const response = await callListener(
+      listener,
+      { type: "refreshAccountInstallations", accountId: "acc-1" },
+      { id: SELF_RUNTIME_ID },
+    );
+
+    expect(refreshAccountInstallationsMock).toHaveBeenCalledTimes(1);
+    expect(refreshAccountInstallationsMock).toHaveBeenCalledWith("acc-1");
+    expect(response).toEqual({ ok: true });
+  });
+
+  it("returns the failure outcome from the installation-refresh service", async () => {
+    refreshAccountInstallationsMock.mockResolvedValueOnce({
+      ok: false,
+      reason: "failed",
+    });
+    const listener = await bootBackground();
+
+    const response = await callListener(
+      listener,
+      { type: "refreshAccountInstallations", accountId: "acc-1" },
+      { id: SELF_RUNTIME_ID },
+    );
+
+    expect(response).toEqual({ ok: false, reason: "failed" });
+  });
+
+  it("rejects refresh-installations messages from a foreign extension id", async () => {
+    const listener = await bootBackground();
+
+    const response = await callListener(
+      listener,
+      { type: "refreshAccountInstallations", accountId: "acc-1" },
+      { id: "other-extension-id" },
+    );
+
+    expect(response).toBeUndefined();
+    expect(refreshAccountInstallationsMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores malformed refresh-installations messages", async () => {
+    const listener = await bootBackground();
+
+    const missingAccountId = await callListener(
+      listener,
+      { type: "refreshAccountInstallations" },
+      { id: SELF_RUNTIME_ID },
+    );
+    const emptyAccountId = await callListener(
+      listener,
+      { type: "refreshAccountInstallations", accountId: "" },
+      { id: SELF_RUNTIME_ID },
+    );
+
+    expect(missingAccountId).toBeUndefined();
+    expect(emptyAccountId).toBeUndefined();
+    expect(refreshAccountInstallationsMock).not.toHaveBeenCalled();
   });
 });
 

@@ -1,4 +1,5 @@
 import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
+import { createInstallationRefreshService } from "../src/background/installation-refresh";
 import { createProactiveRefreshService } from "../src/background/proactive-refresh";
 import { createReviewerFetchService } from "../src/background/reviewer-fetch";
 import { getGitHubAppConfig } from "../src/config/github-app";
@@ -6,6 +7,9 @@ import {
   isCancelPullReviewerSummaryMessage,
   isFetchPullReviewerSummaryMessage,
 } from "../src/runtime/reviewer-fetch";
+import {
+  isRefreshAccountInstallationsMessage,
+} from "../src/runtime/installation-refresh";
 import {
   listAccounts,
   markAccountInvalidated,
@@ -16,6 +20,9 @@ export default defineBackground(() => {
     getClientId: () => getGitHubAppConfig().clientId,
   });
   const reviewerFetchService = createReviewerFetchService({
+    refreshCoordinator: coordinator,
+  });
+  const installationRefreshService = createInstallationRefreshService({
     refreshCoordinator: coordinator,
   });
   const proactiveRefreshService = createProactiveRefreshService({
@@ -116,6 +123,21 @@ export default defineBackground(() => {
       if (isCancelPullReviewerSummaryMessage(message)) {
         reviewerFetchService.cancelRequest(message.requestId);
         return undefined;
+      }
+      if (isRefreshAccountInstallationsMessage(message)) {
+        installationRefreshService
+          .refreshAccountInstallations(message.accountId)
+          .then(
+            (outcome) => sendResponse(outcome),
+            (error) => {
+              console.error(
+                "[GitHub Pulls Show Reviewers] refreshAccountInstallations failed.",
+                error,
+              );
+              sendResponse(undefined);
+            },
+          );
+        return true;
       }
       return undefined;
     },

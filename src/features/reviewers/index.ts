@@ -9,11 +9,12 @@ import {
 import type { PullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
+import type { RefreshAccountInstallationsResponse } from "../../runtime/installation-refresh";
 import {
   ReviewerFetchRuntimeError,
   type FetchPullReviewerSummaryResponse,
 } from "../../runtime/reviewer-fetch";
-import { resolveAccountForRepo, type Account } from "../../storage/accounts";
+import { type Account } from "../../storage/accounts";
 import {
   DEFAULT_PREFERENCES,
   getPreferences,
@@ -22,6 +23,7 @@ import {
   type Preferences,
 } from "../../storage/preferences";
 
+import { createSelfHealingAccountResolver } from "./account-resolution";
 import {
   clearRenderedReviewerState,
   ensureReviewerMount,
@@ -56,6 +58,9 @@ export function bootReviewerListPage(
   };
   const inflightRequests = new Map<string, InflightRequest>();
   let cachedPreferences: Promise<Preferences> | null = null;
+  const accountResolver = createSelfHealingAccountResolver({
+    requestRefresh: requestInstallationsRefresh,
+  });
 
   function abortInflightRequests(): void {
     for (const request of inflightRequests.values()) {
@@ -132,7 +137,7 @@ export function bootReviewerListPage(
     const controller = new AbortController();
     let request: InflightRequest | null = null;
     const promise = (async () => {
-      const account = await resolveAccountForRepo(route.owner, route.repo);
+      const account = await accountResolver.resolveAccount(route.owner, route.repo);
 
       try {
         const summary = await fetchWithRefresh({
@@ -361,4 +366,16 @@ function createAbortError(): Error {
   const error = new Error("The operation was aborted.");
   error.name = "AbortError";
   return error;
+}
+
+async function requestInstallationsRefresh(accountId: string): Promise<boolean> {
+  try {
+    const response = (await browser.runtime.sendMessage({
+      type: "refreshAccountInstallations",
+      accountId,
+    })) as RefreshAccountInstallationsResponse;
+    return response?.ok === true;
+  } catch {
+    return false;
+  }
 }
