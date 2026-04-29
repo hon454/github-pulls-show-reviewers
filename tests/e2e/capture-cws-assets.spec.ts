@@ -12,8 +12,8 @@ const outputDir = path.join(projectRoot, "docs/chrome-web-store-assets");
 const pullsFixturePath = path.join(projectRoot, "tests/fixtures/github-pulls.html");
 
 const screenshotRepo = {
-  owner: "Northstar",
-  repo: "atlas-ui",
+  owner: "hon454",
+  repo: "github-pulls-show-reviewers",
 } as const;
 const screenshotRepoFullName = `${screenshotRepo.owner}/${screenshotRepo.repo}`;
 const screenshotPullsUrl = `https://github.com/${screenshotRepoFullName}/pulls`;
