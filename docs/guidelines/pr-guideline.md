@@ -139,13 +139,13 @@ applies, the same PR should carry the matching update.
 5. Did auth or device flow change? — update
    `docs/manual-chrome-testing.md` scenarios.
 6. Was a new entrypoint or major module added or moved? — update the
-   Repository Map in **both** `README.md` and `AGENTS.md`.
+   Repository Map in `AGENTS.md`.
 7. Was `package.json` `version` bumped? — add
    `docs/releases/vX.Y.Z.md`.
 8. Was a new durable design decision made? — add or update
    `docs/adr/NNNN-<title>.md`.
 9. Did release verification (`pnpm verify:release`) change? — update
-   `README.md` "Pre-release Test Workflow".
+   the Testing section in `CONTRIBUTING.md`.
 10. Did Chrome Web Store user-facing copy or screenshots change? —
     update `docs/chrome-web-store.md`,
     `docs/chrome-web-store-submission.md`, and

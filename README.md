@@ -20,12 +20,7 @@
 
 ## Why Use It
 
-GitHub's pull request list is great for scanning titles, authors, and status, but reviewer context can be easy to miss. This extension adds a lightweight `Reviewers:` strip to each PR row so you can answer the common review-routing questions from the list itself:
-
-- Who is requested?
-- Which team is requested?
-- Has anyone already reviewed?
-- Was the latest review an approval, comment, dismissal, or change request?
+GitHub's pull request list is great for scanning titles, authors, and status, but reviewer context can be easy to miss. Without opening each PR, it is hard to tell who is requested, which teams are requested, and how the latest review landed. This extension answers those questions inline by adding a lightweight `Reviewers:` strip to each PR row.
 
 ![Before and after reviewer chips on a GitHub PR list](./docs/chrome-web-store-assets/01-pr-list-before-after.png)
 
@@ -35,13 +30,14 @@ Install the extension from the [Chrome Web Store](https://chromewebstore.google.
 
 After installation, open a GitHub repository's pull request list. Public repositories work without signing in. For private repositories, open the extension options page and add the GitHub account that can access the repository.
 
-## Public And Private Repositories
+## Public and Private Repositories
 
 - **Public repositories:** work without signing in whenever GitHub exposes enough public PR data.
 - **Private repositories:** require signing in with GitHub through the extension's GitHub App.
 - **Permissions:** the GitHub App requests `Pull requests: Read` only.
 - **Organizations:** an organization owner may need to install or approve the GitHub App before private organization repositories can be read.
 - **Multiple accounts:** personal and work accounts can be added side by side. The extension picks the matching account for each repository.
+- **Session persistence:** sign-in is kept across browser sessions; access tokens are refreshed automatically in the background until you remove the account or revoke the GitHub App.
 
 ## Settings
 
@@ -72,9 +68,10 @@ This repository uses WXT, TypeScript, React, zod, Vitest, Playwright, and pnpm.
 
 ```bash
 pnpm install
-pnpm prepare
 pnpm dev
 ```
+
+`pnpm install` runs `wxt prepare` automatically through pnpm's lifecycle, so no separate prepare step is needed.
 
 Useful validation commands:
 
@@ -91,6 +88,8 @@ Before release packaging or store submission, run:
 pnpm verify:release
 pnpm zip
 ```
+
+`pnpm zip` produces an inspectable build for local verification. Production packaging for the Chrome Web Store uses `pnpm zip:release`, which is a maintainer-only flow documented in [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 For repository workflow, branch naming, commit style, and pull request requirements, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 

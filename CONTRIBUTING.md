@@ -98,10 +98,15 @@ the
 
 ## Testing
 
-See the `Pre-release Test Workflow` section in
-[`README.md`](./README.md) and run `pnpm verify:release` before
-tagging a release. For routine changes, `pnpm lint`,
-`pnpm typecheck`, and `pnpm test` are the minimum expected signals.
+For routine changes, `pnpm lint`, `pnpm typecheck`, and
+`pnpm test` are the minimum expected signals. Before tagging a
+release, run `pnpm verify:release`, which chains
+`pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e`
+as a single gate. PR CI runs the same four signals in parallel
+jobs. Regenerate Chrome Web Store screenshots with
+`pnpm cws:assets` only when store-facing visuals need to change,
+and run `pnpm zip` (or `pnpm zip:release` for production
+packaging) only after the checks above are green.
 
 ## Coding conventions
 
