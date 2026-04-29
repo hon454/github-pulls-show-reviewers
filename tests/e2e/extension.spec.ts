@@ -9,6 +9,7 @@ const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "../..");
 const extensionPath = path.join(projectRoot, ".output/chrome-mv3");
 const fixturesDir = path.join(projectRoot, "tests/fixtures");
+const singleRowFixture = "github-pulls-single-row.html";
 
 type FixtureCase = {
   name: string;
@@ -19,7 +20,7 @@ type FixtureCase = {
 const renderCases: FixtureCase[] = [
   {
     name: "standard metadata row",
-    fixture: "github-pulls.html",
+    fixture: singleRowFixture,
     pullNumber: "42",
   },
   {
@@ -74,7 +75,7 @@ for (const fixtureCase of renderCases) {
 
 test("omits the inline reviewer row when both requested and reviewed are empty", async () => {
   await withExtensionContext(async (context) => {
-    const fixtureHtml = await readFile(path.join(fixturesDir, "github-pulls.html"), "utf8");
+    const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
 
     await routeFixturePage(context, fixtureHtml);
     await routePullApi(context, "42", {
@@ -197,7 +198,7 @@ test("renders app-uncovered banner with Configure access CTA when a signed-in ro
 
 test("clears the reviewer slot silently when review history is denied", async () => {
   await withExtensionContext(async (context) => {
-    const fixtureHtml = await readFile(path.join(fixturesDir, "github-pulls.html"), "utf8");
+    const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
 
     await routeFixturePage(context, fixtureHtml);
     await routePullApi(context, "42", {

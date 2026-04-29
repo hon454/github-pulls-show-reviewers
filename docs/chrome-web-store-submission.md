@@ -24,14 +24,16 @@ Suggested language:
 
 ## Screenshot inventory
 
-Chrome's listing guidance expects at least one screenshot and recommends up to five. The current set is:
+Chrome's listing guidance expects at least one screenshot and recommends up to five. Upload these screenshots to the Chrome Web Store dashboard in this order:
 
-- `01-pr-list-requested-and-reviewed.png`
-  Caption: `Merged Reviewers row with avatar chips and state badges.`
-- `02-pr-list-mixed-review-states.png`
-  Caption: `Optional name-pill layout when Show reviewer names is enabled.`
+- `01-pr-list-before-after.png`
+  Dashboard caption: `Before and after: reviewer chips added directly to the GitHub pull request list.`
+- `02-pr-list-avatar-state-showcase.png`
+  Dashboard caption: `Requested reviewers and completed review states shown as avatar chips with outlines and badges.`
 - `03-options-repository-check.png`
-  Caption: `Display settings and repository diagnostics on the options page.`
+  Dashboard caption: `Display settings and repository diagnostics on the options page.`
+
+The PR-list screenshots are generated from a deterministic GitHub-style fixture for `hon454/github-pulls-show-reviewers` with synthetic PR titles, authors, reviewer states, and avatar images. They should remain realistic enough for store review while avoiding live dummy PRs, real project data, and unrelated UI noise such as floating help buttons.
 
 Regenerate them with:
 
@@ -89,7 +91,7 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 3. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
 4. Run `pnpm zip` only after the checks above pass.
 5. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
-6. Attach the three screenshots listed above with the updated captions.
+6. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
 7. Paste the short description, detailed description, and privacy policy URL.
 8. Fill in the privacy fields using the draft above, then reconcile every answer against the shipped permissions and network behavior.
 9. If you want review before launch, disable automatic publish and stage the release in the dashboard.

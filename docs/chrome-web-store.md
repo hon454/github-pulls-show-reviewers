@@ -7,9 +7,10 @@
 - Packaged icon sizes: `16`, `32`, `48`, `128`.
 - Rebuild PNG assets with `pnpm icons:render`.
 - Chrome Web Store screenshots are generated under [chrome-web-store-assets/](./chrome-web-store-assets/) with `pnpm cws:assets`.
+- The pull-list screenshots use a deterministic GitHub-style fixture for `hon454/github-pulls-show-reviewers` with generated PR titles, authors, reviewer states, and synthetic avatar images. Do not create live dummy PRs for store screenshots.
 - Current screenshot set:
-  - `01-pr-list-requested-and-reviewed.png` — merged `Reviewers` row with avatar chips and state badges
-  - `02-pr-list-mixed-review-states.png` — optional name-pill layout with reviewer names shown
+  - `01-pr-list-before-after.png` — before/after comparison showing GitHub's default PR list beside the extension-enhanced reviewer strip
+  - `02-pr-list-avatar-state-showcase.png` — default avatar-only reviewer chips with requested outlines, completed-review badges, and no unrelated floating help button
   - `03-options-repository-check.png` — options page display settings and repository diagnostics
 
 ## Suggested listing copy
@@ -71,7 +72,7 @@ Expected release gate behavior:
 3. Run `pnpm cws:assets` if screenshots need to be refreshed for this submission.
 4. Upload `.output/github-pulls-show-reviewers-<version>-chrome.zip` to the Chrome Web Store dashboard.
 5. Use the short and detailed descriptions above for the store listing.
-6. Refresh screenshots so they show reviewer chips on GitHub pull request lists only.
+6. Refresh screenshots so they show reviewer chips on GitHub pull request lists only, using the generated fixture rather than live dummy PRs.
 7. Confirm the privacy disclosure matches the shipped behavior:
    no sale of data, no advertising, no remote code, GitHub page access only,
    and locally stored GitHub App accounts plus a `preferences` record in
