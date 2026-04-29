@@ -9,7 +9,7 @@
 
 `GitHub Pulls Show Reviewers` is a Chrome extension built for one narrow workflow: make reviewer visibility obvious on GitHub PR list pages without turning the page into a general PR dashboard.
 
-![Before and after GitHub PR list showing reviewer chips added by the extension](./docs/chrome-web-store-assets/01-pr-list-before-after.png)
+![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
 ## Why This Exists
 
@@ -24,9 +24,7 @@ This extension brings that information into the list itself with lightweight inl
 
 ## What The Extension Shows
 
-| Before / after reviewer visibility                                                            | Avatar-only state showcase                                                                      |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| ![Before and after reviewer chips](./docs/chrome-web-store-assets/01-pr-list-before-after.png) | ![Avatar-only reviewer state showcase](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png) |
+![Before and after reviewer chips on a GitHub PR list](./docs/chrome-web-store-assets/01-pr-list-before-after.png)
 
 The screenshots are generated from a deterministic GitHub-style fixture for this repository, with synthetic pull request rows so store assets stay realistic without depending on live dummy pull requests.
 
