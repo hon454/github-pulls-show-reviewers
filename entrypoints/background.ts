@@ -5,6 +5,7 @@ import { createReviewerFetchService } from "../src/background/reviewer-fetch";
 import { getGitHubAppConfig } from "../src/config/github-app";
 import {
   isCancelPullReviewerSummaryMessage,
+  isFetchPullReviewerMetadataBatchMessage,
   isFetchPullReviewerSummaryMessage,
 } from "../src/runtime/reviewer-fetch";
 import {
@@ -123,6 +124,19 @@ export default defineBackground(() => {
       if (isCancelPullReviewerSummaryMessage(message)) {
         reviewerFetchService.cancelRequest(message.requestId);
         return undefined;
+      }
+      if (isFetchPullReviewerMetadataBatchMessage(message)) {
+        reviewerFetchService.handleMetadataBatchMessage(message).then(
+          (response) => sendResponse(response),
+          (error) => {
+            console.error(
+              "[GitHub Pulls Show Reviewers] Reviewer metadata batch handler crashed.",
+              error,
+            );
+            sendResponse(undefined);
+          },
+        );
+        return true;
       }
       if (isRefreshAccountInstallationsMessage(message)) {
         installationRefreshService

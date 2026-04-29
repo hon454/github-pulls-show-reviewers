@@ -23,19 +23,28 @@
 2. Find PR rows with centralized GitHub selectors.
 3. Extract the pull request number from the row id or primary pull request link.
 4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
-5. Send a `fetchPullReviewerSummary` message to the background service
-   worker when the cache is cold. The background resolves the matched
-   account's token (or no token if none matches), performs the GitHub REST
-   calls, and returns the parsed summary or a typed error.
-6. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the prior state badge. Requested teams keep the text chip shape. User chip links follow the same primary axis as the ring color: blue-ring (still-requested) chips link to `review-requested:<login>`; colored-ring (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use `is:pr is:open` searches by default.
-7. On API errors, emit a signal to the banner aggregator; do not render
+5. Send one `fetchPullReviewerMetadataBatch` message per page/account when the
+   cache is cold. The background reads the first REST pull-list page with the
+   matched account token (or no token if none matches), returning requested user
+   reviewers, requested teams, and author logins that can be reused across
+   visible rows.
+6. Send a `fetchPullReviewerSummary` message for each uncached row. When the
+   page-level metadata contains that pull request number, the background skips
+   the per-row pull endpoint and reads only the reviews endpoint. If the pull
+   number is absent from the batch result, the summary request falls back to the
+   original per-row `pull + reviews` REST path.
+7. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the prior state badge. Requested teams keep the text chip shape. User chip links follow the same primary axis as the ring color: blue-ring (still-requested) chips link to `review-requested:<login>`; colored-ring (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use `is:pr is:open` searches by default.
+8. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text.
-8. Re-run row processing when GitHub mutates the page or performs SPA navigation.
+9. Re-run row processing when GitHub mutates the page or performs SPA navigation.
 
 ## Current limitations
 
 - The extension still depends on GitHub metadata DOM structure.
-- API requests are still one pull request plus one reviews request per uncached row.
+- Cold rows on a typical first PR-list page use one pull-list metadata request
+  plus one reviews request per uncached row. Filtered, searched, or older pages
+  can still fall back to one pull request plus one reviews request for rows that
+  are not present in the first REST pull-list page.
 - Public-repository no-token access still depends on GitHub's unauthenticated REST availability and rate limits.
 - PAT-era single-token settings are not migrated; users must sign in again with
   the GitHub App account flow.
@@ -51,10 +60,16 @@
 ## Request volume decision
 
 - ADR: [0001 - Keep No-Token Support For Public Repositories](./adr/0001-keep-no-token-support-for-public-repositories.md)
-- `v1.0.0` keeps the current `pull + reviews` REST model for cold rows.
-- The current implementation already de-duplicates in-flight row fetches and caches each pull request summary for the active page session, so the immediate duplication risk is contained.
+- The current implementation keeps the REST-only public path and uses
+  `GET /repos/{owner}/{repo}/pulls?per_page=100&state=all` as a page-level
+  metadata hint before row summaries.
+- The content script de-duplicates in-flight row fetches, caches each pull
+  request summary for the active page session, and caches the page-level
+  metadata result per `owner/repo/account`.
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
-- If request volume becomes the next real bottleneck after launch, the preferred follow-up is a page-level batch strategy on the existing REST path before considering a broader API migration.
+- If request volume remains the next bottleneck, the preferred follow-up is to
+  make the REST batch smarter for filtered and paginated GitHub list pages
+  before considering a broader API migration.
 
 ## Access banner classification
 
@@ -97,7 +112,8 @@ snapshot is in-memory only — it is never persisted.
 
 ## Next implementation targets
 
-- Collapse request volume further where practical.
+- Extend the REST metadata batch to better cover searched, filtered, and older
+  paginated GitHub PR list pages.
 - Add more fixture-backed extension boot coverage for GitHub DOM variants.
 
 ## End-to-end banner coverage

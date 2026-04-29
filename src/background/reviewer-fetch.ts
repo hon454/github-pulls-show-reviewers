@@ -1,8 +1,14 @@
 import type { RefreshCoordinator } from "../auth/refresh-coordinator";
-import { fetchPullReviewerSummary, extractGitHubApiStatus } from "../github/api";
+import {
+  fetchPullReviewerMetadataBatch,
+  fetchPullReviewerSummary,
+  extractGitHubApiStatus,
+} from "../github/api";
 import { getAccountById, markAccountInvalidated } from "../storage/accounts";
 import {
   serializeReviewerFetchError,
+  type FetchPullReviewerMetadataBatchMessage,
+  type FetchPullReviewerMetadataBatchResponse,
   type FetchPullReviewerSummaryMessage,
   type FetchPullReviewerSummaryResponse,
 } from "../runtime/reviewer-fetch";
@@ -14,6 +20,9 @@ export type ReviewerFetchService = {
   handleFetchMessage(
     message: FetchPullReviewerSummaryMessage,
   ): Promise<FetchPullReviewerSummaryResponse>;
+  handleMetadataBatchMessage(
+    message: FetchPullReviewerMetadataBatchMessage,
+  ): Promise<FetchPullReviewerMetadataBatchResponse>;
 };
 
 export function createReviewerFetchService(input: {
@@ -67,6 +76,7 @@ export function createReviewerFetchService(input: {
             repo: message.repo,
             pullNumber: message.pullNumber,
             githubToken: token,
+            pullMetadata: message.pullMetadata,
             signal: controller.signal,
           });
 
@@ -101,6 +111,75 @@ export function createReviewerFetchService(input: {
           try {
             const summary = await execute(refreshed?.token ?? outcome.token);
             return { ok: true, summary };
+          } catch (retryError) {
+            if (extractGitHubApiStatus(retryError) === 401) {
+              await markAccountInvalidated(account.id, "revoked");
+            }
+            return {
+              ok: false,
+              error: serializeReviewerFetchError(retryError),
+            };
+          }
+        }
+      } finally {
+        inFlightControllers.delete(message.requestId);
+      }
+    },
+    async handleMetadataBatchMessage(
+      message: FetchPullReviewerMetadataBatchMessage,
+    ): Promise<FetchPullReviewerMetadataBatchResponse> {
+      pruneCanceledRequestIds(Date.now());
+
+      const controller = new AbortController();
+      inFlightControllers.set(message.requestId, controller);
+
+      if (canceledRequestIds.delete(message.requestId)) {
+        controller.abort();
+      }
+
+      try {
+        const account =
+          message.accountId == null ? null : await getAccountById(message.accountId);
+
+        const execute = (token: string | null) =>
+          fetchPullReviewerMetadataBatch({
+            owner: message.owner,
+            repo: message.repo,
+            githubToken: token,
+            signal: controller.signal,
+          });
+
+        try {
+          const metadata = await execute(account?.token ?? null);
+          return { ok: true, metadata };
+        } catch (error) {
+          if (extractGitHubApiStatus(error) !== 401 || account == null) {
+            return {
+              ok: false,
+              error: serializeReviewerFetchError(error),
+            };
+          }
+
+          if (account.refreshToken == null) {
+            await markAccountInvalidated(account.id, "revoked");
+            return {
+              ok: false,
+              error: serializeReviewerFetchError(error),
+            };
+          }
+
+          const outcome = await refreshCoordinator.refreshAccountToken(account.id);
+          if (outcome.ok !== true) {
+            return {
+              ok: false,
+              error: serializeReviewerFetchError(error),
+            };
+          }
+
+          const refreshed = await getAccountById(account.id);
+          try {
+            const metadata = await execute(refreshed?.token ?? outcome.token);
+            return { ok: true, metadata };
           } catch (retryError) {
             if (extractGitHubApiStatus(retryError) === 401) {
               await markAccountInvalidated(account.id, "revoked");

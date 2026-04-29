@@ -31,6 +31,12 @@ const pullSchema = z.object({
     .default([]),
 });
 
+const pullReviewerMetadataSchema = pullSchema.extend({
+  number: z.number(),
+});
+
+const pullReviewerMetadataListSchema = z.array(pullReviewerMetadataSchema);
+
 const pullListSchema = z.array(
   z.object({
     number: z.number(),
@@ -67,6 +73,13 @@ export type ReviewState =
 export type ReviewerUser = { login: string; avatarUrl: string | null };
 
 export type CompletedReview = ReviewerUser & { state: ReviewState };
+
+export type PullReviewerMetadata = {
+  number: string;
+  authorLogin: string;
+  requestedUsers: ReviewerUser[];
+  requestedTeams: string[];
+};
 
 export type PullReviewerSummary = {
   status: PullReviewerSummaryStatus;
@@ -234,21 +247,47 @@ export async function fetchPullReviewerSummary(input: {
   repo: string;
   pullNumber: string;
   githubToken: string | null;
+  pullMetadata?: PullReviewerMetadata;
   signal?: AbortSignal;
 }): Promise<PullReviewerSummary> {
   const headers = createGitHubHeaders(input.githubToken);
-  const pullEndpoint = buildPullEndpoint(
-    input.owner,
-    input.repo,
-    input.pullNumber,
-  );
   const reviewsEndpoint = buildReviewsEndpoint(
     input.owner,
     input.repo,
     input.pullNumber,
   );
-  const pullUrl = `https://api.github.com${pullEndpoint.path}`;
   const reviewsFirstPageUrl = `https://api.github.com${reviewsEndpoint.path}?per_page=100`;
+
+  if (input.pullMetadata != null) {
+    const reviewsFirstResponse = await fetch(reviewsFirstPageUrl, {
+      headers,
+      signal: input.signal,
+    });
+
+    const failure = await createGitHubApiErrorFromResponse(
+      reviewsFirstResponse,
+      reviewsEndpoint,
+    );
+    if (failure != null) {
+      throw new GitHubPullRequestEndpointsError([failure]);
+    }
+
+    const reviews = await collectReviewsAcrossPages({
+      firstResponse: reviewsFirstResponse,
+      endpoint: reviewsEndpoint,
+      headers,
+      signal: input.signal,
+    });
+
+    return buildPullReviewerSummary(input.pullMetadata, reviews);
+  }
+
+  const pullEndpoint = buildPullEndpoint(
+    input.owner,
+    input.repo,
+    input.pullNumber,
+  );
+  const pullUrl = `https://api.github.com${pullEndpoint.path}`;
 
   const [pullResponse, reviewsFirstResponse] = await Promise.all([
     fetch(pullUrl, { headers, signal: input.signal }),
@@ -277,7 +316,43 @@ export async function fetchPullReviewerSummary(input: {
     headers,
     signal: input.signal,
   });
-  const pull = pullParsed.data;
+
+  return buildPullReviewerSummary(
+    toPullReviewerMetadata(input.pullNumber, pullParsed.data),
+    reviews,
+  );
+}
+
+export async function fetchPullReviewerMetadataBatch(input: {
+  owner: string;
+  repo: string;
+  githubToken: string | null;
+  signal?: AbortSignal;
+}): Promise<PullReviewerMetadata[]> {
+  const headers = createGitHubHeaders(input.githubToken);
+  const endpoint = buildPullsMetadataEndpoint(input.owner, input.repo);
+  const response = await fetch(`https://api.github.com${endpoint.path}`, {
+    headers,
+    signal: input.signal,
+  });
+
+  const failure = await createGitHubApiErrorFromResponse(response, endpoint);
+  if (failure != null) {
+    throw failure;
+  }
+
+  const parsed = pullReviewerMetadataListSchema.safeParse(await response.json());
+  if (!parsed.success) {
+    throw new GitHubApiSchemaError(endpoint, parsed.error.issues);
+  }
+
+  return parsed.data.map((pull) => toPullReviewerMetadata(String(pull.number), pull));
+}
+
+function buildPullReviewerSummary(
+  pullMetadata: PullReviewerMetadata,
+  reviews: z.infer<typeof reviewsSchema>,
+): PullReviewerSummary {
   const latestNonCommentByUser = new Map<
     string,
     {
@@ -303,7 +378,7 @@ export async function fetchPullReviewerSummary(input: {
     if (
       normalizedState == null ||
       reviewer == null ||
-      reviewer === pull.user.login
+      reviewer === pullMetadata.authorLogin
     ) {
       return;
     }
@@ -363,12 +438,24 @@ export async function fetchPullReviewerSummary(input: {
 
   return {
     status: "ok" as const,
+    requestedUsers: pullMetadata.requestedUsers,
+    requestedTeams: pullMetadata.requestedTeams,
+    completedReviews,
+  };
+}
+
+function toPullReviewerMetadata(
+  pullNumber: string,
+  pull: z.infer<typeof pullSchema>,
+): PullReviewerMetadata {
+  return {
+    number: pullNumber,
+    authorLogin: pull.user.login,
     requestedUsers: pull.requested_reviewers.map((reviewer) => ({
       login: reviewer.login,
       avatarUrl: normalizeAvatarUrl(reviewer.avatar_url),
     })),
     requestedTeams: pull.requested_teams.map((team) => team.slug),
-    completedReviews,
   };
 }
 
@@ -748,6 +835,17 @@ function buildPullsListEndpoint(
     name: "pulls-list",
     method: "GET",
     path: `/repos/${owner}/${repo}/pulls?per_page=1&state=all`,
+  };
+}
+
+function buildPullsMetadataEndpoint(
+  owner: string,
+  repo: string,
+): GitHubEndpointDescriptor {
+  return {
+    name: "pulls-list",
+    method: "GET",
+    path: `/repos/${owner}/${repo}/pulls?per_page=100&state=all`,
   };
 }
 

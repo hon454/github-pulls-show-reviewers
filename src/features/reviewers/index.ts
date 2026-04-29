@@ -6,12 +6,13 @@ import {
   getCachedReviewerSummary,
   setCachedReviewerSummary,
 } from "../../cache/reviewer-cache";
-import type { PullReviewerSummary } from "../../github/api";
+import type { PullReviewerMetadata, PullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
 import type { RefreshAccountInstallationsResponse } from "../../runtime/installation-refresh";
 import {
   ReviewerFetchRuntimeError,
+  type FetchPullReviewerMetadataBatchResponse,
   type FetchPullReviewerSummaryResponse,
 } from "../../runtime/reviewer-fetch";
 import { type Account } from "../../storage/accounts";
@@ -56,7 +57,22 @@ export function bootReviewerListPage(
     promise: Promise<void>;
     controller: AbortController;
   };
+  type PageMetadataRequest = {
+    owner: string;
+    repo: string;
+    accountId: string | null;
+    promise: Promise<Map<string, PullReviewerMetadata>>;
+    controller: AbortController;
+  };
+  type PageMetadataCache = {
+    owner: string;
+    repo: string;
+    accountId: string | null;
+    metadata: Map<string, PullReviewerMetadata>;
+  };
   const inflightRequests = new Map<string, InflightRequest>();
+  let pageMetadataRequest: PageMetadataRequest | null = null;
+  let pageMetadataCache: PageMetadataCache | null = null;
   let cachedPreferences: Promise<Preferences> | null = null;
   const accountResolver = createSelfHealingAccountResolver({
     requestRefresh: requestInstallationsRefresh,
@@ -67,6 +83,9 @@ export function bootReviewerListPage(
       request.controller.abort();
     }
     inflightRequests.clear();
+    pageMetadataRequest?.controller.abort();
+    pageMetadataRequest = null;
+    pageMetadataCache = null;
   }
 
   function readPreferences(): Promise<Preferences> {
@@ -90,6 +109,83 @@ export function bootReviewerListPage(
       showStateBadge: preferences.showStateBadge,
       showReviewerName: preferences.showReviewerName,
     });
+  }
+
+  async function getPageMetadata(
+    route: NonNullable<typeof currentRoute>,
+    account: Account | null,
+    signal: AbortSignal,
+  ): Promise<Map<string, PullReviewerMetadata>> {
+    const accountId = account?.id ?? null;
+    if (
+      pageMetadataCache != null &&
+      pageMetadataCache.owner === route.owner &&
+      pageMetadataCache.repo === route.repo &&
+      pageMetadataCache.accountId === accountId
+    ) {
+      return pageMetadataCache.metadata;
+    }
+
+    if (
+      pageMetadataRequest != null &&
+      pageMetadataRequest.owner === route.owner &&
+      pageMetadataRequest.repo === route.repo &&
+      pageMetadataRequest.accountId === accountId
+    ) {
+      return pageMetadataRequest.promise;
+    }
+
+    const controller = new AbortController();
+    signal.addEventListener(
+      "abort",
+      () => {
+        controller.abort();
+      },
+      { once: true },
+    );
+
+    const request: PageMetadataRequest = {
+      owner: route.owner,
+      repo: route.repo,
+      accountId,
+      controller,
+      promise: fetchPageMetadata({
+        account,
+        owner: route.owner,
+        repo: route.repo,
+        signal: controller.signal,
+      })
+        .then((metadata) => {
+          const metadataByNumber = new Map(
+            metadata.map((pullMetadata) => [pullMetadata.number, pullMetadata]),
+          );
+          pageMetadataCache = {
+            owner: route.owner,
+            repo: route.repo,
+            accountId,
+            metadata: metadataByNumber,
+          };
+          return metadataByNumber;
+        })
+        .catch((error) => {
+          if (!isAbortError(error) && !controller.signal.aborted) {
+            pageMetadataCache = {
+              owner: route.owner,
+              repo: route.repo,
+              accountId,
+              metadata: new Map(),
+            };
+          }
+          return new Map<string, PullReviewerMetadata>();
+        })
+        .finally(() => {
+          if (pageMetadataRequest === request) {
+            pageMetadataRequest = null;
+          }
+        }),
+    };
+    pageMetadataRequest = request;
+    return request.promise;
   }
 
   async function processRow(row: Element): Promise<void> {
@@ -138,6 +234,12 @@ export function bootReviewerListPage(
     let request: InflightRequest | null = null;
     const promise = (async () => {
       const account = await accountResolver.resolveAccount(route.owner, route.repo);
+      const pullMetadata = (
+        await getPageMetadata(route, account, controller.signal)
+      ).get(pullNumber);
+      if (controller.signal.aborted) {
+        return;
+      }
 
       try {
         const summary = await fetchWithRefresh({
@@ -145,6 +247,7 @@ export function bootReviewerListPage(
           owner: route.owner,
           repo: route.repo,
           pullNumber,
+          pullMetadata,
           signal: controller.signal,
         });
         if (controller.signal.aborted) {
@@ -266,9 +369,10 @@ async function fetchWithRefresh(args: {
   owner: string;
   repo: string;
   pullNumber: string;
+  pullMetadata?: PullReviewerMetadata;
   signal: AbortSignal;
 }): Promise<PullReviewerSummary> {
-  const { account, owner, repo, pullNumber, signal } = args;
+  const { account, owner, repo, pullNumber, pullMetadata, signal } = args;
 
   if (signal.aborted) {
     throw createAbortError();
@@ -282,6 +386,7 @@ async function fetchWithRefresh(args: {
     repo,
     pullNumber,
     accountId: account?.id ?? null,
+    ...(pullMetadata == null ? {} : { pullMetadata }),
   }) as Promise<FetchPullReviewerSummaryResponse | undefined>;
 
   const abortListenerController = new AbortController();
@@ -315,6 +420,58 @@ async function fetchWithRefresh(args: {
   }
 }
 
+async function fetchPageMetadata(args: {
+  account: Account | null;
+  owner: string;
+  repo: string;
+  signal: AbortSignal;
+}): Promise<PullReviewerMetadata[]> {
+  const { account, owner, repo, signal } = args;
+
+  if (signal.aborted) {
+    throw createAbortError();
+  }
+
+  const requestId = createReviewerFetchRequestId();
+  const responsePromise = browser.runtime.sendMessage({
+    type: "fetchPullReviewerMetadataBatch",
+    requestId,
+    owner,
+    repo,
+    accountId: account?.id ?? null,
+  }) as Promise<FetchPullReviewerMetadataBatchResponse | undefined>;
+
+  const abortListenerController = new AbortController();
+  const abortPromise = new Promise<never>((_, reject) => {
+    const onAbort = () => {
+      void browser.runtime
+        .sendMessage({
+          type: "cancelPullReviewerSummary",
+          requestId,
+        })
+        .catch(() => undefined);
+      reject(createAbortError());
+    };
+
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+
+    signal.addEventListener("abort", onAbort, {
+      once: true,
+      signal: abortListenerController.signal,
+    });
+  });
+
+  try {
+    const response = await Promise.race([responsePromise, abortPromise]);
+    return unwrapReviewerMetadataBatchResponse(response);
+  } finally {
+    abortListenerController.abort();
+  }
+}
+
 function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === "AbortError") {
     return true;
@@ -342,6 +499,20 @@ function unwrapReviewerFetchResponse(
   }
 
   throw new Error("Background reviewer fetch failed.");
+}
+
+function unwrapReviewerMetadataBatchResponse(
+  response: FetchPullReviewerMetadataBatchResponse | undefined,
+): PullReviewerMetadata[] {
+  if (response?.ok === true) {
+    return response.metadata;
+  }
+
+  if (response?.ok === false) {
+    throw new ReviewerFetchRuntimeError(response.error);
+  }
+
+  throw new Error("Background reviewer metadata fetch failed.");
 }
 
 let reviewerFetchRequestCounter = 0;
