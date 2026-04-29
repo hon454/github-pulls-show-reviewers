@@ -46,6 +46,14 @@ for (const fixtureCase of renderCases) {
       const fixtureHtml = await readFile(path.join(fixturesDir, fixtureCase.fixture), "utf8");
 
       await routeFixturePage(context, fixtureHtml);
+      await routePullListApi(context, [
+        {
+          number: Number(fixtureCase.pullNumber),
+          user: { login: "hon454" },
+          requested_reviewers: [{ login: "alice" }],
+          requested_teams: [{ slug: "platform" }],
+        },
+      ]);
       await routePullApi(context, fixtureCase.pullNumber, {
         user: { login: "hon454" },
         requested_reviewers: [{ login: "alice" }],
@@ -78,6 +86,14 @@ test("omits the inline reviewer row when both requested and reviewed are empty",
     const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
 
     await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, [
+      {
+        number: 42,
+        user: { login: "hon454" },
+        requested_reviewers: [],
+        requested_teams: [],
+      },
+    ]);
     await routePullApi(context, "42", {
       user: { login: "hon454" },
       requested_reviewers: [],
@@ -100,6 +116,7 @@ test("renders unauth-rate-limit banner with Sign in CTA when an unauthenticated 
     );
 
     await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, []);
     await context.route(
       "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42",
       async (route) => {
@@ -168,6 +185,7 @@ test("renders app-uncovered banner with Configure access CTA when a signed-in ro
     });
 
     await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, []);
     // Defensive stub: in case the background ever calls the installations API,
     // return an empty list rather than letting the real network handle it.
     await context.route("https://api.github.com/user/installations**", async (route) => {
@@ -201,6 +219,7 @@ test("clears the reviewer slot silently when review history is denied", async ()
     const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
 
     await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, []);
     await routePullApi(context, "42", {
       user: { login: "hon454" },
       requested_reviewers: [{ login: "alice" }],
@@ -308,6 +327,22 @@ async function routePullApi(
 ): Promise<void> {
   await context.route(
     `https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/${pullNumber}`,
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(payload),
+      });
+    },
+  );
+}
+
+async function routePullListApi(
+  context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+  payload: object,
+): Promise<void> {
+  await context.route(
+    /^https:\/\/api\.github\.com\/repos\/hon454\/github-pulls-show-reviewers\/pulls\?/,
     async (route) => {
       await route.fulfill({
         status: 200,

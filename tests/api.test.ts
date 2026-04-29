@@ -6,6 +6,7 @@ import {
   GitHubApiError,
   GitHubApiSchemaError,
   fetchPullReviewerSummary,
+  fetchPullReviewerMetadataBatch,
   describeGitHubApiError,
   isRateLimitError,
   parseRepositoryReference,
@@ -152,6 +153,52 @@ describe("isRateLimitError", () => {
 });
 
 describe("fetchPullReviewerSummary", () => {
+  it("skips the pull endpoint when page-level pull metadata is already available", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: { login: "bob" },
+            },
+            {
+              state: "APPROVED",
+              submitted_at: "2026-04-20T12:05:00Z",
+              user: { login: "hon454" },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+      pullMetadata: {
+        number: "42",
+        authorLogin: "hon454",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: ["platform"],
+      },
+    });
+
+    expect(summary).toEqual({
+      status: "ok",
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
+      requestedTeams: ["platform"],
+      completedReviews: [{ login: "bob", avatarUrl: null, state: "APPROVED" }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100",
+    );
+  });
+
   it("supports public repository reads without sending an authorization header", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -848,6 +895,70 @@ describe("fetchPullReviewerSummary", () => {
     expect(summary.completedReviews).toEqual([
       { login: "eve", avatarUrl: null, state: "APPROVED" },
     ]);
+  });
+});
+
+describe("fetchPullReviewerMetadataBatch", () => {
+  it("reads requested reviewer metadata for a page of pull requests without a token", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 42,
+              user: { login: "hon454" },
+              requested_reviewers: [
+                {
+                  login: "alice",
+                  avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+                },
+              ],
+              requested_teams: [{ slug: "platform" }],
+            },
+            {
+              number: 41,
+              user: { login: "octocat" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: null,
+    });
+
+    expect(metadata).toEqual([
+      {
+        number: "42",
+        authorLogin: "hon454",
+        requestedUsers: [
+          {
+            login: "alice",
+            avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+          },
+        ],
+        requestedTeams: ["platform"],
+      },
+      {
+        number: "41",
+        authorLogin: "octocat",
+        requestedUsers: [],
+        requestedTeams: [],
+      },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all",
+    );
+    const headers = fetchMock.mock.calls[0]?.[1]?.headers;
+    expect(headers).toBeInstanceOf(Headers);
+    expect((headers as Headers).get("Authorization")).toBeNull();
   });
 });
 

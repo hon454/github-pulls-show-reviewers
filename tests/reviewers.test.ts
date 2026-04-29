@@ -63,6 +63,12 @@ function getRegisteredListener(
   )?.[2] as (() => void) | undefined;
 }
 
+function getRuntimeMessages(type: string): Array<Record<string, unknown>> {
+  return runtimeSendMessageMock.mock.calls
+    .map(([message]) => message as Record<string, unknown>)
+    .filter((message) => message.type === type);
+}
+
 beforeEach(() => {
   vi.resetModules();
   resolveAccountForRepoMock.mockReset();
@@ -117,14 +123,19 @@ describe("bootReviewerListPage", () => {
       requestedTeams: [],
       completedReviews: [],
     };
-    runtimeSendMessageMock.mockResolvedValue({ ok: true, summary });
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({ ok: true, summary });
+    });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
 
     await flushMicrotasks();
     await flushMicrotasks();
-    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
     expect(document.querySelector("a.ghpsr-pill")).toBeNull();
     expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
 
@@ -157,7 +168,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
     expect(document.querySelector("a.ghpsr-pill")).not.toBeNull();
   });
 
@@ -169,14 +180,19 @@ describe("bootReviewerListPage", () => {
       requestedTeams: [],
       completedReviews: [],
     };
-    runtimeSendMessageMock.mockResolvedValue({ ok: true, summary });
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({ ok: true, summary });
+    });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
 
     await flushMicrotasks();
     await flushMicrotasks();
-    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
 
     capturedStorageListener!(
       {
@@ -191,7 +207,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(2);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
   });
 
   it("sends reviewer fetch requests through the background runtime contract", async () => {
@@ -208,7 +224,12 @@ describe("bootReviewerListPage", () => {
       token: "ghu_old",
       refreshToken: "ghr_old",
     });
-    runtimeSendMessageMock.mockResolvedValueOnce({ ok: true, summary });
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({ ok: true, summary });
+    });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
@@ -216,6 +237,15 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
+    expect(runtimeSendMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "fetchPullReviewerMetadataBatch",
+        owner: "cinev",
+        repo: "shotloom",
+        accountId: "acc-1",
+        requestId: expect.any(String),
+      }),
+    );
     expect(runtimeSendMessageMock).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "fetchPullReviewerSummary",
@@ -226,7 +256,79 @@ describe("bootReviewerListPage", () => {
         requestId: expect.any(String),
       }),
     );
-    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+  });
+
+  it("requests page-level pull metadata once and reuses it for matching row summaries", async () => {
+    document.body.innerHTML = `
+      <div class="js-issue-row" id="issue_42">
+        <a class="Link--primary" href="/cinev/shotloom/pull/42">PR #42</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+      <div class="js-issue-row" id="issue_41">
+        <a class="Link--primary" href="/cinev/shotloom/pull/41">PR #41</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+    `;
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({
+          ok: true,
+          metadata: [
+            {
+              number: "42",
+              authorLogin: "cinev",
+              requestedUsers: [{ login: "alice", avatarUrl: null }],
+              requestedTeams: ["platform"],
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ ok: true, summary });
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const metadataCall = runtimeSendMessageMock.mock.calls.find(
+      ([message]) => message.type === "fetchPullReviewerMetadataBatch",
+    )?.[0];
+    const summaryCalls = runtimeSendMessageMock.mock.calls
+      .map(([message]) => message)
+      .filter((message) => message.type === "fetchPullReviewerSummary");
+
+    expect(metadataCall).toMatchObject({
+      type: "fetchPullReviewerMetadataBatch",
+      owner: "cinev",
+      repo: "shotloom",
+      accountId: null,
+      requestId: expect.any(String),
+    });
+    expect(summaryCalls).toHaveLength(2);
+    expect(
+      summaryCalls.find((message) => message.pullNumber === "42"),
+    ).toMatchObject({
+      pullMetadata: {
+        number: "42",
+        authorLogin: "cinev",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: ["platform"],
+      },
+    });
+    expect(
+      summaryCalls.find((message) => message.pullNumber === "41"),
+    ).not.toHaveProperty("pullMetadata");
   });
 
   it("does not flash loading text on a cache-hit re-render", async () => {
@@ -269,15 +371,22 @@ describe("bootReviewerListPage", () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
     let resolveFetch: ((summary: PullReviewerSummary) => void) | null = null;
-    runtimeSendMessageMock
-      .mockImplementationOnce(
-        () =>
-          new Promise<{ ok: true; summary: PullReviewerSummary }>((resolve) => {
-            resolveFetch = (summary) => resolve({ ok: true, summary });
-          }),
-      )
-      .mockResolvedValueOnce(undefined)
-      .mockImplementationOnce(() => new Promise<void>(() => {}));
+    let summaryRequestCount = 0;
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "cancelPullReviewerSummary") {
+        return Promise.resolve(undefined);
+      }
+      summaryRequestCount += 1;
+      if (summaryRequestCount === 1) {
+        return new Promise<{ ok: true; summary: PullReviewerSummary }>((resolve) => {
+          resolveFetch = (summary) => resolve({ ok: true, summary });
+        });
+      }
+      return new Promise<void>(() => {});
+    });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     bootReviewerListPage(makeCtx());
@@ -310,11 +419,11 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(runtimeSendMessageMock.mock.calls[1]?.[0]).toMatchObject({
+    expect(getRuntimeMessages("cancelPullReviewerSummary")[0]).toMatchObject({
       type: "cancelPullReviewerSummary",
       requestId: expect.any(String),
     });
-    expect(runtimeSendMessageMock.mock.calls[2]?.[0]).toMatchObject({
+    expect(getRuntimeMessages("fetchPullReviewerSummary")[1]).toMatchObject({
       type: "fetchPullReviewerSummary",
       requestId: expect.any(String),
     });
@@ -329,14 +438,29 @@ describe("bootReviewerListPage", () => {
 
   it("shows loading again after a failed refetch clears a previously rendered row", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
-    runtimeSendMessageMock.mockResolvedValueOnce({
-      ok: true,
-      summary: {
-        status: "ok",
-        requestedUsers: [{ login: "alice", avatarUrl: null }],
-        requestedTeams: [],
-        completedReviews: [],
+    const summaryResponses: unknown[] = [
+      {
+        ok: true,
+        summary: {
+          status: "ok",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+          completedReviews: [],
+        },
       },
+    ];
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "cancelPullReviewerSummary") {
+        return Promise.resolve(undefined);
+      }
+      const response = summaryResponses.shift();
+      if (response != null) {
+        return Promise.resolve(response);
+      }
+      return new Promise<void>(() => {});
     });
 
     const { bootReviewerListPage } = await import("../src/features/reviewers");
@@ -346,7 +470,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
 
-    runtimeSendMessageMock.mockResolvedValueOnce({
+    summaryResponses.push({
       ok: false,
       error: { kind: "unknown", status: null, message: "boom" },
     });
@@ -365,9 +489,6 @@ describe("bootReviewerListPage", () => {
     expect(document.body.textContent).not.toContain("alice");
     expect(document.body.textContent).not.toContain("Loading reviewers");
 
-    runtimeSendMessageMock.mockImplementationOnce(
-      () => new Promise<never>(() => {}),
-    );
     capturedStorageListener!(
       {
         settings: {

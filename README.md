@@ -40,7 +40,8 @@ Core behavior:
 - Link reviewer chips to open PR searches by default, with an option to include
   closed PRs in those searches
 - Keep rendering deterministic with pure view-model helpers and centralized selectors
-- Reuse per-page cache entries to avoid duplicate row fetches
+- Reuse page-level reviewer request metadata and per-page cache entries to
+  reduce duplicate cold-row fetches
 - Re-run safely across GitHub SPA navigation and DOM mutations
 
 Review states currently surfaced in the UI:

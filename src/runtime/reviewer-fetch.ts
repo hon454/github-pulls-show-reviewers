@@ -4,6 +4,7 @@ import {
   GitHubPullRequestEndpointsError,
   extractGitHubApiStatus,
   isRateLimitError,
+  type PullReviewerMetadata,
   type PullReviewerSummary,
 } from "../github/api";
 
@@ -14,11 +15,20 @@ export type FetchPullReviewerSummaryMessage = {
   repo: string;
   pullNumber: string;
   accountId: string | null;
+  pullMetadata?: PullReviewerMetadata;
 };
 
 export type CancelPullReviewerSummaryMessage = {
   type: "cancelPullReviewerSummary";
   requestId: string;
+};
+
+export type FetchPullReviewerMetadataBatchMessage = {
+  type: "fetchPullReviewerMetadataBatch";
+  requestId: string;
+  owner: string;
+  repo: string;
+  accountId: string | null;
 };
 
 export type ReviewerFetchRateLimitSnapshot = {
@@ -52,6 +62,16 @@ export type FetchPullReviewerSummaryResponse =
       error: ReviewerFetchErrorEnvelope;
     };
 
+export type FetchPullReviewerMetadataBatchResponse =
+  | {
+      ok: true;
+      metadata: PullReviewerMetadata[];
+    }
+  | {
+      ok: false;
+      error: ReviewerFetchErrorEnvelope;
+    };
+
 export class ReviewerFetchRuntimeError extends Error {
   constructor(public readonly envelope: ReviewerFetchErrorEnvelope) {
     super(envelope.message ?? "Background reviewer fetch failed.");
@@ -71,7 +91,10 @@ export function isFetchPullReviewerSummaryMessage(
     hasNonEmptyString((value as { repo?: unknown }).repo) &&
     hasNonEmptyString((value as { pullNumber?: unknown }).pullNumber) &&
     (((value as { accountId?: unknown }).accountId === null) ||
-      typeof (value as { accountId?: unknown }).accountId === "string")
+      typeof (value as { accountId?: unknown }).accountId === "string") &&
+    (!("pullMetadata" in value) ||
+      (value as { pullMetadata?: unknown }).pullMetadata === undefined ||
+      isPullReviewerMetadata((value as { pullMetadata?: unknown }).pullMetadata))
   );
 }
 
@@ -83,6 +106,21 @@ export function isCancelPullReviewerSummaryMessage(
     typeof value === "object" &&
     (value as { type?: unknown }).type === "cancelPullReviewerSummary" &&
     hasNonEmptyString((value as { requestId?: unknown }).requestId)
+  );
+}
+
+export function isFetchPullReviewerMetadataBatchMessage(
+  value: unknown,
+): value is FetchPullReviewerMetadataBatchMessage {
+  return (
+    value != null &&
+    typeof value === "object" &&
+    (value as { type?: unknown }).type === "fetchPullReviewerMetadataBatch" &&
+    hasNonEmptyString((value as { requestId?: unknown }).requestId) &&
+    hasNonEmptyString((value as { owner?: unknown }).owner) &&
+    hasNonEmptyString((value as { repo?: unknown }).repo) &&
+    (((value as { accountId?: unknown }).accountId === null) ||
+      typeof (value as { accountId?: unknown }).accountId === "string")
   );
 }
 
@@ -257,4 +295,30 @@ function parseRateLimitSnapshot(
 
 function hasNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isPullReviewerMetadata(value: unknown): value is PullReviewerMetadata {
+  if (value == null || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    hasNonEmptyString(record.number) &&
+    hasNonEmptyString(record.authorLogin) &&
+    Array.isArray(record.requestedUsers) &&
+    record.requestedUsers.every(isReviewerUser) &&
+    Array.isArray(record.requestedTeams) &&
+    record.requestedTeams.every((team) => typeof team === "string")
+  );
+}
+
+function isReviewerUser(value: unknown): value is PullReviewerMetadata["requestedUsers"][number] {
+  if (value == null || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    hasNonEmptyString(record.login) &&
+    (record.avatarUrl === null || typeof record.avatarUrl === "string")
+  );
 }
