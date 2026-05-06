@@ -3,10 +3,16 @@ import type { ContentScriptContext } from "wxt/utils/content-script-context";
 import {
   buildReviewerCacheKey,
   clearReviewerCache,
-  getCachedReviewerSummary,
+  getReviewerCacheEntry,
+  isReviewerCacheEntryFresh,
+  markReviewerCacheStale,
+  markReviewerCacheStaleForRepository,
   setCachedReviewerSummary,
 } from "../../cache/reviewer-cache";
-import type { PullReviewerMetadata, PullReviewerSummary } from "../../github/api";
+import type {
+  PullReviewerMetadata,
+  PullReviewerSummary,
+} from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
 import type { RefreshAccountInstallationsResponse } from "../../runtime/installation-refresh";
@@ -35,6 +41,8 @@ import {
   renderReviewers,
 } from "./dom";
 import { buildReviewers } from "./view-model";
+
+const PAGE_METADATA_FRESH_MS = 10_000;
 
 export type ReviewerBootOptions = {
   onRowFailure?: (signal: {
@@ -69,8 +77,11 @@ export function bootReviewerListPage(
     repo: string;
     accountId: string | null;
     metadata: Map<string, PullReviewerMetadata>;
+    fetchedAt: number;
+    stale: boolean;
   };
   const inflightRequests = new Map<string, InflightRequest>();
+  const rowFingerprints = new Map<string, string>();
   let pageMetadataRequest: PageMetadataRequest | null = null;
   let pageMetadataCache: PageMetadataCache | null = null;
   let cachedPreferences: Promise<Preferences> | null = null;
@@ -98,7 +109,7 @@ export function bootReviewerListPage(
   async function renderSummaryForMount(
     mount: HTMLElement,
     route: NonNullable<typeof currentRoute>,
-    summary: ReturnType<typeof getCachedReviewerSummary>,
+    summary: PullReviewerSummary | undefined,
   ): Promise<void> {
     if (!summary) return;
     const preferences = await readPreferences();
@@ -121,7 +132,9 @@ export function bootReviewerListPage(
       pageMetadataCache != null &&
       pageMetadataCache.owner === route.owner &&
       pageMetadataCache.repo === route.repo &&
-      pageMetadataCache.accountId === accountId
+      pageMetadataCache.accountId === accountId &&
+      !pageMetadataCache.stale &&
+      Date.now() - pageMetadataCache.fetchedAt <= PAGE_METADATA_FRESH_MS
     ) {
       return pageMetadataCache.metadata;
     }
@@ -164,6 +177,8 @@ export function bootReviewerListPage(
             repo: route.repo,
             accountId,
             metadata: metadataByNumber,
+            fetchedAt: Date.now(),
+            stale: false,
           };
           return metadataByNumber;
         })
@@ -174,6 +189,8 @@ export function bootReviewerListPage(
               repo: route.repo,
               accountId,
               metadata: new Map(),
+              fetchedAt: Date.now(),
+              stale: false,
             };
           }
           return new Map<string, PullReviewerMetadata>();
@@ -199,10 +216,13 @@ export function bootReviewerListPage(
 
     const route = currentRoute;
     const cacheKey = buildReviewerCacheKey(route.owner, route.repo, pullNumber);
-    const cachedSummary = getCachedReviewerSummary(cacheKey);
-    if (cachedSummary) {
-      await renderSummaryForMount(mount, route, cachedSummary);
-      return;
+    rowFingerprints.set(cacheKey, createRowFingerprint(row, pullNumber));
+    const cachedEntry = getReviewerCacheEntry(cacheKey);
+    if (cachedEntry != null) {
+      await renderSummaryForMount(mount, route, cachedEntry.summary);
+      if (isReviewerCacheEntryFresh(cachedEntry)) {
+        return;
+      }
     }
 
     const existingRequest = inflightRequests.get(cacheKey);
@@ -211,9 +231,9 @@ export function bootReviewerListPage(
       // key, render it immediately instead of flashing the loading text.
       // This also covers the race where the cache has just been set but the
       // inflight entry has not been deleted yet.
-      const existingSummary = getCachedReviewerSummary(cacheKey);
-      if (existingSummary) {
-        await renderSummaryForMount(mount, route, existingSummary);
+      const existingEntry = getReviewerCacheEntry(cacheKey);
+      if (existingEntry != null) {
+        await renderSummaryForMount(mount, route, existingEntry.summary);
       } else if (!mountHasRenderedChips(mount)) {
         renderLoading(mount);
       }
@@ -222,18 +242,25 @@ export function bootReviewerListPage(
       } catch {
         // Existing request errors are reported via its own onRowFailure; swallow here.
       }
-      await renderSummaryForMount(mount, route, getCachedReviewerSummary(cacheKey));
+      await renderSummaryForMount(
+        mount,
+        route,
+        getReviewerCacheEntry(cacheKey)?.summary,
+      );
       return;
     }
 
-    if (!mountHasRenderedChips(mount)) {
+    if (cachedEntry == null && !mountHasRenderedChips(mount)) {
       renderLoading(mount);
     }
 
     const controller = new AbortController();
     let request: InflightRequest | null = null;
     const promise = (async () => {
-      const account = await accountResolver.resolveAccount(route.owner, route.repo);
+      const account = await accountResolver.resolveAccount(
+        route.owner,
+        route.repo,
+      );
       const pullMetadata = (
         await getPageMetadata(route, account, controller.signal)
       ).get(pullNumber);
@@ -287,7 +314,11 @@ export function bootReviewerListPage(
       return;
     }
 
-    await renderSummaryForMount(mount, route, getCachedReviewerSummary(cacheKey));
+    await renderSummaryForMount(
+      mount,
+      route,
+      getReviewerCacheEntry(cacheKey)?.summary,
+    );
   }
 
   function processRows(root: ParentNode = document): void {
@@ -295,6 +326,33 @@ export function bootReviewerListPage(
     root.querySelectorAll(githubSelectors.row).forEach((row) => {
       void processRow(row);
     });
+  }
+
+  function processMutatedRow(target: Node): void {
+    if (currentRoute == null) return;
+    const element = target instanceof Element ? target : target.parentElement;
+    if (element == null || element.closest("[data-ghpsr-root]") != null) {
+      return;
+    }
+    const row = element.closest(githubSelectors.row);
+    if (row == null) return;
+    const pullNumber = extractPullNumber(row);
+    if (pullNumber == null) return;
+    const cacheKey = buildReviewerCacheKey(
+      currentRoute.owner,
+      currentRoute.repo,
+      pullNumber,
+    );
+    const nextFingerprint = createRowFingerprint(row, pullNumber);
+    const previousFingerprint = rowFingerprints.get(cacheKey);
+    rowFingerprints.set(cacheKey, nextFingerprint);
+    if (previousFingerprint === nextFingerprint) {
+      return;
+    }
+    markReviewerCacheStale(cacheKey);
+    pageMetadataCache =
+      pageMetadataCache == null ? null : { ...pageMetadataCache, stale: true };
+    void processRow(row);
   }
 
   function refreshRoute(force = false): void {
@@ -311,6 +369,12 @@ export function bootReviewerListPage(
       previousRoute?.repo !== currentRoute?.repo
     ) {
       clearReviewerCache();
+      rowFingerprints.clear();
+    } else if (currentRoute != null) {
+      markReviewerCacheStaleForRepository(
+        currentRoute.owner,
+        currentRoute.repo,
+      );
     }
 
     processRows();
@@ -318,8 +382,14 @@ export function bootReviewerListPage(
 
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
+      if (mutation.type !== "childList" || mutation.addedNodes.length === 0) {
+        processMutatedRow(mutation.target);
+        continue;
+      }
+      processMutatedRow(mutation.target);
       mutation.addedNodes.forEach((node) => {
         if (!(node instanceof Element)) return;
+        if (node.closest("[data-ghpsr-root]") != null) return;
         if (node.matches(githubSelectors.row)) {
           void processRow(node);
           return;
@@ -329,7 +399,12 @@ export function bootReviewerListPage(
     }
   });
 
-  observer.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, {
+    attributes: true,
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
   processRows();
 
   ctx.addEventListener(window, "wxt:locationchange", () => refreshRoute(true));
@@ -337,10 +412,9 @@ export function bootReviewerListPage(
   ctx.addEventListener(document, "turbo:render", () => refreshRoute(true));
   ctx.addEventListener(document, "pjax:end", () => refreshRoute(true));
 
-  const storageListener: Parameters<typeof browser.storage.onChanged.addListener>[0] = (
-    changes,
-    areaName,
-  ) => {
+  const storageListener: Parameters<
+    typeof browser.storage.onChanged.addListener
+  >[0] = (changes, areaName) => {
     if (areaName !== "local") return;
 
     if (isPreferencesChange(changes)) {
@@ -362,6 +436,34 @@ export function bootReviewerListPage(
     observer.disconnect();
     browser.storage.onChanged.removeListener(storageListener);
   });
+}
+
+function createRowFingerprint(row: Element, pullNumber: string): string {
+  const link = row.querySelector<HTMLAnchorElement>(
+    githubSelectors.primaryLink,
+  );
+  const href = link?.getAttribute("href") ?? "";
+  const metaContainer = findFirst(row, githubSelectors.metaContainers);
+  return [pullNumber, href, readRowMetadataText(metaContainer)].join("|");
+}
+
+function findFirst(
+  root: ParentNode,
+  selectors: readonly string[],
+): Element | null {
+  for (const selector of selectors) {
+    const match = root.querySelector(selector);
+    if (match != null) return match;
+  }
+  return null;
+}
+
+function readRowMetadataText(metaContainer: Element | null): string {
+  if (metaContainer == null) return "";
+  const clone = metaContainer.cloneNode(true);
+  if (!(clone instanceof Element)) return "";
+  clone.querySelectorAll("[data-ghpsr-root]").forEach((node) => node.remove());
+  return (clone.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
 async function fetchWithRefresh(args: {
@@ -539,7 +641,9 @@ function createAbortError(): Error {
   return error;
 }
 
-async function requestInstallationsRefresh(accountId: string): Promise<boolean> {
+async function requestInstallationsRefresh(
+  accountId: string,
+): Promise<boolean> {
   try {
     const response = (await browser.runtime.sendMessage({
       type: "refreshAccountInstallations",

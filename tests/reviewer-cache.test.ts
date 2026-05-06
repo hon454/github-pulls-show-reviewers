@@ -7,6 +7,11 @@ import {
   buildReviewerCacheKey,
   clearReviewerCache,
   getCachedReviewerSummary,
+  getReviewerCacheEntry,
+  isReviewerCacheEntryFresh,
+  markReviewerCacheStale,
+  markReviewerCacheStaleForRepository,
+  REVIEWER_SUMMARY_FRESH_MS,
   setCachedReviewerSummary,
 } from "../src/cache/reviewer-cache";
 
@@ -69,5 +74,60 @@ describe("reviewer cache", () => {
     setCachedReviewerSummary(a, summary("a2"));
     expect(getCachedReviewerSummary(a)?.requestedUsers[0].login).toBe("a2");
     expect(getCachedReviewerSummary(b)?.requestedUsers[0].login).toBe("b");
+  });
+
+  it("tracks freshness without changing the summary getter contract", () => {
+    const key = buildReviewerCacheKey("org", "repo", "1");
+    const fetchedAt = 1_000;
+    setCachedReviewerSummary(key, summary("alice"), { fetchedAt });
+
+    expect(getCachedReviewerSummary(key)?.requestedUsers[0].login).toBe(
+      "alice",
+    );
+
+    const entry = getReviewerCacheEntry(key);
+    expect(entry?.summary.requestedUsers[0].login).toBe("alice");
+    expect(entry?.fetchedAt).toBe(fetchedAt);
+    expect(
+      isReviewerCacheEntryFresh(entry!, fetchedAt + REVIEWER_SUMMARY_FRESH_MS),
+    ).toBe(true);
+    expect(
+      isReviewerCacheEntryFresh(
+        entry!,
+        fetchedAt + REVIEWER_SUMMARY_FRESH_MS + 1,
+      ),
+    ).toBe(false);
+  });
+
+  it("can mark a single cache entry stale for targeted revalidation", () => {
+    const key = buildReviewerCacheKey("org", "repo", "1");
+    setCachedReviewerSummary(key, summary("alice"), { fetchedAt: 10_000 });
+
+    markReviewerCacheStale(key);
+
+    const entry = getReviewerCacheEntry(key);
+    expect(entry?.summary.requestedUsers[0].login).toBe("alice");
+    expect(isReviewerCacheEntryFresh(entry!, 10_001)).toBe(false);
+  });
+
+  it("can mark entries stale for one repository without touching other repositories", () => {
+    const a = buildReviewerCacheKey("org", "repo", "1");
+    const b = buildReviewerCacheKey("org", "repo", "2");
+    const c = buildReviewerCacheKey("other", "repo", "1");
+    setCachedReviewerSummary(a, summary("a"), { fetchedAt: 10_000 });
+    setCachedReviewerSummary(b, summary("b"), { fetchedAt: 10_000 });
+    setCachedReviewerSummary(c, summary("c"), { fetchedAt: 10_000 });
+
+    markReviewerCacheStaleForRepository("org", "repo");
+
+    expect(isReviewerCacheEntryFresh(getReviewerCacheEntry(a)!, 10_001)).toBe(
+      false,
+    );
+    expect(isReviewerCacheEntryFresh(getReviewerCacheEntry(b)!, 10_001)).toBe(
+      false,
+    );
+    expect(isReviewerCacheEntryFresh(getReviewerCacheEntry(c)!, 10_001)).toBe(
+      true,
+    );
   });
 });
