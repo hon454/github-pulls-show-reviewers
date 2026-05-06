@@ -24,19 +24,28 @@
 3. Extract the pull request number from the row id or primary pull request link.
 4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
 5. Send one `fetchPullReviewerMetadataBatch` message per page/account when the
-   cache is cold. The background reads the first REST pull-list page with the
-   matched account token (or no token if none matches), returning requested user
-   reviewers, requested teams, and author logins that can be reused across
-   visible rows.
-6. Send a `fetchPullReviewerSummary` message for each uncached row. When the
-   page-level metadata contains that pull request number, the background skips
-   the per-row pull endpoint and reads only the reviews endpoint. If the pull
-   number is absent from the batch result, the summary request falls back to the
-   original per-row `pull + reviews` REST path.
+   page-level metadata cache is cold or stale. The background reads the first
+   REST pull-list page with the matched account token (or no token if none
+   matches), returning requested user reviewers, requested teams, and author
+   logins that can be reused across visible rows. Page metadata has a shorter
+   freshness window than row summaries because re-review requests primarily
+   change `requested_reviewers` / `requested_teams`.
+6. Send a `fetchPullReviewerSummary` message for each uncached or stale row.
+   Fresh cache hits render without refetching. Stale cache hits render the
+   cached chips immediately, then revalidate in the background and rerender only
+   the affected row when fresh data arrives. When the page-level metadata
+   contains that pull request number, the background skips the per-row pull
+   endpoint and reads only the reviews endpoint. If the pull number is absent
+   from the batch result, the summary request falls back to the original per-row
+   `pull + reviews` REST path.
 7. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the prior state badge. Requested teams keep the text chip shape. User chip links follow the same primary axis as the ring color: blue-ring (still-requested) chips link to `review-requested:<login>`; colored-ring (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use `is:pr is:open` searches by default.
 8. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text.
-9. Re-run row processing when GitHub mutates the page or performs SPA navigation.
+9. Re-run row processing when GitHub mutates the page or performs SPA
+   navigation. Same-repository navigation/render events mark visible row
+   summaries stale instead of trusting the active page-session cache forever.
+   Existing-row DOM mutations use a lightweight row fingerprint so unrelated
+   attribute changes do not trigger reviewer API requests.
 
 ## Current limitations
 
@@ -64,8 +73,9 @@
   `GET /repos/{owner}/{repo}/pulls?per_page=100&state=all` as a page-level
   metadata hint before row summaries.
 - The content script de-duplicates in-flight row fetches, caches each pull
-  request summary for the active page session, and caches the page-level
-  metadata result per `owner/repo/account`.
+  request summary for the active page session with freshness metadata, and
+  caches the page-level metadata result per `owner/repo/account` with a shorter
+  freshness window.
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
 - If request volume remains the next bottleneck, the preferred follow-up is to
   make the REST batch smarter for filtered and paginated GitHub list pages
@@ -73,14 +83,14 @@
 
 ## Access banner classification
 
-| Account state | Failure pattern                                           | Banner kind          | CTA              |
-| ------------- | --------------------------------------------------------- | -------------------- | ---------------- |
-| Signed in     | 401 on any reviewer endpoint                              | `auth-expired`       | Sign in          |
-| Signed in     | 404 / 403 with no rate-limit signal                       | `app-uncovered`      | Configure access |
-| Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`               | `auth-rate-limit`    | (passive wait)   |
-| No account    | 429, or 403 with rate-limit signal                        | `unauth-rate-limit`  | Sign in          |
-| No account    | 401, 403, or 404 without rate-limit signal                | `signin-required`    | Sign in          |
-| Either        | Network / schema / unknown / empty endpoint envelope      | (silent, console.warn) | —             |
+| Account state | Failure pattern                                      | Banner kind            | CTA              |
+| ------------- | ---------------------------------------------------- | ---------------------- | ---------------- |
+| Signed in     | 401 on any reviewer endpoint                         | `auth-expired`         | Sign in          |
+| Signed in     | 404 / 403 with no rate-limit signal                  | `app-uncovered`        | Configure access |
+| Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`          | `auth-rate-limit`      | (passive wait)   |
+| No account    | 429, or 403 with rate-limit signal                   | `unauth-rate-limit`    | Sign in          |
+| No account    | 401, 403, or 404 without rate-limit signal           | `signin-required`      | Sign in          |
+| Either        | Network / schema / unknown / empty endpoint envelope | (silent, console.warn) | —                |
 
 Severity priority for cross-row resolution: `auth-expired` > `app-uncovered` >
 `auth-rate-limit` > `unauth-rate-limit` > `signin-required`. The highest-priority

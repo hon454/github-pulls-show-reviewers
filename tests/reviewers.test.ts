@@ -367,6 +367,227 @@ describe("bootReviewerListPage", () => {
     clearReviewerCache();
   });
 
+  it("renders stale cached reviewers immediately then revalidates and rerenders the row", async () => {
+    getPreferencesMock.mockResolvedValue({
+      version: 1,
+      showStateBadge: true,
+      showReviewerName: true,
+      openPullsOnly: true,
+    });
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    let resolveSummary: ((summary: PullReviewerSummary) => void) | null = null;
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "fetchPullReviewerSummary") {
+        return new Promise<{ ok: true; summary: PullReviewerSummary }>(
+          (resolve) => {
+            resolveSummary = (summary) => resolve({ ok: true, summary });
+          },
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      markReviewerCacheStale,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    const cacheKey = buildReviewerCacheKey("cinev", "shotloom", "42");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      cacheKey,
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+      { fetchedAt: 10_000 },
+    );
+    markReviewerCacheStale(cacheKey);
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@alice");
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
+    resolveSummary!({
+      status: "ok",
+      requestedUsers: [{ login: "bob", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).not.toContain("@alice");
+    expect(document.body.textContent).toContain("@bob");
+
+    clearReviewerCache();
+  });
+
+  it("treats same-repository render events as reviewer cache revalidation triggers", async () => {
+    getPreferencesMock.mockResolvedValue({
+      version: 1,
+      showStateBadge: true,
+      showReviewerName: true,
+      openPullsOnly: true,
+    });
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    let resolveSummary: ((summary: PullReviewerSummary) => void) | null = null;
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "fetchPullReviewerSummary") {
+        return new Promise<{ ok: true; summary: PullReviewerSummary }>(
+          (resolve) => {
+            resolveSummary = (summary) => resolve({ ok: true, summary });
+          },
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      buildReviewerCacheKey("cinev", "shotloom", "42"),
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+      { fetchedAt: Date.now() },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    const ctx = makeCtx();
+    bootReviewerListPage(ctx);
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@alice");
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+
+    getRegisteredListener(ctx, "turbo:render")?.();
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@alice");
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
+    resolveSummary!({
+      status: "ok",
+      requestedUsers: [{ login: "carol", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).not.toContain("@alice");
+    expect(document.body.textContent).toContain("@carol");
+
+    clearReviewerCache();
+  });
+
+  it("only revalidates mutated existing rows when the row fingerprint changes", async () => {
+    getPreferencesMock.mockResolvedValue({
+      version: 1,
+      showStateBadge: true,
+      showReviewerName: true,
+      openPullsOnly: true,
+    });
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    let resolveSummary: ((summary: PullReviewerSummary) => void) | null = null;
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "fetchPullReviewerSummary") {
+        return new Promise<{ ok: true; summary: PullReviewerSummary }>(
+          (resolve) => {
+            resolveSummary = (summary) => resolve({ ok: true, summary });
+          },
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      buildReviewerCacheKey("cinev", "shotloom", "42"),
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+      { fetchedAt: Date.now() },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const link = document.querySelector<HTMLAnchorElement>("a.Link--primary")!;
+    link.setAttribute("data-hovercard-url", "/cinev/shotloom/pull/42");
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+
+    link.setAttribute("href", "/cinev/shotloom/pull/42?updated=1");
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
+    resolveSummary!({
+      status: "ok",
+      requestedUsers: [{ login: "dana", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@dana");
+
+    clearReviewerCache();
+  });
+
   it("aborts in-flight summary fetches on storage (accounts) change and drops the late result", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
@@ -381,9 +602,11 @@ describe("bootReviewerListPage", () => {
       }
       summaryRequestCount += 1;
       if (summaryRequestCount === 1) {
-        return new Promise<{ ok: true; summary: PullReviewerSummary }>((resolve) => {
-          resolveFetch = (summary) => resolve({ ok: true, summary });
-        });
+        return new Promise<{ ok: true; summary: PullReviewerSummary }>(
+          (resolve) => {
+            resolveFetch = (summary) => resolve({ ok: true, summary });
+          },
+        );
       }
       return new Promise<void>(() => {});
     });
