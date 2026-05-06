@@ -68,6 +68,8 @@ This extension is intentionally narrow. Manual verification should stay focused 
 - A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the old state badge.
 - No unrelated PR dashboard data appears.
 - Display preference changes should rerender from cache rather than refetch reviewer API data.
+- Re-requested reviewers or teams should update after GitHub rerenders the PR
+  list, without requiring a full browser reload.
 
 ## 4. Verify the main user flows
 
@@ -171,6 +173,19 @@ This extension is intentionally narrow. Manual verification should stay focused 
 5. Return to the PR list and confirm reviewer chips expand into `@login` pills.
 6. Confirm no new reviewer API requests appear in DevTools after the toggle.
 
+### Reviewer freshness after GitHub rerender
+
+1. Open a PR list for a repository where you can edit review requests.
+2. Open one pull request from the list in another tab, request or remove a
+   reviewer or team, then return to the PR list tab.
+3. Trigger GitHub's normal list rerender by navigating away and back within the
+   same repository, using browser back/forward, or refreshing the PR list's
+   filters.
+4. Confirm the row keeps its existing reviewer chips visible while the extension
+   revalidates in the background.
+5. Confirm the changed reviewer or team state appears without a full browser
+   page reload.
+
 ## 5. Rebuild and reload during iteration
 
 The official Chrome docs note that manifest changes, service worker changes, and content script changes require an extension reload, and content script changes also require reloading the host page.
@@ -208,6 +223,8 @@ Before considering a manual check complete, verify at least these cases:
 - A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence renders the refresh badge.
 - Toggling **Show reviewer names** rerenders the current PR list without extra reviewer API requests.
 - GitHub SPA navigation still leaves reviewer chips visible after moving between PR list views.
+- A changed review request is revalidated after same-repository GitHub
+  navigation or rerender, without requiring a full browser reload.
 - Reloading the page does not duplicate reviewer UI on the same row.
 - The options page never falls back to a blank white screen; a misconfigured
   production build shows an explicit GitHub App configuration warning instead.
