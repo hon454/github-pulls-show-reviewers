@@ -386,6 +386,7 @@ export function bootReviewerListPage(
         processMutatedRow(mutation.target);
         continue;
       }
+      processMutatedRow(mutation.target);
       mutation.addedNodes.forEach((node) => {
         if (!(node instanceof Element)) return;
         if (node.closest("[data-ghpsr-root]") != null) return;

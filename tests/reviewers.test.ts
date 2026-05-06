@@ -588,6 +588,80 @@ describe("bootReviewerListPage", () => {
     clearReviewerCache();
   });
 
+  it("revalidates mutated existing rows when metadata children are added", async () => {
+    getPreferencesMock.mockResolvedValue({
+      version: 1,
+      showStateBadge: true,
+      showReviewerName: true,
+      openPullsOnly: true,
+    });
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    let resolveSummary: ((summary: PullReviewerSummary) => void) | null = null;
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "fetchPullReviewerSummary") {
+        return new Promise<{ ok: true; summary: PullReviewerSummary }>(
+          (resolve) => {
+            resolveSummary = (summary) => resolve({ ok: true, summary });
+          },
+        );
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      buildReviewerCacheKey("cinev", "shotloom", "42"),
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+      { fetchedAt: Date.now() },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const stateText = document.createElement("span");
+    stateText.textContent = "Review requested";
+    metadata.append(stateText);
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
+    resolveSummary!({
+      status: "ok",
+      requestedUsers: [{ login: "erin", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@erin");
+
+    clearReviewerCache();
+  });
+
   it("aborts in-flight summary fetches on storage (accounts) change and drops the late result", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
