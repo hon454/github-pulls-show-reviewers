@@ -51,6 +51,14 @@ const reviewsSchema = z.array(
   }),
 );
 
+const reviewRequestEventsSchema = z.array(
+  z.object({
+    event: z.string(),
+    created_at: z.string(),
+    requested_reviewer: userLiteSchema.nullable().optional(),
+  }),
+);
+
 const rateLimitSchema = z.object({
   rate: z.object({
     limit: z.number(),
@@ -130,7 +138,7 @@ export type RepositoryValidationResult =
       pullNumber?: string;
     };
 
-type GitHubEndpointName = "pull" | "reviews" | "pulls-list";
+type GitHubEndpointName = "pull" | "reviews" | "issue-events" | "pulls-list";
 
 type GitHubEndpointDescriptor = {
   name: GitHubEndpointName;
@@ -143,6 +151,19 @@ type GitHubRateLimitSnapshot = {
   remaining: number | null;
   resource: string | null;
   resetAt: number | null;
+};
+
+type LatestNonCommentReview = {
+  state: Exclude<ReviewState, "COMMENTED">;
+  avatarUrl: string | null;
+  submittedAt: string | null;
+  index: number;
+};
+
+type LatestCommentReview = {
+  avatarUrl: string | null;
+  submittedAt: string | null;
+  index: number;
 };
 
 export class GitHubApiError extends Error {
@@ -279,7 +300,22 @@ export async function fetchPullReviewerSummary(input: {
       signal: input.signal,
     });
 
-    return buildPullReviewerSummary(input.pullMetadata, reviews);
+    const latestReviewRequestByLogin =
+      await fetchLatestReviewRequestEventsForAmbiguousReviewers({
+        owner: input.owner,
+        repo: input.repo,
+        pullNumber: input.pullNumber,
+        pullMetadata: input.pullMetadata,
+        reviews,
+        headers,
+        signal: input.signal,
+      });
+
+    return buildPullReviewerSummary(
+      input.pullMetadata,
+      reviews,
+      latestReviewRequestByLogin,
+    );
   }
 
   const pullEndpoint = buildPullEndpoint(
@@ -317,9 +353,22 @@ export async function fetchPullReviewerSummary(input: {
     signal: input.signal,
   });
 
+  const pullMetadata = toPullReviewerMetadata(input.pullNumber, pullParsed.data);
+  const latestReviewRequestByLogin =
+    await fetchLatestReviewRequestEventsForAmbiguousReviewers({
+      owner: input.owner,
+      repo: input.repo,
+      pullNumber: input.pullNumber,
+      pullMetadata,
+      reviews,
+      headers,
+      signal: input.signal,
+    });
+
   return buildPullReviewerSummary(
-    toPullReviewerMetadata(input.pullNumber, pullParsed.data),
+    pullMetadata,
     reviews,
+    latestReviewRequestByLogin,
   );
 }
 
@@ -352,24 +401,56 @@ export async function fetchPullReviewerMetadataBatch(input: {
 function buildPullReviewerSummary(
   pullMetadata: PullReviewerMetadata,
   reviews: z.infer<typeof reviewsSchema>,
+  latestReviewRequestByLogin: Map<string, string> | null = null,
 ): PullReviewerSummary {
-  const latestNonCommentByUser = new Map<
-    string,
-    {
-      state: Exclude<ReviewState, "COMMENTED">;
-      avatarUrl: string | null;
-      submittedAt: string | null;
-      index: number;
-    }
-  >();
-  const latestCommentByUser = new Map<
-    string,
-    {
-      avatarUrl: string | null;
-      submittedAt: string | null;
-      index: number;
-    }
-  >();
+  const { latestNonCommentByUser, latestCommentByUser } =
+    collectLatestReviewEvidence(pullMetadata, reviews);
+
+  const reviewerLogins = new Set<string>([
+    ...latestNonCommentByUser.keys(),
+    ...latestCommentByUser.keys(),
+  ]);
+
+  const completedReviews: CompletedReview[] = Array.from(reviewerLogins)
+    .map((login) => {
+      const nonComment = latestNonCommentByUser.get(login);
+      if (nonComment != null) {
+        return {
+          login,
+          avatarUrl: nonComment.avatarUrl,
+          state: nonComment.state as ReviewState,
+        };
+      }
+      const comment = latestCommentByUser.get(login)!;
+      return {
+        login,
+        avatarUrl: comment.avatarUrl,
+        state: "COMMENTED" as ReviewState,
+      };
+    })
+    .sort((left, right) => left.login.localeCompare(right.login));
+
+  return {
+    status: "ok" as const,
+    requestedUsers: filterStaleRequestedUsers(
+      pullMetadata.requestedUsers,
+      latestNonCommentByUser,
+      latestReviewRequestByLogin,
+    ),
+    requestedTeams: pullMetadata.requestedTeams,
+    completedReviews,
+  };
+}
+
+function collectLatestReviewEvidence(
+  pullMetadata: PullReviewerMetadata,
+  reviews: z.infer<typeof reviewsSchema>,
+): {
+  latestNonCommentByUser: Map<string, LatestNonCommentReview>;
+  latestCommentByUser: Map<string, LatestCommentReview>;
+} {
+  const latestNonCommentByUser = new Map<string, LatestNonCommentReview>();
+  const latestCommentByUser = new Map<string, LatestCommentReview>();
 
   reviews.forEach((review, index) => {
     const normalizedState = normalizeReviewState(review.state);
@@ -412,36 +493,104 @@ function buildPullReviewerSummary(
     }
   });
 
-  const reviewerLogins = new Set<string>([
-    ...latestNonCommentByUser.keys(),
-    ...latestCommentByUser.keys(),
-  ]);
+  return { latestNonCommentByUser, latestCommentByUser };
+}
 
-  const completedReviews: CompletedReview[] = Array.from(reviewerLogins)
-    .map((login) => {
-      const nonComment = latestNonCommentByUser.get(login);
-      if (nonComment != null) {
-        return {
-          login,
-          avatarUrl: nonComment.avatarUrl,
-          state: nonComment.state as ReviewState,
-        };
-      }
-      const comment = latestCommentByUser.get(login)!;
-      return {
-        login,
-        avatarUrl: comment.avatarUrl,
-        state: "COMMENTED" as ReviewState,
-      };
-    })
-    .sort((left, right) => left.login.localeCompare(right.login));
+async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
+  owner: string;
+  repo: string;
+  pullNumber: string;
+  pullMetadata: PullReviewerMetadata;
+  reviews: z.infer<typeof reviewsSchema>;
+  headers: Headers;
+  signal?: AbortSignal;
+}): Promise<Map<string, string> | null> {
+  const { latestNonCommentByUser } = collectLatestReviewEvidence(
+    params.pullMetadata,
+    params.reviews,
+  );
+  const ambiguousLogins = params.pullMetadata.requestedUsers
+    .map((user) => user.login)
+    .filter((login) => latestNonCommentByUser.has(login));
 
-  return {
-    status: "ok" as const,
-    requestedUsers: pullMetadata.requestedUsers,
-    requestedTeams: pullMetadata.requestedTeams,
-    completedReviews,
-  };
+  if (ambiguousLogins.length === 0) {
+    return null;
+  }
+
+  const endpoint = buildIssueEventsEndpoint(
+    params.owner,
+    params.repo,
+    params.pullNumber,
+  );
+  const firstPageUrl = `https://api.github.com${endpoint.path}?per_page=100`;
+
+  try {
+    const firstResponse = await fetch(firstPageUrl, {
+      headers: params.headers,
+      signal: params.signal,
+    });
+
+    const failure = await createGitHubApiErrorFromResponse(firstResponse, endpoint);
+    if (failure != null) {
+      throw new GitHubPullRequestEndpointsError([failure]);
+    }
+
+    const events = await collectReviewRequestEventsAcrossPages({
+      firstResponse,
+      endpoint,
+      headers: params.headers,
+      signal: params.signal,
+    });
+
+    return selectLatestReviewRequestByLogin(events, new Set(ambiguousLogins));
+  } catch {
+    return new Map();
+  }
+}
+
+function filterStaleRequestedUsers(
+  requestedUsers: ReviewerUser[],
+  latestNonCommentByUser: Map<string, LatestNonCommentReview>,
+  latestReviewRequestByLogin: Map<string, string> | null,
+): ReviewerUser[] {
+  if (latestReviewRequestByLogin == null) {
+    return requestedUsers;
+  }
+
+  return requestedUsers.filter((user) => {
+    const latestReview = latestNonCommentByUser.get(user.login);
+    if (latestReview == null) {
+      return true;
+    }
+
+    return isReviewRequestAfterReview(
+      latestReviewRequestByLogin.get(user.login) ?? null,
+      latestReview.submittedAt,
+    );
+  });
+}
+
+function selectLatestReviewRequestByLogin(
+  events: z.infer<typeof reviewRequestEventsSchema>,
+  targetLogins: Set<string>,
+): Map<string, string> {
+  const latestByLogin = new Map<string, string>();
+
+  for (const event of events) {
+    if (event.event !== "review_requested") {
+      continue;
+    }
+    const login = event.requested_reviewer?.login;
+    if (login == null || !targetLogins.has(login)) {
+      continue;
+    }
+    const existing = latestByLogin.get(login);
+    if (existing == null || event.created_at > existing) {
+      latestByLogin.set(login, event.created_at);
+    }
+  }
+
+  return latestByLogin;
 }
 
 function toPullReviewerMetadata(
@@ -673,6 +822,42 @@ async function collectReviewsAcrossPages(params: {
   }
 }
 
+async function collectReviewRequestEventsAcrossPages(params: {
+  firstResponse: Response;
+  endpoint: GitHubEndpointDescriptor;
+  headers: Headers;
+  signal?: AbortSignal;
+}): Promise<z.infer<typeof reviewRequestEventsSchema>> {
+  const collected: z.infer<typeof reviewRequestEventsSchema> = [];
+
+  let response = params.firstResponse;
+  while (true) {
+    const parsed = reviewRequestEventsSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
+    }
+    collected.push(...parsed.data);
+
+    const nextUrl = parseNextPageUrl(response.headers.get("Link"));
+    if (nextUrl == null) {
+      return collected;
+    }
+
+    response = await fetch(nextUrl, {
+      headers: params.headers,
+      signal: params.signal,
+    });
+
+    const error = await createGitHubApiErrorFromResponse(
+      response,
+      params.endpoint,
+    );
+    if (error != null) {
+      throw new GitHubPullRequestEndpointsError([error]);
+    }
+  }
+}
+
 function parseNextPageUrl(linkHeader: string | null): string | null {
   if (linkHeader == null) {
     return null;
@@ -725,6 +910,23 @@ function isNewerReview(
   }
 
   return index >= existing.index;
+}
+
+function isReviewRequestAfterReview(
+  requestedAt: string | null,
+  reviewedAt: string | null,
+): boolean {
+  if (requestedAt == null || reviewedAt == null) {
+    return false;
+  }
+
+  const requestedTime = Date.parse(requestedAt);
+  const reviewedTime = Date.parse(reviewedAt);
+  if (Number.isNaN(requestedTime) || Number.isNaN(reviewedTime)) {
+    return false;
+  }
+
+  return requestedTime > reviewedTime;
 }
 
 function describeRepositoryValidationError(
@@ -824,6 +1026,18 @@ function buildReviewsEndpoint(
     name: "reviews",
     method: "GET",
     path: `/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
+  };
+}
+
+function buildIssueEventsEndpoint(
+  owner: string,
+  repo: string,
+  pullNumber: string,
+): GitHubEndpointDescriptor {
+  return {
+    name: "issue-events",
+    method: "GET",
+    path: `/repos/${owner}/${repo}/issues/${pullNumber}/events`,
   };
 }
 

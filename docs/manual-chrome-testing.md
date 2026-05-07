@@ -65,7 +65,8 @@ This extension is intentionally narrow. Manual verification should stay focused 
 - Requested reviewers render inline on PR rows.
 - Requested teams render inline on PR rows.
 - Completed review state prefers the latest non-`COMMENTED` review for each reviewer, and falls back to the latest `COMMENTED` review only when no non-comment review exists.
-- A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge instead of the old state badge.
+- A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge only when a later `review_requested` event confirms re-review.
+- A reviewer who remains in `requested_reviewers` after submitting `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED`, with no later `review_requested` event, renders the completed review state.
 - No unrelated PR dashboard data appears.
 - Display preference changes should rerender from cache rather than refetch reviewer API data.
 - Re-requested reviewers or teams should update after GitHub rerenders the PR
@@ -220,7 +221,8 @@ Before considering a manual check complete, verify at least these cases:
 - A requested team is shown with the expected team label format.
 - A reviewer with `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` followed by a later `COMMENTED` review still renders the non-comment state.
 - A reviewer with only `COMMENTED` reviews renders the latest `COMMENTED` state.
-- A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence renders the refresh badge.
+- A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence renders the refresh badge when a later `review_requested` event exists.
+- A stale requested reviewer whose latest `review_requested` event predates the latest non-comment review renders the completed review state, such as `changes requested`.
 - Toggling **Show reviewer names** rerenders the current PR list without extra reviewer API requests.
 - GitHub SPA navigation still leaves reviewer chips visible after moving between PR list views.
 - A changed review request is revalidated after same-repository GitHub
