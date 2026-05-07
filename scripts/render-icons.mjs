@@ -40,6 +40,7 @@ try {
     `);
 
     await page.locator("svg").screenshot({
+      omitBackground: true,
       path: path.join(outputDir, `${size}.png`),
     });
   }

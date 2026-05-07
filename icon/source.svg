@@ -1,19 +1,35 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" rx="116" fill="#101828" />
-  <rect x="80" y="104" width="352" height="304" rx="38" fill="#FCFCFD" />
-  <rect x="96" y="132" width="200" height="20" rx="10" fill="#344054" />
-  <rect x="96" y="168" width="126" height="14" rx="7" fill="#98A2B3" />
-  <rect x="304" y="128" width="110" height="28" rx="14" fill="#D1E9FF" />
-  <rect x="316" y="137" width="86" height="10" rx="5" fill="#175CD3" />
-  <rect x="96" y="230" width="176" height="20" rx="10" fill="#344054" />
-  <rect x="96" y="266" width="154" height="14" rx="7" fill="#98A2B3" />
-  <rect x="282" y="226" width="74" height="28" rx="14" fill="#FEF0C7" />
-  <rect x="294" y="235" width="50" height="10" rx="5" fill="#B54708" />
-  <rect x="366" y="226" width="48" height="28" rx="14" fill="#D1FADF" />
-  <path d="M382 241L391 250L403 234" stroke="#039855" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" />
-  <rect x="96" y="328" width="160" height="20" rx="10" fill="#344054" opacity="0.84" />
-  <rect x="96" y="364" width="118" height="14" rx="7" fill="#98A2B3" opacity="0.88" />
-  <circle cx="404" cy="364" r="26" fill="#1570EF" />
-  <path d="M392 364H416" stroke="#FCFCFD" stroke-width="10" stroke-linecap="round" />
-  <path d="M404 352V376" stroke="#FCFCFD" stroke-width="10" stroke-linecap="round" />
+  <title>GitHub Pulls Show Reviewers icon</title>
+  <!-- GitHub mark adapted from Primer Octicons mark-github-16 (MIT License). -->
+  <g transform="translate(110 100) scale(17)">
+    <path
+      fill="#24292F"
+      d="M6.766 11.328c-2.063-.25-3.516-1.734-3.516-3.656 0-.781.281-1.625.75-2.188-.203-.515-.172-1.609.063-2.062.625-.078 1.468.25 1.968.703.594-.187 1.219-.281 1.985-.281.765 0 1.39.094 1.953.265.484-.437 1.344-.765 1.969-.687.218.422.25 1.515.046 2.047.5.593.766 1.39.766 2.203 0 1.922-1.453 3.375-3.547 3.64.531.344.89 1.094.89 1.954v1.625c0 .468.391.734.86.547C13.781 14.359 16 11.53 16 8.03 16 3.61 12.406 0 7.984 0 3.563 0 0 3.61 0 8.031a7.88 7.88 0 0 0 5.172 7.422c.422.156.828-.125.828-.547v-1.25c-.219.094-.5.156-.75.156-1.031 0-1.64-.562-2.078-1.609-.172-.422-.36-.672-.719-.719-.187-.015-.25-.093-.25-.187 0-.188.313-.328.625-.328.453 0 .844.281 1.25.86.313.452.64.655 1.031.655s.641-.14 1-.5c.266-.265.47-.5.657-.656"
+    />
+  </g>
+
+  <circle cx="350" cy="354" r="82" fill="#F0EDFF" stroke="#2EA043" stroke-width="24" />
+  <g fill="#6F42C1">
+    <rect x="322" y="306" width="16" height="16" />
+    <rect x="362" y="306" width="16" height="16" />
+    <rect x="302" y="326" width="16" height="16" />
+    <rect x="342" y="326" width="16" height="16" />
+    <rect x="382" y="326" width="16" height="16" />
+    <rect x="322" y="346" width="16" height="16" />
+    <rect x="362" y="346" width="16" height="16" />
+    <rect x="302" y="366" width="16" height="16" />
+    <rect x="342" y="366" width="16" height="16" />
+    <rect x="382" y="366" width="16" height="16" />
+    <rect x="322" y="386" width="16" height="16" />
+    <rect x="362" y="386" width="16" height="16" />
+  </g>
+
+  <circle cx="414" cy="410" r="46" fill="#2EA043" />
+  <path
+    d="M395 410L408 423L434 391"
+    stroke="#F6F8FA"
+    stroke-width="18"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>
