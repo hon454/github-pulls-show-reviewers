@@ -7,6 +7,7 @@
 - Packaged icon sizes: `16`, `32`, `48`, `128`.
 - Rebuild PNG assets with `pnpm icons:render`.
 - Chrome Web Store screenshots are generated under [chrome-web-store-assets/](./chrome-web-store-assets/) with `pnpm cws:assets`.
+- Generated screenshots are `1280x800` 24-bit PNG files without alpha, matching Chrome Web Store upload requirements.
 - The pull-list screenshots use a deterministic GitHub-style fixture for `hon454/github-pulls-show-reviewers` with generated PR titles, authors, reviewer states, and synthetic avatar images. Do not create live dummy PRs for store screenshots.
 - Current screenshot set:
   - `01-pr-list-before-after.png` — before/after comparison showing GitHub's default PR list beside the extension-enhanced reviewer strip
