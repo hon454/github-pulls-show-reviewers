@@ -39,6 +39,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm prepare
       - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm preflight:release
       - run: pnpm verify:release
       - run: pnpm zip
 

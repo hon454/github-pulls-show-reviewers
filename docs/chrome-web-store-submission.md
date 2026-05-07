@@ -94,16 +94,17 @@ link and the privacy fields aligned with the shipped behavior.
 ## Release and upload checklist
 
 1. Ensure the package version is the version you intend to submit. Tag names should follow `v<version>`, for example `v1.0.0`.
-2. Run `pnpm verify:release`.
-3. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
-4. Run `pnpm zip` only after the checks above pass.
-5. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
-6. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
-7. Paste the short description, detailed description, and privacy policy URL above.
-8. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
-9. If you want review before launch, disable automatic publish and stage the release in the dashboard.
-10. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
-11. Open the packaged extension's options page once before upload and confirm it never renders as a blank white screen. A missing GitHub App build config must surface the explicit configuration warning instead.
+2. Run `pnpm preflight:release` in an environment with `WXT_GITHUB_APP_CLIENT_ID`, `WXT_GITHUB_APP_SLUG`, and `WXT_GITHUB_APP_NAME` populated. For local release builds, `pnpm build:release` and `pnpm zip:release` load these from GitHub Actions repository variables through `gh` and run the same preflight.
+3. Run `pnpm verify:release`.
+4. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
+5. Run `pnpm zip` only after the checks above pass.
+6. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
+7. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
+8. Paste the short description, detailed description, and privacy policy URL above.
+9. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
+10. If you want review before launch, disable automatic publish and stage the release in the dashboard.
+11. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
+12. Open the packaged extension's options page once before upload and confirm it never renders as a blank white screen. A missing GitHub App build config must surface the explicit configuration warning instead.
 
 ## Current package target
 

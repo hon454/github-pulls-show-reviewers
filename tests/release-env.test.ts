@@ -85,6 +85,41 @@ touch "${markerPath}"
     expect(result.code).not.toBe(0);
     await expect(readFile(markerPath, "utf8")).rejects.toThrow();
   });
+
+  it("stops before running the wrapped command when a required GitHub App var is empty", async () => {
+    const tempDir = await createTempDir();
+    await writeExecutable(
+      path.join(tempDir, "gh"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+cat <<'EOF'
+export WXT_GITHUB_APP_CLIENT_ID='client-id'
+export WXT_GITHUB_APP_SLUG='pulls-show-reviewers'
+export WXT_GITHUB_APP_NAME=''
+EOF
+`,
+    );
+    const markerPath = path.join(tempDir, "command-ran");
+    const targetPath = path.join(tempDir, "touch-marker.sh");
+    await writeExecutable(
+      targetPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+touch "${markerPath}"
+`,
+    );
+
+    const result = await runProcess("bash", [wrapperPath, "bash", targetPath], {
+      cwd: tempDir,
+      env: withPath(tempDir),
+    });
+
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain(
+      "Missing required GitHub App build vars: WXT_GITHUB_APP_NAME",
+    );
+    await expect(readFile(markerPath, "utf8")).rejects.toThrow();
+  });
 });
 
 describe("package.json release scripts", () => {
@@ -101,6 +136,25 @@ describe("package.json release scripts", () => {
     expect(packageJson.scripts["zip:release"]).toBe(
       "bash ./scripts/run-with-github-app-env.sh pnpm zip",
     );
+    expect(packageJson.scripts["preflight:release"]).toBe(
+      "bash ./scripts/require-github-app-build-env.sh",
+    );
+  });
+});
+
+describe("release workflow", () => {
+  it("runs the GitHub App env preflight before creating the zip", async () => {
+    const workflow = await readFile(
+      path.join(projectRoot, ".github/workflows/release.yml"),
+      "utf8",
+    );
+
+    const preflightIndex = workflow.indexOf("- run: pnpm preflight:release");
+    const zipIndex = workflow.indexOf("- run: pnpm zip");
+
+    expect(preflightIndex).toBeGreaterThan(-1);
+    expect(zipIndex).toBeGreaterThan(-1);
+    expect(preflightIndex).toBeLessThan(zipIndex);
   });
 });
 
