@@ -28,6 +28,10 @@ without asking follow-up questions:
 - Repository type (public or private)
 - DOM / selector evidence when the issue is visual
 
+Do not report security vulnerabilities through public GitHub Issues.
+Use GitHub Private Vulnerability Reporting instead, as described in
+[`SECURITY.md`](./SECURITY.md).
+
 ## Suggesting enhancements
 
 Use GitHub Issues and pick the **Feature Request** template.
@@ -120,6 +124,11 @@ packaging) only after the checks above are green.
 
 This project follows the
 [Contributor Covenant](./CODE_OF_CONDUCT.md).
+
+## License
+
+By contributing, you agree that your contributions are licensed under
+the repository's [MIT license](./LICENSE).
 
 ## Scope boundary
 
