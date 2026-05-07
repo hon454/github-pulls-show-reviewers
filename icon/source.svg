@@ -1,6 +1,6 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
   <title>GitHub Pulls Show Reviewers icon</title>
-  <circle cx="240" cy="232" r="150" fill="#FFFFFF" />
+  <circle cx="240" cy="232" r="196" fill="#FFFFFF" />
 
   <!-- GitHub mark adapted from Primer Octicons mark-github-16 (MIT License). -->
   <g transform="translate(40 32) scale(25)">
