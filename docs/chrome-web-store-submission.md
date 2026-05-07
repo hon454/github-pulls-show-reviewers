@@ -33,6 +33,8 @@ Chrome's listing guidance expects at least one screenshot and recommends up to f
 - `03-options-repository-check.png`
   Dashboard caption: `Display settings and repository diagnostics on the options page.`
 
+All generated screenshots are `1280x800` 24-bit PNG files without alpha, so they satisfy Chrome Web Store's screenshot upload constraints.
+
 The PR-list screenshots are generated from a deterministic GitHub-style fixture for `hon454/github-pulls-show-reviewers` with synthetic PR titles, authors, reviewer states, and avatar images. They should remain realistic enough for store review while avoiding live dummy PRs, real project data, and unrelated UI noise such as floating help buttons.
 
 Regenerate them with:

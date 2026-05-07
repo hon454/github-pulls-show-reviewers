@@ -10,6 +10,12 @@ const projectRoot = path.resolve(currentDir, "../..");
 const extensionPath = path.join(projectRoot, ".output/chrome-mv3");
 const outputDir = path.join(projectRoot, "docs/chrome-web-store-assets");
 const pullsFixturePath = path.join(projectRoot, "tests/fixtures/github-pulls.html");
+const storeScreenshotSize = { width: 1280, height: 800 } as const;
+const storeScreenshotFiles = [
+  "01-pr-list-before-after.png",
+  "02-pr-list-avatar-state-showcase.png",
+  "03-options-repository-check.png",
+] as const;
 
 const screenshotRepo = {
   owner: "hon454",
@@ -26,6 +32,12 @@ type ReviewPayload = {
   user: { login: string; avatar_url: string };
 };
 
+type ReviewRequestEventPayload = {
+  event: "review_requested";
+  created_at: string;
+  requested_reviewer: { login: string; avatar_url: string };
+};
+
 type PullScene = {
   pullNumber: string;
   summary: {
@@ -34,6 +46,7 @@ type PullScene = {
     requested_teams: Array<{ slug: string }>;
   };
   reviews: ReviewPayload[];
+  reviewRequestEvents?: ReviewRequestEventPayload[];
   expectedLogins: string[];
   expectedTeamText?: string;
   expectedBadgeClasses: string[];
@@ -112,6 +125,13 @@ const avatarStateScenes: PullScene[] = [
         state: "COMMENTED",
         submitted_at: "2026-04-20T12:15:00Z",
         user: { login: "riley", avatar_url: avatarUrl("riley") },
+      },
+    ],
+    reviewRequestEvents: [
+      {
+        event: "review_requested",
+        created_at: "2026-04-20T12:12:00Z",
+        requested_reviewer: { login: "jules", avatar_url: avatarUrl("jules") },
       },
     ],
     expectedLogins: ["jules", "riley"],
@@ -196,6 +216,7 @@ test("capture Chrome Web Store assets", async () => {
     await captureBeforeAfterScreenshot(context);
     await captureAvatarStateShowcase(context);
     await captureOptionsScreenshot(context, extensionId);
+    await assertStoreScreenshotFiles();
   });
 });
 
@@ -208,7 +229,7 @@ async function withExtensionContext(
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), "ghpsr-cws-"));
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",
-    viewport: { width: 1280, height: 720 },
+    viewport: storeScreenshotSize,
     args: [
       `--disable-extensions-except=${extensionPath}`,
       `--load-extension=${extensionPath}`,
@@ -234,7 +255,7 @@ async function withPlainContext(
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), "ghpsr-cws-plain-"));
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",
-    viewport: { width: 1280, height: 720 },
+    viewport: storeScreenshotSize,
   });
 
   try {
@@ -296,7 +317,8 @@ async function routeReviewerScenes(
   for (const scene of scenes) {
     const pullRoute = `https://api.github.com/repos/${screenshotRepoFullName}/pulls/${scene.pullNumber}`;
     const reviewsRoute = `${pullRoute}/reviews**`;
-    routeUrls.push(pullRoute, reviewsRoute);
+    const eventsRoute = `https://api.github.com/repos/${screenshotRepoFullName}/issues/${scene.pullNumber}/events**`;
+    routeUrls.push(pullRoute, reviewsRoute, eventsRoute);
 
     await context.route(pullRoute, async (route) => {
       await route.fulfill({
@@ -311,6 +333,14 @@ async function routeReviewerScenes(
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(scene.reviews),
+      });
+    });
+
+    await context.route(eventsRoute, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(scene.reviewRequestEvents ?? []),
       });
     });
   }
@@ -331,7 +361,10 @@ async function assertReviewerScenes(page: Page, scenes: PullScene[]): Promise<vo
       await expect(root.locator(`a.ghpsr-avatar[title*="@${login}"]`)).toHaveCount(1);
     }
     for (const badgeClass of scene.expectedBadgeClasses) {
-      expect(await root.locator(`.${badgeClass}`).count()).toBeGreaterThan(0);
+      expect(
+        await root.locator(`.${badgeClass}`).count(),
+        `${badgeClass} should render in the screenshot fixture`,
+      ).toBeGreaterThan(0);
     }
     if (scene.expectedTeamText != null) {
       await expect(root.filter({ hasText: scene.expectedTeamText })).toHaveCount(1);
@@ -416,7 +449,7 @@ async function captureBeforeAfterScreenshot(
   try {
     const beforeData = (await readFile(beforePath)).toString("base64");
     const afterData = (await readFile(afterPath)).toString("base64");
-    await composer.setViewportSize({ width: 1280, height: 720 });
+    await composer.setViewportSize(storeScreenshotSize);
     await composer.setContent(`
       <!doctype html>
       <html>
@@ -428,8 +461,8 @@ async function captureBeforeAfterScreenshot(
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             }
             .frame {
-              width: 1280px;
-              height: 720px;
+              width: ${storeScreenshotSize.width}px;
+              height: ${storeScreenshotSize.height}px;
               box-sizing: border-box;
               padding: 24px;
               display: grid;
@@ -437,7 +470,7 @@ async function captureBeforeAfterScreenshot(
               gap: 18px;
             }
             .panel {
-              height: 660px;
+              height: ${storeScreenshotSize.height - 48}px;
               overflow: hidden;
               border: 1px solid #30363d;
               border-radius: 10px;
@@ -481,6 +514,20 @@ async function captureBeforeAfterScreenshot(
     await composer.close();
     await rm(beforePath, { force: true });
     await rm(afterPath, { force: true });
+  }
+}
+
+async function assertStoreScreenshotFiles(): Promise<void> {
+  expect(storeScreenshotFiles.length).toBeGreaterThanOrEqual(1);
+  expect(storeScreenshotFiles.length).toBeLessThanOrEqual(5);
+
+  for (const fileName of storeScreenshotFiles) {
+    const png = await readFile(path.join(outputDir, fileName));
+    expect(png.toString("ascii", 1, 4)).toBe("PNG");
+    expect(png.readUInt32BE(16)).toBe(storeScreenshotSize.width);
+    expect(png.readUInt32BE(20)).toBe(storeScreenshotSize.height);
+    expect(png.readUInt8(24)).toBe(8);
+    expect(png.readUInt8(25)).toBe(2);
   }
 }
 
