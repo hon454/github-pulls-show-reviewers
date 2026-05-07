@@ -83,4 +83,8 @@ Expected release gate behavior:
 9. Confirm the reviewer-only scope in the listing copy still matches the extension and screenshots before submission.
 10. Open the packaged extension's options page once before submission and confirm it either renders the sign-in UI normally or shows the explicit GitHub App configuration warning, never a blank page.
 
-Concrete submission assets and privacy-form draft live in [chrome-web-store-submission.md](./chrome-web-store-submission.md). The publishable privacy policy draft lives in [privacy-policy.md](./privacy-policy.md).
+Concrete submission assets and current privacy-form values live in
+[chrome-web-store-submission.md](./chrome-web-store-submission.md). The
+canonical published privacy policy lives in [privacy-policy.md](./privacy-policy.md)
+and is hosted publicly at
+<https://github.com/hon454/github-pulls-show-reviewers/blob/main/docs/privacy-policy.md>.

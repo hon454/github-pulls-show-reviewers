@@ -2,6 +2,10 @@
 
 Last updated: 2026-04-24
 
+This is the canonical published privacy policy for the Chrome Web Store listing.
+The public policy URL is
+<https://github.com/hon454/github-pulls-show-reviewers/blob/main/docs/privacy-policy.md>.
+
 `GitHub Pulls Show Reviewers` is a Chrome extension that shows requested reviewers, requested teams, and completed review state directly inside GitHub pull request list pages.
 
 ## What the extension accesses
