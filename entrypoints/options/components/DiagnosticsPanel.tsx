@@ -86,7 +86,11 @@ export function DiagnosticsPanel() {
   return (
     <section style={styles.section}>
       <h2 style={styles.heading}>Diagnostics</h2>
+      <label htmlFor="diagnostics-repository" style={styles.visuallyHidden}>
+        Repository in owner/name format
+      </label>
       <input
+        id="diagnostics-repository"
         type="text"
         value={repository}
         placeholder="owner/name"
@@ -146,6 +150,17 @@ function toneColor(tone: "neutral" | "success" | "error"): string {
 const styles: Record<string, CSSProperties> = {
   section: { marginTop: 32 },
   heading: { margin: 0, fontSize: 18 },
+  visuallyHidden: {
+    position: "absolute",
+    width: 1,
+    height: 1,
+    padding: 0,
+    margin: -1,
+    overflow: "hidden",
+    clip: "rect(0, 0, 0, 0)",
+    whiteSpace: "nowrap",
+    border: 0,
+  },
   input: {
     width: "100%",
     boxSizing: "border-box",
