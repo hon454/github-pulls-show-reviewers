@@ -10,6 +10,7 @@
     "build:release": "bash ./scripts/run-with-github-app-env.sh pnpm build",
     "cws:assets": "WXT_GITHUB_APP_CLIENT_ID=TESTING_CLIENT_ID WXT_GITHUB_APP_SLUG=test-app WXT_GITHUB_APP_NAME='GitHub Pulls Show Reviewers (testing)' pnpm build && pnpm exec playwright test --project=capture",
     "icons:render": "node scripts/render-icons.mjs",
+    "preflight:release": "bash ./scripts/require-github-app-build-env.sh",
     "zip": "wxt zip --browser chrome",
     "zip:release": "bash ./scripts/run-with-github-app-env.sh pnpm zip",
     "prepare": "wxt prepare",

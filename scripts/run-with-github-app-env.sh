@@ -19,4 +19,5 @@ fi
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 env_exports="$(bash "$script_dir/load-github-app-env.sh")"
 eval "$env_exports"
+bash "$script_dir/require-github-app-build-env.sh"
 "$@"
