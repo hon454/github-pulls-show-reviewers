@@ -199,6 +199,19 @@ describe("OptionsPage", () => {
     ).not.toBeNull();
   });
 
+  it("gives the diagnostics repository input an associated label", async () => {
+    await renderOptionsPage();
+
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-testid="diagnostics-repo"]',
+    );
+
+    expect(input).not.toBeNull();
+    expect(input!.labels).toHaveLength(1);
+    expect(input!.labels![0]?.textContent).toContain("Repository");
+    expect(input!.labels![0]?.textContent).toContain("owner/name");
+  });
+
   it("renders account cards when accounts are present", async () => {
     listAccountsMock.mockResolvedValue([
       {
