@@ -100,3 +100,6 @@ For repository workflow, branch naming, commit style, and pull request requireme
 - [Chrome Web Store notes](./docs/chrome-web-store.md)
 - [Chrome Web Store submission draft](./docs/chrome-web-store-submission.md)
 - [Privacy policy draft](./docs/privacy-policy.md)
+- [Security policy](./SECURITY.md)
+- [Release notes](./docs/releases/)
+- [MIT license](./LICENSE)
