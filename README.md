@@ -60,7 +60,9 @@ The extension is built around the minimum access needed to show reviewer informa
 - Removing an account from the options page deletes the locally stored token for that account.
 - To revoke the GitHub App itself, remove it from GitHub's Applications settings.
 
-See the [privacy policy draft](./docs/privacy-policy.md) for the full policy text.
+See the
+[public privacy policy](https://github.com/hon454/github-pulls-show-reviewers/blob/main/docs/privacy-policy.md)
+for the full policy text.
 
 ## For Contributors
 
@@ -98,8 +100,8 @@ For repository workflow, branch naming, commit style, and pull request requireme
 - [Implementation notes](./docs/implementation-notes.md)
 - [Manual Chrome testing](./docs/manual-chrome-testing.md)
 - [Chrome Web Store notes](./docs/chrome-web-store.md)
-- [Chrome Web Store submission draft](./docs/chrome-web-store-submission.md)
-- [Privacy policy draft](./docs/privacy-policy.md)
+- [Chrome Web Store submission packet](./docs/chrome-web-store-submission.md)
+- [Privacy policy](./docs/privacy-policy.md)
 - [Security policy](./SECURITY.md)
 - [Release notes](./docs/releases/)
 - [MIT license](./LICENSE)

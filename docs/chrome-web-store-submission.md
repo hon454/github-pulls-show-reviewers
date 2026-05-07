@@ -43,14 +43,14 @@ Regenerate them with:
 pnpm cws:assets
 ```
 
-## Privacy practices draft
+## Current privacy practices
 
 Use the current shipped behavior, not aspirational behavior.
 
 Single purpose:
 `Show requested reviewers, requested teams, and completed review state inside GitHub pull request list pages.`
 
-Permission justification draft:
+Permission justification:
 
 - `storage`: stores locally the GitHub App accounts (user-to-server access token, refresh token, and token-expiry timestamps per account) so the user can access private repositories. It also stores the review-chip display preferences (`showStateBadge`, `showReviewerName`, and `openPullsOnly`) under the local `preferences` key.
 - `alarms`: schedules a recurring 15-minute background task that refreshes GitHub App access tokens ahead of expiry. Without this, every eight-hour token lifetime would force the user to sign in again even while actively using the extension, and reviewer lookups on private repositories would stall until the next sign-in.
@@ -60,7 +60,7 @@ Permission justification draft:
 Remote code:
 `No, this extension does not execute remote code.`
 
-Conservative data usage draft:
+Conservative data usage:
 
 - Authentication information: `Yes`
   Reason: the user may sign in with GitHub via the GitHub App, and the resulting user-to-server token is stored locally for private repository access.
@@ -70,21 +70,26 @@ Conservative data usage draft:
   Reason: the extension detects when the user is on a GitHub repository pull request list page in order to activate.
 - Personal communications, health information, financial/payment information, location, web history outside GitHub, and advertising identifiers: `No`
 
-Certification draft:
+Certification:
 
 - Data is used only for the extension's reviewer-visibility feature.
 - Data is not sold.
 - Data is not used for creditworthiness or lending decisions.
 - Data is not used or transferred for unrelated advertising or marketing.
 
-Sharing draft:
+Sharing:
 
 - Requests needed for reviewer lookups go directly to GitHub.
 - No extension-operated backend receives user data.
 - No data is shared with advertisers or data brokers.
 
 Privacy policy URL:
-Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before submission. The Chrome Web Store requires the privacy policy link and the privacy fields to match the shipped behavior.
+`https://github.com/hon454/github-pulls-show-reviewers/blob/main/docs/privacy-policy.md`
+
+Earlier submission preparation tracked the need to host
+[privacy-policy.md](./privacy-policy.md) at a stable public URL. The published
+Chrome Web Store listing now uses the GitHub-hosted policy URL above. Keep that
+link and the privacy fields aligned with the shipped behavior.
 
 ## Release and upload checklist
 
@@ -94,8 +99,8 @@ Host [privacy-policy.md](./privacy-policy.md) at a stable public URL before subm
 4. Run `pnpm zip` only after the checks above pass.
 5. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
 6. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
-7. Paste the short description, detailed description, and privacy policy URL.
-8. Fill in the privacy fields using the draft above, then reconcile every answer against the shipped permissions and network behavior.
+7. Paste the short description, detailed description, and privacy policy URL above.
+8. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
 9. If you want review before launch, disable automatic publish and stage the release in the dashboard.
 10. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
 11. Open the packaged extension's options page once before upload and confirm it never renders as a blank white screen. A missing GitHub App build config must surface the explicit configuration warning instead.
