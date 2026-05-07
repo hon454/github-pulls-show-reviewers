@@ -785,6 +785,93 @@ describe("fetchPullReviewerSummary", () => {
     ]);
   });
 
+  it("rethrows AbortError from an ambiguous issue-events lookup", async () => {
+    const abortError = new Error("The operation was aborted.");
+    abortError.name = "AbortError";
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "CHANGES_REQUESTED",
+              submitted_at: "2026-05-07T02:03:16Z",
+              user: { login: "alice", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockRejectedValueOnce(abortError);
+
+    await expect(
+      fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+        },
+      }),
+    ).rejects.toBe(abortError);
+  });
+
+  it("warns and falls back when an ambiguous issue-events payload is malformed", async () => {
+    const warnMock = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "CHANGES_REQUESTED",
+              submitted_at: "2026-05-07T02:03:16Z",
+              user: { login: "alice", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              event: "review_requested",
+              created_at: 123,
+              requested_reviewer: { login: "alice", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+      pullMetadata: {
+        number: "42",
+        authorLogin: "author",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+      },
+    });
+
+    expect(summary.requestedUsers).toEqual([]);
+    expect(summary.completedReviews).toEqual([
+      { login: "alice", avatarUrl: null, state: "CHANGES_REQUESTED" },
+    ]);
+    expect(warnMock).toHaveBeenCalledWith(
+      expect.stringContaining("unexpected response shape"),
+      expect.any(Array),
+    );
+  });
+
   it("keeps DISMISSED when a later COMMENTED review is submitted by the same reviewer", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(

@@ -166,6 +166,11 @@ type LatestCommentReview = {
   index: number;
 };
 
+type LatestReviewEvidence = {
+  latestNonCommentByUser: Map<string, LatestNonCommentReview>;
+  latestCommentByUser: Map<string, LatestCommentReview>;
+};
+
 export class GitHubApiError extends Error {
   constructor(
     public readonly status: number,
@@ -300,20 +305,24 @@ export async function fetchPullReviewerSummary(input: {
       signal: input.signal,
     });
 
+    const latestReviewEvidence = collectLatestReviewEvidence(
+      input.pullMetadata,
+      reviews,
+    );
     const latestReviewRequestByLogin =
       await fetchLatestReviewRequestEventsForAmbiguousReviewers({
         owner: input.owner,
         repo: input.repo,
         pullNumber: input.pullNumber,
         pullMetadata: input.pullMetadata,
-        reviews,
+        latestNonCommentByUser: latestReviewEvidence.latestNonCommentByUser,
         headers,
         signal: input.signal,
       });
 
     return buildPullReviewerSummary(
       input.pullMetadata,
-      reviews,
+      latestReviewEvidence,
       latestReviewRequestByLogin,
     );
   }
@@ -354,20 +363,21 @@ export async function fetchPullReviewerSummary(input: {
   });
 
   const pullMetadata = toPullReviewerMetadata(input.pullNumber, pullParsed.data);
+  const latestReviewEvidence = collectLatestReviewEvidence(pullMetadata, reviews);
   const latestReviewRequestByLogin =
     await fetchLatestReviewRequestEventsForAmbiguousReviewers({
       owner: input.owner,
       repo: input.repo,
       pullNumber: input.pullNumber,
       pullMetadata,
-      reviews,
+      latestNonCommentByUser: latestReviewEvidence.latestNonCommentByUser,
       headers,
       signal: input.signal,
     });
 
   return buildPullReviewerSummary(
     pullMetadata,
-    reviews,
+    latestReviewEvidence,
     latestReviewRequestByLogin,
   );
 }
@@ -400,11 +410,11 @@ export async function fetchPullReviewerMetadataBatch(input: {
 
 function buildPullReviewerSummary(
   pullMetadata: PullReviewerMetadata,
-  reviews: z.infer<typeof reviewsSchema>,
+  latestReviewEvidence: LatestReviewEvidence,
   latestReviewRequestByLogin: Map<string, string> | null = null,
 ): PullReviewerSummary {
   const { latestNonCommentByUser, latestCommentByUser } =
-    collectLatestReviewEvidence(pullMetadata, reviews);
+    latestReviewEvidence;
 
   const reviewerLogins = new Set<string>([
     ...latestNonCommentByUser.keys(),
@@ -445,10 +455,7 @@ function buildPullReviewerSummary(
 function collectLatestReviewEvidence(
   pullMetadata: PullReviewerMetadata,
   reviews: z.infer<typeof reviewsSchema>,
-): {
-  latestNonCommentByUser: Map<string, LatestNonCommentReview>;
-  latestCommentByUser: Map<string, LatestCommentReview>;
-} {
+): LatestReviewEvidence {
   const latestNonCommentByUser = new Map<string, LatestNonCommentReview>();
   const latestCommentByUser = new Map<string, LatestCommentReview>();
 
@@ -501,17 +508,13 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
   repo: string;
   pullNumber: string;
   pullMetadata: PullReviewerMetadata;
-  reviews: z.infer<typeof reviewsSchema>;
+  latestNonCommentByUser: Map<string, LatestNonCommentReview>;
   headers: Headers;
   signal?: AbortSignal;
 }): Promise<Map<string, string> | null> {
-  const { latestNonCommentByUser } = collectLatestReviewEvidence(
-    params.pullMetadata,
-    params.reviews,
-  );
   const ambiguousLogins = params.pullMetadata.requestedUsers
     .map((user) => user.login)
-    .filter((login) => latestNonCommentByUser.has(login));
+    .filter((login) => params.latestNonCommentByUser.has(login));
 
   if (ambiguousLogins.length === 0) {
     return null;
@@ -543,7 +546,13 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
     });
 
     return selectLatestReviewRequestByLogin(events, new Set(ambiguousLogins));
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+    if (error instanceof GitHubApiSchemaError) {
+      console.warn(error.message, error.issues);
+    }
     return new Map();
   }
 }
@@ -554,9 +563,13 @@ function filterStaleRequestedUsers(
   latestReviewRequestByLogin: Map<string, string> | null,
 ): ReviewerUser[] {
   if (latestReviewRequestByLogin == null) {
+    // No requested/completed overlap existed, so the issue-events lookup was
+    // intentionally skipped and every requested user remains requested.
     return requestedUsers;
   }
 
+  // A present map means the lookup was attempted. Missing login entries are
+  // treated as no confirmed re-request and drop the stale requested marker.
   return requestedUsers.filter((user) => {
     const latestReview = latestNonCommentByUser.get(user.login);
     if (latestReview == null) {
@@ -585,7 +598,7 @@ function selectLatestReviewRequestByLogin(
       continue;
     }
     const existing = latestByLogin.get(login);
-    if (existing == null || event.created_at > existing) {
+    if (existing == null || isTimestampAfter(event.created_at, existing)) {
       latestByLogin.set(login, event.created_at);
     }
   }
@@ -916,17 +929,31 @@ function isReviewRequestAfterReview(
   requestedAt: string | null,
   reviewedAt: string | null,
 ): boolean {
-  if (requestedAt == null || reviewedAt == null) {
+  // GitHub should provide submitted_at for non-PENDING reviews. If it is
+  // absent, prefer the completed review state over showing a refresh badge.
+  return isTimestampAfter(requestedAt, reviewedAt);
+}
+
+function isTimestampAfter(left: string | null, right: string | null): boolean {
+  if (left == null || right == null) {
     return false;
   }
 
-  const requestedTime = Date.parse(requestedAt);
-  const reviewedTime = Date.parse(reviewedAt);
-  if (Number.isNaN(requestedTime) || Number.isNaN(reviewedTime)) {
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
     return false;
   }
 
-  return requestedTime > reviewedTime;
+  return leftTime > rightTime;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  return error instanceof Error && error.name === "AbortError";
 }
 
 function describeRepositoryValidationError(
