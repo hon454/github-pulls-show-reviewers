@@ -54,7 +54,9 @@
    navigation. Same-repository navigation/render events mark visible row
    summaries stale instead of trusting the active page-session cache forever.
    Existing-row DOM mutations use a lightweight row fingerprint so unrelated
-   attribute changes do not trigger reviewer API requests.
+   attribute changes do not trigger reviewer API requests. The fingerprint
+   excludes extension-rendered reviewer nodes and GitHub's volatile relative
+   timestamp nodes, so automatic time text updates do not refetch reviewers.
 
 ## Current limitations
 

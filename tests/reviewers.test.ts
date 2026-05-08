@@ -588,6 +588,60 @@ describe("bootReviewerListPage", () => {
     clearReviewerCache();
   });
 
+  it("does not revalidate existing rows when GitHub relative-time text updates", async () => {
+    getPreferencesMock.mockResolvedValue({
+      version: 1,
+      showStateBadge: true,
+      showReviewerName: true,
+      openPullsOnly: true,
+    });
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      buildReviewerCacheKey("cinev", "shotloom", "42"),
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+      { fetchedAt: Date.now() },
+    );
+
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    metadata.innerHTML = `
+      <span class="issue-meta-section">
+        #42 opened <relative-time datetime="2026-05-08T02:00:00Z">30 minutes ago</relative-time> by mira
+      </span>
+    `;
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@alice");
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+
+    document.querySelector("relative-time")!.textContent = "31 minutes ago";
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+
+    clearReviewerCache();
+  });
+
   it("revalidates mutated existing rows when metadata children are added", async () => {
     getPreferencesMock.mockResolvedValue({
       version: 1,
