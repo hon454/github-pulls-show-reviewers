@@ -462,7 +462,14 @@ function readRowMetadataText(metaContainer: Element | null): string {
   if (metaContainer == null) return "";
   const clone = metaContainer.cloneNode(true);
   if (!(clone instanceof Element)) return "";
-  clone.querySelectorAll("[data-ghpsr-root]").forEach((node) => node.remove());
+  clone
+    .querySelectorAll(
+      [
+        "[data-ghpsr-root]",
+        ...githubSelectors.volatileMetadataSelectors,
+      ].join(", "),
+    )
+    .forEach((node) => node.remove());
   return (clone.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
