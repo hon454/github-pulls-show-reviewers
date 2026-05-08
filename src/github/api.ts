@@ -630,25 +630,38 @@ export async function validateAccountToken(
       message: "No account provided — sign in with GitHub from the options page.",
     };
   }
+  const rateLimitEndpoint: GitHubEndpointDescriptor = {
+    name: "pulls-list",
+    method: "GET",
+    path: "/rate_limit",
+  };
   const response = await fetch("https://api.github.com/rate_limit", {
     headers: createGitHubHeaders(account.token),
   });
   if (!response.ok) {
-    const error = await createGitHubApiError(response, {
-      name: "pulls-list",
-      method: "GET",
-      path: "/rate_limit",
-    });
+    const error = await createGitHubApiError(response, rateLimitEndpoint);
     return {
       ok: false,
       message: describeGitHubApiError(error, { githubToken: account.token }),
     };
   }
-  const payload = rateLimitSchema.parse(await response.json());
+  const parsed = rateLimitSchema.safeParse(await response.json());
+  if (!parsed.success) {
+    const schemaError = new GitHubApiSchemaError(
+      rateLimitEndpoint,
+      parsed.error.issues,
+    );
+    return {
+      ok: false,
+      message: describeGitHubApiError(schemaError, {
+        githubToken: account.token,
+      }),
+    };
+  }
   return {
     ok: true,
-    limit: payload.rate.limit,
-    remaining: payload.rate.remaining,
+    limit: parsed.data.rate.limit,
+    remaining: parsed.data.rate.remaining,
   };
 }
 
@@ -689,7 +702,21 @@ export async function validateGitHubRepositoryAccess(
     };
   }
 
-  const pulls = pullListSchema.parse(await response.json());
+  const parsedPulls = pullListSchema.safeParse(await response.json());
+  if (!parsedPulls.success) {
+    const schemaError = new GitHubApiSchemaError(
+      listEndpoint,
+      parsedPulls.error.issues,
+    );
+    return {
+      ok: false,
+      authMode,
+      outcome: classifyRepositoryValidationOutcome(schemaError, auth),
+      fullName,
+      message: describeRepositoryValidationError(schemaError, fullName, auth),
+    };
+  }
+  const pulls = parsedPulls.data;
   const firstPull = pulls[0];
   if (firstPull == null) {
     return {

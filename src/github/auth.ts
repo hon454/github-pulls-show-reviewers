@@ -20,6 +20,16 @@ export class DeviceFlowError extends Error {
   }
 }
 
+export class GitHubAuthSchemaError extends Error {
+  constructor(
+    public readonly endpoint: string,
+    public readonly issues?: unknown,
+  ) {
+    super(`GitHub returned an unexpected response shape for ${endpoint}.`);
+    this.name = "GitHubAuthSchemaError";
+  }
+}
+
 const deviceCodeInitSchema = z.object({
   device_code: z.string(),
   user_code: z.string(),
@@ -348,10 +358,13 @@ export async function fetchAuthenticatedUser(input: {
   if (!response.ok) {
     throw new Error(`GET /user failed with status ${response.status}.`);
   }
-  const payload = githubUserSchema.parse(await response.json());
+  const parsed = githubUserSchema.safeParse(await response.json());
+  if (!parsed.success) {
+    throw new GitHubAuthSchemaError("GET /user", parsed.error.issues);
+  }
   return {
-    login: payload.login,
-    avatarUrl: payload.avatar_url ?? null,
+    login: parsed.data.login,
+    avatarUrl: parsed.data.avatar_url ?? null,
   };
 }
 
@@ -401,8 +414,14 @@ export async function fetchUserInstallations(input: {
         `GET /user/installations failed with status ${response.status}.`,
       );
     }
-    const payload = userInstallationsSchema.parse(await response.json());
-    for (const installation of payload.installations) {
+    const parsed = userInstallationsSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      throw new GitHubAuthSchemaError(
+        "GET /user/installations",
+        parsed.error.issues,
+      );
+    }
+    for (const installation of parsed.data.installations) {
       if (installation.account.type === "Bot") {
         continue;
       }
@@ -443,10 +462,16 @@ export async function fetchInstallationRepositories(input: {
         `GET /user/installations/${input.installationId}/repositories failed with status ${response.status}.`,
       );
     }
-    const payload = installationRepositoriesSchema.parse(
+    const parsed = installationRepositoriesSchema.safeParse(
       await response.json(),
     );
-    for (const repository of payload.repositories) {
+    if (!parsed.success) {
+      throw new GitHubAuthSchemaError(
+        `GET /user/installations/${input.installationId}/repositories`,
+        parsed.error.issues,
+      );
+    }
+    for (const repository of parsed.data.repositories) {
       results.push(repository.full_name);
     }
     url = parseNextLink(response.headers.get("link"));

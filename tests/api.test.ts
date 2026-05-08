@@ -10,6 +10,7 @@ import {
   describeGitHubApiError,
   isRateLimitError,
   parseRepositoryReference,
+  validateAccountToken,
   validateGitHubRepositoryAccess,
 } from "../src/github/api";
 
@@ -1341,4 +1342,54 @@ describe("validateGitHubRepositoryAccess", () => {
       }
     });
   }
+
+  it("returns a typed diagnostic when /pulls returns a malformed body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([{ not_a_number: "oops" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await validateGitHubRepositoryAccess(
+      { token: "ghu_example" },
+      "hon454/github-pulls-show-reviewers",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toBe("unknown-error");
+    expect(result.message).toContain("unexpected response shape");
+    expect(result.message).not.toMatch(/ZodError/);
+  });
+});
+
+describe("validateAccountToken", () => {
+  it("returns ok with limit and remaining for a healthy rate-limit body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ rate: { limit: 5000, remaining: 4999 } }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const result = await validateAccountToken({ token: "ghu_example" });
+    expect(result).toEqual({ ok: true, limit: 5000, remaining: 4999 });
+  });
+
+  it("returns a typed diagnostic when /rate_limit returns a malformed body", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ unexpected: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await validateAccountToken({ token: "ghu_example" });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("unexpected response shape");
+    expect(result.message).toContain("/rate_limit");
+    expect(result.message).not.toMatch(/ZodError/);
+  });
 });
