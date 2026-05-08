@@ -99,7 +99,7 @@ Run this preflight before every Chrome Web Store upload. It guards
 against `package.json` / zip / Git tag / release note drift before the
 package reaches the Chrome Web Store dashboard.
 
-Start with the bare package version, such as `1.7.2`, and confirm every
+Start with the bare package version, such as `1.7.3`, and confirm every
 derived release artifact uses that same `<version>` value:
 
 1. `package.json` `version` field must be the bare `<version>`. Sanity check with
