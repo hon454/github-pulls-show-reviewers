@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   DeviceFlowError,
+  GitHubAuthSchemaError,
   fetchAuthenticatedUser,
   fetchInstallationRepositories,
   fetchUserInstallations,
@@ -229,5 +230,34 @@ describe("fetchInstallationRepositories", () => {
     await expect(
       fetchInstallationRepositories({ token: "ghu_abc", installationId: 1 }),
     ).rejects.toThrow();
+  });
+});
+
+describe("auth schema diagnostics", () => {
+  it("throws GitHubAuthSchemaError when /user payload is malformed", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({ unexpected: true }),
+    );
+    await expect(
+      fetchAuthenticatedUser({ token: "ghu_abc" }),
+    ).rejects.toBeInstanceOf(GitHubAuthSchemaError);
+  });
+
+  it("throws GitHubAuthSchemaError when /user/installations payload is malformed", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({ installations: "not-an-array" }),
+    );
+    await expect(
+      fetchUserInstallations({ token: "ghu_abc" }),
+    ).rejects.toBeInstanceOf(GitHubAuthSchemaError);
+  });
+
+  it("throws GitHubAuthSchemaError when installation repositories payload is malformed", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({ repositories: [{ wrong: "shape" }] }),
+    );
+    await expect(
+      fetchInstallationRepositories({ token: "ghu_abc", installationId: 1 }),
+    ).rejects.toBeInstanceOf(GitHubAuthSchemaError);
   });
 });
