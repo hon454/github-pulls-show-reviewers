@@ -153,6 +153,15 @@ export function ensureReviewerStyles(): void {
       border: 1px solid transparent;
     }
     .ghpsr-chip:hover { text-decoration: none; filter: brightness(0.98); }
+
+    .ghpsr-avatar:focus-visible,
+    .ghpsr-pill:focus-visible,
+    .ghpsr-chip:focus-visible {
+      outline: 2px solid var(--fgColor-accent, #0969da);
+      outline-offset: 2px;
+      border-radius: 999px;
+    }
+
     .ghpsr-chip--team {
       color: var(--fgColor-attention, #9a6700);
       background: color-mix(in srgb, var(--bgColor-attention-muted, #fff8c5) 80%, white);
