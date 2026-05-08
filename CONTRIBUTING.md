@@ -120,6 +120,25 @@ packaging) only after the checks above are green.
   [`AGENTS.md`](./AGENTS.md#implementation-guidelines) for patterns
   specific to this codebase.
 
+## Dependency audits
+
+The
+[`dependency-audit`](./.github/workflows/dependency-audit.yml) workflow
+runs `pnpm audit --audit-level moderate` on a weekly schedule (Mondays
+09:00 UTC) and on demand via `workflow_dispatch`. The job fails when a
+moderate-or-higher advisory appears, surfacing a notification to the
+maintainer. There is no automated dependency PR bot; the workflow is
+intentionally noise-light.
+
+When the workflow fails:
+
+1. Investigate the advisory locally with `pnpm audit`.
+2. Bump the affected dependency or transitive override.
+3. Run `pnpm verify:release` before pushing the fix.
+
+If a finding is a known false positive, document the rationale in the
+fix commit instead of suppressing the workflow.
+
 ## Code of Conduct
 
 This project follows the

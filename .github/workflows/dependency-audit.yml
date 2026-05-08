@@ -1,0 +1,28 @@
+name: Dependency audit
+
+on:
+  schedule:
+    # Run weekly on Monday 09:00 UTC.
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Fail only on moderate-or-higher advisories so transitive low-severity
+      # noise does not page the maintainer. The job runs on a schedule and
+      # surfaces failures via GitHub Actions notifications, with no automated
+      # PRs.
+      - name: pnpm audit (moderate+)
+        run: pnpm audit --audit-level moderate
