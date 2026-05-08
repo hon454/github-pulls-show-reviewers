@@ -93,18 +93,28 @@ link and the privacy fields aligned with the shipped behavior.
 
 ## Release and upload checklist
 
-1. Ensure the package version is the version you intend to submit. Tag names should follow `v<version>`, for example `v1.0.0`.
-2. Run `pnpm preflight:release` in an environment with `WXT_GITHUB_APP_CLIENT_ID`, `WXT_GITHUB_APP_SLUG`, and `WXT_GITHUB_APP_NAME` populated. For local release builds, `pnpm build:release` and `pnpm zip:release` load these from GitHub Actions repository variables through `gh` and run the same preflight.
-3. Run `pnpm verify:release`.
-4. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
-5. Run `pnpm zip` only after the checks above pass.
-6. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
-7. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
-8. Paste the short description, detailed description, and privacy policy URL above.
-9. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
-10. If you want review before launch, disable automatic publish and stage the release in the dashboard.
-11. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
-12. Open the packaged extension's options page once before upload and confirm it never renders as a blank white screen. A missing GitHub App build config must surface the explicit configuration warning instead.
+1. Run `pnpm preflight:release` in an environment with `WXT_GITHUB_APP_CLIENT_ID`, `WXT_GITHUB_APP_SLUG`, and `WXT_GITHUB_APP_NAME` populated. For local release builds, `pnpm build:release` and `pnpm zip:release` load these from GitHub Actions repository variables through `gh` and run the same preflight.
+2. Run `pnpm verify:release`.
+3. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
+4. Run `pnpm zip` only after the checks above pass.
+5. Run the [version-alignment
+   preflight](./chrome-web-store.md#version-alignment-preflight) and
+   confirm `package.json`, the packaged zip filename, the `v<version>`
+   Git tag, and the `docs/releases/v<version>.md` note all use the same
+   bare `<version>` value.
+6. Open the packaged extension's options page once before upload and
+   confirm it never renders as a blank white screen. A missing GitHub App
+   build config must surface the explicit configuration warning instead.
+7. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
+8. Confirm the dashboard package version reads the same bare `<version>`
+   from the preflight before submitting for review or publishing.
+9. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
+10. Paste the short description, detailed description, and privacy policy URL above.
+11. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
+12. If you want review before launch, disable automatic publish and stage the release in the dashboard.
+13. After approval, publish the staged version and confirm the Git tag,
+    GitHub Release, release note, and now-published store version still
+    reference the same bare `<version>` value.
 
 ## Current package target
 
