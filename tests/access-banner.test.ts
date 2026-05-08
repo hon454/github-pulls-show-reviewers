@@ -466,6 +466,21 @@ describe("banner DOM", () => {
     expect(el.querySelector("button")?.textContent).toBe("Dismiss");
   });
 
+  it("attaches focus-visible classes on the CTA link and dismiss button", () => {
+    const banner = setup();
+    banner.update({
+      current: "app-uncovered",
+      dismissed: false,
+      repo: TEST_REPO,
+    });
+    const link = document.querySelector("[data-ghpsr-banner] a");
+    const dismiss = document.querySelector("[data-ghpsr-banner] button");
+    expect(link?.classList.contains("ghpsr-banner-cta")).toBe(true);
+    expect(dismiss?.classList.contains("ghpsr-banner-dismiss")).toBe(true);
+    const styleEl = document.querySelector("[data-ghpsr-banner-style]");
+    expect(styleEl?.textContent).toContain(":focus-visible");
+  });
+
   it("removes the banner when dismissed", () => {
     const banner = setup();
     banner.update({

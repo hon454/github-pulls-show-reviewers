@@ -2,6 +2,24 @@ import type { BannerKind, BannerState } from "./aggregator";
 import { formatBannerMessage } from "./aggregator";
 
 const BANNER_ATTRIBUTE = "data-ghpsr-banner";
+const BANNER_STYLE_ATTRIBUTE = "data-ghpsr-banner-style";
+
+function ensureBannerStyles(): void {
+  if (document.head.querySelector(`[${BANNER_STYLE_ATTRIBUTE}]`)) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.setAttribute(BANNER_STYLE_ATTRIBUTE, "true");
+  style.textContent = `
+    .ghpsr-banner-cta:focus-visible,
+    .ghpsr-banner-dismiss:focus-visible {
+      outline: 2px solid var(--fgColor-accent, #0969da);
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+  `;
+  document.head.append(style);
+}
 
 export type BannerMount = {
   update(state: BannerState): void;
@@ -45,6 +63,8 @@ export function mountBanner(input: {
       return;
     }
 
+    ensureBannerStyles();
+
     if (element == null) {
       element = document.createElement("div");
       element.setAttribute(BANNER_ATTRIBUTE, "true");
@@ -75,12 +95,14 @@ export function mountBanner(input: {
       link.target = "_blank";
       link.rel = "noreferrer";
       link.textContent = cta.label;
+      link.className = "ghpsr-banner-cta";
       element.append(link);
     }
 
     const dismissBtn = document.createElement("button");
     dismissBtn.type = "button";
     dismissBtn.textContent = "Dismiss";
+    dismissBtn.className = "ghpsr-banner-dismiss";
     dismissBtn.addEventListener("click", () => input.onDismiss());
     element.append(dismissBtn);
   }
