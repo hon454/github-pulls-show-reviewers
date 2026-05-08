@@ -258,10 +258,11 @@ describe("renderReviewers", () => {
     expect(row?.querySelector(".d-none.d-md-inline-flex")).not.toBeNull();
   });
 
-  it("declares :focus-visible styles for reviewer pills and team chips", () => {
+  it("declares :focus-visible styles for reviewer avatars, pills, and team chips", () => {
     ensureReviewerStyles();
     const styleEl = document.querySelector("[data-ghpsr-style]");
     const css = styleEl?.textContent ?? "";
+    expect(css).toContain(".ghpsr-avatar:focus-visible");
     expect(css).toContain(".ghpsr-pill:focus-visible");
     expect(css).toContain(".ghpsr-chip:focus-visible");
     expect(css).toContain("outline:");

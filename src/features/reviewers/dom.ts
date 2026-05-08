@@ -154,6 +154,7 @@ export function ensureReviewerStyles(): void {
     }
     .ghpsr-chip:hover { text-decoration: none; filter: brightness(0.98); }
 
+    .ghpsr-avatar:focus-visible,
     .ghpsr-pill:focus-visible,
     .ghpsr-chip:focus-visible {
       outline: 2px solid var(--fgColor-accent, #0969da);
