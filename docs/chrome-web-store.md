@@ -68,23 +68,24 @@ Expected release gate behavior:
 
 ## Manual Chrome Web Store submission checklist
 
-Before uploading, complete the [version-alignment
-preflight](#version-alignment-preflight) below. Then:
-
 1. Run `pnpm icons:render` if the SVG icon changed.
 2. Run `pnpm verify:release`.
 3. Run `pnpm cws:assets` if screenshots need to be refreshed for this submission.
-4. Upload `.output/github-pulls-show-reviewers-<version>-chrome.zip` to the Chrome Web Store dashboard.
-5. Use the short and detailed descriptions above for the store listing.
-6. Refresh screenshots so they show reviewer chips on GitHub pull request lists only, using the generated fixture rather than live dummy PRs.
-7. Confirm the privacy disclosure matches the shipped behavior:
+4. Run `pnpm zip` after the checks above pass.
+5. Complete the [version-alignment
+   preflight](#version-alignment-preflight).
+6. Upload `.output/github-pulls-show-reviewers-<version>-chrome.zip` to the Chrome Web Store dashboard.
+7. Confirm the dashboard package version reads the same bare `<version>`
+   from the preflight before submitting for review or publishing.
+8. Use the short and detailed descriptions above for the store listing.
+9. Refresh screenshots so they show reviewer chips on GitHub pull request lists only, using the generated fixture rather than live dummy PRs.
+10. Confirm the privacy disclosure matches the shipped behavior:
    no sale of data, no advertising, no remote code, GitHub page access only,
    and locally stored GitHub App accounts plus a `preferences` record in
    `browser.storage.local` for private-repository access and reviewer display
    settings.
-8. Keep release tags aligned with the store package version, using `v<manifest-version>` tags such as `v1.0.0`.
-9. Confirm the reviewer-only scope in the listing copy still matches the extension and screenshots before submission.
-10. Open the packaged extension's options page once before submission and confirm it either renders the sign-in UI normally or shows the explicit GitHub App configuration warning, never a blank page.
+11. Confirm the reviewer-only scope in the listing copy still matches the extension and screenshots before submission.
+12. Open the packaged extension's options page once before submission and confirm it either renders the sign-in UI normally or shows the explicit GitHub App configuration warning, never a blank page.
 
 Concrete submission assets and current privacy-form values live in
 [chrome-web-store-submission.md](./chrome-web-store-submission.md). The
@@ -95,27 +96,29 @@ and is hosted publicly at
 ## Version-alignment preflight
 
 Run this preflight before every Chrome Web Store upload. It guards
-against `package.json` / zip / Git tag / release note / store draft
-drift, which is the most common manual-release failure mode for this
-repository.
+against `package.json` / zip / Git tag / release note drift before the
+package reaches the Chrome Web Store dashboard.
 
-Confirm every item below resolves to the same `v<version>` string:
+Start with the bare package version, such as `1.7.2`, and confirm every
+derived release artifact uses that same `<version>` value:
 
-1. `package.json` `version` field. Sanity check with
+1. `package.json` `version` field must be the bare `<version>`. Sanity check with
    `node -p "require('./package.json').version"`.
 2. The packaged zip filename. The release zip must be named
    `github-pulls-show-reviewers-<version>-chrome.zip` and live under
    `.output/`. Verify with
    `ls .output/github-pulls-show-reviewers-<version>-chrome.zip`.
-3. The Git tag. Verify with `git tag -l "v<version>"` and that the tag
+3. The Git tag must be `v<version>`. Verify with `git tag -l "v<version>"` and that the tag
    points at the commit you intend to ship
    (`git rev-parse v<version>`).
 4. The release note file. `docs/releases/v<version>.md` must exist and
    describe this version's changes.
-5. The Chrome Web Store draft version. The dashboard's package version
-   must read the same `<version>` after upload, before publish.
 
 If any of these disagree, stop and reconcile before continuing the
 upload. The maintainer pattern is to bump `package.json`, recreate the
 zip, retag, and refresh the release note rather than to publish a
 mismatched submission.
+
+After upload, the Chrome Web Store draft version becomes available in
+the dashboard. Confirm it reads the same bare `<version>` before
+submitting for review or publishing.
