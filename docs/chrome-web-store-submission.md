@@ -93,7 +93,11 @@ link and the privacy fields aligned with the shipped behavior.
 
 ## Release and upload checklist
 
-1. Ensure the package version is the version you intend to submit. Tag names should follow `v<version>`, for example `v1.0.0`.
+1. Run the [version-alignment
+   preflight](./chrome-web-store.md#version-alignment-preflight) and
+   confirm `package.json`, the packaged zip filename, the Git tag, the
+   `docs/releases/v<version>.md` note, and the Chrome Web Store draft
+   version all resolve to the same `v<version>`.
 2. Run `pnpm preflight:release` in an environment with `WXT_GITHUB_APP_CLIENT_ID`, `WXT_GITHUB_APP_SLUG`, and `WXT_GITHUB_APP_NAME` populated. For local release builds, `pnpm build:release` and `pnpm zip:release` load these from GitHub Actions repository variables through `gh` and run the same preflight.
 3. Run `pnpm verify:release`.
 4. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
@@ -103,7 +107,7 @@ link and the privacy fields aligned with the shipped behavior.
 8. Paste the short description, detailed description, and privacy policy URL above.
 9. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
 10. If you want review before launch, disable automatic publish and stage the release in the dashboard.
-11. After approval, publish the staged version and align the Git tag, GitHub Release, and store version.
+11. After approval, publish the staged version and re-run the version-alignment preflight against the now-published draft to confirm the Git tag, GitHub Release, and store version still match `v<version>`.
 12. Open the packaged extension's options page once before upload and confirm it never renders as a blank white screen. A missing GitHub App build config must surface the explicit configuration warning instead.
 
 ## Current package target

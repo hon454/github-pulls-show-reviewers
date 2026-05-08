@@ -68,6 +68,9 @@ Expected release gate behavior:
 
 ## Manual Chrome Web Store submission checklist
 
+Before uploading, complete the [version-alignment
+preflight](#version-alignment-preflight) below. Then:
+
 1. Run `pnpm icons:render` if the SVG icon changed.
 2. Run `pnpm verify:release`.
 3. Run `pnpm cws:assets` if screenshots need to be refreshed for this submission.
@@ -88,3 +91,31 @@ Concrete submission assets and current privacy-form values live in
 canonical published privacy policy lives in [privacy-policy.md](./privacy-policy.md)
 and is hosted publicly at
 <https://github.com/hon454/github-pulls-show-reviewers/blob/main/docs/privacy-policy.md>.
+
+## Version-alignment preflight
+
+Run this preflight before every Chrome Web Store upload. It guards
+against `package.json` / zip / Git tag / release note / store draft
+drift, which is the most common manual-release failure mode for this
+repository.
+
+Confirm every item below resolves to the same `v<version>` string:
+
+1. `package.json` `version` field. Sanity check with
+   `node -p "require('./package.json').version"`.
+2. The packaged zip filename. The release zip must be named
+   `github-pulls-show-reviewers-<version>-chrome.zip` and live under
+   `.output/`. Verify with
+   `ls .output/github-pulls-show-reviewers-<version>-chrome.zip`.
+3. The Git tag. Verify with `git tag -l "v<version>"` and that the tag
+   points at the commit you intend to ship
+   (`git rev-parse v<version>`).
+4. The release note file. `docs/releases/v<version>.md` must exist and
+   describe this version's changes.
+5. The Chrome Web Store draft version. The dashboard's package version
+   must read the same `<version>` after upload, before publish.
+
+If any of these disagree, stop and reconcile before continuing the
+upload. The maintainer pattern is to bump `package.json`, recreate the
+zip, retag, and refresh the release note rather than to publish a
+mismatched submission.
