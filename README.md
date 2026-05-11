@@ -30,6 +30,20 @@ Install the extension from the [Chrome Web Store](https://chromewebstore.google.
 
 After installation, open a GitHub repository's pull request list. Public repositories work without signing in. For private repositories, open the extension options page and add the GitHub account that can access the repository.
 
+## Browser and Language Support
+
+Chrome is the only browser this extension currently supports and tests. Other
+Chromium-family browsers such as Edge, Brave, and Arc may be able to run the
+same MV3 build, but they are not release targets today and are not covered by
+the manual Chrome verification flow. Firefox support is also out of scope until
+its MV3 behavior, extension packaging, and GitHub sign-in flow are tested
+explicitly.
+
+The extension is English-only today. Future localization would require
+extracting Chrome manifest strings, options-page copy, access-banner guidance,
+and injected pull-request-list labels into Chrome `_locales` resources or an
+equivalent localization layer.
+
 ## Public and Private Repositories
 
 - **Public repositories:** work without signing in whenever GitHub exposes enough public PR data.

@@ -68,6 +68,17 @@
 - Public-repository no-token access still depends on GitHub's unauthenticated REST availability and rate limits.
 - PAT-era single-token settings are not migrated; users must sign in again with
   the GitHub App account flow.
+- Browser support is intentionally limited to Chrome. The build and release
+  flow target Chrome MV3, manual verification runs in Chrome, and Chrome Web
+  Store packaging is the only distribution path. Edge, Brave, and Arc may run
+  the Chromium MV3 output, but they are compatibility expectations rather than
+  supported targets. Firefox support would need separate MV3 behavior checks,
+  packaging validation, store guidance, and private-repository sign-in testing.
+- User-facing copy is intentionally English-only. Adding localization later
+  would require extracting manifest text into Chrome `_locales`, moving
+  options-page React copy, access-banner guidance, and injected reviewer labels
+  behind a translation boundary, then adding fixture coverage to keep localized
+  pull-list rendering deterministic.
 
 ## Display preferences
 
