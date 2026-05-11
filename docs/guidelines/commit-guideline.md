@@ -68,9 +68,10 @@ the available checks manually before committing or pushing:
 - `pnpm lint`
 - `pnpm typecheck`
 - `pnpm test`
+- `pnpm test:coverage`
 - `pnpm verify:release` (before tagging a release)
 
-CI runs `pnpm typecheck` on every PR.
+CI runs `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, and `pnpm test:e2e` on every PR.
 
 ## Examples
 

@@ -95,6 +95,7 @@ Useful validation commands:
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm test:coverage
 pnpm test:e2e
 ```
 

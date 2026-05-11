@@ -18,11 +18,12 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:e2e:build": "WXT_GITHUB_APP_CLIENT_ID=TESTING_CLIENT_ID WXT_GITHUB_APP_SLUG=test-app pnpm build",
     "test:e2e:run": "pnpm exec playwright test --project=default",
     "test:e2e:grep": "pnpm exec playwright test --project=default --grep",
     "test:e2e": "pnpm test:e2e:build && pnpm test:e2e:run",
-    "verify:release": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e"
+    "verify:release": "pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm test:e2e"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -35,13 +36,14 @@
     "@testing-library/react": "^16.3.2",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.8",
+    "@vitest/coverage-v8": "3.2.4",
     "eslint": "^9.38.0",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^26.1.0",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.1",
-    "vitest": "^3.2.4",
+    "vitest": "3.2.4",
     "wxt": "^0.20.7"
   },
   "packageManager": "pnpm@10.18.3"
