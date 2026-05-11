@@ -23,7 +23,7 @@
     "test:e2e:run": "pnpm exec playwright test --project=default",
     "test:e2e:grep": "pnpm exec playwright test --project=default --grep",
     "test:e2e": "pnpm test:e2e:build && pnpm test:e2e:run",
-    "verify:release": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e"
+    "verify:release": "pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm test:e2e"
   },
   "dependencies": {
     "react": "^19.0.0",
@@ -43,7 +43,7 @@
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.1",
-    "vitest": "^3.2.4",
+    "vitest": "3.2.4",
     "wxt": "^0.20.7"
   },
   "packageManager": "pnpm@10.18.3"
