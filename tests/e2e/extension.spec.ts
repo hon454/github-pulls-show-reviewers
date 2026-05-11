@@ -214,6 +214,129 @@ test("renders app-uncovered banner with Configure access CTA when a signed-in ro
   });
 });
 
+test("refreshes an expired selected-installation account before rendering private reviewer metadata", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
+    const now = Date.now();
+    const refreshRequests: string[] = [];
+    const metadataAuthHeaders: string[] = [];
+    const reviewsAuthHeaders: string[] = [];
+
+    await seedSignedInAccount(context, {
+      accountId: "acc-refresh",
+      login: "hon454",
+      installationOwner: "hon454",
+      repositorySelection: "selected",
+      repoFullNames: ["hon454/github-pulls-show-reviewers"],
+      token: "ghu_expired",
+      refreshToken: "ghr_refresh",
+      expiresAt: now - 60_000,
+      refreshTokenExpiresAt: now + 30 * 24 * 60 * 60 * 1000,
+    });
+
+    await routeFixturePage(context, fixtureHtml);
+    await context.route(
+      "https://github.com/login/oauth/access_token",
+      async (route) => {
+        refreshRequests.push(route.request().postData() ?? "");
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            access_token: "ghu_refreshed",
+            token_type: "bearer",
+            refresh_token: "ghr_rotated",
+            expires_in: 28_800,
+            refresh_token_expires_in: 158_976_000,
+          }),
+        });
+      },
+    );
+    await context.route(
+      /^https:\/\/api\.github\.com\/repos\/hon454\/github-pulls-show-reviewers\/pulls\?/,
+      async (route) => {
+        const authorization = route.request().headers().authorization ?? "";
+        metadataAuthHeaders.push(authorization);
+        if (authorization === "Bearer ghu_expired") {
+          await route.fulfill({
+            status: 401,
+            contentType: "application/json",
+            body: JSON.stringify({ message: "Bad credentials" }),
+          });
+          return;
+        }
+
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            {
+              number: 42,
+              user: { login: "hon454" },
+              requested_reviewers: [{ login: "alice" }],
+              requested_teams: [{ slug: "platform" }],
+            },
+          ]),
+        });
+      },
+    );
+    await context.route(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews**",
+      async (route) => {
+        const authorization = route.request().headers().authorization ?? "";
+        reviewsAuthHeaders.push(authorization);
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: { login: "bob" },
+            },
+          ]),
+        });
+      },
+    );
+
+    const page = await context.newPage();
+    await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
+
+    const root = page.locator(".ghpsr-root");
+    await expect(root).toContainText("Reviewers:");
+    await expect(root).toContainText("Team: platform");
+    await expect(root.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+    await expect(
+      root.locator('a.ghpsr-avatar[title*="@bob"][title*="approved"]'),
+    ).toHaveCount(1);
+    expect(refreshRequests).toHaveLength(1);
+    expect(refreshRequests[0]).toContain("grant_type=refresh_token");
+    expect(refreshRequests[0]).toContain("refresh_token=ghr_refresh");
+    expect(metadataAuthHeaders[0]).toBe("Bearer ghu_expired");
+    expect(metadataAuthHeaders).toContain("Bearer ghu_refreshed");
+    expect(
+      metadataAuthHeaders.filter((header) => header === "Bearer ghu_expired"),
+    ).toHaveLength(1);
+    expect(
+      metadataAuthHeaders.every(
+        (header) =>
+          header === "Bearer ghu_refreshed" || header === "Bearer ghu_expired",
+      ),
+    ).toBe(true);
+    expect(
+      reviewsAuthHeaders.every((header) => header === "Bearer ghu_refreshed"),
+    ).toBe(true);
+    await expectStoredAuth(context, "acc-refresh", {
+      token: "ghu_refreshed",
+      refreshToken: "ghr_rotated",
+      invalidated: false,
+      invalidatedReason: null,
+    });
+  });
+});
+
 test("clears the reviewer slot silently when review history is denied", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
@@ -410,6 +533,12 @@ async function seedSignedInAccount(
     accountId: string;
     login: string;
     installationOwner: string;
+    repositorySelection?: "all" | "selected";
+    repoFullNames?: string[] | null;
+    token?: string;
+    refreshToken?: string | null;
+    expiresAt?: number | null;
+    refreshTokenExpiresAt?: number | null;
   },
 ): Promise<void> {
   const serviceWorker =
@@ -434,12 +563,12 @@ async function seedSignedInAccount(
           createdAt: now,
         },
         [`account:auth:${seed.accountId}`]: {
-          token: "ghu_seeded",
+          token: seed.token ?? "ghu_seeded",
           invalidated: false,
           invalidatedReason: null,
-          refreshToken: null,
-          expiresAt: null,
-          refreshTokenExpiresAt: null,
+          refreshToken: seed.refreshToken ?? null,
+          expiresAt: seed.expiresAt ?? null,
+          refreshTokenExpiresAt: seed.refreshTokenExpiresAt ?? null,
         },
         [`account:installations:${seed.accountId}`]: {
           installations: [
@@ -450,14 +579,49 @@ async function seedSignedInAccount(
                 type: "Organization",
                 avatarUrl: null,
               },
-              repositorySelection: "all",
-              repoFullNames: null,
+              repositorySelection: seed.repositorySelection ?? "all",
+              repoFullNames: seed.repoFullNames ?? null,
             },
           ],
           installationsRefreshedAt: now,
         },
       });
     }, input);
+  } finally {
+    await optionsPage.close();
+  }
+}
+
+async function expectStoredAuth(
+  context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+  accountId: string,
+  expected: {
+    token: string;
+    refreshToken: string | null;
+    invalidated: boolean;
+    invalidatedReason: string | null;
+  },
+): Promise<void> {
+  const serviceWorker =
+    context.serviceWorkers()[0] ??
+    (await context.waitForEvent("serviceworker"));
+  const extensionId = new URL(serviceWorker.url()).host;
+  const optionsPage = await context.newPage();
+  try {
+    await optionsPage.goto(`chrome-extension://${extensionId}/options.html`);
+    const stored = await optionsPage.evaluate((id) => {
+      const storage = (
+        globalThis as unknown as {
+          chrome: {
+            storage: {
+              local: { get(key: string): Promise<Record<string, unknown>> };
+            };
+          };
+        }
+      ).chrome.storage.local;
+      return storage.get(`account:auth:${id}`);
+    }, accountId);
+    expect(stored[`account:auth:${accountId}`]).toMatchObject(expected);
   } finally {
     await optionsPage.close();
   }
