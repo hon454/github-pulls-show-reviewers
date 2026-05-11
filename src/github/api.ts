@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { withOptionalSignal } from "./request-init";
+
 type GitHubAuthContext = {
   githubToken: string | null;
 };
@@ -285,10 +287,10 @@ export async function fetchPullReviewerSummary(input: {
   const reviewsFirstPageUrl = `https://api.github.com${reviewsEndpoint.path}?per_page=100`;
 
   if (input.pullMetadata != null) {
-    const reviewsFirstResponse = await fetch(reviewsFirstPageUrl, {
-      headers,
-      signal: input.signal,
-    });
+    const reviewsFirstResponse = await fetch(
+      reviewsFirstPageUrl,
+      withOptionalSignal({ headers }, input.signal),
+    );
 
     const failure = await createGitHubApiErrorFromResponse(
       reviewsFirstResponse,
@@ -302,7 +304,7 @@ export async function fetchPullReviewerSummary(input: {
       firstResponse: reviewsFirstResponse,
       endpoint: reviewsEndpoint,
       headers,
-      signal: input.signal,
+      ...(input.signal == null ? {} : { signal: input.signal }),
     });
 
     const latestReviewEvidence = collectLatestReviewEvidence(
@@ -317,7 +319,7 @@ export async function fetchPullReviewerSummary(input: {
         pullMetadata: input.pullMetadata,
         latestNonCommentByUser: latestReviewEvidence.latestNonCommentByUser,
         headers,
-        signal: input.signal,
+        ...(input.signal == null ? {} : { signal: input.signal }),
       });
 
     return buildPullReviewerSummary(
@@ -335,8 +337,8 @@ export async function fetchPullReviewerSummary(input: {
   const pullUrl = `https://api.github.com${pullEndpoint.path}`;
 
   const [pullResponse, reviewsFirstResponse] = await Promise.all([
-    fetch(pullUrl, { headers, signal: input.signal }),
-    fetch(reviewsFirstPageUrl, { headers, signal: input.signal }),
+    fetch(pullUrl, withOptionalSignal({ headers }, input.signal)),
+    fetch(reviewsFirstPageUrl, withOptionalSignal({ headers }, input.signal)),
   ]);
 
   const failures = (
@@ -359,7 +361,7 @@ export async function fetchPullReviewerSummary(input: {
     firstResponse: reviewsFirstResponse,
     endpoint: reviewsEndpoint,
     headers,
-    signal: input.signal,
+    ...(input.signal == null ? {} : { signal: input.signal }),
   });
 
   const pullMetadata = toPullReviewerMetadata(input.pullNumber, pullParsed.data);
@@ -372,7 +374,7 @@ export async function fetchPullReviewerSummary(input: {
       pullMetadata,
       latestNonCommentByUser: latestReviewEvidence.latestNonCommentByUser,
       headers,
-      signal: input.signal,
+      ...(input.signal == null ? {} : { signal: input.signal }),
     });
 
   return buildPullReviewerSummary(
@@ -390,10 +392,10 @@ export async function fetchPullReviewerMetadataBatch(input: {
 }): Promise<PullReviewerMetadata[]> {
   const headers = createGitHubHeaders(input.githubToken);
   const endpoint = buildPullsMetadataEndpoint(input.owner, input.repo);
-  const response = await fetch(`https://api.github.com${endpoint.path}`, {
-    headers,
-    signal: input.signal,
-  });
+  const response = await fetch(
+    `https://api.github.com${endpoint.path}`,
+    withOptionalSignal({ headers }, input.signal),
+  );
 
   const failure = await createGitHubApiErrorFromResponse(response, endpoint);
   if (failure != null) {
@@ -528,10 +530,10 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
   const firstPageUrl = `https://api.github.com${endpoint.path}?per_page=100`;
 
   try {
-    const firstResponse = await fetch(firstPageUrl, {
-      headers: params.headers,
-      signal: params.signal,
-    });
+    const firstResponse = await fetch(
+      firstPageUrl,
+      withOptionalSignal({ headers: params.headers }, params.signal),
+    );
 
     const failure = await createGitHubApiErrorFromResponse(firstResponse, endpoint);
     if (failure != null) {
@@ -542,7 +544,7 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
       firstResponse,
       endpoint,
       headers: params.headers,
-      signal: params.signal,
+      ...(params.signal == null ? {} : { signal: params.signal }),
     });
 
     return selectLatestReviewRequestByLogin(events, new Set(ambiguousLogins));
@@ -847,10 +849,10 @@ async function collectReviewsAcrossPages(params: {
       return collected;
     }
 
-    response = await fetch(nextUrl, {
-      headers: params.headers,
-      signal: params.signal,
-    });
+    response = await fetch(
+      nextUrl,
+      withOptionalSignal({ headers: params.headers }, params.signal),
+    );
 
     const error = await createGitHubApiErrorFromResponse(
       response,
@@ -883,10 +885,10 @@ async function collectReviewRequestEventsAcrossPages(params: {
       return collected;
     }
 
-    response = await fetch(nextUrl, {
-      headers: params.headers,
-      signal: params.signal,
-    });
+    response = await fetch(
+      nextUrl,
+      withOptionalSignal({ headers: params.headers }, params.signal),
+    );
 
     const error = await createGitHubApiErrorFromResponse(
       response,

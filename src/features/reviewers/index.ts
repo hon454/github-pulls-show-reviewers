@@ -274,8 +274,8 @@ export function bootReviewerListPage(
           owner: route.owner,
           repo: route.repo,
           pullNumber,
-          pullMetadata,
           signal: controller.signal,
+          ...(pullMetadata == null ? {} : { pullMetadata }),
         });
         if (controller.signal.aborted) {
           return;
