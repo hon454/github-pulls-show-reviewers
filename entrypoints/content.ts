@@ -49,7 +49,11 @@ export default defineContentScript({
               );
               return;
             }
-            aggregator.reportFailure(classified.kind, classified.info);
+            if (classified.info == null) {
+              aggregator.reportFailure(classified.kind);
+            } else {
+              aggregator.reportFailure(classified.kind, classified.info);
+            }
           },
         });
       }
@@ -93,13 +97,11 @@ function classifyRowFailure(
       }
       continue;
     }
-    best = {
-      kind,
-      info:
-        isRateLimitKind(kind)
-          ? { rateLimit: failure.rateLimit }
-          : undefined,
-    };
+    if (isRateLimitKind(kind) && failure.rateLimit != null) {
+      best = { kind, info: { rateLimit: failure.rateLimit } };
+    } else {
+      best = { kind };
+    }
   }
   return best;
 }

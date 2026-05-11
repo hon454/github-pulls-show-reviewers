@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { withOptionalSignal } from "./request-init";
+
 export type DeviceFlowErrorCode =
   | "expired_token"
   | "access_denied"
@@ -51,15 +53,20 @@ export async function initiateDeviceFlow(input: {
   clientId: string;
   signal?: AbortSignal;
 }): Promise<DeviceFlowInit> {
-  const response = await fetch("https://github.com/login/device/code", {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ client_id: input.clientId }).toString(),
-    signal: input.signal,
-  });
+  const response = await fetch(
+    "https://github.com/login/device/code",
+    withOptionalSignal(
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ client_id: input.clientId }).toString(),
+      },
+      input.signal,
+    ),
+  );
   if (!response.ok) {
     throw new DeviceFlowError(
       "network_error",
@@ -128,19 +135,24 @@ export async function pollForAccessToken(input: {
   deviceCode: string;
   signal?: AbortSignal;
 }): Promise<AccessTokenPollResult> {
-  const response = await fetch("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      client_id: input.clientId,
-      device_code: input.deviceCode,
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-    }).toString(),
-    signal: input.signal,
-  });
+  const response = await fetch(
+    "https://github.com/login/oauth/access_token",
+    withOptionalSignal(
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          client_id: input.clientId,
+          device_code: input.deviceCode,
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+        }).toString(),
+      },
+      input.signal,
+    ),
+  );
   if (!response.ok) {
     throw new DeviceFlowError(
       "network_error",
@@ -230,19 +242,24 @@ export async function refreshAccessToken(input: {
 }): Promise<RefreshTokenResult> {
   let response: Response;
   try {
-    response = await fetch("https://github.com/login/oauth/access_token", {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        client_id: input.clientId,
-        grant_type: "refresh_token",
-        refresh_token: input.refreshToken,
-      }).toString(),
-      signal: input.signal,
-    });
+    response = await fetch(
+      "https://github.com/login/oauth/access_token",
+      withOptionalSignal(
+        {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            client_id: input.clientId,
+            grant_type: "refresh_token",
+            refresh_token: input.refreshToken,
+          }).toString(),
+        },
+        input.signal,
+      ),
+    );
   } catch (cause) {
     throw new RefreshTokenError(
       "transient",
@@ -351,10 +368,10 @@ export async function fetchAuthenticatedUser(input: {
   token: string;
   signal?: AbortSignal;
 }): Promise<AuthenticatedUser> {
-  const response = await fetch("https://api.github.com/user", {
-    headers: createAuthHeaders(input.token),
-    signal: input.signal,
-  });
+  const response = await fetch(
+    "https://api.github.com/user",
+    withOptionalSignal({ headers: createAuthHeaders(input.token) }, input.signal),
+  );
   if (!response.ok) {
     throw new Error(`GET /user failed with status ${response.status}.`);
   }
@@ -405,10 +422,10 @@ export async function fetchUserInstallations(input: {
   let url: string | null =
     "https://api.github.com/user/installations?per_page=100";
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
-    const response = await fetch(url, {
-      headers: createAuthHeaders(input.token),
-      signal: input.signal,
-    });
+    const response = await fetch(
+      url,
+      withOptionalSignal({ headers: createAuthHeaders(input.token) }, input.signal),
+    );
     if (!response.ok) {
       throw new Error(
         `GET /user/installations failed with status ${response.status}.`,
@@ -453,10 +470,10 @@ export async function fetchInstallationRepositories(input: {
   const results: string[] = [];
   let url: string | null = `https://api.github.com/user/installations/${input.installationId}/repositories?per_page=100`;
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
-    const response = await fetch(url, {
-      headers: createAuthHeaders(input.token),
-      signal: input.signal,
-    });
+    const response = await fetch(
+      url,
+      withOptionalSignal({ headers: createAuthHeaders(input.token) }, input.signal),
+    );
     if (!response.ok) {
       throw new Error(
         `GET /user/installations/${input.installationId}/repositories failed with status ${response.status}.`,

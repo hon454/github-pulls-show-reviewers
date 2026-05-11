@@ -76,8 +76,10 @@ export function createReviewerFetchService(input: {
             repo: message.repo,
             pullNumber: message.pullNumber,
             githubToken: token,
-            pullMetadata: message.pullMetadata,
             signal: controller.signal,
+            ...(message.pullMetadata == null
+              ? {}
+              : { pullMetadata: message.pullMetadata }),
           });
 
         try {

@@ -137,10 +137,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(401)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "auth-expired",
-        undefined,
-      );
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-expired");
     });
 
     it("emits app-uncovered for account + 404 (no rate-limit signal)", async () => {
@@ -157,10 +154,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(404)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "app-uncovered",
-        undefined,
-      );
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("app-uncovered");
     });
 
     it("emits app-uncovered for account + 403 without rate-limit signal", async () => {
@@ -179,10 +173,7 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "app-uncovered",
-        undefined,
-      );
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("app-uncovered");
     });
 
     it("emits auth-rate-limit with the response snapshot for account + 403 + rate-limit headers", async () => {
@@ -230,9 +221,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(429)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
-        rateLimit: undefined,
-      });
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
     });
 
     it("backfills rate-limit details from a later same-kind failure", async () => {
@@ -315,10 +304,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(403)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "signin-required",
-        undefined,
-      );
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
     });
 
     it("emits signin-required for no account + 401", async () => {
@@ -335,10 +321,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(401)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "signin-required",
-        undefined,
-      );
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
     });
 
     it("emits unauth-rate-limit without a snapshot for no account + 429 with no headers", async () => {
@@ -357,7 +340,6 @@ describe("content entrypoint", () => {
 
       expect(aggregator.reportFailure).toHaveBeenCalledWith(
         "unauth-rate-limit",
-        { rateLimit: undefined },
       );
     });
 
@@ -375,10 +357,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(404)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "signin-required",
-        undefined,
-      );
+      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
     });
 
     it("picks the highest-priority kind across mixed failures (auth-expired wins over app-uncovered)", async () => {
