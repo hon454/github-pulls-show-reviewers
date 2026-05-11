@@ -1,9 +1,19 @@
+import { z } from "zod";
+
 import type { InstallationRefreshOutcome } from "../background/installation-refresh";
 
-export type RefreshAccountInstallationsMessage = {
-  type: "refreshAccountInstallations";
-  accountId: string;
-};
+const nonEmptyStringSchema = z
+  .string()
+  .refine((value) => value.trim().length > 0);
+
+export const refreshAccountInstallationsMessageSchema = z.object({
+  type: z.literal("refreshAccountInstallations"),
+  accountId: nonEmptyStringSchema,
+});
+
+export type RefreshAccountInstallationsMessage = z.infer<
+  typeof refreshAccountInstallationsMessageSchema
+>;
 
 export type RefreshAccountInstallationsResponse =
   | InstallationRefreshOutcome
@@ -12,11 +22,5 @@ export type RefreshAccountInstallationsResponse =
 export function isRefreshAccountInstallationsMessage(
   value: unknown,
 ): value is RefreshAccountInstallationsMessage {
-  return (
-    value != null &&
-    typeof value === "object" &&
-    (value as { type?: unknown }).type === "refreshAccountInstallations" &&
-    typeof (value as { accountId?: unknown }).accountId === "string" &&
-    ((value as { accountId: string }).accountId.trim().length > 0)
-  );
+  return refreshAccountInstallationsMessageSchema.safeParse(value).success;
 }
