@@ -69,6 +69,17 @@
 - PAT-era single-token settings are not migrated; users must sign in again with
   the GitHub App account flow.
 
+## Unit coverage gate
+
+- `pnpm test:coverage` runs the Vitest unit suite with V8 coverage over
+  `src/**/*.ts`.
+- Coverage reports are emitted as terminal text and ignored local HTML output in
+  `coverage/`.
+- The gate starts near the measured v1.7.3 baseline: 85% statements, 80%
+  branches, 90% functions, and 85% lines. The threshold is intentionally modest
+  so reviewer-critical code cannot lose broad coverage silently while existing
+  auth and background-worker gaps can be improved incrementally.
+
 ## Display preferences
 
 - Stored under a separate `preferences` key in `browser.storage.local` (schema `version: 1`).
