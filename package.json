@@ -1,6 +1,6 @@
 {
   "name": "github-pulls-show-reviewers",
-  "version": "1.7.3",
+  "version": "1.8.0",
   "private": true,
   "type": "module",
   "description": "Chrome extension focused on showing reviewers directly in GitHub pull request lists.",
