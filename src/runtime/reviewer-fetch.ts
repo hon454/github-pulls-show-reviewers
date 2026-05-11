@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import {
   GitHubApiError,
   GitHubApiSchemaError,
@@ -8,28 +10,56 @@ import {
   type PullReviewerSummary,
 } from "../github/api";
 
-export type FetchPullReviewerSummaryMessage = {
-  type: "fetchPullReviewerSummary";
-  requestId: string;
-  owner: string;
-  repo: string;
-  pullNumber: string;
-  accountId: string | null;
-  pullMetadata?: PullReviewerMetadata;
-};
+const nonEmptyStringSchema = z
+  .string()
+  .refine((value) => value.trim().length > 0);
 
-export type CancelPullReviewerSummaryMessage = {
-  type: "cancelPullReviewerSummary";
-  requestId: string;
-};
+const reviewerUserMessageSchema = z.object({
+  login: nonEmptyStringSchema,
+  avatarUrl: z.string().nullable(),
+}) satisfies z.ZodType<PullReviewerMetadata["requestedUsers"][number]>;
 
-export type FetchPullReviewerMetadataBatchMessage = {
-  type: "fetchPullReviewerMetadataBatch";
-  requestId: string;
-  owner: string;
-  repo: string;
-  accountId: string | null;
-};
+const pullReviewerMetadataMessageSchema = z.object({
+  number: nonEmptyStringSchema,
+  authorLogin: nonEmptyStringSchema,
+  requestedUsers: z.array(reviewerUserMessageSchema),
+  requestedTeams: z.array(z.string()),
+}) satisfies z.ZodType<PullReviewerMetadata>;
+
+export const fetchPullReviewerSummaryMessageSchema = z.object({
+  type: z.literal("fetchPullReviewerSummary"),
+  requestId: nonEmptyStringSchema,
+  owner: nonEmptyStringSchema,
+  repo: nonEmptyStringSchema,
+  pullNumber: nonEmptyStringSchema,
+  accountId: z.string().nullable(),
+  pullMetadata: pullReviewerMetadataMessageSchema.optional(),
+});
+
+export type FetchPullReviewerSummaryMessage = z.infer<
+  typeof fetchPullReviewerSummaryMessageSchema
+>;
+
+export const cancelPullReviewerSummaryMessageSchema = z.object({
+  type: z.literal("cancelPullReviewerSummary"),
+  requestId: nonEmptyStringSchema,
+});
+
+export type CancelPullReviewerSummaryMessage = z.infer<
+  typeof cancelPullReviewerSummaryMessageSchema
+>;
+
+export const fetchPullReviewerMetadataBatchMessageSchema = z.object({
+  type: z.literal("fetchPullReviewerMetadataBatch"),
+  requestId: nonEmptyStringSchema,
+  owner: nonEmptyStringSchema,
+  repo: nonEmptyStringSchema,
+  accountId: z.string().nullable(),
+});
+
+export type FetchPullReviewerMetadataBatchMessage = z.infer<
+  typeof fetchPullReviewerMetadataBatchMessageSchema
+>;
 
 export type ReviewerFetchRateLimitSnapshot = {
   limit: number | null;
@@ -82,46 +112,19 @@ export class ReviewerFetchRuntimeError extends Error {
 export function isFetchPullReviewerSummaryMessage(
   value: unknown,
 ): value is FetchPullReviewerSummaryMessage {
-  return (
-    value != null &&
-    typeof value === "object" &&
-    (value as { type?: unknown }).type === "fetchPullReviewerSummary" &&
-    hasNonEmptyString((value as { requestId?: unknown }).requestId) &&
-    hasNonEmptyString((value as { owner?: unknown }).owner) &&
-    hasNonEmptyString((value as { repo?: unknown }).repo) &&
-    hasNonEmptyString((value as { pullNumber?: unknown }).pullNumber) &&
-    (((value as { accountId?: unknown }).accountId === null) ||
-      typeof (value as { accountId?: unknown }).accountId === "string") &&
-    (!("pullMetadata" in value) ||
-      (value as { pullMetadata?: unknown }).pullMetadata === undefined ||
-      isPullReviewerMetadata((value as { pullMetadata?: unknown }).pullMetadata))
-  );
+  return fetchPullReviewerSummaryMessageSchema.safeParse(value).success;
 }
 
 export function isCancelPullReviewerSummaryMessage(
   value: unknown,
 ): value is CancelPullReviewerSummaryMessage {
-  return (
-    value != null &&
-    typeof value === "object" &&
-    (value as { type?: unknown }).type === "cancelPullReviewerSummary" &&
-    hasNonEmptyString((value as { requestId?: unknown }).requestId)
-  );
+  return cancelPullReviewerSummaryMessageSchema.safeParse(value).success;
 }
 
 export function isFetchPullReviewerMetadataBatchMessage(
   value: unknown,
 ): value is FetchPullReviewerMetadataBatchMessage {
-  return (
-    value != null &&
-    typeof value === "object" &&
-    (value as { type?: unknown }).type === "fetchPullReviewerMetadataBatch" &&
-    hasNonEmptyString((value as { requestId?: unknown }).requestId) &&
-    hasNonEmptyString((value as { owner?: unknown }).owner) &&
-    hasNonEmptyString((value as { repo?: unknown }).repo) &&
-    (((value as { accountId?: unknown }).accountId === null) ||
-      typeof (value as { accountId?: unknown }).accountId === "string")
-  );
+  return fetchPullReviewerMetadataBatchMessageSchema.safeParse(value).success;
 }
 
 export function serializeReviewerFetchError(
@@ -291,34 +294,4 @@ function parseRateLimitSnapshot(
     return undefined;
   }
   return candidate;
-}
-
-function hasNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function isPullReviewerMetadata(value: unknown): value is PullReviewerMetadata {
-  if (value == null || typeof value !== "object") {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return (
-    hasNonEmptyString(record.number) &&
-    hasNonEmptyString(record.authorLogin) &&
-    Array.isArray(record.requestedUsers) &&
-    record.requestedUsers.every(isReviewerUser) &&
-    Array.isArray(record.requestedTeams) &&
-    record.requestedTeams.every((team) => typeof team === "string")
-  );
-}
-
-function isReviewerUser(value: unknown): value is PullReviewerMetadata["requestedUsers"][number] {
-  if (value == null || typeof value !== "object") {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return (
-    hasNonEmptyString(record.login) &&
-    (record.avatarUrl === null || typeof record.avatarUrl === "string")
-  );
 }
