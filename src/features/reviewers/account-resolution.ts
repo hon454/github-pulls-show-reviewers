@@ -79,6 +79,14 @@ export function createSelfHealingAccountResolver(input: {
     return candidates;
   }
 
+  function hasInstallationForOwner(account: Account, owner: string): boolean {
+    const normalizedOwner = owner.toLowerCase();
+    return account.installations.some(
+      (installation) =>
+        installation.account.login.toLowerCase() === normalizedOwner,
+    );
+  }
+
   return {
     async resolveAccount(owner: string, repo: string): Promise<Account | null> {
       const initial = await resolveAccountForRepo(owner, repo);
@@ -111,6 +119,17 @@ export function createSelfHealingAccountResolver(input: {
       if (ownerAccount != null) {
         return ownerAccount;
       }
+
+      const ownerInstallationAccounts = accounts.filter((account) =>
+        hasInstallationForOwner(account, owner),
+      );
+      if (ownerInstallationAccounts.length === 1) {
+        return ownerInstallationAccounts[0] ?? null;
+      }
+      if (ownerInstallationAccounts.length > 1) {
+        return null;
+      }
+
       return accounts.length === 1 ? accounts[0] : null;
     },
   };

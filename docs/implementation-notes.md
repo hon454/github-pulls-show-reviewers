@@ -40,11 +40,13 @@
    `pull + reviews` REST path.
    If no covering account is found, the first attempt still uses the no-token
    path so public repositories keep working without authentication. When that
-   no-token summary fetch fails with an authentication, access, not-found, or
-   rate-limit response, the content script retries once with a connected
-   fallback account: first an account whose login matches the repository owner,
-   otherwise the sole active connected account if there is exactly one. A
-   successful fallback renders reviewers; a failed fallback is reported as a
+   no-token metadata or summary fetch fails with an authentication, access,
+   not-found, or rate-limit response, the content script retries once with a
+   connected fallback account: first an account whose login matches the
+   repository owner, then the only active account installed on that owner, and
+   finally the sole active connected account if there is exactly one. Ambiguous
+   owner-installation matches do not fallback. A successful fallback is reused
+   for that owner during the page session; a failed fallback is reported as a
    signed-in failure so the banner can point to GitHub App access rather than
    asking the user to sign in again.
 7. For ambiguous user reviewers that appear in both `requested_reviewers` and

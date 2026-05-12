@@ -60,7 +60,11 @@ describe("createSelfHealingAccountResolver", () => {
         installations: [
           {
             id: 1,
-            account: { login: "different-org", type: "Organization", avatarUrl: null },
+            account: {
+              login: "different-org",
+              type: "Organization",
+              avatarUrl: null,
+            },
             repositorySelection: "all",
             repoFullNames: null,
           },
@@ -285,6 +289,66 @@ describe("createSelfHealingAccountResolver", () => {
 
     expect(result).toBeNull();
     expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the only active account installed on the repo owner as a fallback account", async () => {
+    const account = makeAccount({
+      id: "acc-work",
+      login: "work-user",
+      installations: [
+        {
+          id: 7,
+          account: { login: "acme", type: "Organization", avatarUrl: null },
+          repositorySelection: "selected",
+          repoFullNames: ["acme/legacy"],
+        },
+      ],
+    });
+    listAccountsMock.mockResolvedValueOnce([
+      makeAccount({ id: "acc-personal", login: "personal-user" }),
+      account,
+    ]);
+    const requestRefresh = vi.fn();
+
+    const resolver = createSelfHealingAccountResolver({ requestRefresh });
+    const result = await resolver.resolveFallbackAccount("acme");
+
+    expect(result).toBe(account);
+  });
+
+  it("does not pick a fallback account when multiple active accounts are installed on the repo owner", async () => {
+    listAccountsMock.mockResolvedValueOnce([
+      makeAccount({
+        id: "acc-a",
+        login: "user-a",
+        installations: [
+          {
+            id: 7,
+            account: { login: "acme", type: "Organization", avatarUrl: null },
+            repositorySelection: "selected",
+            repoFullNames: ["acme/legacy"],
+          },
+        ],
+      }),
+      makeAccount({
+        id: "acc-b",
+        login: "user-b",
+        installations: [
+          {
+            id: 8,
+            account: { login: "ACME", type: "Organization", avatarUrl: null },
+            repositorySelection: "all",
+            repoFullNames: null,
+          },
+        ],
+      }),
+    ]);
+    const requestRefresh = vi.fn();
+
+    const resolver = createSelfHealingAccountResolver({ requestRefresh });
+    const result = await resolver.resolveFallbackAccount("acme");
+
+    expect(result).toBeNull();
   });
 
   it("still re-resolves and returns null when a refresh succeeds but does not heal coverage", async () => {

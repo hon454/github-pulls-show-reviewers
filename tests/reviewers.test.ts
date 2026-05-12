@@ -259,7 +259,7 @@ describe("bootReviewerListPage", () => {
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
   });
 
-  it("retries a failed no-token reviewer fetch with the connected owner account", async () => {
+  it("uses the connected owner account after a failed no-token metadata fetch", async () => {
     document.body.innerHTML = `
       <div class="js-issue-row" id="issue_42">
         <a class="Link--primary" href="/hon454/private-repo/pull/42">PR #42</a>
@@ -339,10 +339,15 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
 
     expect(
-      getRuntimeMessages("fetchPullReviewerSummary").map(
+      getRuntimeMessages("fetchPullReviewerMetadataBatch").map(
         (message) => message.accountId,
       ),
     ).toEqual([null, "acc-owner"]);
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map(
+        (message) => message.accountId,
+      ),
+    ).toEqual(["acc-owner"]);
     expect(onRowFailure).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Reviewers:");
     expect(
@@ -423,6 +428,117 @@ describe("bootReviewerListPage", () => {
         envelope: notFoundError,
       }),
     });
+  });
+
+  it("reuses a page fallback account after a failed no-token metadata request", async () => {
+    document.body.innerHTML = `
+      <div class="js-issue-row" id="issue_42">
+        <a class="Link--primary" href="/hon454/private-repo/pull/42">PR #42</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+      <div class="js-issue-row" id="issue_41">
+        <a class="Link--primary" href="/hon454/private-repo/pull/41">PR #41</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+    `;
+    window.history.replaceState({}, "", "/hon454/private-repo/pulls");
+
+    const account = {
+      id: "acc-owner",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_owner",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    };
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    listAccountsMock.mockResolvedValue([account]);
+
+    const rateLimitError = {
+      kind: "github-api" as const,
+      status: 429,
+      failures: [{ status: 429, endpoint: null, rateLimited: true }],
+    };
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+
+    runtimeSendMessageMock.mockImplementation(
+      (message: {
+        type?: string;
+        accountId?: string | null;
+        pullNumber?: string;
+      }) => {
+        if (
+          message.type === "fetchPullReviewerMetadataBatch" &&
+          message.accountId == null
+        ) {
+          return Promise.resolve({ ok: false, error: rateLimitError });
+        }
+        if (
+          message.type === "fetchPullReviewerMetadataBatch" &&
+          message.accountId === "acc-owner"
+        ) {
+          return Promise.resolve({
+            ok: true,
+            metadata: [
+              {
+                number: "42",
+                authorLogin: "hon454",
+                requestedUsers: [],
+                requestedTeams: [],
+              },
+              {
+                number: "41",
+                authorLogin: "hon454",
+                requestedUsers: [],
+                requestedTeams: [],
+              },
+            ],
+          });
+        }
+        if (
+          message.type === "fetchPullReviewerSummary" &&
+          message.accountId === "acc-owner"
+        ) {
+          return Promise.resolve({ ok: true, summary });
+        }
+        if (message.type === "fetchPullReviewerSummary") {
+          return Promise.resolve({ ok: false, error: rateLimitError });
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(
+      getRuntimeMessages("fetchPullReviewerMetadataBatch").map(
+        (message) => message.accountId,
+      ),
+    ).toEqual([null, "acc-owner"]);
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map(
+        (message) => message.accountId,
+      ),
+    ).toEqual(["acc-owner", "acc-owner"]);
+    expect(listAccountsMock).toHaveBeenCalledTimes(1);
+    expect(onRowFailure).not.toHaveBeenCalled();
   });
 
   it("requests page-level pull metadata once and reuses it for matching row summaries", async () => {

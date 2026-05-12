@@ -81,10 +81,20 @@ export function bootReviewerListPage(
     fetchedAt: number;
     stale: boolean;
   };
+  type FallbackAccountCache = {
+    owner: string;
+    account: Account | null;
+  };
+  type FallbackAccountRequest = {
+    owner: string;
+    promise: Promise<Account | null>;
+  };
   const inflightRequests = new Map<string, InflightRequest>();
   const rowFingerprints = new Map<string, string>();
   let pageMetadataRequest: PageMetadataRequest | null = null;
   let pageMetadataCache: PageMetadataCache | null = null;
+  let fallbackAccountCache: FallbackAccountCache | null = null;
+  let fallbackAccountRequest: FallbackAccountRequest | null = null;
   let cachedPreferences: Promise<Preferences> | null = null;
   const accountResolver = createSelfHealingAccountResolver({
     requestRefresh: requestInstallationsRefresh,
@@ -98,6 +108,46 @@ export function bootReviewerListPage(
     pageMetadataRequest?.controller.abort();
     pageMetadataRequest = null;
     pageMetadataCache = null;
+  }
+
+  function clearFallbackAccountCache(): void {
+    fallbackAccountCache = null;
+    fallbackAccountRequest = null;
+  }
+
+  function readCachedFallbackAccount(
+    owner: string,
+  ): Account | null | undefined {
+    return fallbackAccountCache?.owner === owner
+      ? fallbackAccountCache.account
+      : undefined;
+  }
+
+  async function getFallbackAccount(owner: string): Promise<Account | null> {
+    const cached = readCachedFallbackAccount(owner);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    if (fallbackAccountRequest?.owner === owner) {
+      return fallbackAccountRequest.promise;
+    }
+
+    const request: FallbackAccountRequest = {
+      owner,
+      promise: accountResolver.resolveFallbackAccount(owner).then((account) => {
+        fallbackAccountCache = { owner, account };
+        return account;
+      }),
+    };
+    fallbackAccountRequest = request;
+    try {
+      return await request.promise;
+    } finally {
+      if (fallbackAccountRequest === request) {
+        fallbackAccountRequest = null;
+      }
+    }
   }
 
   function readPreferences(): Promise<Preferences> {
@@ -128,7 +178,10 @@ export function bootReviewerListPage(
     account: Account | null,
     signal: AbortSignal,
   ): Promise<Map<string, PullReviewerMetadata>> {
-    const accountId = account?.id ?? null;
+    const cachedFallbackAccount =
+      account == null ? readCachedFallbackAccount(route.owner) : undefined;
+    const requestAccount = cachedFallbackAccount ?? account;
+    const accountId = requestAccount?.id ?? null;
     if (
       pageMetadataCache != null &&
       pageMetadataCache.owner === route.owner &&
@@ -164,7 +217,7 @@ export function bootReviewerListPage(
       accountId,
       controller,
       promise: fetchPageMetadata({
-        account,
+        account: requestAccount,
         owner: route.owner,
         repo: route.repo,
         signal: controller.signal,
@@ -183,8 +236,40 @@ export function bootReviewerListPage(
           };
           return metadataByNumber;
         })
-        .catch((error) => {
+        .catch(async (error) => {
           if (!isAbortError(error) && !controller.signal.aborted) {
+            if (account == null && shouldRetryWithFallbackAccount(error)) {
+              const fallbackAccount = await getFallbackAccount(route.owner);
+              if (fallbackAccount != null && !controller.signal.aborted) {
+                try {
+                  const metadata = await fetchPageMetadata({
+                    account: fallbackAccount,
+                    owner: route.owner,
+                    repo: route.repo,
+                    signal: controller.signal,
+                  });
+                  const metadataByNumber = new Map(
+                    metadata.map((pullMetadata) => [
+                      pullMetadata.number,
+                      pullMetadata,
+                    ]),
+                  );
+                  pageMetadataCache = {
+                    owner: route.owner,
+                    repo: route.repo,
+                    accountId: fallbackAccount.id,
+                    metadata: metadataByNumber,
+                    fetchedAt: Date.now(),
+                    stale: false,
+                  };
+                  return metadataByNumber;
+                } catch {
+                  if (controller.signal.aborted) {
+                    return new Map<string, PullReviewerMetadata>();
+                  }
+                }
+              }
+            }
             pageMetadataCache = {
               owner: route.owner,
               repo: route.repo,
@@ -265,13 +350,16 @@ export function bootReviewerListPage(
       const pullMetadata = (
         await getPageMetadata(route, account, controller.signal)
       ).get(pullNumber);
+      const cachedFallbackAccount =
+        account == null ? readCachedFallbackAccount(route.owner) : undefined;
+      const summaryAccount = cachedFallbackAccount ?? account;
       if (controller.signal.aborted) {
         return;
       }
 
       try {
         const summary = await fetchWithRefresh({
-          account,
+          account: summaryAccount,
           owner: route.owner,
           repo: route.repo,
           pullNumber,
@@ -286,12 +374,14 @@ export function bootReviewerListPage(
         if (isAbortError(error) || controller.signal.aborted) {
           return;
         }
-        let failureAccount = account;
+        let failureAccount = summaryAccount;
         let failureError = error;
-        if (account == null && shouldRetryWithFallbackAccount(error)) {
-          const fallbackAccount = await accountResolver.resolveFallbackAccount(
-            route.owner,
-          );
+        if (
+          account == null &&
+          summaryAccount == null &&
+          shouldRetryWithFallbackAccount(error)
+        ) {
+          const fallbackAccount = await getFallbackAccount(route.owner);
           if (controller.signal.aborted) {
             return;
           }
@@ -459,6 +549,7 @@ export function bootReviewerListPage(
 
     if (isAccountsChange(changes)) {
       clearReviewerCache();
+      clearFallbackAccountCache();
       abortInflightRequests();
       processRows();
     }
