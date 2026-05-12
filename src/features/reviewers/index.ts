@@ -18,6 +18,7 @@ import { githubSelectors } from "../../github/selectors";
 import type { RefreshAccountInstallationsResponse } from "../../runtime/installation-refresh";
 import {
   ReviewerFetchRuntimeError,
+  extractReviewerFetchFailures,
   type FetchPullReviewerMetadataBatchResponse,
   type FetchPullReviewerSummaryResponse,
 } from "../../runtime/reviewer-fetch";
@@ -285,14 +286,47 @@ export function bootReviewerListPage(
         if (isAbortError(error) || controller.signal.aborted) {
           return;
         }
+        let failureAccount = account;
+        let failureError = error;
+        if (account == null && shouldRetryWithFallbackAccount(error)) {
+          const fallbackAccount = await accountResolver.resolveFallbackAccount(
+            route.owner,
+          );
+          if (controller.signal.aborted) {
+            return;
+          }
+          if (fallbackAccount != null) {
+            try {
+              const summary = await fetchWithRefresh({
+                account: fallbackAccount,
+                owner: route.owner,
+                repo: route.repo,
+                pullNumber,
+                signal: controller.signal,
+                ...(pullMetadata == null ? {} : { pullMetadata }),
+              });
+              if (controller.signal.aborted) {
+                return;
+              }
+              setCachedReviewerSummary(cacheKey, summary);
+              return;
+            } catch (fallbackError) {
+              if (isAbortError(fallbackError) || controller.signal.aborted) {
+                return;
+              }
+              failureAccount = fallbackAccount;
+              failureError = fallbackError;
+            }
+          }
+        }
         mount.replaceChildren();
         mount.removeAttribute("title");
         clearRenderedReviewerState(mount);
         options?.onRowFailure?.({
           owner: route.owner,
           repo: route.repo,
-          account,
-          error,
+          account: failureAccount,
+          error: failureError,
         });
       } finally {
         // Only delete if this is still the tracked request for that key.
@@ -464,10 +498,9 @@ function readRowMetadataText(metaContainer: Element | null): string {
   if (!(clone instanceof Element)) return "";
   clone
     .querySelectorAll(
-      [
-        "[data-ghpsr-root]",
-        ...githubSelectors.volatileMetadataSelectors,
-      ].join(", "),
+      ["[data-ghpsr-root]", ...githubSelectors.volatileMetadataSelectors].join(
+        ", ",
+      ),
     )
     .forEach((node) => node.remove());
   return (clone.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -594,6 +627,17 @@ function isAbortError(error: unknown): boolean {
     return true;
   }
   return false;
+}
+
+function shouldRetryWithFallbackAccount(error: unknown): boolean {
+  return extractReviewerFetchFailures(error).some((failure) => {
+    if (failure.rateLimited || failure.status === 429) {
+      return true;
+    }
+    return (
+      failure.status === 401 || failure.status === 403 || failure.status === 404
+    );
+  });
 }
 
 function unwrapReviewerFetchResponse(

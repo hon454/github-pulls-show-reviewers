@@ -49,6 +49,9 @@ equivalent localization layer.
 - **Public repositories:** work without signing in whenever GitHub exposes enough public PR data.
 - **Private repositories:** require signing in with GitHub through the extension's GitHub App.
 - **Permissions:** the GitHub App requests `Pull requests: Read` only.
+- **Repository access:** if a signed-in private repository is not covered by the
+  GitHub App installation, the extension prompts you to configure App access
+  for that owner/repository.
 - **Organizations:** an organization owner may need to install or approve the GitHub App before private organization repositories can be read.
 - **Multiple accounts:** personal and work accounts can be added side by side. The extension picks the matching account for each repository.
 - **Session persistence:** sign-in is kept across browser sessions; access tokens are refreshed automatically in the background until you remove the account or revoke the GitHub App.

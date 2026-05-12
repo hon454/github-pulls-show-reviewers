@@ -259,6 +259,172 @@ describe("bootReviewerListPage", () => {
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
   });
 
+  it("retries a failed no-token reviewer fetch with the connected owner account", async () => {
+    document.body.innerHTML = `
+      <div class="js-issue-row" id="issue_42">
+        <a class="Link--primary" href="/hon454/private-repo/pull/42">PR #42</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+    `;
+    window.history.replaceState({}, "", "/hon454/private-repo/pulls");
+
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    listAccountsMock.mockResolvedValue([
+      {
+        id: "acc-owner",
+        login: "hon454",
+        avatarUrl: null,
+        token: "ghu_owner",
+        createdAt: 1,
+        installations: [],
+        installationsRefreshedAt: 1,
+        invalidated: false,
+        invalidatedReason: null,
+        refreshToken: null,
+        expiresAt: null,
+        refreshTokenExpiresAt: null,
+      },
+    ]);
+
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+    const rateLimitError = {
+      kind: "github-api" as const,
+      status: 429,
+      failures: [
+        {
+          status: 429,
+          endpoint: null,
+          rateLimited: true,
+          rateLimit: {
+            limit: 60,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1_700_000_000,
+          },
+        },
+      ],
+    };
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type?: string; accountId?: string | null }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch") {
+          return Promise.resolve({ ok: false, error: rateLimitError });
+        }
+        if (
+          message.type === "fetchPullReviewerSummary" &&
+          message.accountId == null
+        ) {
+          return Promise.resolve({ ok: false, error: rateLimitError });
+        }
+        if (
+          message.type === "fetchPullReviewerSummary" &&
+          message.accountId === "acc-owner"
+        ) {
+          return Promise.resolve({ ok: true, summary });
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map(
+        (message) => message.accountId,
+      ),
+    ).toEqual([null, "acc-owner"]);
+    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Reviewers:");
+    expect(
+      document.querySelector('a.ghpsr-avatar[title*="@alice"]'),
+    ).not.toBeNull();
+  });
+
+  it("reports fallback account failures as signed-in failures", async () => {
+    document.body.innerHTML = `
+      <div class="js-issue-row" id="issue_42">
+        <a class="Link--primary" href="/hon454/private-repo/pull/42">PR #42</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+    `;
+    window.history.replaceState({}, "", "/hon454/private-repo/pulls");
+
+    const account = {
+      id: "acc-owner",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_owner",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    };
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    listAccountsMock.mockResolvedValue([account]);
+
+    const rateLimitError = {
+      kind: "github-api" as const,
+      status: 429,
+      failures: [{ status: 429, endpoint: null, rateLimited: true }],
+    };
+    const notFoundError = {
+      kind: "github-api" as const,
+      status: 404,
+      failures: [{ status: 404, endpoint: null, rateLimited: false }],
+    };
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type?: string; accountId?: string | null }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch") {
+          return Promise.resolve({ ok: false, error: rateLimitError });
+        }
+        if (
+          message.type === "fetchPullReviewerSummary" &&
+          message.accountId == null
+        ) {
+          return Promise.resolve({ ok: false, error: rateLimitError });
+        }
+        if (
+          message.type === "fetchPullReviewerSummary" &&
+          message.accountId === "acc-owner"
+        ) {
+          return Promise.resolve({ ok: false, error: notFoundError });
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(onRowFailure).toHaveBeenCalledWith({
+      owner: "hon454",
+      repo: "private-repo",
+      account,
+      error: expect.objectContaining({
+        envelope: notFoundError,
+      }),
+    });
+  });
+
   it("requests page-level pull metadata once and reuses it for matching row summaries", async () => {
     document.body.innerHTML = `
       <div class="js-issue-row" id="issue_42">
