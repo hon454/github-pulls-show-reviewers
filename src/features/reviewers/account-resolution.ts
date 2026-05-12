@@ -6,9 +6,12 @@ import {
 
 export type SelfHealingAccountResolver = {
   resolveAccount(owner: string, repo: string): Promise<Account | null>;
+  resolveFallbackAccount(owner: string): Promise<Account | null>;
 };
 
-export type RequestInstallationsRefresh = (accountId: string) => Promise<boolean>;
+export type RequestInstallationsRefresh = (
+  accountId: string,
+) => Promise<boolean>;
 
 export function createSelfHealingAccountResolver(input: {
   requestRefresh: RequestInstallationsRefresh;
@@ -63,7 +66,9 @@ export function createSelfHealingAccountResolver(input: {
           return true;
         }
         const fullNames = installation.repoFullNames ?? [];
-        return fullNames.some((name) => name.toLowerCase() === normalizedFullName);
+        return fullNames.some(
+          (name) => name.toLowerCase() === normalizedFullName,
+        );
       });
       if (alreadyCovers) {
         continue;
@@ -72,6 +77,14 @@ export function createSelfHealingAccountResolver(input: {
     }
 
     return candidates;
+  }
+
+  function hasInstallationForOwner(account: Account, owner: string): boolean {
+    const normalizedOwner = owner.toLowerCase();
+    return account.installations.some(
+      (installation) =>
+        installation.account.login.toLowerCase() === normalizedOwner,
+    );
   }
 
   return {
@@ -89,9 +102,35 @@ export function createSelfHealingAccountResolver(input: {
         return null;
       }
 
-      await Promise.all(refreshable.map((accountId) => dedupedRefresh(accountId)));
+      await Promise.all(
+        refreshable.map((accountId) => dedupedRefresh(accountId)),
+      );
 
       return await resolveAccountForRepo(owner, repo);
+    },
+    async resolveFallbackAccount(owner: string): Promise<Account | null> {
+      const accounts = (await listAccounts()).filter(
+        (account) => !account.invalidated,
+      );
+      const normalizedOwner = owner.toLowerCase();
+      const ownerAccount = accounts.find(
+        (account) => account.login.toLowerCase() === normalizedOwner,
+      );
+      if (ownerAccount != null) {
+        return ownerAccount;
+      }
+
+      const ownerInstallationAccounts = accounts.filter((account) =>
+        hasInstallationForOwner(account, owner),
+      );
+      if (ownerInstallationAccounts.length === 1) {
+        return ownerInstallationAccounts[0] ?? null;
+      }
+      if (ownerInstallationAccounts.length > 1) {
+        return null;
+      }
+
+      return accounts.length === 1 ? accounts[0] : null;
     },
   };
 }

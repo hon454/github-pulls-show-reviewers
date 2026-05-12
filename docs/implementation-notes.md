@@ -38,6 +38,17 @@
    endpoint and reads only the reviews endpoint. If the pull number is absent
    from the batch result, the summary request falls back to the original per-row
    `pull + reviews` REST path.
+   If no covering account is found, the first attempt still uses the no-token
+   path so public repositories keep working without authentication. When that
+   no-token metadata or summary fetch fails with an authentication, access,
+   not-found, or rate-limit response, the content script retries once with a
+   connected fallback account: first an account whose login matches the
+   repository owner, then the only active account installed on that owner, and
+   finally the sole active connected account if there is exactly one. Ambiguous
+   owner-installation matches do not fallback. A successful fallback is reused
+   for that owner during the page session; a failed fallback is reported as a
+   signed-in failure so the banner can point to GitHub App access rather than
+   asking the user to sign in again.
 7. For ambiguous user reviewers that appear in both `requested_reviewers` and
    the latest non-`COMMENTED` review set (`APPROVED`, `CHANGES_REQUESTED`, or
    `DISMISSED`), read the pull request's issue events and compare ordering.
@@ -51,12 +62,12 @@
 9. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text.
 10. Re-run row processing when GitHub mutates the page or performs SPA
-   navigation. Same-repository navigation/render events mark visible row
-   summaries stale instead of trusting the active page-session cache forever.
-   Existing-row DOM mutations use a lightweight row fingerprint so unrelated
-   attribute changes do not trigger reviewer API requests. The fingerprint
-   excludes extension-rendered reviewer nodes and GitHub's volatile relative
-   timestamp nodes, so automatic time text updates do not refetch reviewers.
+    navigation. Same-repository navigation/render events mark visible row
+    summaries stale instead of trusting the active page-session cache forever.
+    Existing-row DOM mutations use a lightweight row fingerprint so unrelated
+    attribute changes do not trigger reviewer API requests. The fingerprint
+    excludes extension-rendered reviewer nodes and GitHub's volatile relative
+    timestamp nodes, so automatic time text updates do not refetch reviewers.
 
 ## Current limitations
 
@@ -154,7 +165,11 @@ snapshot is in-memory only — it is never persisted.
 - `createSelfHealingAccountResolver` (`src/features/reviewers/account-resolution.ts`) wraps the resolution: when the cached lookup misses, it scans for accounts that own a `selected` installation on the same owner but do not list the repo, then sends a `refreshAccountInstallations` message to the background and re-runs the resolution.
 - The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. Tokens never enter the content-script context.
 - Each candidate is refreshed at most once per page session. A successful refresh writes to `account:installations:*`, which the existing `accountsChange` storage listener uses to clear the row cache and re-render covered rows transparently.
-- Genuinely uncovered repos still flow into the `app-uncovered` / `signin-required` banner copy after the refresh attempt completes.
+- Genuinely uncovered repos still flow into the `app-uncovered` /
+  `signin-required` banner copy after the refresh attempt completes. When a
+  connected fallback account is available, uncovered private repositories are
+  reported through the signed-in `app-uncovered` path rather than the no-account
+  sign-in path.
 
 ## Next implementation targets
 
