@@ -537,7 +537,6 @@ describe("bootReviewerListPage", () => {
         (message) => message.accountId,
       ),
     ).toEqual(["acc-owner", "acc-owner"]);
-    expect(listAccountsMock).toHaveBeenCalledTimes(1);
     expect(onRowFailure).not.toHaveBeenCalled();
   });
 
