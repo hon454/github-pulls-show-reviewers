@@ -121,5 +121,5 @@ link and the privacy fields aligned with the shipped behavior.
 Expected package path after `pnpm zip`:
 
 ```text
-.output/github-pulls-show-reviewers-1.8.0-chrome.zip
+.output/github-pulls-show-reviewers-1.8.1-chrome.zip
 ```
