@@ -27,11 +27,13 @@
    page-level metadata cache is cold or stale. The content script includes the
    visible pull numbers in that message. The background reads the first REST
    pull-list page with the matched account token (or no token if none matches)
-   and follows `Link: rel="next"` until those visible numbers are covered or
-   pagination ends, returning requested user reviewers, requested teams, and
-   author logins that can be reused across visible rows. Page metadata has a
-   shorter freshness window than row summaries because re-review requests
-   primarily change `requested_reviewers` / `requested_teams`.
+   and follows validated `Link: rel="next"` pagination for up to three REST
+   pages total, stopping earlier when those visible numbers are covered or
+   pagination ends. The response returns requested user reviewers, requested
+   teams, and author logins that can be reused across visible rows. Page
+   metadata has a shorter freshness window than row summaries because
+   re-review requests primarily change `requested_reviewers` /
+   `requested_teams`.
 6. Send a `fetchPullReviewerSummary` message for each uncached or stale row.
    Fresh cache hits render without refetching. Stale cache hits render the
    cached chips immediately, then revalidate in the background and rerender only
@@ -123,18 +125,19 @@
   `GET /repos/{owner}/{repo}/pulls?per_page=100&state=all` as a page-level
   metadata hint before row summaries. For searched, filtered, and paginated
   GitHub list pages, the content script sends visible pull numbers so the
-  background can follow REST pagination until those numbers are covered.
+  background can follow REST pagination until those numbers are covered, bounded
+  to three REST pages total.
 - The content script de-duplicates in-flight row fetches, caches each pull
   request summary for the active page session with freshness metadata, and
-  caches the page-level metadata result per `owner/repo/account` with a shorter
-  freshness window.
+  caches the page-level metadata result per `owner/repo/account` and visible
+  pull-number set with a shorter freshness window.
 - Issue-event requests are targeted to ambiguous requested+completed reviewer
   overlaps only. Rows whose requested users do not overlap a latest
   non-`COMMENTED` review keep the lower-volume pull metadata plus reviews path.
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
 - If request volume remains the next bottleneck, the preferred follow-up is to
-  bound or tune the REST pagination strategy with fixture-backed evidence
-  before considering a broader API migration.
+  tune the three-page REST pagination bound with fixture-backed evidence before
+  considering a broader API migration.
 
 ## Access banner classification
 

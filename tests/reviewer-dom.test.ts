@@ -262,8 +262,11 @@ describe("renderReviewers", () => {
     await loadFixture("github-pulls-title-only-metadata.html");
     const row = document.querySelector(".js-issue-row");
     const mountNode = ensureReviewerMount(row!);
+    const repeatedMountNode = ensureReviewerMount(row!);
     expect(mountNode).not.toBeNull();
-    expect(row?.querySelector("[data-ghpsr-fallback-meta]")).not.toBeNull();
+    expect(repeatedMountNode).toBe(mountNode);
+    expect(row?.querySelectorAll("[data-ghpsr-fallback-meta]")).toHaveLength(1);
+    expect(row?.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
     expect(extractPullNumber(row!)).toBe("203");
   });
 

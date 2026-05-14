@@ -191,6 +191,7 @@ export function extractPullNumber(row: Element): string | null {
 export function ensureReviewerMount(row: Element): HTMLElement | null {
   const metaContainer =
     findFirst<HTMLElement>(row, githubSelectors.metaContainers) ??
+    row.querySelector<HTMLElement>(githubSelectors.fallbackMetaContainer) ??
     createFallbackMetaContainer(row);
   if (metaContainer == null) return null;
 
