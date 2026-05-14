@@ -10,6 +10,7 @@ import {
 const {
   refreshAccountTokenMock,
   fetchPullReviewerSummaryMock,
+  fetchPullReviewerMetadataBatchMock,
   getAccountByIdMock,
   listAccountsMock,
   markAccountInvalidatedMock,
@@ -20,6 +21,7 @@ const {
 } = vi.hoisted(() => ({
   refreshAccountTokenMock: vi.fn(),
   fetchPullReviewerSummaryMock: vi.fn(),
+  fetchPullReviewerMetadataBatchMock: vi.fn(),
   getAccountByIdMock: vi.fn(),
   listAccountsMock: vi.fn<() => Promise<unknown[]>>(),
   markAccountInvalidatedMock: vi.fn(),
@@ -60,6 +62,7 @@ vi.mock("../src/github/api", async () => {
   return {
     ...actual,
     fetchPullReviewerSummary: fetchPullReviewerSummaryMock,
+    fetchPullReviewerMetadataBatch: fetchPullReviewerMetadataBatchMock,
   };
 });
 
@@ -102,6 +105,7 @@ beforeEach(() => {
   vi.resetModules();
   refreshAccountTokenMock.mockReset();
   fetchPullReviewerSummaryMock.mockReset();
+  fetchPullReviewerMetadataBatchMock.mockReset();
   getAccountByIdMock.mockReset();
   listAccountsMock.mockReset().mockResolvedValue([]);
   markAccountInvalidatedMock.mockReset();
@@ -311,6 +315,54 @@ describe("background runtime.onMessage handler", () => {
     expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(2);
     expect(fetchPullReviewerSummaryMock.mock.calls[1][0]).toMatchObject({
       githubToken: "ghu_new",
+    });
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+  });
+
+  it("refreshes on metadata batch 401 and retries with the updated token", async () => {
+    const listener = await bootBackground();
+    const metadata = [
+      {
+        number: "42",
+        authorLogin: "octo-author",
+        requestedUsers: [],
+        requestedTeams: ["maintainers"],
+      },
+    ];
+    getAccountByIdMock
+      .mockResolvedValueOnce({
+        id: "acc-1",
+        token: "ghu_old",
+        refreshToken: "ghr_old",
+      })
+      .mockResolvedValueOnce({
+        id: "acc-1",
+        token: "ghu_new",
+        refreshToken: "ghr_new",
+      });
+    fetchPullReviewerMetadataBatchMock
+      .mockRejectedValueOnce({ status: 401 })
+      .mockResolvedValueOnce(metadata);
+
+    const response = await callListener(
+      listener,
+      {
+        type: "fetchPullReviewerMetadataBatch",
+        requestId: "req-batch-1",
+        owner: "cinev",
+        repo: "shotloom",
+        accountId: "acc-1",
+        targetPullNumbers: ["42"],
+      },
+      { id: SELF_RUNTIME_ID },
+    );
+
+    expect(response).toEqual({ ok: true, metadata });
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
+    expect(fetchPullReviewerMetadataBatchMock).toHaveBeenCalledTimes(2);
+    expect(fetchPullReviewerMetadataBatchMock.mock.calls[1][0]).toMatchObject({
+      githubToken: "ghu_new",
+      targetPullNumbers: ["42"],
     });
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
