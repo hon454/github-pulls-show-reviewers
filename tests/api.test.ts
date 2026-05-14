@@ -1288,6 +1288,173 @@ describe("fetchPullReviewerMetadataBatch", () => {
     expect(headers).toBeInstanceOf(Headers);
     expect((headers as Headers).get("Authorization")).toBeNull();
   });
+
+  it("follows pull-list pagination until visible target pull numbers are covered", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 200,
+              user: { login: "hon454" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2>; rel="next"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 150,
+              user: { login: "octocat" },
+              requested_reviewers: [{ login: "alice", avatar_url: null }],
+              requested_teams: [{ slug: "platform" }],
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: null,
+      targetPullNumbers: ["150"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2",
+    );
+    expect(metadata.find((pull) => pull.number === "150")).toEqual({
+      number: "150",
+      authorLogin: "octocat",
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
+      requestedTeams: ["platform"],
+    });
+  });
+
+  it("stops pull-list pagination after a bounded number of pages", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 300,
+              user: { login: "hon454" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2>; rel="next"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 250,
+              user: { login: "octocat" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=3>; rel="next"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 200,
+              user: { login: "alice" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=4>; rel="next"',
+            },
+          },
+        ),
+      );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: null,
+      targetPullNumbers: ["150"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(metadata.map((pull) => pull.number)).toEqual(["300", "250", "200"]);
+  });
+
+  it("does not follow pull-list pagination links outside the expected GitHub endpoint", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 200,
+              user: { login: "hon454" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://example.test/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2>; rel="next"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: "ghu_example",
+      targetPullNumbers: ["150"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(metadata.map((pull) => pull.number)).toEqual(["200"]);
+  });
 });
 
 describe("validateGitHubRepositoryAccess", () => {

@@ -258,6 +258,18 @@ describe("renderReviewers", () => {
     expect(row?.querySelector(".d-none.d-md-inline-flex")).not.toBeNull();
   });
 
+  it("creates a deterministic fallback mount when GitHub omits the metadata container", async () => {
+    await loadFixture("github-pulls-title-only-metadata.html");
+    const row = document.querySelector(".js-issue-row");
+    const mountNode = ensureReviewerMount(row!);
+    const repeatedMountNode = ensureReviewerMount(row!);
+    expect(mountNode).not.toBeNull();
+    expect(repeatedMountNode).toBe(mountNode);
+    expect(row?.querySelectorAll("[data-ghpsr-fallback-meta]")).toHaveLength(1);
+    expect(row?.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    expect(extractPullNumber(row!)).toBe("203");
+  });
+
   it("declares :focus-visible styles for reviewer avatars, pills, and team chips", () => {
     ensureReviewerStyles();
     const styleEl = document.querySelector("[data-ghpsr-style]");

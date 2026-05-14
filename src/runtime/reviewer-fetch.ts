@@ -55,6 +55,7 @@ export const fetchPullReviewerMetadataBatchMessageSchema = z.object({
   owner: nonEmptyStringSchema,
   repo: nonEmptyStringSchema,
   accountId: z.string().nullable(),
+  targetPullNumbers: z.array(nonEmptyStringSchema).optional(),
 });
 
 export type FetchPullReviewerMetadataBatchMessage = z.infer<

@@ -38,6 +38,7 @@ const pullReviewerMetadataSchema = pullSchema.extend({
 });
 
 const pullReviewerMetadataListSchema = z.array(pullReviewerMetadataSchema);
+const MAX_PULL_METADATA_BATCH_PAGES = 3;
 
 const pullListSchema = z.array(
   z.object({
@@ -388,6 +389,7 @@ export async function fetchPullReviewerMetadataBatch(input: {
   owner: string;
   repo: string;
   githubToken: string | null;
+  targetPullNumbers?: string[];
   signal?: AbortSignal;
 }): Promise<PullReviewerMetadata[]> {
   const headers = createGitHubHeaders(input.githubToken);
@@ -402,12 +404,15 @@ export async function fetchPullReviewerMetadataBatch(input: {
     throw failure;
   }
 
-  const parsed = pullReviewerMetadataListSchema.safeParse(await response.json());
-  if (!parsed.success) {
-    throw new GitHubApiSchemaError(endpoint, parsed.error.issues);
-  }
+  const pulls = await collectPullMetadataAcrossPages({
+    firstResponse: response,
+    endpoint,
+    headers,
+    targetPullNumbers: input.targetPullNumbers ?? [],
+    ...(input.signal == null ? {} : { signal: input.signal }),
+  });
 
-  return parsed.data.map((pull) => toPullReviewerMetadata(String(pull.number), pull));
+  return pulls.map((pull) => toPullReviewerMetadata(String(pull.number), pull));
 }
 
 function buildPullReviewerSummary(
@@ -900,7 +905,77 @@ async function collectReviewRequestEventsAcrossPages(params: {
   }
 }
 
-function parseNextPageUrl(linkHeader: string | null): string | null {
+async function collectPullMetadataAcrossPages(params: {
+  firstResponse: Response;
+  endpoint: GitHubEndpointDescriptor;
+  headers: Headers;
+  targetPullNumbers: string[];
+  signal?: AbortSignal;
+}): Promise<z.infer<typeof pullReviewerMetadataListSchema>> {
+  const collected: z.infer<typeof pullReviewerMetadataListSchema> = [];
+  const targets = new Set(params.targetPullNumbers);
+  const expectedPathname = params.endpoint.path.split("?")[0];
+
+  let response = params.firstResponse;
+  let pageCount = 0;
+  while (true) {
+    const parsed = pullReviewerMetadataListSchema.safeParse(
+      await response.json(),
+    );
+    if (!parsed.success) {
+      throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
+    }
+    collected.push(...parsed.data);
+    pageCount += 1;
+
+    if (
+      targets.size === 0 ||
+      hasAllTargetPulls(collected, targets) ||
+      pageCount >= MAX_PULL_METADATA_BATCH_PAGES
+    ) {
+      return collected;
+    }
+
+    const nextUrl = parseNextPageUrl(
+      response.headers.get("Link"),
+      expectedPathname,
+    );
+    if (nextUrl == null) {
+      return collected;
+    }
+
+    response = await fetch(
+      nextUrl,
+      withOptionalSignal({ headers: params.headers }, params.signal),
+    );
+
+    const error = await createGitHubApiErrorFromResponse(
+      response,
+      params.endpoint,
+    );
+    if (error != null) {
+      throw error;
+    }
+  }
+}
+
+function hasAllTargetPulls(
+  pulls: z.infer<typeof pullReviewerMetadataListSchema>,
+  targets: Set<string>,
+): boolean {
+  const pullNumbers = new Set(pulls.map((pull) => String(pull.number)));
+  for (const target of targets) {
+    if (!pullNumbers.has(target)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function parseNextPageUrl(
+  linkHeader: string | null,
+  expectedPathname?: string,
+): string | null {
   if (linkHeader == null) {
     return null;
   }
@@ -912,11 +987,30 @@ function parseNextPageUrl(linkHeader: string | null): string | null {
     }
     const rels = match[2].split(/\s+/);
     if (rels.includes("next")) {
+      if (
+        expectedPathname != null &&
+        !isExpectedGitHubApiUrl(match[1], expectedPathname)
+      ) {
+        return null;
+      }
       return match[1];
     }
   }
 
   return null;
+}
+
+function isExpectedGitHubApiUrl(url: string, expectedPathname: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === "https:" &&
+      parsed.hostname === "api.github.com" &&
+      parsed.pathname === expectedPathname
+    );
+  } catch {
+    return false;
+  }
 }
 
 function normalizeReviewState(state: string): ReviewState | null {

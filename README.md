@@ -16,6 +16,9 @@
 - Shows requested team reviewers on GitHub pull request list rows.
 - Shows each reviewer's latest completed review state: `approved`, `changes requested`, `commented`, or `dismissed`.
 - Links reviewer chips to GitHub PR searches.
+- Reuses page-level reviewer metadata across visible rows, including searched
+  or paginated pull request lists when GitHub's REST pagination exposes those
+  rows.
 - Keeps working as GitHub updates the page during normal navigation.
 
 ## Why Use It

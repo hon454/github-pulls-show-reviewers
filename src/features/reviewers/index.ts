@@ -70,16 +70,32 @@ export function bootReviewerListPage(
     owner: string;
     repo: string;
     accountId: string | null;
-    promise: Promise<Map<string, PullReviewerMetadata>>;
+    targetPullNumbersKey: string;
+    sequence: number;
+    promise: Promise<PageMetadataResult>;
     controller: AbortController;
+  };
+  type PageMetadataFailure = {
+    account: Account | null;
+    error: unknown;
+    reported: boolean;
+    suppressRowFallback: boolean;
+  };
+  type PageMetadataResult = {
+    metadata: Map<string, PullReviewerMetadata>;
+    failure: PageMetadataFailure | null;
   };
   type PageMetadataCache = {
     owner: string;
     repo: string;
     accountId: string | null;
+    targetPullNumbers: string[];
+    targetPullNumbersKey: string;
     metadata: Map<string, PullReviewerMetadata>;
     fetchedAt: number;
+    sequence: number;
     stale: boolean;
+    failure: PageMetadataFailure | null;
   };
   type FallbackAccountCache = {
     owner: string;
@@ -93,6 +109,7 @@ export function bootReviewerListPage(
   const rowFingerprints = new Map<string, string>();
   let pageMetadataRequest: PageMetadataRequest | null = null;
   let pageMetadataCache: PageMetadataCache | null = null;
+  let pageMetadataSequence = 0;
   let fallbackAccountCache: FallbackAccountCache | null = null;
   let fallbackAccountRequest: FallbackAccountRequest | null = null;
   let cachedPreferences: Promise<Preferences> | null = null;
@@ -173,31 +190,105 @@ export function bootReviewerListPage(
     });
   }
 
+  function pageMetadataCacheIsFresh(cache: PageMetadataCache): boolean {
+    return (
+      !cache.stale &&
+      Date.now() - cache.fetchedAt <= PAGE_METADATA_FRESH_MS
+    );
+  }
+
+  function readExactPageMetadataCache(args: {
+    route: NonNullable<typeof currentRoute>;
+    accountId: string | null;
+    targetPullNumbersKey: string;
+  }): PageMetadataCache | null {
+    const { route, accountId, targetPullNumbersKey } = args;
+    if (
+      pageMetadataCache == null ||
+      pageMetadataCache.owner !== route.owner ||
+      pageMetadataCache.repo !== route.repo ||
+      pageMetadataCache.accountId !== accountId ||
+      pageMetadataCache.targetPullNumbersKey !== targetPullNumbersKey ||
+      !pageMetadataCacheIsFresh(pageMetadataCache)
+    ) {
+      return null;
+    }
+    return pageMetadataCache;
+  }
+
+  function readCoveringPageMetadataCache(args: {
+    route: NonNullable<typeof currentRoute>;
+    accountId: string | null;
+    targetPullNumbers: string[];
+  }): PageMetadataCache | null {
+    const { route, accountId, targetPullNumbers } = args;
+    if (
+      pageMetadataCache == null ||
+      pageMetadataCache.owner !== route.owner ||
+      pageMetadataCache.repo !== route.repo ||
+      pageMetadataCache.accountId !== accountId ||
+      pageMetadataCache.failure != null ||
+      !pageMetadataCacheIsFresh(pageMetadataCache)
+    ) {
+      return null;
+    }
+
+    const cache = pageMetadataCache;
+    return targetPullNumbers.every((pullNumber) =>
+      cache.metadata.has(pullNumber),
+    )
+      ? cache
+      : null;
+  }
+
+  function pageMetadataResultFromCache(
+    cache: PageMetadataCache,
+  ): PageMetadataResult {
+    return {
+      metadata: cache.metadata,
+      failure: cache.failure,
+    };
+  }
+
+  function writePageMetadataCache(
+    nextCache: PageMetadataCache,
+  ): PageMetadataCache {
+    if (
+      pageMetadataCache != null &&
+      pageMetadataCache.sequence > nextCache.sequence
+    ) {
+      return pageMetadataCache;
+    }
+    pageMetadataCache = nextCache;
+    return pageMetadataCache;
+  }
+
   async function getPageMetadata(
     route: NonNullable<typeof currentRoute>,
     account: Account | null,
     signal: AbortSignal,
-  ): Promise<Map<string, PullReviewerMetadata>> {
+  ): Promise<PageMetadataResult> {
     const cachedFallbackAccount =
       account == null ? readCachedFallbackAccount(route.owner) : undefined;
     const requestAccount = cachedFallbackAccount ?? account;
     const accountId = requestAccount?.id ?? null;
-    if (
-      pageMetadataCache != null &&
-      pageMetadataCache.owner === route.owner &&
-      pageMetadataCache.repo === route.repo &&
-      pageMetadataCache.accountId === accountId &&
-      !pageMetadataCache.stale &&
-      Date.now() - pageMetadataCache.fetchedAt <= PAGE_METADATA_FRESH_MS
-    ) {
-      return pageMetadataCache.metadata;
+    const targetPullNumbers = collectVisiblePullNumbers();
+    const targetPullNumbersKey = targetPullNumbers.join(",");
+    const cachedPageMetadata = readExactPageMetadataCache({
+      route,
+      accountId,
+      targetPullNumbersKey,
+    });
+    if (cachedPageMetadata != null) {
+      return pageMetadataResultFromCache(cachedPageMetadata);
     }
 
     if (
       pageMetadataRequest != null &&
       pageMetadataRequest.owner === route.owner &&
       pageMetadataRequest.repo === route.repo &&
-      pageMetadataRequest.accountId === accountId
+      pageMetadataRequest.accountId === accountId &&
+      pageMetadataRequest.targetPullNumbersKey === targetPullNumbersKey
     ) {
       return pageMetadataRequest.promise;
     }
@@ -211,42 +302,57 @@ export function bootReviewerListPage(
       { once: true },
     );
 
+    const requestSequence = pageMetadataSequence + 1;
+    pageMetadataSequence = requestSequence;
     const request: PageMetadataRequest = {
       owner: route.owner,
       repo: route.repo,
       accountId,
+      targetPullNumbersKey,
+      sequence: requestSequence,
       controller,
       promise: fetchPageMetadata({
         account: requestAccount,
         owner: route.owner,
         repo: route.repo,
+        targetPullNumbers,
         signal: controller.signal,
       })
         .then((metadata) => {
           const metadataByNumber = new Map(
             metadata.map((pullMetadata) => [pullMetadata.number, pullMetadata]),
           );
-          pageMetadataCache = {
+          const cache = writePageMetadataCache({
             owner: route.owner,
             repo: route.repo,
             accountId,
+            targetPullNumbers,
+            targetPullNumbersKey,
             metadata: metadataByNumber,
             fetchedAt: Date.now(),
+            sequence: request.sequence,
             stale: false,
-          };
-          return metadataByNumber;
+            failure: null,
+          });
+          return pageMetadataResultFromCache(cache);
         })
         .catch(async (error) => {
           if (!isAbortError(error) && !controller.signal.aborted) {
+            let failureAccount = requestAccount;
+            let failureError = error;
             if (account == null && shouldRetryWithFallbackAccount(error)) {
               const fallbackAccount = await getFallbackAccount(route.owner);
               if (fallbackAccount != null && !controller.signal.aborted) {
+                if (pageMetadataRequest === request) {
+                  request.accountId = fallbackAccount.id;
+                }
                 try {
                   const metadata = await fetchPageMetadata({
                     account: fallbackAccount,
                     owner: route.owner,
                     repo: route.repo,
                     signal: controller.signal,
+                    targetPullNumbers,
                   });
                   const metadataByNumber = new Map(
                     metadata.map((pullMetadata) => [
@@ -254,32 +360,73 @@ export function bootReviewerListPage(
                       pullMetadata,
                     ]),
                   );
-                  pageMetadataCache = {
+                  const cache = writePageMetadataCache({
                     owner: route.owner,
                     repo: route.repo,
                     accountId: fallbackAccount.id,
+                    targetPullNumbers,
+                    targetPullNumbersKey,
                     metadata: metadataByNumber,
                     fetchedAt: Date.now(),
+                    sequence: request.sequence,
                     stale: false,
-                  };
-                  return metadataByNumber;
-                } catch {
+                    failure: null,
+                  });
+                  return pageMetadataResultFromCache(cache);
+                } catch (fallbackError) {
                   if (controller.signal.aborted) {
-                    return new Map<string, PullReviewerMetadata>();
+                    return {
+                      metadata: new Map<string, PullReviewerMetadata>(),
+                      failure: null,
+                    };
                   }
+                  failureAccount = fallbackAccount;
+                  failureError = fallbackError;
                 }
               }
             }
-            pageMetadataCache = {
+            const coveringCache = readCoveringPageMetadataCache({
+              route,
+              accountId: failureAccount?.id ?? accountId,
+              targetPullNumbers,
+            });
+            if (
+              coveringCache != null &&
+              coveringCache.sequence > request.sequence
+            ) {
+              return pageMetadataResultFromCache(coveringCache);
+            }
+            const failure = shouldSuppressRowFallbackAfterPageMetadataFailure(
+              failureError,
+            )
+              ? {
+                  account: failureAccount,
+                  error: failureError,
+                  reported: false,
+                  suppressRowFallback: true,
+                }
+              : null;
+            const cache = writePageMetadataCache({
               owner: route.owner,
               repo: route.repo,
-              accountId,
+              accountId: failureAccount?.id ?? accountId,
+              targetPullNumbers,
+              targetPullNumbersKey,
               metadata: new Map(),
               fetchedAt: Date.now(),
+              sequence: request.sequence,
               stale: false,
+              failure,
+            });
+            return {
+              metadata: cache.metadata,
+              failure: cache.failure,
             };
           }
-          return new Map<string, PullReviewerMetadata>();
+          return {
+            metadata: new Map<string, PullReviewerMetadata>(),
+            failure: null,
+          };
         })
         .finally(() => {
           if (pageMetadataRequest === request) {
@@ -289,6 +436,22 @@ export function bootReviewerListPage(
     };
     pageMetadataRequest = request;
     return request.promise;
+  }
+
+  function reportPageMetadataFailure(
+    route: NonNullable<typeof currentRoute>,
+    failure: PageMetadataFailure,
+  ): void {
+    if (failure.reported) {
+      return;
+    }
+    failure.reported = true;
+    options?.onRowFailure?.({
+      owner: route.owner,
+      repo: route.repo,
+      account: failure.account,
+      error: failure.error,
+    });
   }
 
   async function processRow(row: Element): Promise<void> {
@@ -347,9 +510,19 @@ export function bootReviewerListPage(
         route.owner,
         route.repo,
       );
-      const pullMetadata = (
-        await getPageMetadata(route, account, controller.signal)
-      ).get(pullNumber);
+      const pageMetadata = await getPageMetadata(
+        route,
+        account,
+        controller.signal,
+      );
+      if (pageMetadata.failure?.suppressRowFallback) {
+        reportPageMetadataFailure(route, pageMetadata.failure);
+        mount.replaceChildren();
+        mount.removeAttribute("title");
+        clearRenderedReviewerState(mount);
+        return;
+      }
+      const pullMetadata = pageMetadata.metadata.get(pullNumber);
       const cachedFallbackAccount =
         account == null ? readCachedFallbackAccount(route.owner) : undefined;
       const summaryAccount = cachedFallbackAccount ?? account;
@@ -597,6 +770,20 @@ function readRowMetadataText(metaContainer: Element | null): string {
   return (clone.textContent ?? "").replace(/\s+/g, " ").trim();
 }
 
+function collectVisiblePullNumbers(): string[] {
+  const pullNumbers: string[] = [];
+  const seen = new Set<string>();
+  document.querySelectorAll(githubSelectors.row).forEach((row) => {
+    const pullNumber = extractPullNumber(row);
+    if (pullNumber == null || seen.has(pullNumber)) {
+      return;
+    }
+    seen.add(pullNumber);
+    pullNumbers.push(pullNumber);
+  });
+  return pullNumbers;
+}
+
 async function fetchWithRefresh(args: {
   account: Account | null;
   owner: string;
@@ -657,9 +844,10 @@ async function fetchPageMetadata(args: {
   account: Account | null;
   owner: string;
   repo: string;
+  targetPullNumbers: string[];
   signal: AbortSignal;
 }): Promise<PullReviewerMetadata[]> {
-  const { account, owner, repo, signal } = args;
+  const { account, owner, repo, signal, targetPullNumbers } = args;
 
   if (signal.aborted) {
     throw createAbortError();
@@ -672,6 +860,7 @@ async function fetchPageMetadata(args: {
     owner,
     repo,
     accountId: account?.id ?? null,
+    targetPullNumbers,
   }) as Promise<FetchPullReviewerMetadataBatchResponse | undefined>;
 
   const abortListenerController = new AbortController();
@@ -729,6 +918,12 @@ function shouldRetryWithFallbackAccount(error: unknown): boolean {
       failure.status === 401 || failure.status === 403 || failure.status === 404
     );
   });
+}
+
+function shouldSuppressRowFallbackAfterPageMetadataFailure(
+  error: unknown,
+): boolean {
+  return shouldRetryWithFallbackAccount(error);
 }
 
 function unwrapReviewerFetchResponse(
