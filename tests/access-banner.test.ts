@@ -498,6 +498,36 @@ describe("banner DOM", () => {
 });
 
 describe("bootAccessBanner", () => {
+  function stubBootGlobals() {
+    vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "Iv1.testclient");
+    vi.stubGlobal("__GITHUB_APP_SLUG__", "test-reviewer-app");
+    vi.stubGlobal("__GITHUB_APP_NAME__", "Test Reviewer App");
+    vi.stubGlobal("__PROD__", true);
+    vi.stubGlobal("browser", {
+      runtime: {
+        getURL: (path: string) => `chrome-extension://ext-id${path}`,
+      },
+    });
+  }
+
+  async function bootOnPullList() {
+    stubBootGlobals();
+    window.history.replaceState({}, "", "/hon454/github-pulls-show-reviewers/pulls");
+
+    const invalidationCallbacks: Array<() => void> = [];
+    const ctx = {
+      onInvalidated: vi.fn((callback: () => void) => {
+        invalidationCallbacks.push(callback);
+      }),
+    };
+    const { bootAccessBanner } = await import("../src/features/access-banner");
+    const handle = bootAccessBanner(ctx as never);
+    if (handle == null) {
+      throw new Error("expected access banner to boot");
+    }
+    return { handle, ctx, invalidationCallbacks };
+  }
+
   it("returns null instead of throwing when production GitHub App config is missing", async () => {
     vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "");
     vi.stubGlobal("__GITHUB_APP_SLUG__", "");
@@ -516,5 +546,94 @@ describe("bootAccessBanner", () => {
     } as never);
 
     expect(handle).toBeNull();
+  });
+
+  it("mounts after .pr-toolbar before lower-priority fallback targets", async () => {
+    document.body.innerHTML = `
+      <main id="main">
+        <div class="subnav" id="subnav"></div>
+        <div class="pr-toolbar" id="toolbar"></div>
+      </main>
+    `;
+
+    const { handle } = await bootOnPullList();
+    handle.reportFailure("signin-required");
+
+    const banner = document.querySelector("[data-ghpsr-banner]");
+    const toolbar = document.querySelector("#toolbar");
+    expect(banner).not.toBeNull();
+    expect(banner?.previousElementSibling).toBe(toolbar);
+  });
+
+  it("falls back to .subnav when .pr-toolbar is missing", async () => {
+    document.body.innerHTML = `
+      <main id="main">
+        <div class="subnav" id="subnav"></div>
+      </main>
+    `;
+
+    const { handle } = await bootOnPullList();
+    handle.reportFailure("signin-required");
+
+    const banner = document.querySelector("[data-ghpsr-banner]");
+    const subnav = document.querySelector("#subnav");
+    expect(banner).not.toBeNull();
+    expect(banner?.previousElementSibling).toBe(subnav);
+  });
+
+  it("falls back to main when toolbar and subnav targets are missing", async () => {
+    document.body.innerHTML = `<main id="main"></main>`;
+
+    const { handle } = await bootOnPullList();
+    handle.reportFailure("signin-required");
+
+    const banner = document.querySelector("[data-ghpsr-banner]");
+    const main = document.querySelector("#main");
+    expect(banner).not.toBeNull();
+    expect(banner?.previousElementSibling).toBe(main);
+  });
+
+  it("subscribes to banner state updates and renders the configured links", async () => {
+    document.body.innerHTML = `<main id="main"></main>`;
+
+    const { handle } = await bootOnPullList();
+    expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
+
+    handle.reportFailure("app-uncovered");
+
+    const banner = document.querySelector("[data-ghpsr-banner]");
+    const link = banner?.querySelector("a");
+    expect(banner?.textContent).toContain("hon454/github-pulls-show-reviewers");
+    expect(link?.textContent).toBe("Configure access");
+    expect(link?.getAttribute("href")).toBe(
+      "https://github.com/apps/test-reviewer-app/installations/new",
+    );
+  });
+
+  it("teardown unsubscribes and removes mounted UI", async () => {
+    document.body.innerHTML = `<main id="main"></main>`;
+
+    const { handle } = await bootOnPullList();
+    handle.reportFailure("signin-required");
+    expect(document.querySelector("[data-ghpsr-banner]")).not.toBeNull();
+
+    handle.teardown();
+    expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
+
+    handle.reportFailure("auth-expired");
+    expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
+  });
+
+  it("tears down mounted UI when the content script context is invalidated", async () => {
+    document.body.innerHTML = `<main id="main"></main>`;
+
+    const { handle, ctx, invalidationCallbacks } = await bootOnPullList();
+    handle.reportFailure("signin-required");
+    expect(document.querySelector("[data-ghpsr-banner]")).not.toBeNull();
+    expect(ctx.onInvalidated).toHaveBeenCalledTimes(1);
+
+    invalidationCallbacks[0]?.();
+
+    expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
   });
 });
