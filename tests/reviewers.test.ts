@@ -311,8 +311,17 @@ describe("bootReviewerListPage", () => {
     };
     runtimeSendMessageMock.mockImplementation(
       (message: { type?: string; accountId?: string | null }) => {
-        if (message.type === "fetchPullReviewerMetadataBatch") {
+        if (
+          message.type === "fetchPullReviewerMetadataBatch" &&
+          message.accountId == null
+        ) {
           return Promise.resolve({ ok: false, error: rateLimitError });
+        }
+        if (
+          message.type === "fetchPullReviewerMetadataBatch" &&
+          message.accountId === "acc-owner"
+        ) {
+          return Promise.resolve({ ok: true, metadata: [] });
         }
         if (
           message.type === "fetchPullReviewerSummary" &&
@@ -393,8 +402,17 @@ describe("bootReviewerListPage", () => {
     };
     runtimeSendMessageMock.mockImplementation(
       (message: { type?: string; accountId?: string | null }) => {
-        if (message.type === "fetchPullReviewerMetadataBatch") {
+        if (
+          message.type === "fetchPullReviewerMetadataBatch" &&
+          message.accountId == null
+        ) {
           return Promise.resolve({ ok: false, error: rateLimitError });
+        }
+        if (
+          message.type === "fetchPullReviewerMetadataBatch" &&
+          message.accountId === "acc-owner"
+        ) {
+          return Promise.resolve({ ok: true, metadata: [] });
         }
         if (
           message.type === "fetchPullReviewerSummary" &&
@@ -610,6 +628,120 @@ describe("bootReviewerListPage", () => {
     expect(
       summaryCalls.find((message) => message.pullNumber === "41"),
     ).not.toHaveProperty("pullMetadata");
+  });
+
+  it("passes visible pull numbers to the page-level metadata request", async () => {
+    document.body.innerHTML = `
+      <div class="js-issue-row" id="issue_150">
+        <a class="Link--primary" href="/cinev/shotloom/pull/150">PR #150</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+      <div class="js-issue-row" id="issue_149">
+        <a class="Link--primary" href="/cinev/shotloom/pull/149">PR #149</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+    `;
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({
+          ok: true,
+          metadata: [
+            {
+              number: "150",
+              authorLogin: "cinev",
+              requestedUsers: [],
+              requestedTeams: [],
+            },
+            {
+              number: "149",
+              authorLogin: "cinev",
+              requestedUsers: [],
+              requestedTeams: [],
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ ok: true, summary });
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(
+      getRuntimeMessages("fetchPullReviewerMetadataBatch")[0],
+    ).toMatchObject({
+      targetPullNumbers: ["150", "149"],
+    });
+  });
+
+  it("short-circuits same-page row fallback after a final page metadata rate-limit failure", async () => {
+    document.body.innerHTML = `
+      <div class="js-issue-row" id="issue_42">
+        <a class="Link--primary" href="/cinev/shotloom/pull/42">PR #42</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+      <div class="js-issue-row" id="issue_41">
+        <a class="Link--primary" href="/cinev/shotloom/pull/41">PR #41</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+    `;
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    listAccountsMock.mockResolvedValue([]);
+
+    const rateLimitError = {
+      kind: "github-api" as const,
+      status: 429,
+      failures: [
+        {
+          status: 429,
+          endpoint: "/repos/cinev/shotloom/pulls",
+          rateLimited: true,
+          rateLimit: {
+            limit: 60,
+            remaining: 0,
+            resource: "core",
+            resetAt: 1_700_000_000,
+          },
+        },
+      ],
+    };
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: false, error: rateLimitError });
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+    expect(onRowFailure).toHaveBeenCalledTimes(1);
+    expect(onRowFailure).toHaveBeenCalledWith({
+      owner: "cinev",
+      repo: "shotloom",
+      account: null,
+      error: expect.objectContaining({
+        envelope: rateLimitError,
+      }),
+    });
   });
 
   it("does not flash loading text on a cache-hit re-render", async () => {

@@ -388,6 +388,7 @@ export async function fetchPullReviewerMetadataBatch(input: {
   owner: string;
   repo: string;
   githubToken: string | null;
+  targetPullNumbers?: string[];
   signal?: AbortSignal;
 }): Promise<PullReviewerMetadata[]> {
   const headers = createGitHubHeaders(input.githubToken);
@@ -402,12 +403,15 @@ export async function fetchPullReviewerMetadataBatch(input: {
     throw failure;
   }
 
-  const parsed = pullReviewerMetadataListSchema.safeParse(await response.json());
-  if (!parsed.success) {
-    throw new GitHubApiSchemaError(endpoint, parsed.error.issues);
-  }
+  const pulls = await collectPullMetadataAcrossPages({
+    firstResponse: response,
+    endpoint,
+    headers,
+    targetPullNumbers: input.targetPullNumbers ?? [],
+    ...(input.signal == null ? {} : { signal: input.signal }),
+  });
 
-  return parsed.data.map((pull) => toPullReviewerMetadata(String(pull.number), pull));
+  return pulls.map((pull) => toPullReviewerMetadata(String(pull.number), pull));
 }
 
 function buildPullReviewerSummary(
@@ -898,6 +902,63 @@ async function collectReviewRequestEventsAcrossPages(params: {
       throw new GitHubPullRequestEndpointsError([error]);
     }
   }
+}
+
+async function collectPullMetadataAcrossPages(params: {
+  firstResponse: Response;
+  endpoint: GitHubEndpointDescriptor;
+  headers: Headers;
+  targetPullNumbers: string[];
+  signal?: AbortSignal;
+}): Promise<z.infer<typeof pullReviewerMetadataListSchema>> {
+  const collected: z.infer<typeof pullReviewerMetadataListSchema> = [];
+  const targets = new Set(params.targetPullNumbers);
+
+  let response = params.firstResponse;
+  while (true) {
+    const parsed = pullReviewerMetadataListSchema.safeParse(
+      await response.json(),
+    );
+    if (!parsed.success) {
+      throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
+    }
+    collected.push(...parsed.data);
+
+    if (targets.size === 0 || hasAllTargetPulls(collected, targets)) {
+      return collected;
+    }
+
+    const nextUrl = parseNextPageUrl(response.headers.get("Link"));
+    if (nextUrl == null) {
+      return collected;
+    }
+
+    response = await fetch(
+      nextUrl,
+      withOptionalSignal({ headers: params.headers }, params.signal),
+    );
+
+    const error = await createGitHubApiErrorFromResponse(
+      response,
+      params.endpoint,
+    );
+    if (error != null) {
+      throw error;
+    }
+  }
+}
+
+function hasAllTargetPulls(
+  pulls: z.infer<typeof pullReviewerMetadataListSchema>,
+  targets: Set<string>,
+): boolean {
+  const pullNumbers = new Set(pulls.map((pull) => String(pull.number)));
+  for (const target of targets) {
+    if (!pullNumbers.has(target)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function parseNextPageUrl(linkHeader: string | null): string | null {

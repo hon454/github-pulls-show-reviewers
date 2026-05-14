@@ -149,6 +149,9 @@ export function createReviewerFetchService(input: {
             repo: message.repo,
             githubToken: token,
             signal: controller.signal,
+            ...(message.targetPullNumbers == null
+              ? {}
+              : { targetPullNumbers: message.targetPullNumbers }),
           });
 
         try {

@@ -189,10 +189,10 @@ export function extractPullNumber(row: Element): string | null {
 }
 
 export function ensureReviewerMount(row: Element): HTMLElement | null {
-  const metaContainer = findFirst<HTMLElement>(row, githubSelectors.metaContainers);
-  if (metaContainer == null) {
-    return null;
-  }
+  const metaContainer =
+    findFirst<HTMLElement>(row, githubSelectors.metaContainers) ??
+    createFallbackMetaContainer(row);
+  if (metaContainer == null) return null;
 
   let inlineMetaRow = findFirst<HTMLElement>(
     metaContainer,
@@ -213,6 +213,17 @@ export function ensureReviewerMount(row: Element): HTMLElement | null {
   }
 
   return mount;
+}
+
+function createFallbackMetaContainer(row: Element): HTMLElement | null {
+  const link = row.querySelector<HTMLAnchorElement>(githubSelectors.primaryLink);
+  if (link == null) return null;
+
+  const container = document.createElement("span");
+  container.className = "d-none d-md-inline-flex";
+  container.setAttribute("data-ghpsr-fallback-meta", "true");
+  link.insertAdjacentElement("afterend", container);
+  return container;
 }
 
 export function renderLoading(mount: HTMLElement): void {

@@ -1288,6 +1288,61 @@ describe("fetchPullReviewerMetadataBatch", () => {
     expect(headers).toBeInstanceOf(Headers);
     expect((headers as Headers).get("Authorization")).toBeNull();
   });
+
+  it("follows pull-list pagination until visible target pull numbers are covered", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 200,
+              user: { login: "hon454" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2>; rel="next"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 150,
+              user: { login: "octocat" },
+              requested_reviewers: [{ login: "alice", avatar_url: null }],
+              requested_teams: [{ slug: "platform" }],
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: null,
+      targetPullNumbers: ["150"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2",
+    );
+    expect(metadata.find((pull) => pull.number === "150")).toEqual({
+      number: "150",
+      authorLogin: "octocat",
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
+      requestedTeams: ["platform"],
+    });
+  });
 });
 
 describe("validateGitHubRepositoryAccess", () => {

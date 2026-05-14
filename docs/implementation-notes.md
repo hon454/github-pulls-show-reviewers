@@ -24,20 +24,25 @@
 3. Extract the pull request number from the row id or primary pull request link.
 4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
 5. Send one `fetchPullReviewerMetadataBatch` message per page/account when the
-   page-level metadata cache is cold or stale. The background reads the first
-   REST pull-list page with the matched account token (or no token if none
-   matches), returning requested user reviewers, requested teams, and author
-   logins that can be reused across visible rows. Page metadata has a shorter
-   freshness window than row summaries because re-review requests primarily
-   change `requested_reviewers` / `requested_teams`.
+   page-level metadata cache is cold or stale. The content script includes the
+   visible pull numbers in that message. The background reads the first REST
+   pull-list page with the matched account token (or no token if none matches)
+   and follows `Link: rel="next"` until those visible numbers are covered or
+   pagination ends, returning requested user reviewers, requested teams, and
+   author logins that can be reused across visible rows. Page metadata has a
+   shorter freshness window than row summaries because re-review requests
+   primarily change `requested_reviewers` / `requested_teams`.
 6. Send a `fetchPullReviewerSummary` message for each uncached or stale row.
    Fresh cache hits render without refetching. Stale cache hits render the
    cached chips immediately, then revalidate in the background and rerender only
    the affected row when fresh data arrives. When the page-level metadata
    contains that pull request number, the background skips the per-row pull
    endpoint and reads only the reviews endpoint. If the pull number is absent
-   from the batch result, the summary request falls back to the original per-row
-   `pull + reviews` REST path.
+   from a successful batch result, the summary request falls back to the
+   original per-row `pull + reviews` REST path. If the page-level metadata batch
+   finally fails with an authentication, access, not-found, or rate-limit
+   failure after eligible fallback-account retry, same-page row fallback is
+   suppressed and the existing page banner receives that failure once.
    If no covering account is found, the first attempt still uses the no-token
    path so public repositories keep working without authentication. When that
    no-token metadata or summary fetch fails with an authentication, access,
@@ -72,10 +77,11 @@
 ## Current limitations
 
 - The extension still depends on GitHub metadata DOM structure.
-- Cold rows on a typical first PR-list page use one pull-list metadata request
-  plus one reviews request per uncached row. Filtered, searched, or older pages
-  can still fall back to one pull request plus one reviews request for rows that
-  are not present in the first REST pull-list page.
+- Cold rows use one pull-list metadata request, additional pull-list pages only
+  when visible pull numbers are not covered by the first REST page, and one
+  reviews request per uncached row. Very old filtered or searched pages can
+  still fall back to one pull request plus one reviews request for visible rows
+  if pagination ends before matching metadata is found.
 - Public-repository no-token access still depends on GitHub's unauthenticated REST availability and rate limits.
 - PAT-era single-token settings are not migrated; users must sign in again with
   the GitHub App account flow.
@@ -113,9 +119,11 @@
 ## Request volume decision
 
 - ADR: [0001 - Keep No-Token Support For Public Repositories](./adr/0001-keep-no-token-support-for-public-repositories.md)
-- The current implementation keeps the REST-only public path and uses
+- The current implementation keeps the REST-only public path and starts with
   `GET /repos/{owner}/{repo}/pulls?per_page=100&state=all` as a page-level
-  metadata hint before row summaries.
+  metadata hint before row summaries. For searched, filtered, and paginated
+  GitHub list pages, the content script sends visible pull numbers so the
+  background can follow REST pagination until those numbers are covered.
 - The content script de-duplicates in-flight row fetches, caches each pull
   request summary for the active page session with freshness metadata, and
   caches the page-level metadata result per `owner/repo/account` with a shorter
@@ -125,7 +133,7 @@
   non-`COMMENTED` review keep the lower-volume pull metadata plus reviews path.
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
 - If request volume remains the next bottleneck, the preferred follow-up is to
-  make the REST batch smarter for filtered and paginated GitHub list pages
+  bound or tune the REST pagination strategy with fixture-backed evidence
   before considering a broader API migration.
 
 ## Access banner classification
@@ -173,8 +181,6 @@ snapshot is in-memory only — it is never persisted.
 
 ## Next implementation targets
 
-- Extend the REST metadata batch to better cover searched, filtered, and older
-  paginated GitHub PR list pages.
 - Add more fixture-backed extension boot coverage for GitHub DOM variants.
 
 ## End-to-end banner coverage

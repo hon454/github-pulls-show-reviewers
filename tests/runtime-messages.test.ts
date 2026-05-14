@@ -69,6 +69,7 @@ describe("reviewer fetch runtime message schemas", () => {
       owner: "cinev",
       repo: "shotloom",
       accountId: "acc-1",
+      targetPullNumbers: ["42", "41"],
     };
 
     expect(
