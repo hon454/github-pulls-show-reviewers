@@ -38,12 +38,25 @@ const renderCases: FixtureCase[] = [
     fixture: "github-pulls-link-only.html",
     pullNumber: "77",
   },
+  {
+    name: "title-only metadata fallback",
+    fixture: "github-pulls-title-only-metadata.html",
+    pullNumber: "203",
+  },
+  {
+    name: "non-primary pull link fallback",
+    fixture: "github-pulls-non-primary-link.html",
+    pullNumber: "314",
+  },
 ];
 
 for (const fixtureCase of renderCases) {
   test(`renders reviewer chips for ${fixtureCase.name}`, async () => {
     await withExtensionContext(async (context) => {
-      const fixtureHtml = await readFile(path.join(fixturesDir, fixtureCase.fixture), "utf8");
+      const fixtureHtml = await readFile(
+        path.join(fixturesDir, fixtureCase.fixture),
+        "utf8",
+      );
 
       await routeFixturePage(context, fixtureHtml);
       await routePullListApi(context, [
@@ -68,12 +81,16 @@ for (const fixtureCase of renderCases) {
       ]);
 
       const page = await context.newPage();
-      await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
+      await page.goto(
+        "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+      );
 
       const root = page.locator(".ghpsr-root");
       await expect(root).toContainText("Reviewers:");
       await expect(root).toContainText("Team: platform");
-      await expect(root.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(1);
+      await expect(root.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+        1,
+      );
       await expect(
         root.locator('a.ghpsr-avatar[title*="@bob"][title*="approved"]'),
       ).toHaveCount(1);
@@ -83,7 +100,10 @@ for (const fixtureCase of renderCases) {
 
 test("omits the inline reviewer row when both requested and reviewed are empty", async () => {
   await withExtensionContext(async (context) => {
-    const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, singleRowFixture),
+      "utf8",
+    );
 
     await routeFixturePage(context, fixtureHtml);
     await routePullListApi(context, [
@@ -102,9 +122,122 @@ test("omits the inline reviewer row when both requested and reviewed are empty",
     await routeReviewsApi(context, "42", []);
 
     const page = await context.newPage();
-    await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
 
     await expect(page.locator(".ghpsr-root")).toBeEmpty();
+  });
+});
+
+test("renders reviewer chips after a same-repository GitHub rerender", async () => {
+  await withExtensionContext(async (context) => {
+    const initialFixtureHtml = await readFile(
+      path.join(fixturesDir, singleRowFixture),
+      "utf8",
+    );
+    const rerenderFixtureHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-missing-inline-meta.html"),
+      "utf8",
+    );
+
+    await routeFixturePage(context, initialFixtureHtml);
+    await routePullListApi(context, [
+      {
+        number: 42,
+        user: { login: "hon454" },
+        requested_reviewers: [{ login: "alice" }],
+        requested_teams: [],
+      },
+      {
+        number: 128,
+        user: { login: "hon454" },
+        requested_reviewers: [{ login: "charlie" }],
+        requested_teams: [{ slug: "design-systems" }],
+      },
+    ]);
+    await routePullApi(context, "42", {
+      user: { login: "hon454" },
+      requested_reviewers: [{ login: "alice" }],
+      requested_teams: [],
+    });
+    await routePullApi(context, "128", {
+      user: { login: "hon454" },
+      requested_reviewers: [{ login: "charlie" }],
+      requested_teams: [{ slug: "design-systems" }],
+    });
+    await routeReviewsApi(context, "42", []);
+    await routeReviewsApi(context, "128", [
+      {
+        state: "APPROVED",
+        submitted_at: "2026-04-20T12:00:00Z",
+        user: { login: "dana" },
+      },
+    ]);
+
+    const page = await context.newPage();
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+
+    await page.evaluate((html) => {
+      const nextDocument = new DOMParser().parseFromString(html, "text/html");
+      const nextContainer = nextDocument.querySelector(
+        ".js-navigation-container",
+      );
+      const currentContainer = document.querySelector(
+        ".js-navigation-container",
+      );
+      if (nextContainer == null || currentContainer == null) {
+        throw new Error("fixture navigation container missing");
+      }
+      window.history.pushState(
+        {},
+        "",
+        "/hon454/github-pulls-show-reviewers/pulls?page=2",
+      );
+      currentContainer.replaceWith(nextContainer);
+      document.dispatchEvent(new Event("turbo:render", { bubbles: true }));
+    }, rerenderFixtureHtml);
+
+    const root = page.locator(".ghpsr-root");
+    await expect(root).toContainText("Reviewers:");
+    await expect(root).toContainText("Team: design-systems");
+    await expect(root.locator('a.ghpsr-avatar[title*="@charlie"]')).toHaveCount(
+      1,
+    );
+    await expect(
+      root.locator('a.ghpsr-avatar[title*="@dana"][title*="approved"]'),
+    ).toHaveCount(1);
+  });
+});
+
+test("clears metadata-missing reviewer slots silently when reviewer fetch fails", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-title-only-metadata.html"),
+      "utf8",
+    );
+
+    await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, []);
+    await routePullApiError(context, "203", 403);
+    await routeReviewsApiError(context, "203", 403);
+
+    const page = await context.newPage();
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+
+    await expect(page.locator(".ghpsr-status--error")).toHaveCount(0);
+    const root = page.locator(".ghpsr-root");
+    const rootCount = await root.count();
+    if (rootCount > 0) {
+      await expect(root).toBeEmpty();
+    }
   });
 });
 
@@ -155,7 +288,9 @@ test("renders unauth-rate-limit banner with Sign in CTA when an unauthenticated 
     );
 
     const page = await context.newPage();
-    await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
 
     const banner = page.locator("[data-ghpsr-banner]");
     await expect(banner).toContainText(
@@ -188,18 +323,23 @@ test("renders app-uncovered banner with Configure access CTA when a signed-in ro
     await routePullListApi(context, []);
     // Defensive stub: in case the background ever calls the installations API,
     // return an empty list rather than letting the real network handle it.
-    await context.route("https://api.github.com/user/installations**", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ total_count: 0, installations: [] }),
-      });
-    });
+    await context.route(
+      "https://api.github.com/user/installations**",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ total_count: 0, installations: [] }),
+        });
+      },
+    );
     await routePullApiError(context, "42", 404);
     await routeReviewsApiError(context, "42", 404);
 
     const page = await context.newPage();
-    await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
 
     const banner = page.locator("[data-ghpsr-banner]");
     await expect(banner).toContainText(
@@ -216,7 +356,10 @@ test("renders app-uncovered banner with Configure access CTA when a signed-in ro
 
 test("refreshes an expired selected-installation account before rendering private reviewer metadata", async () => {
   await withExtensionContext(async (context) => {
-    const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, singleRowFixture),
+      "utf8",
+    );
     const now = Date.now();
     const refreshRequests: string[] = [];
     const metadataAuthHeaders: string[] = [];
@@ -300,7 +443,9 @@ test("refreshes an expired selected-installation account before rendering privat
     );
 
     const page = await context.newPage();
-    await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
 
     const root = page.locator(".ghpsr-root");
     await expect(root).toContainText("Reviewers:");
@@ -339,7 +484,10 @@ test("refreshes an expired selected-installation account before rendering privat
 
 test("clears the reviewer slot silently when review history is denied", async () => {
   await withExtensionContext(async (context) => {
-    const fixtureHtml = await readFile(path.join(fixturesDir, singleRowFixture), "utf8");
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, singleRowFixture),
+      "utf8",
+    );
 
     await routeFixturePage(context, fixtureHtml);
     await routePullListApi(context, []);
@@ -366,7 +514,9 @@ test("clears the reviewer slot silently when review history is denied", async ()
     );
 
     const page = await context.newPage();
-    await page.goto("https://github.com/hon454/github-pulls-show-reviewers/pulls");
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
 
     // Row-level error rendering is removed; failures silently clear the reviewer slot.
     await expect(page.locator(".ghpsr-status--error")).toHaveCount(0);
@@ -380,9 +530,13 @@ test("clears the reviewer slot silently when review history is denied", async ()
 });
 
 async function withExtensionContext(
-  run: (context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>) => Promise<void>,
+  run: (
+    context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+  ) => Promise<void>,
 ): Promise<void> {
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), "ghpsr-playwright-"));
+  const userDataDir = await mkdtemp(
+    path.join(os.tmpdir(), "ghpsr-playwright-"),
+  );
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",
     args: [
@@ -393,7 +547,8 @@ async function withExtensionContext(
 
   try {
     const serviceWorker =
-      context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+      context.serviceWorkers()[0] ??
+      (await context.waitForEvent("serviceworker"));
     expect(serviceWorker.url()).toContain("chrome-extension://");
     await settleExtensionInstallUi(context);
     await run(context);
@@ -434,13 +589,16 @@ async function routeFixturePage(
   context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
   fixtureHtml: string,
 ): Promise<void> {
-  await context.route("https://github.com/hon454/github-pulls-show-reviewers/pulls", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "text/html",
-      body: fixtureHtml,
-    });
-  });
+  await context.route(
+    "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: fixtureHtml,
+      });
+    },
+  );
 }
 
 async function routePullApi(
@@ -542,7 +700,8 @@ async function seedSignedInAccount(
   },
 ): Promise<void> {
   const serviceWorker =
-    context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+    context.serviceWorkers()[0] ??
+    (await context.waitForEvent("serviceworker"));
   const extensionId = new URL(serviceWorker.url()).host;
   const optionsPage = await context.newPage();
   try {

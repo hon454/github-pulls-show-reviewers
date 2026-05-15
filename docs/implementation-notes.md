@@ -21,7 +21,10 @@
 
 1. Parse the current repository route from `window.location.pathname`.
 2. Find PR rows with centralized GitHub selectors.
-3. Extract the pull request number from the row id or primary pull request link.
+3. Extract the pull request number from the row id or a centralized pull
+   request link selector. The selector prefers GitHub's `Link--primary` class
+   and falls back to `js-navigation-open` pull links for markup variants where
+   the title link keeps navigation behavior but loses the primary-link class.
 4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
 5. Send one `fetchPullReviewerMetadataBatch` message per page/account when the
    page-level metadata cache is cold or stale. The content script includes the
