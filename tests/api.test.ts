@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GitHubApiError,
   GitHubApiSchemaError,
+  PULL_METADATA_BATCH_PAGE_BUDGET,
+  REVIEW_REQUEST_EVENT_PAGE_BUDGET,
   fetchPullReviewerSummary,
   fetchPullReviewerMetadataBatch,
   describeGitHubApiError,
@@ -1347,6 +1349,11 @@ describe("fetchPullReviewerSummary", () => {
 });
 
 describe("fetchPullReviewerMetadataBatch", () => {
+  it("publishes the fixed REST request budgets used by reviewer loading", () => {
+    expect(PULL_METADATA_BATCH_PAGE_BUDGET).toBe(3);
+    expect(REVIEW_REQUEST_EVENT_PAGE_BUDGET).toBe(2);
+  });
+
   it("reads requested reviewer metadata for a page of pull requests without a token", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -1464,7 +1471,7 @@ describe("fetchPullReviewerMetadataBatch", () => {
     });
   });
 
-  it("stops pull-list pagination after a bounded number of pages", async () => {
+  it("stops older visible pull-list discovery after the metadata request budget", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -1532,7 +1539,7 @@ describe("fetchPullReviewerMetadataBatch", () => {
       targetPullNumbers: ["150"],
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(PULL_METADATA_BATCH_PAGE_BUDGET);
     expect(metadata.map((pull) => pull.number)).toEqual(["300", "250", "200"]);
   });
 

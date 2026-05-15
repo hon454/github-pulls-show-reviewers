@@ -38,8 +38,8 @@ const pullReviewerMetadataSchema = pullSchema.extend({
 });
 
 const pullReviewerMetadataListSchema = z.array(pullReviewerMetadataSchema);
-const MAX_PULL_METADATA_BATCH_PAGES = 3;
-const MAX_REVIEW_REQUEST_EVENT_PAGES = 2;
+export const PULL_METADATA_BATCH_PAGE_BUDGET = 3;
+export const REVIEW_REQUEST_EVENT_PAGE_BUDGET = 2;
 
 const pullListSchema = z.array(
   z.object({
@@ -888,7 +888,7 @@ async function collectReviewRequestEventsAcrossPages(params: {
     collected.push(...parsed.data);
     pageCount += 1;
 
-    if (pageCount >= MAX_REVIEW_REQUEST_EVENT_PAGES) {
+    if (pageCount >= REVIEW_REQUEST_EVENT_PAGE_BUDGET) {
       return collected;
     }
 
@@ -938,7 +938,7 @@ async function collectPullMetadataAcrossPages(params: {
     if (
       targets.size === 0 ||
       hasAllTargetPulls(collected, targets) ||
-      pageCount >= MAX_PULL_METADATA_BATCH_PAGES
+      pageCount >= PULL_METADATA_BATCH_PAGE_BUDGET
     ) {
       return collected;
     }
