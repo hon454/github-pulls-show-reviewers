@@ -737,20 +737,21 @@ export function bootReviewerListPage(
 }
 
 function createRowFingerprint(row: Element, pullNumber: string): string {
-  const link = row.querySelector<HTMLAnchorElement>(
-    githubSelectors.primaryLink,
+  const link = findFirst<HTMLAnchorElement>(
+    row,
+    githubSelectors.pullLinkSelectors,
   );
   const href = link?.getAttribute("href") ?? "";
   const metaContainer = findFirst(row, githubSelectors.metaContainers);
   return [pullNumber, href, readRowMetadataText(metaContainer)].join("|");
 }
 
-function findFirst(
+function findFirst<T extends Element = Element>(
   root: ParentNode,
   selectors: readonly string[],
-): Element | null {
+): T | null {
   for (const selector of selectors) {
-    const match = root.querySelector(selector);
+    const match = root.querySelector<T>(selector);
     if (match != null) return match;
   }
   return null;

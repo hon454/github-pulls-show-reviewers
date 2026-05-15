@@ -1,6 +1,10 @@
 export const githubSelectors = {
   row: ".js-issue-row",
   primaryLink: 'a.Link--primary[href*="/pull/"]',
+  pullLinkSelectors: [
+    'a.Link--primary[href*="/pull/"]',
+    'a.js-navigation-open[href*="/pull/"]',
+  ],
   metaContainers: [
     ".d-flex.mt-1.text-small.color-fg-muted",
     '[class*="ListItem-module__ListItemMetadataRow"]',

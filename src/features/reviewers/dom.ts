@@ -181,7 +181,10 @@ export function extractPullNumber(row: Element): string | null {
     }
   }
 
-  const link = row.querySelector<HTMLAnchorElement>(githubSelectors.primaryLink);
+  const link = findFirst<HTMLAnchorElement>(
+    row,
+    githubSelectors.pullLinkSelectors,
+  );
   const href = link?.getAttribute("href");
   const match = href?.match(/\/pull\/(\d+)/);
 
@@ -217,7 +220,10 @@ export function ensureReviewerMount(row: Element): HTMLElement | null {
 }
 
 function createFallbackMetaContainer(row: Element): HTMLElement | null {
-  const link = row.querySelector<HTMLAnchorElement>(githubSelectors.primaryLink);
+  const link = findFirst<HTMLAnchorElement>(
+    row,
+    githubSelectors.pullLinkSelectors,
+  );
   if (link == null) return null;
 
   const container = document.createElement("span");
