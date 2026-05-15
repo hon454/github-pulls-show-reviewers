@@ -39,6 +39,7 @@ const pullReviewerMetadataSchema = pullSchema.extend({
 
 const pullReviewerMetadataListSchema = z.array(pullReviewerMetadataSchema);
 const MAX_PULL_METADATA_BATCH_PAGES = 3;
+const MAX_REVIEW_REQUEST_EVENT_PAGES = 2;
 
 const pullListSchema = z.array(
   z.object({
@@ -878,15 +879,21 @@ async function collectReviewRequestEventsAcrossPages(params: {
   const collected: z.infer<typeof reviewRequestEventsSchema> = [];
 
   let response = params.firstResponse;
+  let pageCount = 0;
   while (true) {
     const parsed = reviewRequestEventsSchema.safeParse(await response.json());
     if (!parsed.success) {
       throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
     }
     collected.push(...parsed.data);
+    pageCount += 1;
+
+    if (pageCount >= MAX_REVIEW_REQUEST_EVENT_PAGES) {
+      return collected;
+    }
 
     const nextUrl = parseNextPageUrl(response.headers.get("Link"));
-    if (nextUrl == null) {
+    if (nextUrl == null || !isGitHubApiUrl(nextUrl)) {
       return collected;
     }
 
@@ -1008,6 +1015,15 @@ function isExpectedGitHubApiUrl(url: string, expectedPathname: string): boolean 
       parsed.hostname === "api.github.com" &&
       parsed.pathname === expectedPathname
     );
+  } catch {
+    return false;
+  }
+}
+
+function isGitHubApiUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname === "api.github.com";
   } catch {
     return false;
   }

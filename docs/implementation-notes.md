@@ -61,13 +61,14 @@
    asking the user to sign in again.
 7. For ambiguous user reviewers that appear in both `requested_reviewers` and
    the latest non-`COMMENTED` review set (`APPROVED`, `CHANGES_REQUESTED`, or
-   `DISMISSED`), read the pull request's issue events and compare ordering.
-   When the latest `review_requested` event for that user is newer than the
-   latest completed review, keep the user requested so the row shows the
-   refresh badge. Otherwise, drop the stale requested marker so the row shows
-   the completed review state. If this targeted issue-event lookup fails, fall
-   back to the completed review state instead of labeling the reviewer as
-   re-requested.
+   `DISMISSED`), read up to two pages of the pull request's issue events and
+   compare ordering. When the latest `review_requested` event for that user
+   within that bounded lookup is newer than the latest completed review, keep
+   the user requested so the row shows the refresh badge. Otherwise, drop the
+   stale requested marker so the row shows the completed review state. If this
+   targeted issue-event lookup fails, or the confirming event is beyond the
+   two-page bound, fall back to the completed review state instead of labeling
+   the reviewer as re-requested.
 8. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge only when the event ordering confirms a later re-request. Requested teams keep the text chip shape. User chip links follow the same primary axis as the ring color: blue-ring (still-requested) chips link to `review-requested:<login>`; colored-ring (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use `is:pr is:open` searches by default.
 9. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text.
@@ -135,8 +136,11 @@
   caches the page-level metadata result per `owner/repo/account` and visible
   pull-number set with a shorter freshness window.
 - Issue-event requests are targeted to ambiguous requested+completed reviewer
-  overlaps only. Rows whose requested users do not overlap a latest
-  non-`COMMENTED` review keep the lower-volume pull metadata plus reviews path.
+  overlaps only, and follow at most two GitHub API issue-event pages. Rows
+  whose requested users do not overlap a latest non-`COMMENTED` review keep the
+  lower-volume pull metadata plus reviews path. If a confirming
+  `review_requested` event is unavailable within the two-page bound, the row
+  uses the completed review state rather than an uncertain refresh badge.
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
 - If request volume remains the next bottleneck, the preferred follow-up is to
   tune the three-page REST pagination bound with fixture-backed evidence before
