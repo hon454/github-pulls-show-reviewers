@@ -39,6 +39,7 @@ const pullReviewerMetadataSchema = pullSchema.extend({
 
 const pullReviewerMetadataListSchema = z.array(pullReviewerMetadataSchema);
 const MAX_PULL_METADATA_BATCH_PAGES = 3;
+const MAX_REVIEW_REQUEST_EVENT_PAGES = 2;
 
 const pullListSchema = z.array(
   z.object({
@@ -878,15 +879,17 @@ async function collectReviewRequestEventsAcrossPages(params: {
   const collected: z.infer<typeof reviewRequestEventsSchema> = [];
 
   let response = params.firstResponse;
+  let pageCount = 0;
   while (true) {
     const parsed = reviewRequestEventsSchema.safeParse(await response.json());
     if (!parsed.success) {
       throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
     }
     collected.push(...parsed.data);
+    pageCount += 1;
 
     const nextUrl = parseNextPageUrl(response.headers.get("Link"));
-    if (nextUrl == null) {
+    if (nextUrl == null || pageCount >= MAX_REVIEW_REQUEST_EVENT_PAGES) {
       return collected;
     }
 
