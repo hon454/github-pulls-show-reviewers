@@ -224,20 +224,42 @@ test("clears metadata-missing reviewer slots silently when reviewer fetch fails"
 
     await routeFixturePage(context, fixtureHtml);
     await routePullListApi(context, []);
-    await routePullApiError(context, "203", 403);
-    await routeReviewsApiError(context, "203", 403);
+    let pullRequestCount = 0;
+    let reviewsRequestCount = 0;
+    await context.route(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/203",
+      async (route) => {
+        pullRequestCount += 1;
+        await route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "status 403" }),
+        });
+      },
+    );
+    await context.route(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/203/reviews**",
+      async (route) => {
+        reviewsRequestCount += 1;
+        await route.fulfill({
+          status: 403,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "status 403" }),
+        });
+      },
+    );
 
     const page = await context.newPage();
     await page.goto(
       "https://github.com/hon454/github-pulls-show-reviewers/pulls",
     );
 
+    await expect.poll(() => pullRequestCount).toBe(1);
+    await expect.poll(() => reviewsRequestCount).toBe(1);
     await expect(page.locator(".ghpsr-status--error")).toHaveCount(0);
     const root = page.locator(".ghpsr-root");
-    const rootCount = await root.count();
-    if (rootCount > 0) {
-      await expect(root).toBeEmpty();
-    }
+    await expect(root).toHaveCount(1);
+    await expect(root).toBeEmpty();
   });
 });
 

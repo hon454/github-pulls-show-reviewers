@@ -270,6 +270,35 @@ describe("renderReviewers", () => {
     expect(extractPullNumber(row!)).toBe("203");
   });
 
+  it("prefers the title link over earlier non-primary navigation links", () => {
+    document.body.innerHTML = `
+      <div class="js-issue-row">
+        <a class="js-navigation-open" href="/hon454/github-pulls-show-reviewers/pull/202">
+          Earlier navigation link
+        </a>
+        <a class="Link--primary" href="/hon454/github-pulls-show-reviewers/pull/203">
+          Title link
+        </a>
+      </div>
+    `;
+    const row = document.querySelector(".js-issue-row")!;
+    const earlierLink = row.querySelector<HTMLAnchorElement>(
+      ".js-navigation-open",
+    )!;
+    const titleLink = row.querySelector<HTMLAnchorElement>(".Link--primary")!;
+
+    const mountNode = ensureReviewerMount(row);
+
+    expect(extractPullNumber(row)).toBe("203");
+    expect(mountNode).not.toBeNull();
+    expect(
+      titleLink.nextElementSibling?.getAttribute("data-ghpsr-fallback-meta"),
+    ).toBe("true");
+    expect(
+      earlierLink.nextElementSibling?.getAttribute("data-ghpsr-fallback-meta"),
+    ).not.toBe("true");
+  });
+
   it("declares :focus-visible styles for reviewer avatars, pills, and team chips", () => {
     ensureReviewerStyles();
     const styleEl = document.querySelector("[data-ghpsr-style]");
