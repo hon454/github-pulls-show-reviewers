@@ -888,8 +888,12 @@ async function collectReviewRequestEventsAcrossPages(params: {
     collected.push(...parsed.data);
     pageCount += 1;
 
+    if (pageCount >= MAX_REVIEW_REQUEST_EVENT_PAGES) {
+      return collected;
+    }
+
     const nextUrl = parseNextPageUrl(response.headers.get("Link"));
-    if (nextUrl == null || pageCount >= MAX_REVIEW_REQUEST_EVENT_PAGES) {
+    if (nextUrl == null || !isGitHubApiUrl(nextUrl)) {
       return collected;
     }
 
@@ -1011,6 +1015,15 @@ function isExpectedGitHubApiUrl(url: string, expectedPathname: string): boolean 
       parsed.hostname === "api.github.com" &&
       parsed.pathname === expectedPathname
     );
+  } catch {
+    return false;
+  }
+}
+
+function isGitHubApiUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && parsed.hostname === "api.github.com";
   } catch {
     return false;
   }

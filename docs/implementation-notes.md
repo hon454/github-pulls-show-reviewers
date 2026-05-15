@@ -136,11 +136,11 @@
   caches the page-level metadata result per `owner/repo/account` and visible
   pull-number set with a shorter freshness window.
 - Issue-event requests are targeted to ambiguous requested+completed reviewer
-  overlaps only, and follow at most two issue-event pages. Rows whose requested
-  users do not overlap a latest non-`COMMENTED` review keep the lower-volume
-  pull metadata plus reviews path. If a confirming `review_requested` event is
-  unavailable within the two-page bound, the row uses the completed review
-  state rather than an uncertain refresh badge.
+  overlaps only, and follow at most two GitHub API issue-event pages. Rows
+  whose requested users do not overlap a latest non-`COMMENTED` review keep the
+  lower-volume pull metadata plus reviews path. If a confirming
+  `review_requested` event is unavailable within the two-page bound, the row
+  uses the completed review state rather than an uncertain refresh badge.
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
 - If request volume remains the next bottleneck, the preferred follow-up is to
   tune the three-page REST pagination bound with fixture-backed evidence before

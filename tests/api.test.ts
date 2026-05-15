@@ -818,6 +818,54 @@ describe("fetchPullReviewerSummary", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("does not follow non-GitHub issue-events pagination links with auth headers", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-05-07T02:03:16Z",
+              user: { login: "alice", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            Link: '<https://example.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2>; rel="next"',
+          },
+        }),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: "gho_token",
+      pullMetadata: {
+        number: "42",
+        authorLogin: "author",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+      },
+    });
+
+    expect(summary.requestedUsers).toEqual([]);
+    expect(summary.completedReviews).toEqual([
+      { login: "alice", avatarUrl: null, state: "APPROVED" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map((call) => call[0])).not.toContain(
+      "https://example.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2",
+    );
+  });
+
   it("falls back to completed review state when an ambiguous issue-events lookup fails", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
