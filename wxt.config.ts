@@ -19,7 +19,7 @@ export default defineConfig({
   manifest: {
     name: "GitHub Pulls Show Reviewers",
     description:
-      "Show requested reviewers and review state directly in GitHub pull request lists.",
+      "See requested reviewers, teams, and completed review state directly in GitHub pull request lists.",
     icons: {
       16: "/icon/16.png",
       32: "/icon/32.png",
