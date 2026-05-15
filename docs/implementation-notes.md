@@ -125,22 +125,37 @@
 ## Request volume decision
 
 - ADR: [0001 - Keep No-Token Support For Public Repositories](./adr/0001-keep-no-token-support-for-public-repositories.md)
-- The current implementation keeps the REST-only public path and starts with
-  `GET /repos/{owner}/{repo}/pulls?per_page=100&state=all` as a page-level
-  metadata hint before row summaries. For searched, filtered, and paginated
-  GitHub list pages, the content script sends visible pull numbers so the
-  background can follow REST pagination until those numbers are covered, bounded
-  to three REST pages total.
+- The current implementation keeps the REST-only public path and uses one
+  page-level metadata batch per fresh `owner/repo/account/visible pull numbers`
+  set before row summaries. That batch starts with
+  `GET /repos/{owner}/{repo}/pulls?per_page=100&state=all`.
+- For searched, filtered, and paginated GitHub list pages, the content script
+  sends visible pull numbers so the background can follow REST pagination until
+  those numbers are covered. The hard budget is three pull-list pages total
+  (`PULL_METADATA_BATCH_PAGE_BUDGET`), or up to 300 pull records at GitHub's
+  documented `per_page=100` maximum.
+- Rows covered by page metadata skip the per-row pull endpoint and fetch only
+  reviews, so the cold-row budget is the shared pull-list metadata batch plus
+  one `GET /repos/{owner}/{repo}/pulls/{n}/reviews?per_page=100` request per
+  uncached visible row, with additional review pages followed only when GitHub
+  returns review pagination links.
+- If a successful metadata batch does not cover an older visible pull within
+  the three-page budget, that row falls back to the original per-row
+  `pull + reviews` REST path. This fallback is intentional: it preserves
+  reviewer visibility for older filtered/search results without making the
+  shared no-token metadata discovery unbounded.
 - The content script de-duplicates in-flight row fetches, caches each pull
   request summary for the active page session with freshness metadata, and
   caches the page-level metadata result per `owner/repo/account` and visible
-  pull-number set with a shorter freshness window.
+  pull-number set with a shorter freshness window. When page metadata already
+  covers a row, row-level duplicate pull endpoint fetches are avoided.
 - Issue-event requests are targeted to ambiguous requested+completed reviewer
-  overlaps only, and follow at most two GitHub API issue-event pages. Rows
-  whose requested users do not overlap a latest non-`COMMENTED` review keep the
-  lower-volume pull metadata plus reviews path. If a confirming
-  `review_requested` event is unavailable within the two-page bound, the row
-  uses the completed review state rather than an uncertain refresh badge.
+  overlaps only, and follow at most two GitHub API issue-event pages
+  (`REVIEW_REQUEST_EVENT_PAGE_BUDGET`). Rows whose requested users do not
+  overlap a latest non-`COMMENTED` review keep the lower-volume pull metadata
+  plus reviews path. If a confirming `review_requested` event is unavailable
+  within the two-page bound, the row uses the completed review state rather
+  than an uncertain refresh badge.
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
 - If request volume remains the next bottleneck, the preferred follow-up is to
   tune the three-page REST pagination bound with fixture-backed evidence before

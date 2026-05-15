@@ -641,6 +641,11 @@ describe("bootReviewerListPage", () => {
         <div class="d-flex mt-1 text-small color-fg-muted"></div>
       </div>
     `;
+    window.history.replaceState(
+      {},
+      "",
+      "/cinev/shotloom/pulls?q=is%3Apr+review-requested%3Aalice",
+    );
     resolveAccountForRepoMock.mockResolvedValue(null);
     const summary: PullReviewerSummary = {
       status: "ok",
@@ -683,6 +688,87 @@ describe("bootReviewerListPage", () => {
     ).toMatchObject({
       targetPullNumbers: ["150", "149"],
     });
+  });
+
+  it("uses metadata-covered older visible rows without row pull fallback", async () => {
+    document.body.innerHTML = `
+      <div class="js-issue-row" id="issue_150">
+        <a class="Link--primary" href="/cinev/shotloom/pull/150">PR #150</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+      <div class="js-issue-row" id="issue_149">
+        <a class="Link--primary" href="/cinev/shotloom/pull/149">PR #149</a>
+        <div class="d-flex mt-1 text-small color-fg-muted"></div>
+      </div>
+    `;
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({
+          ok: true,
+          metadata: [
+            {
+              number: "150",
+              authorLogin: "cinev",
+              requestedUsers: [{ login: "alice", avatarUrl: null }],
+              requestedTeams: [],
+            },
+            {
+              number: "149",
+              authorLogin: "cinev",
+              requestedUsers: [],
+              requestedTeams: ["platform"],
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ ok: true, summary });
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(1);
+    expect(
+      getRuntimeMessages("fetchPullReviewerMetadataBatch")[0],
+    ).toMatchObject({
+      targetPullNumbers: ["150", "149"],
+    });
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map((message) => ({
+        pullNumber: message.pullNumber,
+        pullMetadata: message.pullMetadata,
+      })),
+    ).toEqual([
+      {
+        pullNumber: "150",
+        pullMetadata: {
+          number: "150",
+          authorLogin: "cinev",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+        },
+      },
+      {
+        pullNumber: "149",
+        pullMetadata: {
+          number: "149",
+          authorLogin: "cinev",
+          requestedUsers: [],
+          requestedTeams: ["platform"],
+        },
+      },
+    ]);
   });
 
   it("short-circuits same-page row fallback after a final page metadata rate-limit failure", async () => {
