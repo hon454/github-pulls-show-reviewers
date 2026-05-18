@@ -133,8 +133,14 @@ describe("package.json release scripts", () => {
     expect(packageJson.scripts["build:release"]).toBe(
       "bash ./scripts/run-with-github-app-env.sh pnpm build",
     );
+    expect(packageJson.scripts["verify:package-config"]).toBe(
+      "node scripts/verify-packaged-github-app-config.mjs",
+    );
+    expect(packageJson.scripts["zip:checked"]).toBe(
+      "pnpm zip && pnpm verify:package-config",
+    );
     expect(packageJson.scripts["zip:release"]).toBe(
-      "bash ./scripts/run-with-github-app-env.sh pnpm zip",
+      "bash ./scripts/run-with-github-app-env.sh pnpm zip:checked",
     );
     expect(packageJson.scripts["preflight:release"]).toBe(
       "bash ./scripts/require-github-app-build-env.sh",
@@ -150,11 +156,12 @@ describe("release workflow", () => {
     );
 
     const preflightIndex = workflow.indexOf("- run: pnpm preflight:release");
-    const zipIndex = workflow.indexOf("- run: pnpm zip");
+    const zipIndex = workflow.indexOf("- run: pnpm zip:checked");
 
     expect(preflightIndex).toBeGreaterThan(-1);
     expect(zipIndex).toBeGreaterThan(-1);
     expect(preflightIndex).toBeLessThan(zipIndex);
+    expect(workflow).not.toContain("- run: pnpm zip\n");
   });
 });
 

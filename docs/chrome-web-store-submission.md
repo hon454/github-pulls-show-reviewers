@@ -96,7 +96,9 @@ link and the privacy fields aligned with the shipped behavior.
 1. Run `pnpm preflight:release` in an environment with `WXT_GITHUB_APP_CLIENT_ID`, `WXT_GITHUB_APP_SLUG`, and `WXT_GITHUB_APP_NAME` populated. For local release builds, `pnpm build:release` and `pnpm zip:release` load these from GitHub Actions repository variables through `gh` and run the same preflight.
 2. Run `pnpm verify:release`.
 3. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
-4. Run `pnpm zip` only after the checks above pass.
+4. Run `pnpm zip:release` only after the checks above pass. Do not upload a
+   package created by plain `pnpm zip`; the release script loads the maintainer
+   GitHub App identifiers and verifies the final zip before submission.
 5. Run the [version-alignment
    preflight](./chrome-web-store.md#version-alignment-preflight) and
    confirm `package.json`, the packaged zip filename, the `v<version>`
@@ -118,8 +120,8 @@ link and the privacy fields aligned with the shipped behavior.
 
 ## Current package target
 
-Expected package path after `pnpm zip`:
+Expected package path after `pnpm zip:release`:
 
 ```text
-.output/github-pulls-show-reviewers-1.11.0-chrome.zip
+.output/github-pulls-show-reviewers-1.11.1-chrome.zip
 ```

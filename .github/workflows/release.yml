@@ -41,7 +41,7 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm preflight:release
       - run: pnpm verify:release
-      - run: pnpm zip
+      - run: pnpm zip:checked
 
       - name: Resolve release metadata
         id: release_meta

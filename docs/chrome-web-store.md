@@ -31,7 +31,7 @@ Detailed description:
 - Trigger options:
   - Push a version tag such as `v1.0.0`
   - Run the workflow manually with `workflow_dispatch`, optionally targeting an existing tag such as `v1.0.0`
-- The workflow installs Playwright Chromium, runs `pnpm verify:release`, and then packages with `pnpm zip`.
+- The workflow installs Playwright Chromium, runs `pnpm verify:release`, and then packages with `pnpm zip:checked`.
 - Every run uploads the packaged Chrome zip as a workflow artifact.
 - Tag-triggered runs also attach the zip to a GitHub Release.
 - If `docs/releases/<tag>.md` exists, the workflow uses that file as the release body.
@@ -52,17 +52,17 @@ pnpm verify:release
 4. Run `pnpm test:coverage` to exercise unit and fixture-backed regression coverage for routes, selectors, reviewer mapping, settings, and repository diagnostics while enforcing the configured coverage thresholds.
 5. Run `pnpm test:e2e` to build the extension and verify the packaged MV3 output still boots and renders reviewer chips in Playwright scenarios. For filtered Playwright runs, use `pnpm test:e2e:build` and then `pnpm test:e2e:grep "<pattern>"`.
 6. Run `pnpm cws:assets` only if store screenshots or other listing visuals need to be refreshed.
-7. Run `pnpm zip` after the checks above are green and the package is ready for inspection or submission.
+7. Run `pnpm zip:release` after the checks above are green and the package is ready for inspection or submission.
 8. Manually load `.output/chrome-mv3` in Chrome and confirm the options page never renders as a blank white screen; if the GitHub App build config is missing, it must show an explicit configuration warning instead.
 
-To build or zip locally with the same GitHub App environment the release workflow uses, run `pnpm build:release` or `pnpm zip:release`. Both wrap the regular `pnpm build` / `pnpm zip` commands and source the repository's GitHub Actions `vars` via [scripts/load-github-app-env.sh](../scripts/load-github-app-env.sh), so a maintainer no longer needs to keep a personal `.env.local` with the production client ID. The script relies on `gh` being authenticated for this repository.
+To build or zip locally with the same GitHub App environment the release workflow uses, run `pnpm build:release` or `pnpm zip:release`. Both source the repository's GitHub Actions `vars` via [scripts/load-github-app-env.sh](../scripts/load-github-app-env.sh), so a maintainer no longer needs to keep a personal `.env.local` with the production client ID. `pnpm zip:release` also runs `pnpm verify:package-config` against the final zip and fails if the package contains dev/test GitHub App markers or omits the configured maintainer App identifiers. The script relies on `gh` being authenticated for this repository.
 
 Expected release gate behavior:
 
 - `ci.yml` runs `pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, and
   `pnpm test:e2e` on pushes to `main` and pull requests, split into parallel
   fast-path and e2e jobs.
-- `release.yml` installs Playwright Chromium, re-runs `pnpm verify:release`, and then runs `pnpm zip`.
+- `release.yml` installs Playwright Chromium, re-runs `pnpm verify:release`, and then runs `pnpm zip:checked`.
 - `release.yml` does not generate Chrome Web Store screenshots, so `pnpm cws:assets` remains a manual pre-submission step when visuals change.
 - `pnpm test:e2e` no longer mutates `docs/chrome-web-store-assets/`; the screenshot capture spec is scoped to a separate `capture` Playwright project that only `pnpm cws:assets` runs.
 
@@ -71,7 +71,7 @@ Expected release gate behavior:
 1. Run `pnpm icons:render` if the SVG icon changed.
 2. Run `pnpm verify:release`.
 3. Run `pnpm cws:assets` if screenshots need to be refreshed for this submission.
-4. Run `pnpm zip` after the checks above pass.
+4. Run `pnpm zip:release` after the checks above pass. Do not upload a package created by plain `pnpm zip`.
 5. Complete the [version-alignment
    preflight](#version-alignment-preflight).
 6. Upload `.output/github-pulls-show-reviewers-<version>-chrome.zip` to the Chrome Web Store dashboard.

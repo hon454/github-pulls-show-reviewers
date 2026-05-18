@@ -109,10 +109,10 @@ Before release packaging or store submission, run:
 
 ```bash
 pnpm verify:release
-pnpm zip
+pnpm zip:release
 ```
 
-`pnpm zip` produces an inspectable build for local verification. Production packaging for the Chrome Web Store uses `pnpm zip:release`, which is a maintainer-only flow documented in [CONTRIBUTING.md](./CONTRIBUTING.md).
+`pnpm zip` produces an inspectable local build only. Production packaging for the Chrome Web Store uses `pnpm zip:release`, which loads the maintainer GitHub App identifiers and verifies the final zip before upload.
 
 For repository workflow, branch naming, commit style, and pull request requirements, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
