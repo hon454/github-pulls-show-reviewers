@@ -63,8 +63,15 @@ export function ensureReviewerStyles(): void {
       width: 24px;
       height: 24px;
       border-radius: 50%;
-      box-shadow: 0 0 0 2px var(--ghpsr-border-color, transparent);
       margin-right: 2px;
+    }
+    .ghpsr-avatar::before {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      border: 2px solid var(--ghpsr-border-color, transparent);
+      border-radius: 50%;
+      pointer-events: none;
     }
     .ghpsr-avatar-img,
     .ghpsr-initials {

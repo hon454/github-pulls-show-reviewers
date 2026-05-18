@@ -308,6 +308,15 @@ describe("renderReviewers", () => {
     expect(css).toContain(".ghpsr-chip:focus-visible");
     expect(css).toContain("outline:");
   });
+
+  it("keeps reviewer avatar state rings independent from clickable focus styles", () => {
+    ensureReviewerStyles();
+    const styleEl = document.querySelector("[data-ghpsr-style]");
+    const css = styleEl?.textContent ?? "";
+    expect(css).toContain(".ghpsr-avatar::before");
+    expect(css).toContain("border: 2px solid var(--ghpsr-border-color");
+    expect(css).not.toContain("box-shadow: 0 0 0 2px var(--ghpsr-border-color");
+  });
 });
 
 describe("renderReviewers — (isRequested, state) display truth table", () => {
