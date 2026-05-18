@@ -102,7 +102,7 @@ function coverageField(
 
   return field(
     "Installation coverage",
-    "Maybe covered; installation repository snapshot is incomplete",
+    "Maybe covered - local snapshot truncated",
     "warning",
   );
 }
@@ -110,11 +110,9 @@ function coverageField(
 function endpointResultField(
   result: RepositoryValidationResult,
 ): RepositoryDiagnosticField {
-  const httpStatus = result.httpStatus ? ` (HTTP ${result.httpStatus})` : "";
-
   return field(
     "Endpoint result",
-    `${endpointOutcomeLabel(result.outcome)}${httpStatus}`,
+    endpointOutcomeLabel(result.outcome),
     endpointOutcomeTone(result.outcome),
   );
 }

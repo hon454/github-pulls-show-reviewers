@@ -68,7 +68,7 @@ describe("repository diagnostics view model", () => {
         { label: "Installation coverage", value: "Covered", tone: "success" },
         {
           label: "Endpoint result",
-          value: "Accessible (HTTP 200)",
+          value: "Accessible",
           tone: "success",
         },
       ],
@@ -131,12 +131,12 @@ describe("repository diagnostics view model", () => {
         { label: "Auth mode", value: "Matched account token", tone: "success" },
         {
           label: "Installation coverage",
-          value: "Maybe covered; installation repository snapshot is incomplete",
+          value: "Maybe covered - local snapshot truncated",
           tone: "warning",
         },
         {
           label: "Endpoint result",
-          value: "Unauthenticated rate limit (HTTP 403)",
+          value: "Unauthenticated rate limit",
           tone: "error",
         },
         {
