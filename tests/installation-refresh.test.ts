@@ -86,11 +86,17 @@ afterEach(() => {
 describe("createInstallationRefreshService", () => {
   it("fetches installations + selected-repo lists with the account token and persists them", async () => {
     getAccountByIdMock.mockResolvedValue(makeAccount({ token: "ghu_live" }));
-    fetchUserInstallationsMock.mockResolvedValue([
-      makeApiInstallation({ id: 1, login: "acme", repositorySelection: "selected" }),
-      makeApiInstallation({ id: 2, login: "octocat", repositorySelection: "all" }),
-    ]);
-    fetchInstallationRepositoriesMock.mockResolvedValue(["acme/widgets", "acme/legacy"]);
+    fetchUserInstallationsMock.mockResolvedValue({
+      items: [
+        makeApiInstallation({ id: 1, login: "acme", repositorySelection: "selected" }),
+        makeApiInstallation({ id: 2, login: "octocat", repositorySelection: "all" }),
+      ],
+      truncated: false,
+    });
+    fetchInstallationRepositoriesMock.mockResolvedValue({
+      items: ["acme/widgets", "acme/legacy"],
+      truncated: false,
+    });
 
     const service = createInstallationRefreshService({
       refreshCoordinator: refreshCoordinatorMock,
@@ -116,13 +122,52 @@ describe("createInstallationRefreshService", () => {
         id: 1,
         account: { login: "acme", type: "Organization", avatarUrl: null },
         repositorySelection: "selected",
-        repoFullNames: ["acme/widgets", "acme/legacy"],
+        repoSnapshot: {
+          fullNames: ["acme/widgets", "acme/legacy"],
+          completeness: "complete",
+        },
       },
       {
         id: 2,
         account: { login: "octocat", type: "Organization", avatarUrl: null },
         repositorySelection: "all",
-        repoFullNames: null,
+        repoSnapshot: null,
+      },
+    ]);
+  });
+
+  it("persists truncated selected-repository snapshots", async () => {
+    getAccountByIdMock.mockResolvedValue(makeAccount({ token: "ghu_live" }));
+    fetchUserInstallationsMock.mockResolvedValue({
+      items: [
+        makeApiInstallation({ id: 1, login: "acme", repositorySelection: "selected" }),
+      ],
+      truncated: false,
+    });
+    fetchInstallationRepositoriesMock.mockResolvedValue({
+      items: ["acme/widgets"],
+      truncated: true,
+    });
+
+    const service = createInstallationRefreshService({
+      refreshCoordinator: refreshCoordinatorMock,
+    });
+    const outcome = await service.refreshAccountInstallations("acc-1");
+
+    expect(outcome).toEqual({ ok: true });
+    const [, installations] = replaceInstallationsMock.mock.calls[0] as [
+      string,
+      Installation[],
+    ];
+    expect(installations).toEqual([
+      {
+        id: 1,
+        account: { login: "acme", type: "Organization", avatarUrl: null },
+        repositorySelection: "selected",
+        repoSnapshot: {
+          fullNames: ["acme/widgets"],
+          completeness: "truncated",
+        },
       },
     ]);
   });
@@ -161,9 +206,12 @@ describe("createInstallationRefreshService", () => {
       .mockResolvedValueOnce(makeAccount({ token: "ghu_new" }));
     fetchUserInstallationsMock
       .mockRejectedValueOnce(Object.assign(new Error("401"), { status: 401 }))
-      .mockResolvedValueOnce([
-        makeApiInstallation({ id: 7, login: "acme", repositorySelection: "all" }),
-      ]);
+      .mockResolvedValueOnce({
+        items: [
+          makeApiInstallation({ id: 7, login: "acme", repositorySelection: "all" }),
+        ],
+        truncated: false,
+      });
     refreshAccountTokenMock.mockResolvedValue({ ok: true, token: "ghu_new" });
 
     const service = createInstallationRefreshService({
@@ -249,10 +297,16 @@ describe("createInstallationRefreshService", () => {
 
   it("dedupes concurrent refresh calls for the same account into a single API run", async () => {
     getAccountByIdMock.mockResolvedValue(makeAccount());
-    let resolveFetch: (value: ReturnType<typeof makeApiInstallation>[]) => void = () => {};
+    let resolveFetch: (value: {
+      items: ReturnType<typeof makeApiInstallation>[];
+      truncated: boolean;
+    }) => void = () => {};
     fetchUserInstallationsMock.mockImplementation(
       () =>
-        new Promise<ReturnType<typeof makeApiInstallation>[]>((resolve) => {
+        new Promise<{
+          items: ReturnType<typeof makeApiInstallation>[];
+          truncated: boolean;
+        }>((resolve) => {
           resolveFetch = resolve;
         }),
     );
@@ -266,9 +320,12 @@ describe("createInstallationRefreshService", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    resolveFetch([
-      makeApiInstallation({ id: 9, login: "acme", repositorySelection: "all" }),
-    ]);
+    resolveFetch({
+      items: [
+        makeApiInstallation({ id: 9, login: "acme", repositorySelection: "all" }),
+      ],
+      truncated: false,
+    });
 
     const [outcomeA, outcomeB] = await Promise.all([a, b]);
 
@@ -281,7 +338,7 @@ describe("createInstallationRefreshService", () => {
 
   it("starts a fresh refresh for the same account after the previous one settles", async () => {
     getAccountByIdMock.mockResolvedValue(makeAccount());
-    fetchUserInstallationsMock.mockResolvedValue([]);
+    fetchUserInstallationsMock.mockResolvedValue({ items: [], truncated: false });
 
     const service = createInstallationRefreshService({
       refreshCoordinator: refreshCoordinatorMock,

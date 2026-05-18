@@ -21,6 +21,11 @@ const getAccountByIdMock = vi.fn<() => Promise<Account | null>>(
 const removeAccountMock = vi.fn(async () => {});
 const replaceInstallationsMock = vi.fn(async () => {});
 const resolveAccountForRepoMock = vi.fn(async () => null);
+const resolveAccountCoverageForRepoMock = vi.fn<
+  AccountsModuleType["resolveAccountCoverageForRepo"]
+>(async () => ({
+  status: "uncovered",
+}));
 
 const getPreferencesMock = vi.fn(async () => ({
   version: 1 as const,
@@ -60,6 +65,7 @@ vi.mock("../src/storage/accounts", async (importActual) => {
     replaceInstallations: replaceInstallationsMock,
     getAccountById: getAccountByIdMock,
     resolveAccountForRepo: resolveAccountForRepoMock,
+    resolveAccountCoverageForRepo: resolveAccountCoverageForRepoMock,
   };
 });
 
@@ -138,6 +144,7 @@ beforeEach(() => {
   removeAccountMock.mockReset();
   replaceInstallationsMock.mockReset();
   resolveAccountForRepoMock.mockReset();
+  resolveAccountCoverageForRepoMock.mockReset();
   listAccountsMock.mockResolvedValue([]);
   getAccountByIdMock.mockResolvedValue(null);
   removeAccountMock.mockResolvedValue(undefined);
@@ -156,6 +163,7 @@ beforeEach(() => {
     openPullsOnly: true,
   });
   resolveAccountForRepoMock.mockResolvedValue(null);
+  resolveAccountCoverageForRepoMock.mockResolvedValue({ status: "uncovered" });
   validateGitHubRepositoryAccessMock.mockResolvedValue({
     ok: true,
     message: "Repository is accessible.",
@@ -210,6 +218,68 @@ describe("OptionsPage", () => {
     expect(input!.labels).toHaveLength(1);
     expect(input!.labels![0]?.textContent).toContain("Repository");
     expect(input!.labels![0]?.textContent).toContain("owner/name");
+  });
+
+  it("surfaces incomplete selected-installation snapshots in matched diagnostics", async () => {
+    const account: Account = {
+      id: "acc",
+      login: "hon454",
+      avatarUrl: null,
+      token: "ghu_abc",
+      createdAt: 1,
+      installations: [
+        {
+          id: 42,
+          account: { login: "cinev", type: "Organization", avatarUrl: null },
+          repositorySelection: "selected",
+          repoSnapshot: {
+            fullNames: ["cinev/landing"],
+            completeness: "truncated",
+          },
+        },
+      ],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    };
+    resolveAccountCoverageForRepoMock.mockResolvedValueOnce({
+      status: "maybe-covered-truncated",
+      account,
+    });
+    await renderOptionsPage();
+
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-testid="diagnostics-repo"]',
+    )!;
+    const matchedButton = document.querySelector<HTMLButtonElement>(
+      '[data-testid="diagnostics-matched"]',
+    )!;
+
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "cinev/shotloom" } });
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      matchedButton.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(resolveAccountCoverageForRepoMock).toHaveBeenCalledWith(
+      "cinev",
+      "shotloom",
+    );
+    expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledWith(
+      account,
+      "cinev/shotloom",
+    );
+    expect(
+      document.querySelector('[data-testid="diagnostics-status"]')?.textContent,
+    ).toContain("installation repository snapshot is incomplete");
   });
 
   it("renders account cards when accounts are present", async () => {
@@ -269,14 +339,20 @@ describe("OptionsPage", () => {
       .mockRejectedValueOnce(
         new Error("GET /user/installations failed with status 401."),
       )
-      .mockResolvedValueOnce([
-        {
-          id: 42,
-          account: { login: "cinev", type: "Organization", avatarUrl: null },
-          repositorySelection: "selected",
-        },
-      ]);
-    fetchInstallationRepositories.mockResolvedValueOnce(["cinev/shotloom"]);
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 42,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "selected",
+          },
+        ],
+        truncated: false,
+      });
+    fetchInstallationRepositories.mockResolvedValueOnce({
+      items: ["cinev/shotloom"],
+      truncated: false,
+    });
 
     const sendMessageMock = vi
       .fn()
@@ -315,7 +391,10 @@ describe("OptionsPage", () => {
         id: 42,
         account: { login: "cinev", type: "Organization", avatarUrl: null },
         repositorySelection: "selected",
-        repoFullNames: ["cinev/shotloom"],
+        repoSnapshot: {
+          fullNames: ["cinev/shotloom"],
+          completeness: "complete",
+        },
       },
     ]);
   });
@@ -537,7 +616,7 @@ describe("OptionsPage", () => {
       login: "hon454",
       avatarUrl: null,
     });
-    fetchUserInstallations.mockResolvedValue([]);
+    fetchUserInstallations.mockResolvedValue({ items: [], truncated: false });
 
     await act(async () => {
       document

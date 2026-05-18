@@ -3,17 +3,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   upsertAccountByLogin,
   type Account,
-  type Installation,
 } from "../../src/storage/accounts";
 import {
   DeviceFlowError,
   fetchAuthenticatedUser,
-  fetchInstallationRepositories,
-  fetchUserInstallations,
   initiateDeviceFlow,
   pollForAccessToken,
   type DeviceFlowInit,
 } from "../../src/github/auth";
+import { loadAccountInstallations } from "../../src/github/installations";
 
 export type DeviceFlowState =
   | { phase: "idle" }
@@ -194,24 +192,9 @@ async function completeAccountConnect(
   if (isCancelled()) {
     return false;
   }
-  const apiInstallations = await fetchUserInstallations({ token: poll.accessToken });
-  const installations: Installation[] = await Promise.all(
-    apiInstallations.map(async (installation) => {
-      const repoFullNames =
-        installation.repositorySelection === "selected"
-          ? await fetchInstallationRepositories({
-              token: poll.accessToken,
-              installationId: installation.id,
-            })
-          : null;
-      return {
-        id: installation.id,
-        account: installation.account,
-        repositorySelection: installation.repositorySelection,
-        repoFullNames,
-      };
-    }),
-  );
+  const installations = await loadAccountInstallations({
+    token: poll.accessToken,
+  });
   if (isCancelled()) {
     return false;
   }

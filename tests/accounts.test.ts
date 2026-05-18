@@ -151,7 +151,7 @@ describe("accounts storage", () => {
         id: 42,
         account: { login: "hon454", type: "User", avatarUrl: null },
         repositorySelection: "all",
-        repoFullNames: null,
+        repoSnapshot: null,
       },
     ]);
     const [account] = await listAccounts();
@@ -277,7 +277,7 @@ describe("accounts storage", () => {
           id: 42,
           account: { login: "hon454", type: "User", avatarUrl: null },
           repositorySelection: "all",
-          repoFullNames: null,
+          repoSnapshot: null,
         },
       ],
       newAccountId: "acc-should-be-ignored",
@@ -603,6 +603,61 @@ describe("resolveAccountForRepo", () => {
     const { resolveAccountForRepo } = await import("../src/storage/accounts");
     const account = await resolveAccountForRepo("cinev", "shotloom");
     expect(account).not.toBeNull();
+  });
+
+  it("loads legacy selected repoFullNames as a complete canonical repoSnapshot", async () => {
+    await seedAccounts([
+      makeAccount({
+        installations: [
+          {
+            id: 1,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "selected",
+            repoFullNames: ["CINEV/Shotloom"],
+          },
+        ],
+      }),
+    ]);
+    const { listAccounts } = await import("../src/storage/accounts");
+    const [account] = await listAccounts();
+    expect(account.installations[0]).toMatchObject({
+      repositorySelection: "selected",
+      repoSnapshot: {
+        fullNames: ["CINEV/Shotloom"],
+        completeness: "complete",
+      },
+    });
+    expect("repoFullNames" in account.installations[0]).toBe(false);
+  });
+
+  it("reports maybe-covered-truncated for selected snapshots that ended before all repos were loaded", async () => {
+    await seedAccounts([
+      makeAccount({
+        installations: [
+          {
+            id: 1,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "selected",
+            repoSnapshot: {
+              fullNames: ["cinev/landing"],
+              completeness: "truncated",
+            },
+          },
+        ],
+      }),
+    ]);
+    const { resolveAccountCoverageForRepo, resolveAccountForRepo } = await import(
+      "../src/storage/accounts"
+    );
+    await expect(
+      resolveAccountCoverageForRepo("cinev", "shotloom"),
+    ).resolves.toMatchObject({
+      status: "maybe-covered-truncated",
+      account: { id: "acc" },
+    });
+    await expect(resolveAccountForRepo("cinev", "shotloom")).resolves.toMatchObject({
+      id: "acc",
+    });
   });
 
   it("does not match selected installations when repo is absent", async () => {

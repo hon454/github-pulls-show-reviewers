@@ -3,7 +3,7 @@ import { useRef, useState, type CSSProperties } from "react";
 import { validateRepositoryAccessWithAccount } from "../../../src/auth/account-token-refresh";
 import { validateGitHubRepositoryAccess } from "../../../src/github/api";
 import {
-  resolveAccountForRepo,
+  resolveAccountCoverageForRepo,
   type Account,
 } from "../../../src/storage/accounts";
 
@@ -50,7 +50,9 @@ export function DiagnosticsPanel() {
       return;
     }
     await runDiagnostic(async () => {
-      const account = await resolveAccountForRepo(match[1], match[2]);
+      const resolution = await resolveAccountCoverageForRepo(match[1], match[2]);
+      const account =
+        resolution.status === "uncovered" ? null : resolution.account;
       setMatchedAccount(account);
       if (account == null) {
         setStatus({
@@ -63,7 +65,14 @@ export function DiagnosticsPanel() {
         account,
         repository: trimmed,
       });
-      setStatus({ tone: result.ok ? "success" : "error", message: result.message });
+      const truncatedPrefix =
+        resolution.status === "maybe-covered-truncated"
+          ? "The local installation repository snapshot is incomplete, so this account may still cover the repository. "
+          : "";
+      setStatus({
+        tone: result.ok ? "success" : "error",
+        message: `${truncatedPrefix}${result.message}`,
+      });
     });
   }
 

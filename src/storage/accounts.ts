@@ -5,16 +5,67 @@ const ACCOUNT_PROFILE_KEY_PREFIX = "account:profile:";
 const ACCOUNT_AUTH_KEY_PREFIX = "account:auth:";
 const ACCOUNT_INSTALLATIONS_KEY_PREFIX = "account:installations:";
 
-const installationSchema = z.object({
+const installationBaseSchema = z.object({
   id: z.number().int().positive(),
   account: z.object({
     login: z.string(),
     type: z.enum(["User", "Organization"]),
     avatarUrl: z.string().url().nullable(),
   }),
-  repositorySelection: z.enum(["all", "selected"]),
-  repoFullNames: z.array(z.string()).nullable(),
 });
+
+const repoSnapshotSchema = z.object({
+  fullNames: z.array(z.string()),
+  completeness: z.enum(["complete", "truncated"]),
+});
+
+const canonicalInstallationSchema = z.discriminatedUnion("repositorySelection", [
+  installationBaseSchema.extend({
+    repositorySelection: z.literal("all"),
+    repoSnapshot: z.null(),
+  }),
+  installationBaseSchema.extend({
+    repositorySelection: z.literal("selected"),
+    repoSnapshot: repoSnapshotSchema,
+  }),
+]);
+
+const legacyInstallationSchema = z
+  .object({
+    id: z.number().int().positive(),
+    account: z.object({
+      login: z.string(),
+      type: z.enum(["User", "Organization"]),
+      avatarUrl: z.string().url().nullable(),
+    }),
+    repositorySelection: z.enum(["all", "selected"]),
+    repoFullNames: z.array(z.string()).nullable().optional(),
+  })
+  .transform((installation) => {
+    if (installation.repositorySelection === "all") {
+      return {
+        id: installation.id,
+        account: installation.account,
+        repositorySelection: "all" as const,
+        repoSnapshot: null,
+      };
+    }
+
+    return {
+      id: installation.id,
+      account: installation.account,
+      repositorySelection: "selected" as const,
+      repoSnapshot: {
+        fullNames: installation.repoFullNames ?? [],
+        completeness: "complete" as const,
+      },
+    };
+  });
+
+const installationSchema = z.union([
+  canonicalInstallationSchema,
+  legacyInstallationSchema,
+]);
 
 const accountProfileSchema = z.object({
   id: z.string(),
@@ -79,6 +130,10 @@ const extensionSettingsSchemaV2 = z.object({
 export type Installation = z.infer<typeof installationSchema>;
 export type Account = z.infer<typeof accountSchema>;
 export type ExtensionSettings = z.infer<typeof extensionSettingsSchemaV4>;
+export type AccountCoverageResolution =
+  | { status: "covered"; account: Account }
+  | { status: "maybe-covered-truncated"; account: Account }
+  | { status: "uncovered" };
 
 const EMPTY_SETTINGS: ExtensionSettings = { version: 4, accountIds: [] };
 
@@ -445,15 +500,16 @@ export async function updateAccountTokens(
   });
 }
 
-export async function resolveAccountForRepo(
+export async function resolveAccountCoverageForRepo(
   owner: string,
   repo: string,
-): Promise<Account | null> {
+): Promise<AccountCoverageResolution> {
   const normalizedOwner = owner.toLowerCase();
   const normalizedRepo = repo.toLowerCase();
   const normalizedFullName = `${normalizedOwner}/${normalizedRepo}`;
 
   const accounts = await listAccounts();
+  let truncatedCandidate: Account | null = null;
   for (const account of accounts) {
     if (account.invalidated) {
       continue;
@@ -463,13 +519,33 @@ export async function resolveAccountForRepo(
         continue;
       }
       if (installation.repositorySelection === "all") {
-        return account;
+        return { status: "covered", account };
       }
-      const fullNames = installation.repoFullNames ?? [];
-      if (fullNames.some((name) => name.toLowerCase() === normalizedFullName)) {
-        return account;
+      if (
+        installation.repoSnapshot.fullNames.some(
+          (name) => name.toLowerCase() === normalizedFullName,
+        )
+      ) {
+        return { status: "covered", account };
+      }
+      if (
+        installation.repoSnapshot.completeness === "truncated" &&
+        truncatedCandidate == null
+      ) {
+        truncatedCandidate = account;
       }
     }
   }
-  return null;
+  if (truncatedCandidate != null) {
+    return { status: "maybe-covered-truncated", account: truncatedCandidate };
+  }
+  return { status: "uncovered" };
+}
+
+export async function resolveAccountForRepo(
+  owner: string,
+  repo: string,
+): Promise<Account | null> {
+  const resolution = await resolveAccountCoverageForRepo(owner, repo);
+  return resolution.status === "uncovered" ? null : resolution.account;
 }

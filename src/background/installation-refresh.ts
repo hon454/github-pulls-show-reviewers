@@ -1,15 +1,11 @@
 import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import { extractGitHubApiStatus } from "../github/api";
-import {
-  fetchInstallationRepositories,
-  fetchUserInstallations,
-} from "../github/auth";
+import { loadAccountInstallations } from "../github/installations";
 import {
   getAccountById,
   markAccountInvalidated,
   replaceInstallations,
   type Account,
-  type Installation,
 } from "../storage/accounts";
 
 export type InstallationRefreshOutcome =
@@ -26,24 +22,6 @@ export function createInstallationRefreshService(input: {
   const { refreshCoordinator } = input;
   const inFlight = new Map<string, Promise<InstallationRefreshOutcome>>();
 
-  async function loadInstallationsWithToken(token: string): Promise<Installation[]> {
-    const apiInstallations = await fetchUserInstallations({ token });
-    return Promise.all(
-      apiInstallations.map(async (installation): Promise<Installation> => ({
-        id: installation.id,
-        account: installation.account,
-        repositorySelection: installation.repositorySelection,
-        repoFullNames:
-          installation.repositorySelection === "selected"
-            ? await fetchInstallationRepositories({
-                token,
-                installationId: installation.id,
-              })
-            : null,
-      })),
-    );
-  }
-
   async function run(accountId: string): Promise<InstallationRefreshOutcome> {
     const account = await getAccountById(accountId);
     if (account == null) {
@@ -54,7 +32,7 @@ export function createInstallationRefreshService(input: {
     }
 
     try {
-      const installations = await loadInstallationsWithToken(account.token);
+      const installations = await loadAccountInstallations({ token: account.token });
       await replaceInstallations(account.id, installations);
       return { ok: true };
     } catch (error) {
@@ -75,7 +53,9 @@ export function createInstallationRefreshService(input: {
       const refreshed: Account | null = await getAccountById(account.id);
       const tokenForRetry = refreshed?.token ?? refreshOutcome.token;
       try {
-        const installations = await loadInstallationsWithToken(tokenForRetry);
+        const installations = await loadAccountInstallations({
+          token: tokenForRetry,
+        });
         await replaceInstallations(account.id, installations);
         return { ok: true };
       } catch (retryError) {

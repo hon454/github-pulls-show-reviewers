@@ -65,8 +65,7 @@ export function createSelfHealingAccountResolver(input: {
         if (installation.repositorySelection === "all") {
           return true;
         }
-        const fullNames = installation.repoFullNames ?? [];
-        return fullNames.some(
+        return installation.repoSnapshot.fullNames.some(
           (name) => name.toLowerCase() === normalizedFullName,
         );
       });

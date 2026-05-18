@@ -105,6 +105,12 @@ This extension is intentionally narrow. Manual verification should stay focused 
    render.
 4. Visit a third repository in that org; confirm an empty reviewer slot per row
    and a banner prompting to add access.
+5. In the options page, click **Refresh installations**, then run
+   **Check matched account** for one selected repository. Confirm diagnostics
+   reports the matched account result. For unusually large selected
+   installations where GitHub pagination exceeds the local ceiling, diagnostics
+   should say the local installation repository snapshot is incomplete before
+   reporting the account access result.
 
 ### App-uncovered banner
 
