@@ -1,5 +1,4 @@
 import type {
-  GitHubRateLimitSnapshot,
   RepositoryValidationOutcome,
   RepositoryValidationResult,
 } from "../../github/api";
@@ -40,7 +39,7 @@ export function buildMatchedAccountDiagnostic(input: {
     field("Auth mode", "Matched account token", "success"),
     coverageField(input.coverageStatus),
     endpointResultField(input.result),
-    ...rateLimitFields(input.result.rateLimit),
+    ...rateLimitFields(input.result),
   ];
 
   return {
@@ -63,7 +62,7 @@ export function buildNoTokenDiagnostic(input: {
       field("Auth mode", "No token"),
       field("Installation coverage", "Not checked"),
       endpointResultField(input.result),
-      ...rateLimitFields(input.result.rateLimit),
+      ...rateLimitFields(input.result),
     ],
   };
 }
@@ -78,7 +77,7 @@ export function buildUncoveredAccountDiagnostic(
     fields: [
       field("Repository", repository),
       field("Matched account", "None", "error"),
-      field("Auth mode", "Matched account token", "error"),
+      field("Auth mode", "Not checked"),
       field("Installation coverage", "Uncovered", "error"),
       field("Endpoint result", "Not checked"),
     ],
@@ -154,9 +153,8 @@ function endpointOutcomeTone(
   return "error";
 }
 
-function rateLimitFields(
-  rateLimit: GitHubRateLimitSnapshot | undefined,
-): RepositoryDiagnosticField[] {
+function rateLimitFields(result: RepositoryValidationResult): RepositoryDiagnosticField[] {
+  const { rateLimit } = result;
   if (!rateLimit) {
     return [];
   }
@@ -179,7 +177,20 @@ function rateLimitFields(
     return [];
   }
 
-  return [field("Rate limit", segments.join(", "), "error")];
+  return [field("Rate limit", segments.join(", "), rateLimitTone(result))];
+}
+
+function rateLimitTone(
+  result: RepositoryValidationResult,
+): RepositoryDiagnosticTone {
+  if (
+    result.outcome === "unauthenticated-rate-limit" ||
+    result.rateLimit?.remaining === 0
+  ) {
+    return "error";
+  }
+
+  return "neutral";
 }
 
 function formatResetAt(resetAt: number): string {

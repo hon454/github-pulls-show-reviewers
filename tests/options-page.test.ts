@@ -368,6 +368,7 @@ describe("OptionsPage", () => {
     expect(validateGitHubRepositoryAccessMock).not.toHaveBeenCalled();
     const fields = document.querySelector('[data-testid="diagnostics-fields"]');
     expect(fields?.textContent).toContain("Matched accountNone");
+    expect(fields?.textContent).toContain("Auth modeNot checked");
     expect(fields?.textContent).toContain("Installation coverageUncovered");
     expect(fields?.textContent).toContain("Endpoint resultNot checked");
   });

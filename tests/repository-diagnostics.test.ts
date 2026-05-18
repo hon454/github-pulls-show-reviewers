@@ -88,7 +88,7 @@ describe("repository diagnostics view model", () => {
       fields: [
         { label: "Repository", value: "octo/private-repo", tone: "neutral" },
         { label: "Matched account", value: "None", tone: "error" },
-        { label: "Auth mode", value: "Matched account token", tone: "error" },
+        { label: "Auth mode", value: "Not checked", tone: "neutral" },
         { label: "Installation coverage", value: "Uncovered", tone: "error" },
         { label: "Endpoint result", value: "Not checked", tone: "neutral" },
       ],
@@ -223,6 +223,31 @@ describe("repository diagnostics view model", () => {
       label: "Endpoint result",
       value: "GitHub App installation missing",
       tone: "error",
+    });
+  });
+
+  it("keeps non-exhausted rate-limit evidence neutral on unrelated failures", () => {
+    const diagnostic = buildMatchedAccountDiagnostic({
+      repository: "octo/repo",
+      coverageStatus: "covered",
+      account: account(),
+      result: validationResult({
+        ok: false,
+        outcome: "token-not-found",
+        message: "Repository was not found.",
+        rateLimit: {
+          limit: 5000,
+          remaining: 4999,
+          resource: "core",
+          resetAt: null,
+        },
+      }),
+    });
+
+    expect(diagnostic.fields).toContainEqual({
+      label: "Rate limit",
+      value: "4999 of 5000 remaining, resource core",
+      tone: "neutral",
     });
   });
 });
