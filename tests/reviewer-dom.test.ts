@@ -317,6 +317,13 @@ describe("renderReviewers", () => {
     expect(css).toContain("border: 2px solid var(--ghpsr-border-color");
     expect(css).not.toContain("box-shadow: 0 0 0 2px var(--ghpsr-border-color");
   });
+
+  it("renders reviewer avatars on a white base for transparent avatar artwork", () => {
+    ensureReviewerStyles();
+    const styleEl = document.querySelector("[data-ghpsr-style]");
+    const css = styleEl?.textContent ?? "";
+    expect(css).toContain("background: #fff;");
+  });
 });
 
 describe("renderReviewers — (isRequested, state) display truth table", () => {

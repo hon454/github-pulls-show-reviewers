@@ -63,6 +63,7 @@ export function ensureReviewerStyles(): void {
       width: 24px;
       height: 24px;
       border-radius: 50%;
+      background: #fff;
       margin-right: 2px;
     }
     .ghpsr-avatar::before {
@@ -80,6 +81,7 @@ export function ensureReviewerStyles(): void {
       border-radius: 50%;
       display: block;
     }
+    .ghpsr-avatar-img { background: #fff; }
     .ghpsr-initials {
       display: flex;
       align-items: center;
