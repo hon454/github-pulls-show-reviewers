@@ -66,7 +66,7 @@ The options page lets you tune the display without changing the core reviewer-fo
 - Show reviewer avatars only, or expand users into `@login` pills.
 - Show or hide review-state badges.
 - Choose whether reviewer chip links search open PRs only or include closed PRs too.
-- Check account and repository access diagnostics for private repositories.
+- Check account, repository access, installation coverage, and rate-limit diagnostics for private repositories.
 
 ![Display settings and repository diagnostics in the options page](./docs/chrome-web-store-assets/03-options-repository-check.png)
 
