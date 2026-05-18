@@ -1656,6 +1656,85 @@ describe("validateGitHubRepositoryAccess", () => {
     expect(result.message).toContain("unexpected response shape");
     expect(result.message).not.toMatch(/ZodError/);
   });
+
+  it("includes endpoint and status evidence for repository access failures", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "Not Found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await validateGitHubRepositoryAccess(
+      { token: "ghu_example" },
+      "hon454/private-reviewers",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toBe("token-not-found");
+    expect(result.endpoint).toEqual({
+      name: "pulls-list",
+      method: "GET",
+      path: "/repos/hon454/private-reviewers/pulls?per_page=1&state=all",
+    });
+    expect(result.httpStatus).toBe(404);
+    expect(result.rateLimit).toBeUndefined();
+  });
+
+  it("includes unauthenticated rate-limit snapshot evidence when headers are present", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+        status: 403,
+        headers: {
+          "Content-Type": "application/json",
+          "x-ratelimit-limit": "60",
+          "x-ratelimit-remaining": "0",
+          "x-ratelimit-resource": "core",
+          "x-ratelimit-reset": "1710000000",
+        },
+      }),
+    );
+
+    const result = await validateGitHubRepositoryAccess(
+      null,
+      "hon454/github-pulls-show-reviewers",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.authMode).toBe("no-token");
+    expect(result.outcome).toBe("unauthenticated-rate-limit");
+    expect(result.endpoint?.name).toBe("pulls-list");
+    expect(result.httpStatus).toBe(403);
+    expect(result.rateLimit).toEqual({
+      limit: 60,
+      remaining: 0,
+      resource: "core",
+      resetAt: 1710000000,
+    });
+  });
+
+  it("keeps malformed repository responses typed without invented HTTP evidence", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([{ not_a_number: "oops" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await validateGitHubRepositoryAccess(
+      { token: "ghu_example" },
+      "hon454/github-pulls-show-reviewers",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.outcome).toBe("unknown-error");
+    expect(result.endpoint).toBeUndefined();
+    expect(result.httpStatus).toBeUndefined();
+    expect(result.rateLimit).toBeUndefined();
+  });
 });
 
 describe("validateAccountToken", () => {
