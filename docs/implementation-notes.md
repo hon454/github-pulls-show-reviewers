@@ -18,6 +18,10 @@
   one of five guidance states — token expired, App not installed, auth rate
   limit, unauthenticated rate limit, or sign-in required — chosen by severity
   priority across all row failures on the page.
+- The options page repository diagnostics show structured evidence for reviewer
+  access checks: matched account, auth mode, GitHub App installation coverage,
+  endpoint result, and any rate-limit headers GitHub returned for the diagnostic
+  request. Rate-limit snapshots are diagnostic output only and are not persisted.
 
 ## Runtime flow
 

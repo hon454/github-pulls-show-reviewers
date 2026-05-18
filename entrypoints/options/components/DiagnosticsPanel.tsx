@@ -1,20 +1,20 @@
 import { useRef, useState, type CSSProperties } from "react";
 
 import { validateRepositoryAccessWithAccount } from "../../../src/auth/account-token-refresh";
-import { validateGitHubRepositoryAccess } from "../../../src/github/api";
 import {
-  resolveAccountCoverageForRepo,
-  type Account,
-} from "../../../src/storage/accounts";
-
-type Status =
-  | { tone: "neutral" | "success" | "error"; message: string }
-  | null;
+  buildMatchedAccountDiagnostic,
+  buildNoTokenDiagnostic,
+  buildUncoveredAccountDiagnostic,
+  type RepositoryDiagnosticTone,
+  type RepositoryDiagnosticViewModel,
+} from "../../../src/features/repository-diagnostics";
+import { validateGitHubRepositoryAccess } from "../../../src/github/api";
+import { resolveAccountCoverageForRepo } from "../../../src/storage/accounts";
 
 export function DiagnosticsPanel() {
   const [repository, setRepository] = useState("");
-  const [status, setStatus] = useState<Status>(null);
-  const [matchedAccount, setMatchedAccount] = useState<Account | null>(null);
+  const [diagnostic, setDiagnostic] =
+    useState<RepositoryDiagnosticViewModel | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -25,13 +25,18 @@ export function DiagnosticsPanel() {
 
     busyRef.current = true;
     setBusy(true);
-    setStatus({ tone: "neutral", message: "Running diagnostics..." });
+    setDiagnostic({
+      tone: "neutral",
+      message: "Running diagnostics...",
+      fields: [],
+    });
     try {
       await execute();
     } catch (error) {
-      setStatus({
+      setDiagnostic({
         tone: "error",
         message: `Could not run diagnostics. ${errorMessage(error)}`,
+        fields: [],
       });
     } finally {
       busyRef.current = false;
@@ -43,52 +48,52 @@ export function DiagnosticsPanel() {
     const trimmed = repository.trim();
     const match = trimmed.match(/^([^/\s]+)\/([^/\s]+)$/);
     if (!match) {
-      setStatus({
+      setDiagnostic({
         tone: "error",
         message: "Enter a repository as owner/name before running diagnostics.",
+        fields: [],
       });
       return;
     }
     await runDiagnostic(async () => {
       const resolution = await resolveAccountCoverageForRepo(match[1], match[2]);
-      const account =
-        resolution.status === "uncovered" ? null : resolution.account;
-      setMatchedAccount(account);
-      if (account == null) {
-        setStatus({
-          tone: "error",
-          message: `No connected account covers ${trimmed}. Install the GitHub App on the owner.`,
-        });
+      if (resolution.status === "uncovered") {
+        setDiagnostic(
+          buildUncoveredAccountDiagnostic(
+            trimmed,
+            `No connected account covers ${trimmed}. Install the GitHub App on the owner.`,
+          ),
+        );
         return;
       }
       const result = await validateRepositoryAccessWithAccount({
-        account,
+        account: resolution.account,
         repository: trimmed,
       });
-      const truncatedPrefix =
-        resolution.status === "maybe-covered-truncated"
-          ? "The local installation repository snapshot is incomplete, so this account may still cover the repository. "
-          : "";
-      setStatus({
-        tone: result.ok ? "success" : "error",
-        message: `${truncatedPrefix}${result.message}`,
-      });
+      setDiagnostic(
+        buildMatchedAccountDiagnostic({
+          repository: trimmed,
+          coverageStatus: resolution.status,
+          account: resolution.account,
+          result,
+        }),
+      );
     });
   }
 
   async function runNoToken() {
     const trimmed = repository.trim();
     if (!trimmed) {
-      setStatus({
+      setDiagnostic({
         tone: "error",
         message: "Enter a repository before running the no-token check.",
+        fields: [],
       });
       return;
     }
-    setMatchedAccount(null);
     await runDiagnostic(async () => {
       const result = await validateGitHubRepositoryAccess(null, trimmed);
-      setStatus({ tone: result.ok ? "success" : "error", message: result.message });
+      setDiagnostic(buildNoTokenDiagnostic({ repository: trimmed, result }));
     });
   }
 
@@ -127,18 +132,34 @@ export function DiagnosticsPanel() {
           Check no-token path
         </button>
       </div>
-      {matchedAccount ? (
-        <p style={styles.hint}>Matched account: @{matchedAccount.login}.</p>
-      ) : null}
-      {status ? (
-        <p
-          style={{ ...styles.hint, color: toneColor(status.tone) }}
-          role="status"
-          aria-live="polite"
-          data-testid="diagnostics-status"
-        >
-          {status.message}
-        </p>
+      {diagnostic ? (
+        <>
+          <p
+            style={{ ...styles.hint, color: toneColor(diagnostic.tone) }}
+            role="status"
+            aria-live="polite"
+            data-testid="diagnostics-status"
+          >
+            {diagnostic.message}
+          </p>
+          {diagnostic.fields.length > 0 ? (
+            <dl style={styles.diagnosticFields} data-testid="diagnostics-fields">
+              {diagnostic.fields.map((field) => (
+                <div key={field.label} style={styles.diagnosticField}>
+                  <dt style={styles.diagnosticLabel}>{field.label}</dt>
+                  <dd
+                    style={{
+                      ...styles.diagnosticValue,
+                      color: toneColor(field.tone),
+                    }}
+                  >
+                    {field.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : null}
+        </>
       ) : null}
     </section>
   );
@@ -150,8 +171,9 @@ function errorMessage(error: unknown): string {
     : "Please try again.";
 }
 
-function toneColor(tone: "neutral" | "success" | "error"): string {
+function toneColor(tone: RepositoryDiagnosticTone): string {
   if (tone === "success") return "#1a7f37";
+  if (tone === "warning") return "#9a6700";
   if (tone === "error") return "#cf222e";
   return "#52463b";
 }
@@ -182,6 +204,25 @@ const styles: Record<string, CSSProperties> = {
   },
   actions: { display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" },
   hint: { fontSize: 13, color: "#52463b", marginTop: 12 },
+  diagnosticFields: {
+    display: "grid",
+    gridTemplateColumns: "max-content minmax(0, 1fr)",
+    gap: "8px 12px",
+    margin: "12px 0 0",
+    fontSize: 13,
+  },
+  diagnosticField: {
+    display: "contents",
+  },
+  diagnosticLabel: {
+    color: "#6e5f4f",
+    fontWeight: 700,
+  },
+  diagnosticValue: {
+    margin: 0,
+    minWidth: 0,
+    overflowWrap: "anywhere",
+  },
   primaryButton: {
     border: 0,
     borderRadius: 999,

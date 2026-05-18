@@ -109,8 +109,8 @@ This extension is intentionally narrow. Manual verification should stay focused 
    **Check matched account** for one selected repository. Confirm diagnostics
    reports the matched account result. For unusually large selected
    installations where GitHub pagination exceeds the local ceiling, diagnostics
-   should say the local installation repository snapshot is incomplete before
-   reporting the account access result.
+   should show `Installation coverage` as
+   `Maybe covered - local snapshot truncated` alongside the endpoint result.
 
 ### App-uncovered banner
 

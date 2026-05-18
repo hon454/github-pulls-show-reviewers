@@ -4,6 +4,7 @@ import { act, createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as GitHubApiModule from "../src/github/api";
+import type { RepositoryValidationResult } from "../src/github/api";
 import type { Account } from "../src/storage/accounts";
 import type * as AccountsModule from "../src/storage/accounts";
 
@@ -91,10 +92,9 @@ vi.mock("../src/github/auth", () => ({
   DeviceFlowError: class extends Error {},
 }));
 
-const validateGitHubRepositoryAccessMock = vi.fn(async () => ({
-  ok: true,
-  message: "Repository is accessible.",
-}));
+const validateGitHubRepositoryAccessMock = vi.fn(async () =>
+  validationResult({ message: "Repository is accessible." }),
+);
 
 vi.mock("../src/github/api", async (importActual) => ({
   ...(await importActual<GitHubApiModuleType>()),
@@ -134,6 +134,38 @@ async function renderOptionsPageInStrictMode() {
   });
 }
 
+function account(partial: Partial<Account> = {}): Account {
+  return {
+    id: "acc",
+    login: "hon454",
+    avatarUrl: null,
+    token: "ghu_abc",
+    createdAt: 1,
+    installations: [],
+    installationsRefreshedAt: 1,
+    invalidated: false,
+    invalidatedReason: null,
+    refreshToken: null,
+    expiresAt: null,
+    refreshTokenExpiresAt: null,
+    ...partial,
+  };
+}
+
+function validationResult(
+  partial: Partial<RepositoryValidationResult> = {},
+): RepositoryValidationResult {
+  return {
+    ok: true,
+    authMode: "token",
+    outcome: "accessible",
+    message: "Repository diagnostics checked pull #12 in cinev/shotloom.",
+    fullName: "cinev/shotloom",
+    pullNumber: "12",
+    ...partial,
+  } as RepositoryValidationResult;
+}
+
 beforeEach(() => {
   // `vi.mock` factory results are cached across `vi.resetModules()` in
   // this file (module cache is reset but factory outputs are reused), so
@@ -164,10 +196,9 @@ beforeEach(() => {
   });
   resolveAccountForRepoMock.mockResolvedValue(null);
   resolveAccountCoverageForRepoMock.mockResolvedValue({ status: "uncovered" });
-  validateGitHubRepositoryAccessMock.mockResolvedValue({
-    ok: true,
-    message: "Repository is accessible.",
-  });
+  validateGitHubRepositoryAccessMock.mockResolvedValue(
+    validationResult({ message: "Repository is accessible." }),
+  );
   vi.stubGlobal("browser", {
     runtime: {
       sendMessage: vi.fn(),
@@ -221,12 +252,7 @@ describe("OptionsPage", () => {
   });
 
   it("surfaces incomplete selected-installation snapshots in matched diagnostics", async () => {
-    const account: Account = {
-      id: "acc",
-      login: "hon454",
-      avatarUrl: null,
-      token: "ghu_abc",
-      createdAt: 1,
+    const matchedAccount = account({
       installations: [
         {
           id: 42,
@@ -238,16 +264,10 @@ describe("OptionsPage", () => {
           },
         },
       ],
-      installationsRefreshedAt: 1,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: null,
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
-    };
+    });
     resolveAccountCoverageForRepoMock.mockResolvedValueOnce({
       status: "maybe-covered-truncated",
-      account,
+      account: matchedAccount,
     });
     await renderOptionsPage();
 
@@ -274,12 +294,130 @@ describe("OptionsPage", () => {
       "shotloom",
     );
     expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledWith(
-      account,
+      matchedAccount,
       "cinev/shotloom",
     );
     expect(
+      document.querySelector('[data-testid="diagnostics-fields"]')?.textContent,
+    ).toContain("Installation coverageMaybe covered - local snapshot truncated");
+  });
+
+  it("renders structured diagnostics for a matched account success", async () => {
+    const matchedAccount = account();
+    resolveAccountCoverageForRepoMock.mockResolvedValueOnce({
+      status: "covered",
+      account: matchedAccount,
+    });
+    validateGitHubRepositoryAccessMock.mockResolvedValueOnce(
+      validationResult(),
+    );
+    await renderOptionsPage();
+
+    await act(async () => {
+      fireEvent.change(
+        document.querySelector<HTMLInputElement>(
+          '[data-testid="diagnostics-repo"]',
+        )!,
+        { target: { value: "cinev/shotloom" } },
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="diagnostics-matched"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(
       document.querySelector('[data-testid="diagnostics-status"]')?.textContent,
-    ).toContain("installation repository snapshot is incomplete");
+    ).toContain("checked pull #12");
+    const fields = document.querySelector('[data-testid="diagnostics-fields"]');
+    expect(fields?.textContent).toContain("Matched account@hon454");
+    expect(fields?.textContent).toContain("Auth modeMatched account token");
+    expect(fields?.textContent).toContain("Installation coverageCovered");
+    expect(fields?.textContent).toContain("Endpoint resultAccessible");
+  });
+
+  it("renders uncovered installation diagnostics without repository validation", async () => {
+    resolveAccountCoverageForRepoMock.mockResolvedValueOnce({
+      status: "uncovered",
+    });
+    await renderOptionsPage();
+
+    await act(async () => {
+      fireEvent.change(
+        document.querySelector<HTMLInputElement>(
+          '[data-testid="diagnostics-repo"]',
+        )!,
+        { target: { value: "cinev/shotloom" } },
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="diagnostics-matched"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(validateGitHubRepositoryAccessMock).not.toHaveBeenCalled();
+    const fields = document.querySelector('[data-testid="diagnostics-fields"]');
+    expect(fields?.textContent).toContain("Matched accountNone");
+    expect(fields?.textContent).toContain("Auth modeNot checked");
+    expect(fields?.textContent).toContain("Installation coverageUncovered");
+    expect(fields?.textContent).toContain("Endpoint resultNot checked");
+  });
+
+  it("renders no-token rate-limit diagnostics", async () => {
+    validateGitHubRepositoryAccessMock.mockResolvedValueOnce(
+      validationResult({
+        ok: false,
+        authMode: "no-token",
+        outcome: "unauthenticated-rate-limit",
+        message: "Repository diagnostics hit the unauthenticated rate limit.",
+        fullName: "cinev/shotloom",
+        rateLimit: {
+          limit: 60,
+          remaining: 0,
+          resource: "core",
+          resetAt: 1710000000,
+        },
+      }),
+    );
+    await renderOptionsPage();
+
+    await act(async () => {
+      fireEvent.change(
+        document.querySelector<HTMLInputElement>(
+          '[data-testid="diagnostics-repo"]',
+        )!,
+        { target: { value: "cinev/shotloom" } },
+      );
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="diagnostics-no-token"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const fields = document.querySelector('[data-testid="diagnostics-fields"]');
+    expect(fields?.textContent).toContain("Matched accountNot checked");
+    expect(fields?.textContent).toContain("Auth modeNo token");
+    expect(fields?.textContent).toContain(
+      "Endpoint resultUnauthenticated rate limit",
+    );
+    expect(fields?.textContent).toContain(
+      "Rate limit0 of 60 remaining, resource core, resets at 2024-03-09 16:00 UTC",
+    );
   });
 
   it("renders account cards when accounts are present", async () => {

@@ -117,6 +117,7 @@ export type RepositoryValidationOutcome =
   | "accessible"
   | "invalid-repository"
   | "no-pulls"
+  | "authenticated-rate-limit"
   | "unauthenticated-rate-limit"
   | "unauthenticated-private-like"
   | "token-invalid"
@@ -124,33 +125,43 @@ export type RepositoryValidationOutcome =
   | "token-not-found"
   | "unknown-error";
 
+type RepositoryValidationFailureEvidence = {
+  endpoint?: GitHubEndpointDescriptor;
+  httpStatus?: number;
+  rateLimit?: GitHubRateLimitSnapshot;
+};
+
 export type RepositoryValidationResult =
-  | {
+  | ({
       ok: true;
       authMode: RepositoryValidationAuthMode;
       outcome: "accessible";
       message: string;
       fullName: string;
       pullNumber: string;
-    }
-  | {
+    } & RepositoryValidationFailureEvidence)
+  | ({
       ok: false;
       authMode: RepositoryValidationAuthMode;
       outcome: Exclude<RepositoryValidationOutcome, "accessible">;
       message: string;
       fullName?: string;
       pullNumber?: string;
-    };
+    } & RepositoryValidationFailureEvidence);
 
-type GitHubEndpointName = "pull" | "reviews" | "issue-events" | "pulls-list";
+export type GitHubEndpointName =
+  | "pull"
+  | "reviews"
+  | "issue-events"
+  | "pulls-list";
 
-type GitHubEndpointDescriptor = {
+export type GitHubEndpointDescriptor = {
   name: GitHubEndpointName;
   method: "GET";
   path: string;
 };
 
-type GitHubRateLimitSnapshot = {
+export type GitHubRateLimitSnapshot = {
   limit: number | null;
   remaining: number | null;
   resource: string | null;
@@ -707,6 +718,7 @@ export async function validateGitHubRepositoryAccess(
       outcome: classifyRepositoryValidationOutcome(error, auth),
       fullName,
       message: describeRepositoryValidationError(error, fullName, auth),
+      ...getRepositoryValidationFailureEvidence(error),
     };
   }
 
@@ -758,6 +770,7 @@ export async function validateGitHubRepositoryAccess(
         auth,
         pullNumber,
       ),
+      ...getRepositoryValidationFailureEvidence(error),
     };
   }
 
@@ -1297,6 +1310,10 @@ function classifyRepositoryValidationOutcome(
   const primaryError = getPrimaryGitHubApiError(error);
 
   if (auth.githubToken) {
+    if (primaryError && isRateLimitError(primaryError)) {
+      return "authenticated-rate-limit";
+    }
+
     if (primaryError?.status === 401) {
       return "token-invalid";
     }
@@ -1325,6 +1342,37 @@ function classifyRepositoryValidationOutcome(
   }
 
   return "unknown-error";
+}
+
+function getRepositoryValidationFailureEvidence(
+  error: unknown,
+): RepositoryValidationFailureEvidence {
+  const primaryError = getPrimaryGitHubApiError(error);
+  if (primaryError == null) {
+    return {};
+  }
+
+  return {
+    ...(primaryError.endpoint == null
+      ? {}
+      : { endpoint: primaryError.endpoint }),
+    httpStatus: primaryError.status,
+    ...(hasRateLimitEvidence(primaryError.rateLimit)
+      ? { rateLimit: primaryError.rateLimit }
+      : {}),
+  };
+}
+
+function hasRateLimitEvidence(
+  rateLimit: GitHubRateLimitSnapshot | undefined,
+): rateLimit is GitHubRateLimitSnapshot {
+  return (
+    rateLimit != null &&
+    (rateLimit.limit != null ||
+      rateLimit.remaining != null ||
+      rateLimit.resource != null ||
+      rateLimit.resetAt != null)
+  );
 }
 
 function getPrimaryGitHubApiError(error: unknown): GitHubApiError | null {
