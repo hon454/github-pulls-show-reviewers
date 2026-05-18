@@ -124,6 +124,8 @@ function endpointOutcomeLabel(outcome: RepositoryValidationOutcome): string {
       return "Invalid repository";
     case "no-pulls":
       return "No pull requests found";
+    case "authenticated-rate-limit":
+      return "Signed-in rate limit";
     case "unauthenticated-rate-limit":
       return "Unauthenticated rate limit";
     case "unauthenticated-private-like":
@@ -184,6 +186,7 @@ function rateLimitTone(
   result: RepositoryValidationResult,
 ): RepositoryDiagnosticTone {
   if (
+    result.outcome === "authenticated-rate-limit" ||
     result.outcome === "unauthenticated-rate-limit" ||
     result.rateLimit?.remaining === 0
   ) {

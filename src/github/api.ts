@@ -117,6 +117,7 @@ export type RepositoryValidationOutcome =
   | "accessible"
   | "invalid-repository"
   | "no-pulls"
+  | "authenticated-rate-limit"
   | "unauthenticated-rate-limit"
   | "unauthenticated-private-like"
   | "token-invalid"
@@ -1309,6 +1310,10 @@ function classifyRepositoryValidationOutcome(
   const primaryError = getPrimaryGitHubApiError(error);
 
   if (auth.githubToken) {
+    if (primaryError && isRateLimitError(primaryError)) {
+      return "authenticated-rate-limit";
+    }
+
     if (primaryError?.status === 401) {
       return "token-invalid";
     }

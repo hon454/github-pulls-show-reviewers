@@ -109,7 +109,7 @@ describe("repository diagnostics view model", () => {
       account: account(),
       result: validationResult({
         ok: false,
-        outcome: "unauthenticated-rate-limit",
+        outcome: "authenticated-rate-limit",
         authMode: "token",
         message: "Repository diagnostics failed for octo/repo.",
         fullName: "octo/repo",
@@ -137,7 +137,7 @@ describe("repository diagnostics view model", () => {
         },
         {
           label: "Endpoint result",
-          value: "Unauthenticated rate limit",
+          value: "Signed-in rate limit",
           tone: "error",
         },
         {

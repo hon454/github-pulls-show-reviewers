@@ -1715,6 +1715,39 @@ describe("validateGitHubRepositoryAccess", () => {
     });
   });
 
+  it("classifies signed-in rate-limit diagnostics separately from unknown errors", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+        status: 403,
+        headers: {
+          "Content-Type": "application/json",
+          "x-ratelimit-limit": "5000",
+          "x-ratelimit-remaining": "0",
+          "x-ratelimit-resource": "core",
+          "x-ratelimit-reset": "1710000000",
+        },
+      }),
+    );
+
+    const result = await validateGitHubRepositoryAccess(
+      { token: "ghu_example" },
+      "hon454/github-pulls-show-reviewers",
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.authMode).toBe("token");
+    expect(result.outcome).toBe("authenticated-rate-limit");
+    expect(result.endpoint?.name).toBe("pulls-list");
+    expect(result.httpStatus).toBe(403);
+    expect(result.rateLimit).toEqual({
+      limit: 5000,
+      remaining: 0,
+      resource: "core",
+      resetAt: 1710000000,
+    });
+  });
+
   it("keeps malformed repository responses typed without invented HTTP evidence", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify([{ not_a_number: "oops" }]), {
