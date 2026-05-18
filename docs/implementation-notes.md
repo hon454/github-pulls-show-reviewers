@@ -4,7 +4,9 @@
 
 - Settings store multiple connected GitHub accounts under a single versioned
   `settings` key. Each account carries a user-to-server token plus a cache of
-  its GitHub App installations (`all` or `selected` with explicit full names).
+  its GitHub App installations. `all` installations cover the owner directly;
+  `selected` installations carry an explicit repository snapshot with both
+  full names and a `complete` / `truncated` completeness marker.
 - Device flow runs on the options page. Polling stops when the options tab
   closes; restarts are clean.
 - Content scripts detect PR rows and dispatch a `fetchPullReviewerSummary`
@@ -25,7 +27,10 @@
    request link selector. The selector prefers GitHub's `Link--primary` class
    and falls back to `js-navigation-open` pull links for markup variants where
    the title link keeps navigation behavior but loses the primary-link class.
-4. Resolve the covering account for `owner/repo` via `resolveAccountForRepo`.
+4. Resolve the covering account for `owner/repo` via
+   `resolveAccountForRepo`. Internally, account coverage distinguishes
+   definite coverage from a truncated selected-installation snapshot that may
+   still cover the repository.
 5. Send one `fetchPullReviewerMetadataBatch` message per page/account when the
    page-level metadata cache is cold or stale. The content script includes the
    visible pull numbers in that message. The background reads the first REST
@@ -195,7 +200,17 @@ snapshot is in-memory only — it is never persisted.
 ## Stale GitHub App installation self-healing
 
 - `resolveAccountForRepo` reads the locally cached installations snapshot, so a repo added to an existing installation outside the extension can look uncovered until the next manual `Refresh installations` click.
-- `createSelfHealingAccountResolver` (`src/features/reviewers/account-resolution.ts`) wraps the resolution: when the cached lookup misses, it scans for accounts that own a `selected` installation on the same owner but do not list the repo, then sends a `refreshAccountInstallations` message to the background and re-runs the resolution.
+- Selected-installation snapshots record whether GitHub pagination completed.
+  When the local page ceiling is reached while a `next` link still exists, the
+  snapshot is marked `truncated`. A repository absent from a truncated snapshot
+  is treated as maybe covered, so the extension uses that account token and lets
+  the real repository API response decide access instead of silently falling
+  back to uncovered guidance.
+- Account installation-list pagination is stricter: if the account-level
+  `/user/installations` list hits the local page ceiling while a `next` link
+  still exists, the refresh fails without replacing the previous installation
+  snapshot because omitted installations cannot be tied to an owner.
+- `createSelfHealingAccountResolver` (`src/features/reviewers/account-resolution.ts`) wraps the resolution: when a complete cached selected-installation lookup misses, it scans for accounts that own a `selected` installation on the same owner but do not list the repo, then sends a `refreshAccountInstallations` message to the background and re-runs the resolution.
 - The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. Tokens never enter the content-script context.
 - Each candidate is refreshed at most once per page session. A successful refresh writes to `account:installations:*`, which the existing `accountsChange` storage listener uses to clear the row cache and re-render covered rows transparently.
 - Genuinely uncovered repos still flow into the `app-uncovered` /
@@ -203,6 +218,9 @@ snapshot is in-memory only — it is never persisted.
   connected fallback account is available, uncovered private repositories are
   reported through the signed-in `app-uncovered` path rather than the no-account
   sign-in path.
+- Options diagnostics uses the same coverage resolution and includes an
+  incomplete selected-installation snapshot warning alongside the matched
+  account access result.
 
 ## Next implementation targets
 

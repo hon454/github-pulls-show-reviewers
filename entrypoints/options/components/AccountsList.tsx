@@ -1,15 +1,11 @@
 import { useRef, useState, type CSSProperties } from "react";
 
 import { retryWithAccountRefresh } from "../../../src/auth/account-token-refresh";
-import {
-  fetchInstallationRepositories,
-  fetchUserInstallations,
-} from "../../../src/github/auth";
+import { loadAccountInstallations } from "../../../src/github/installations";
 import {
   removeAccount,
   replaceInstallations,
   type Account,
-  type Installation,
 } from "../../../src/storage/accounts";
 
 type Props = {
@@ -68,21 +64,7 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
             throw new Error("Account token is required to refresh installations.");
           }
 
-          const apiInstallations = await fetchUserInstallations({ token });
-          return Promise.all(
-            apiInstallations.map(async (installation): Promise<Installation> => ({
-              id: installation.id,
-              account: installation.account,
-              repositorySelection: installation.repositorySelection,
-              repoFullNames:
-                installation.repositorySelection === "selected"
-                  ? await fetchInstallationRepositories({
-                      token,
-                      installationId: installation.id,
-                    })
-                  : null,
-            })),
-          );
+          return loadAccountInstallations({ token });
         },
       });
       await replaceInstallations(account.id, installations);

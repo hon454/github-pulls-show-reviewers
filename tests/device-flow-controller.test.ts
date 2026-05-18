@@ -101,7 +101,10 @@ describe("useDeviceFlowController", () => {
       login: "hon454",
       avatarUrl: null,
     });
-    (auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
 
     const onConnected = vi.fn();
     const { result } = renderHook(() =>
@@ -275,7 +278,10 @@ describe("useDeviceFlowController", () => {
           resolveUser = resolve;
         }),
     );
-    (auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
 
     const onConnected = vi.fn();
     const { result } = renderHook(() =>

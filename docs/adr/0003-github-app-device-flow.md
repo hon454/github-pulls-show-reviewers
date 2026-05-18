@@ -1,6 +1,6 @@
 # ADR 0003: GitHub App + Device Flow
 
-- Status: Accepted — token lifecycle amended by [ADR 0004](./0004-github-app-token-refresh.md)
+- Status: Accepted — token lifecycle amended by [ADR 0004](./0004-github-app-token-refresh.md); installation-cache completeness amended on 2026-05-18
 - Date: 2026-04-21
 
 ## Context
@@ -20,11 +20,15 @@ Ship a maintainer-owned GitHub App plus OAuth Device Flow.
 
 - Store multiple accounts in `browser.storage.local` under a single versioned
   `settings` key. Each account caches its installations (`all` or `selected`
-  with explicit full names).
+  with explicit full names). Selected-installation repository snapshots record
+  whether repository pagination completed.
 - Run device code polling on the options page because MV3 service workers
   unload on idle.
 - Resolve repository access via `resolveAccountForRepo(owner, repo)` using
-  the cached installations — no user-typed scope patterns.
+  the cached installations — no user-typed scope patterns. A selected
+  installation with a truncated repository snapshot is non-authoritative for
+  missing repositories on that owner, so the extension may use that account and
+  let the repository API response decide access.
 - Remove all PAT-era code, storage, copy, and tests.
 - Preserve the no-token public-repository path from [ADR 0001](./0001-keep-no-token-support-for-public-repositories.md).
 
@@ -35,6 +39,10 @@ Ship a maintainer-owned GitHub App plus OAuth Device Flow.
   acceptance is the single gate.
 - Installation data gives authoritative coverage rather than relying on user
   scope patterns.
+- Completeness markers preserve that authority boundary: complete snapshots can
+  rule out a missing selected repository, truncated selected-repository
+  snapshots can only say "maybe covered", and truncated account-level
+  installation lists fail refresh instead of replacing known state.
 - The flow never needs a client secret: GitHub's device-flow grant-type
   exchange does not require one, and the extension stays purely client-side.
 - Multi-account storage matches how GitHub itself models access and avoids a
@@ -47,6 +55,8 @@ Ship a maintainer-owned GitHub App plus OAuth Device Flow.
 - Narrower scope, smaller blast radius.
 - No per-token SSO authorization dance.
 - Installation-based matching is authoritative and easy to refresh.
+- Large selected-installation repository lists degrade to API-verified access
+  instead of false uncovered guidance when local pagination is incomplete.
 - Fewer moving pieces on the rendering side: row-level failure text goes away;
   a single banner handles install guidance.
 
@@ -54,6 +64,10 @@ Ship a maintainer-owned GitHub App plus OAuth Device Flow.
 
 - Some organizations require admin approval for GitHub App installation. Users
   blocked by strict policies rely on the no-token public path.
+- Accounts with more installations than the local pagination ceiling cannot
+  refresh their installation cache until the ceiling is raised or the API
+  result fits inside it. The extension keeps the previous cache rather than
+  persisting a partial account-level installation list.
 - User-to-server tokens have no refresh in a pure-client setting (the refresh
   endpoint requires a client secret). Users sign in again when a token is
   revoked — detected lazily and surfaced through the banner and options page.

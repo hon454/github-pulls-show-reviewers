@@ -180,13 +180,46 @@ describe("fetchUserInstallations", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(fixture("user-installations.json")),
     );
-    const installations = await fetchUserInstallations({ token: "ghu_abc" });
+    const result = await fetchUserInstallations({ token: "ghu_abc" });
+    const installations = result.items;
+    expect(result.truncated).toBe(false);
     expect(installations).toHaveLength(2);
     expect(installations[0]).toMatchObject({
       id: 12345,
       repositorySelection: "all",
     });
     expect(installations[0].account.login).toBe("hon454");
+  });
+
+  it("marks installation pagination truncated when the ceiling leaves a next page", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    for (let page = 1; page <= 10; page++) {
+      fetchMock.mockResolvedValueOnce(
+        paginatedResponse(
+          {
+            total_count: 1_001,
+            installations: [
+              {
+                id: page,
+                account: {
+                  login: `org-${page}`,
+                  type: "Organization",
+                  avatar_url: null,
+                },
+                repository_selection: "all",
+              },
+            ],
+          },
+          `https://api.github.com/user/installations?page=${page + 1}&per_page=100`,
+        ),
+      );
+    }
+
+    const result = await fetchUserInstallations({ token: "ghu_abc" });
+
+    expect(result.items).toHaveLength(10);
+    expect(result.truncated).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 });
 
@@ -195,14 +228,17 @@ describe("fetchInstallationRepositories", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse(fixture("installation-repositories.json")),
     );
-    const names = await fetchInstallationRepositories({
+    const result = await fetchInstallationRepositories({
       token: "ghu_abc",
       installationId: 67890,
     });
-    expect(names).toEqual(["cinev/shotloom", "cinev/landing"]);
+    expect(result).toEqual({
+      items: ["cinev/shotloom", "cinev/landing"],
+      truncated: false,
+    });
   });
 
-  it("follows pagination up to the 10-page ceiling", async () => {
+  it("marks selected-repository pagination truncated when the ceiling leaves a next page", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     for (let page = 1; page <= 10; page++) {
       fetchMock.mockResolvedValueOnce(
@@ -219,7 +255,8 @@ describe("fetchInstallationRepositories", () => {
       token: "ghu_abc",
       installationId: 1,
     });
-    expect(names).toHaveLength(10);
+    expect(names.items).toHaveLength(10);
+    expect(names.truncated).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 

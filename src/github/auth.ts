@@ -412,12 +412,17 @@ export type ApiInstallation = {
   repositorySelection: "all" | "selected";
 };
 
+export type PaginatedResult<T> = {
+  items: T[];
+  truncated: boolean;
+};
+
 export const MAX_INSTALLATION_PAGES = 10;
 
 export async function fetchUserInstallations(input: {
   token: string;
   signal?: AbortSignal;
-}): Promise<ApiInstallation[]> {
+}): Promise<PaginatedResult<ApiInstallation>> {
   const results: ApiInstallation[] = [];
   let url: string | null =
     "https://api.github.com/user/installations?per_page=100";
@@ -454,7 +459,7 @@ export async function fetchUserInstallations(input: {
     }
     url = parseNextLink(response.headers.get("link"));
   }
-  return results;
+  return { items: results, truncated: url != null };
 }
 
 const installationRepositoriesSchema = z.object({
@@ -466,7 +471,7 @@ export async function fetchInstallationRepositories(input: {
   token: string;
   installationId: number;
   signal?: AbortSignal;
-}): Promise<string[]> {
+}): Promise<PaginatedResult<string>> {
   const results: string[] = [];
   let url: string | null = `https://api.github.com/user/installations/${input.installationId}/repositories?per_page=100`;
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
@@ -493,5 +498,5 @@ export async function fetchInstallationRepositories(input: {
     }
     url = parseNextLink(response.headers.get("link"));
   }
-  return results;
+  return { items: results, truncated: url != null };
 }

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-04-24
+Last updated: 2026-05-18
 
 This is the canonical published privacy policy for the Chrome Web Store listing.
 The public policy URL is
@@ -34,8 +34,9 @@ To provide its reviewer visibility feature, the extension may access:
   across `account:profile:*`, `account:auth:*`, and
   `account:installations:*` keys. These records contain the GitHub login,
   avatar URL, creation timestamp, user-to-server access token, refresh token,
-  token expiry timestamps, cached GitHub App installations, and invalidation
-  state. Entries live there until the user removes the account.
+  token expiry timestamps, cached GitHub App installations, selected-repository
+  snapshot names plus whether those snapshots were fully paginated, and
+  invalidation state. Entries live there until the user removes the account.
 - Display preferences are stored locally in `browser.storage.local` under a
   separate `preferences` key. That record currently stores whether review-state
   badges stay visible, whether reviewer names expand into text pills, and
