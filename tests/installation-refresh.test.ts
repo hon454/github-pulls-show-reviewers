@@ -172,6 +172,25 @@ describe("createInstallationRefreshService", () => {
     ]);
   });
 
+  it("does not persist when the account installation list is truncated", async () => {
+    getAccountByIdMock.mockResolvedValue(makeAccount({ token: "ghu_live" }));
+    fetchUserInstallationsMock.mockResolvedValue({
+      items: [
+        makeApiInstallation({ id: 1, login: "acme", repositorySelection: "all" }),
+      ],
+      truncated: true,
+    });
+
+    const service = createInstallationRefreshService({
+      refreshCoordinator: refreshCoordinatorMock,
+    });
+    const outcome = await service.refreshAccountInstallations("acc-1");
+
+    expect(outcome).toEqual({ ok: false, reason: "failed" });
+    expect(fetchInstallationRepositoriesMock).not.toHaveBeenCalled();
+    expect(replaceInstallationsMock).not.toHaveBeenCalled();
+  });
+
   it("returns ok:false reason=no-account when the account has been removed", async () => {
     getAccountByIdMock.mockResolvedValue(null);
 

@@ -30,27 +30,28 @@ const canonicalInstallationSchema = z.discriminatedUnion("repositorySelection", 
   }),
 ]);
 
-const legacyInstallationSchema = z
-  .object({
-    id: z.number().int().positive(),
-    account: z.object({
-      login: z.string(),
-      type: z.enum(["User", "Organization"]),
-      avatarUrl: z.string().url().nullable(),
-    }),
-    repositorySelection: z.enum(["all", "selected"]),
-    repoFullNames: z.array(z.string()).nullable().optional(),
+const legacyAllInstallationSchema = installationBaseSchema
+  .extend({
+    repositorySelection: z.literal("all"),
+    repoFullNames: z.null().optional(),
   })
+  .strict()
   .transform((installation) => {
-    if (installation.repositorySelection === "all") {
-      return {
-        id: installation.id,
-        account: installation.account,
-        repositorySelection: "all" as const,
-        repoSnapshot: null,
-      };
-    }
+    return {
+      id: installation.id,
+      account: installation.account,
+      repositorySelection: "all" as const,
+      repoSnapshot: null,
+    };
+  });
 
+const legacySelectedInstallationSchema = installationBaseSchema
+  .extend({
+    repositorySelection: z.literal("selected"),
+    repoFullNames: z.array(z.string()),
+  })
+  .strict()
+  .transform((installation) => {
     return {
       id: installation.id,
       account: installation.account,
@@ -64,7 +65,8 @@ const legacyInstallationSchema = z
 
 const installationSchema = z.union([
   canonicalInstallationSchema,
-  legacyInstallationSchema,
+  legacyAllInstallationSchema,
+  legacySelectedInstallationSchema,
 ]);
 
 const accountProfileSchema = z.object({

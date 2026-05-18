@@ -630,6 +630,26 @@ describe("resolveAccountForRepo", () => {
     expect("repoFullNames" in account.installations[0]).toBe(false);
   });
 
+  it("rejects malformed canonical selected snapshots instead of treating them as legacy", async () => {
+    await seedAccounts([
+      makeAccount({
+        installations: [
+          {
+            id: 1,
+            account: { login: "cinev", type: "Organization", avatarUrl: null },
+            repositorySelection: "selected",
+            repoSnapshot: {
+              fullNames: "cinev/shotloom",
+              completeness: "complete",
+            },
+          },
+        ],
+      }),
+    ]);
+    const { listAccounts } = await import("../src/storage/accounts");
+    await expect(listAccounts()).resolves.toEqual([]);
+  });
+
   it("reports maybe-covered-truncated for selected snapshots that ended before all repos were loaded", async () => {
     await seedAccounts([
       makeAccount({

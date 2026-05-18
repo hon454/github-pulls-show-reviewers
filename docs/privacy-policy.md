@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-04-24
+Last updated: 2026-05-18
 
 This is the canonical published privacy policy for the Chrome Web Store listing.
 The public policy URL is

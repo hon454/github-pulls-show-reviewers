@@ -206,6 +206,10 @@ snapshot is in-memory only — it is never persisted.
   is treated as maybe covered, so the extension uses that account token and lets
   the real repository API response decide access instead of silently falling
   back to uncovered guidance.
+- Account installation-list pagination is stricter: if the account-level
+  `/user/installations` list hits the local page ceiling while a `next` link
+  still exists, the refresh fails without replacing the previous installation
+  snapshot because omitted installations cannot be tied to an owner.
 - `createSelfHealingAccountResolver` (`src/features/reviewers/account-resolution.ts`) wraps the resolution: when a complete cached selected-installation lookup misses, it scans for accounts that own a `selected` installation on the same owner but do not list the repo, then sends a `refreshAccountInstallations` message to the background and re-runs the resolution.
 - The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. Tokens never enter the content-script context.
 - Each candidate is refreshed at most once per page session. A successful refresh writes to `account:installations:*`, which the existing `accountsChange` storage listener uses to clear the row cache and re-render covered rows transparently.
@@ -214,9 +218,9 @@ snapshot is in-memory only — it is never persisted.
   connected fallback account is available, uncovered private repositories are
   reported through the signed-in `app-uncovered` path rather than the no-account
   sign-in path.
-- Options diagnostics uses the same coverage resolution and reports when a
-  selected-installation snapshot is incomplete before running the matched
-  account access check.
+- Options diagnostics uses the same coverage resolution and includes an
+  incomplete selected-installation snapshot warning alongside the matched
+  account access result.
 
 ## Next implementation targets
 
