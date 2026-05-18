@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildMatchedAccountDiagnostic,
+  buildNoTokenDiagnostic,
   buildUncoveredAccountDiagnostic,
 } from "../src/features/repository-diagnostics";
 import type {
@@ -133,6 +134,49 @@ describe("repository diagnostics view model", () => {
           label: "Installation coverage",
           value: "Maybe covered - local snapshot truncated",
           tone: "warning",
+        },
+        {
+          label: "Endpoint result",
+          value: "Unauthenticated rate limit",
+          tone: "error",
+        },
+        {
+          label: "Rate limit",
+          value: "0 of 60 remaining, resource core, resets at 2024-03-09 16:00 UTC",
+          tone: "error",
+        },
+      ],
+    });
+  });
+
+  it("builds no-token diagnostics with unchecked account and coverage fields", () => {
+    const diagnostic = buildNoTokenDiagnostic({
+      repository: "octo/repo",
+      result: validationResult({
+        ok: false,
+        authMode: "no-token",
+        outcome: "unauthenticated-rate-limit",
+        message: "Repository diagnostics failed for octo/repo.",
+        rateLimit: {
+          limit: 60,
+          remaining: 0,
+          resource: "core",
+          resetAt: 1710000000,
+        },
+      }),
+    });
+
+    expect(diagnostic).toEqual({
+      tone: "error",
+      message: "Repository diagnostics failed for octo/repo.",
+      fields: [
+        { label: "Repository", value: "octo/repo", tone: "neutral" },
+        { label: "Matched account", value: "Not checked", tone: "neutral" },
+        { label: "Auth mode", value: "No token", tone: "neutral" },
+        {
+          label: "Installation coverage",
+          value: "Not checked",
+          tone: "neutral",
         },
         {
           label: "Endpoint result",
