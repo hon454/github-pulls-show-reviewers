@@ -199,6 +199,33 @@ describe("background runtime.onMessage handler", () => {
     expect(response).toEqual({ ok: true });
   });
 
+  it("reports a failed options page open back to the caller", async () => {
+    openOptionsPageMock.mockRejectedValueOnce(new Error("blocked"));
+    const listener = await bootBackground();
+
+    const response = await callListener(
+      listener,
+      { type: "openOptionsPage" },
+      { id: SELF_RUNTIME_ID },
+    );
+
+    expect(openOptionsPageMock).toHaveBeenCalledTimes(1);
+    expect(response).toEqual({ ok: false });
+  });
+
+  it("rejects options page messages from a different extension id", async () => {
+    const listener = await bootBackground();
+
+    const response = await callListener(
+      listener,
+      { type: "openOptionsPage" },
+      { id: "some-other-extension-id" },
+    );
+
+    expect(response).toBeUndefined();
+    expect(openOptionsPageMock).not.toHaveBeenCalled();
+  });
+
   it("rejects valid refresh messages from a different extension id", async () => {
     const listener = await bootBackground();
 
