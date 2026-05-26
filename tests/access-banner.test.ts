@@ -367,15 +367,11 @@ describe("formatBannerMessage", () => {
   it("returns signin-required copy that mentions private repos", () => {
     expect(
       formatBannerMessage({ current: "signin-required", repo: TEST_REPO }),
-    ).toBe(
-      "Sign in with GitHub to see reviewers on private repositories.",
-    );
+    ).toBe("Sign in with GitHub to see reviewers on private repositories.");
   });
 
   it("returns an empty string when current is null", () => {
-    expect(
-      formatBannerMessage({ current: null, repo: TEST_REPO }),
-    ).toBe("");
+    expect(formatBannerMessage({ current: null, repo: TEST_REPO })).toBe("");
   });
 });
 
@@ -385,10 +381,12 @@ describe("banner DOM", () => {
   function setup() {
     document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
     const target = document.querySelector<HTMLElement>(".gh-header")!;
+    const onOpenOptionsPage = vi.fn();
     return mountBanner({
       insertAfter: target,
       installUrl: "https://github.com/apps/test-app/installations/new",
       optionsPageUrl: "chrome-extension://ext-id/options.html",
+      onOpenOptionsPage,
       onDismiss: () => {},
     });
   }
@@ -401,7 +399,11 @@ describe("banner DOM", () => {
 
   it("renders Configure access link for app-uncovered", () => {
     const banner = setup();
-    banner.update({ current: "app-uncovered", dismissed: false, repo: TEST_REPO });
+    banner.update({
+      current: "app-uncovered",
+      dismissed: false,
+      repo: TEST_REPO,
+    });
     const el = document.querySelector("[data-ghpsr-banner]")!;
     expect(el.textContent).toContain("cinev/shotloom");
     expect(el.textContent).toContain("@cinev's GitHub App installation");
@@ -454,6 +456,33 @@ describe("banner DOM", () => {
     );
   });
 
+  it("opens options through the extension runtime when Sign in is clicked", () => {
+    document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
+    const target = document.querySelector<HTMLElement>(".gh-header")!;
+    const onOpenOptionsPage = vi.fn();
+    const banner = mountBanner({
+      insertAfter: target,
+      installUrl: "https://github.com/apps/test-app/installations/new",
+      optionsPageUrl: "chrome-extension://ext-id/options.html",
+      onOpenOptionsPage,
+      onDismiss: () => {},
+    });
+    banner.update({
+      current: "auth-expired",
+      dismissed: false,
+      repo: TEST_REPO,
+    });
+
+    const link = document.querySelector<HTMLAnchorElement>(
+      "[data-ghpsr-banner] a",
+    )!;
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    link.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(onOpenOptionsPage).toHaveBeenCalledTimes(1);
+  });
+
   it("renders no CTA link for auth-rate-limit (passive wait)", () => {
     const banner = setup();
     banner.update({
@@ -498,7 +527,7 @@ describe("banner DOM", () => {
 });
 
 describe("bootAccessBanner", () => {
-  function stubBootGlobals() {
+  function stubBootGlobals(sendMessage = vi.fn(async () => ({ ok: true }))) {
     vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "Iv1.testclient");
     vi.stubGlobal("__GITHUB_APP_SLUG__", "test-reviewer-app");
     vi.stubGlobal("__GITHUB_APP_NAME__", "Test Reviewer App");
@@ -506,13 +535,21 @@ describe("bootAccessBanner", () => {
     vi.stubGlobal("browser", {
       runtime: {
         getURL: (path: string) => `chrome-extension://ext-id${path}`,
+        sendMessage,
       },
     });
+    return { sendMessage };
   }
 
-  async function bootOnPullList() {
-    stubBootGlobals();
-    window.history.replaceState({}, "", "/hon454/github-pulls-show-reviewers/pulls");
+  async function bootOnPullList(input?: {
+    sendMessage?: ReturnType<typeof vi.fn>;
+  }) {
+    stubBootGlobals(input?.sendMessage);
+    window.history.replaceState(
+      {},
+      "",
+      "/hon454/github-pulls-show-reviewers/pulls",
+    );
 
     const invalidationCallbacks: Array<() => void> = [];
     const ctx = {
@@ -536,9 +573,14 @@ describe("bootAccessBanner", () => {
     vi.stubGlobal("browser", {
       runtime: {
         getURL: (path: string) => `chrome-extension://ext-id${path}`,
+        sendMessage: vi.fn(async () => ({ ok: true })),
       },
     });
-    window.history.replaceState({}, "", "/hon454/github-pulls-show-reviewers/pulls");
+    window.history.replaceState(
+      {},
+      "",
+      "/hon454/github-pulls-show-reviewers/pulls",
+    );
 
     const { bootAccessBanner } = await import("../src/features/access-banner");
     const handle = bootAccessBanner({
@@ -608,6 +650,21 @@ describe("bootAccessBanner", () => {
     expect(link?.getAttribute("href")).toBe(
       "https://github.com/apps/test-reviewer-app/installations/new",
     );
+  });
+
+  it("routes Sign in clicks through the background options-page opener", async () => {
+    document.body.innerHTML = `<main id="main"></main>`;
+    const sendMessage = vi.fn(async () => ({ ok: true }));
+
+    const { handle } = await bootOnPullList({ sendMessage });
+    handle.reportFailure("auth-expired");
+    document
+      .querySelector<HTMLAnchorElement>("[data-ghpsr-banner] a")!
+      .dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true }),
+      );
+
+    expect(sendMessage).toHaveBeenCalledWith({ type: "openOptionsPage" });
   });
 
   it("teardown unsubscribes and removes mounted UI", async () => {

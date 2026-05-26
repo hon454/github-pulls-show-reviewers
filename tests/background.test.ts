@@ -56,9 +56,8 @@ vi.mock("../src/storage/accounts", () => ({
 }));
 
 vi.mock("../src/github/api", async () => {
-  const actual = await vi.importActual<typeof GithubApiModule>(
-    "../src/github/api",
-  );
+  const actual =
+    await vi.importActual<typeof GithubApiModule>("../src/github/api");
   return {
     ...actual,
     fetchPullReviewerSummary: fetchPullReviewerSummaryMock,
@@ -100,6 +99,7 @@ function callListener(
 
 let capturedAlarmListener: ((alarm: { name: string }) => void) | null;
 const alarmsCreateMock = vi.fn(async () => undefined);
+const openOptionsPageMock = vi.fn(async () => undefined);
 
 beforeEach(() => {
   vi.resetModules();
@@ -115,6 +115,7 @@ beforeEach(() => {
   createInstallationRefreshServiceMock.mockClear();
   getGitHubAppConfigMock.mockClear();
   alarmsCreateMock.mockClear();
+  openOptionsPageMock.mockClear();
   capturedMessageListener = null;
   capturedAlarmListener = null;
 
@@ -128,7 +129,7 @@ beforeEach(() => {
           capturedMessageListener = listener;
         }),
       },
-      openOptionsPage: vi.fn(),
+      openOptionsPage: openOptionsPageMock,
     },
     action: {
       onClicked: { addListener: vi.fn() },
@@ -185,6 +186,19 @@ describe("background runtime.onMessage handler", () => {
     expect(sync).toBe(true);
   });
 
+  it("opens the options page for extension-originated banner CTA messages", async () => {
+    const listener = await bootBackground();
+
+    const response = await callListener(
+      listener,
+      { type: "openOptionsPage" },
+      { id: SELF_RUNTIME_ID },
+    );
+
+    expect(openOptionsPageMock).toHaveBeenCalledTimes(1);
+    expect(response).toEqual({ ok: true });
+  });
+
   it("rejects valid refresh messages from a different extension id", async () => {
     const listener = await bootBackground();
 
@@ -211,11 +225,9 @@ describe("background runtime.onMessage handler", () => {
       { type: "somethingElse", accountId: "acc-1" },
       { id: SELF_RUNTIME_ID },
     );
-    const notAnObject = await callListener(
-      listener,
-      "refreshAccessToken",
-      { id: SELF_RUNTIME_ID },
-    );
+    const notAnObject = await callListener(listener, "refreshAccessToken", {
+      id: SELF_RUNTIME_ID,
+    });
     const emptyReviewerFetch = await callListener(
       listener,
       {
@@ -374,7 +386,10 @@ describe("background runtime.onMessage handler", () => {
       token: "ghu_old",
       refreshToken: "ghr_old",
     });
-    refreshAccountTokenMock.mockResolvedValueOnce({ ok: false, terminal: false });
+    refreshAccountTokenMock.mockResolvedValueOnce({
+      ok: false,
+      terminal: false,
+    });
     fetchPullReviewerSummaryMock.mockRejectedValueOnce({ status: 401 });
 
     const response = await callListener(

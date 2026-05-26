@@ -1,7 +1,11 @@
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
-import { buildInstallAppUrl, readGitHubAppConfig } from "../../config/github-app";
+import {
+  buildInstallAppUrl,
+  readGitHubAppConfig,
+} from "../../config/github-app";
 import { parsePullListRoute } from "../../github/routes";
+import type { OpenOptionsPageMessage } from "../../runtime/options-page";
 
 import { createBannerAggregator, type BannerAggregator } from "./aggregator";
 import { mountBanner, type BannerMount } from "./dom";
@@ -32,6 +36,16 @@ export function bootAccessBanner(
   const appConfig = appConfigResult.config;
   const installUrl = buildInstallAppUrl(appConfig.slug);
 
+  function openOptionsPage(): void {
+    const message: OpenOptionsPageMessage = { type: "openOptionsPage" };
+    browser.runtime.sendMessage(message).catch((error) => {
+      console.warn(
+        "[ghpsr] Failed to open options page from access banner.",
+        error,
+      );
+    });
+  }
+
   let mount: BannerMount | null = null;
 
   function ensureMountTarget(): HTMLElement | null {
@@ -53,6 +67,7 @@ export function bootAccessBanner(
         insertAfter: target,
         installUrl,
         optionsPageUrl,
+        onOpenOptionsPage: openOptionsPage,
         onDismiss: () => aggregator.dismiss(),
       });
     }
