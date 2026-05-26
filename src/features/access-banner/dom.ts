@@ -27,7 +27,7 @@ export type BannerMount = {
 };
 
 type CtaSpec =
-  | { kind: "link"; label: string; href: string }
+  | { kind: "link"; label: string; href: string; action?: "open-options" }
   | { kind: "none" };
 
 function ctaFor(
@@ -41,7 +41,12 @@ function ctaFor(
     case "auth-expired":
     case "unauth-rate-limit":
     case "signin-required":
-      return { kind: "link", label: "Sign in", href: optionsPageUrl };
+      return {
+        kind: "link",
+        label: "Sign in",
+        href: optionsPageUrl,
+        action: "open-options",
+      };
     case "auth-rate-limit":
       return { kind: "none" };
   }
@@ -51,6 +56,7 @@ export function mountBanner(input: {
   insertAfter: HTMLElement;
   installUrl: string;
   optionsPageUrl: string;
+  onOpenOptionsPage?: () => void;
   onDismiss: () => void;
 }): BannerMount {
   let element: HTMLElement | null = null;
@@ -96,6 +102,12 @@ export function mountBanner(input: {
       link.rel = "noreferrer";
       link.textContent = cta.label;
       link.className = "ghpsr-banner-cta";
+      if (cta.action === "open-options" && input.onOpenOptionsPage) {
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          input.onOpenOptionsPage?.();
+        });
+      }
       element.append(link);
     }
 

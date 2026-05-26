@@ -12,6 +12,10 @@ import {
   isRefreshAccountInstallationsMessage,
   refreshAccountInstallationsMessageSchema,
 } from "../src/runtime/installation-refresh";
+import {
+  isOpenOptionsPageMessage,
+  openOptionsPageMessageSchema,
+} from "../src/runtime/options-page";
 
 describe("reviewer fetch runtime message schemas", () => {
   it("accepts valid fetch-summary messages through the schema-backed guard", () => {
@@ -107,5 +111,24 @@ describe("installation refresh runtime message schema", () => {
       refreshAccountInstallationsMessageSchema.safeParse(message).success,
     ).toBe(false);
     expect(isRefreshAccountInstallationsMessage(message)).toBe(false);
+  });
+});
+
+describe("options page runtime message schema", () => {
+  it("accepts the payload-free open-options message", () => {
+    const message = { type: "openOptionsPage" };
+
+    expect(openOptionsPageMessageSchema.safeParse(message).success).toBe(true);
+    expect(isOpenOptionsPageMessage(message)).toBe(true);
+  });
+
+  it("rejects extra fields on the payload-free open-options message", () => {
+    const message = {
+      type: "openOptionsPage",
+      url: "chrome-extension://other/options.html",
+    };
+
+    expect(openOptionsPageMessageSchema.safeParse(message).success).toBe(false);
+    expect(isOpenOptionsPageMessage(message)).toBe(false);
   });
 });

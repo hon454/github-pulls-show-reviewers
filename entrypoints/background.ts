@@ -8,13 +8,9 @@ import {
   isFetchPullReviewerMetadataBatchMessage,
   isFetchPullReviewerSummaryMessage,
 } from "../src/runtime/reviewer-fetch";
-import {
-  isRefreshAccountInstallationsMessage,
-} from "../src/runtime/installation-refresh";
-import {
-  listAccounts,
-  markAccountInvalidated,
-} from "../src/storage/accounts";
+import { isRefreshAccountInstallationsMessage } from "../src/runtime/installation-refresh";
+import { isOpenOptionsPageMessage } from "../src/runtime/options-page";
+import { listAccounts, markAccountInvalidated } from "../src/storage/accounts";
 
 export default defineBackground(() => {
   const coordinator = createRefreshCoordinator({
@@ -93,9 +89,7 @@ export default defineBackground(() => {
         typeof (message as { accountId?: unknown }).accountId === "string"
       ) {
         coordinator
-          .refreshAccountToken(
-            (message as { accountId: string }).accountId,
-          )
+          .refreshAccountToken((message as { accountId: string }).accountId)
           .then(
             (outcome) => sendResponse(outcome),
             (error) => {
@@ -106,6 +100,19 @@ export default defineBackground(() => {
               sendResponse(undefined);
             },
           );
+        return true;
+      }
+      if (isOpenOptionsPageMessage(message)) {
+        browser.runtime.openOptionsPage().then(
+          () => sendResponse({ ok: true }),
+          (error) => {
+            console.error(
+              "[GitHub Pulls Show Reviewers] Failed to open options page.",
+              error,
+            );
+            sendResponse({ ok: false });
+          },
+        );
         return true;
       }
       if (isFetchPullReviewerSummaryMessage(message)) {
