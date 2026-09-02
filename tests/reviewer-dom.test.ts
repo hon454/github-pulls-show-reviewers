@@ -49,9 +49,7 @@ describe("renderReviewers", () => {
       status: "ok",
       requestedUsers: [{ login: "alice", avatarUrl: null }],
       requestedTeams: ["platform"],
-      completedReviews: [
-        { login: "bob", avatarUrl: null, state: "APPROVED" },
-      ],
+      completedReviews: [{ login: "bob", avatarUrl: null, state: "APPROVED" }],
     });
 
     renderReviewers(mount(), entries, {
@@ -82,15 +80,15 @@ describe("renderReviewers", () => {
     expect(avatar?.classList.contains("ghpsr-avatar--border-requested")).toBe(
       true,
     );
-    expect(avatar?.querySelector("img.ghpsr-avatar-img")?.getAttribute("src")).toBe(
-      "https://example/a.png",
-    );
-    expect(avatar?.querySelector("img.ghpsr-avatar-img")?.getAttribute("loading")).toBe(
-      "lazy",
-    );
-    expect(avatar?.querySelector("img.ghpsr-avatar-img")?.getAttribute("width")).toBe(
-      "24",
-    );
+    expect(
+      avatar?.querySelector("img.ghpsr-avatar-img")?.getAttribute("src"),
+    ).toBe("https://example/a.png");
+    expect(
+      avatar?.querySelector("img.ghpsr-avatar-img")?.getAttribute("loading"),
+    ).toBe("lazy");
+    expect(
+      avatar?.querySelector("img.ghpsr-avatar-img")?.getAttribute("width"),
+    ).toBe("24");
     expect(document.querySelector(".ghpsr-pill")).toBeNull();
   });
 
@@ -118,9 +116,7 @@ describe("renderReviewers", () => {
       status: "ok",
       requestedUsers: [],
       requestedTeams: [],
-      completedReviews: [
-        { login: "bob", avatarUrl: null, state: "APPROVED" },
-      ],
+      completedReviews: [{ login: "bob", avatarUrl: null, state: "APPROVED" }],
     });
 
     renderReviewers(mount(), entries, {
@@ -251,11 +247,47 @@ describe("renderReviewers", () => {
     expect(mountNode).not.toBeNull();
   });
 
-  it("creates an inline metadata row when GitHub omits the desktop wrapper span", async () => {
+  it("creates an extension-owned metadata row when GitHub omits the desktop wrapper span", async () => {
     await loadFixture("github-pulls-missing-inline-meta.html");
     const row = document.querySelector(".js-issue-row");
-    expect(ensureReviewerMount(row!)).not.toBeNull();
-    expect(row?.querySelector(".d-none.d-md-inline-flex")).not.toBeNull();
+    const mountNode = ensureReviewerMount(row!);
+    const reviewerMeta = row?.querySelector("[data-ghpsr-reviewer-meta]");
+    expect(mountNode).not.toBeNull();
+    expect(reviewerMeta).not.toBeNull();
+    expect(reviewerMeta?.classList.contains("ghpsr-reviewer-meta")).toBe(true);
+    expect(reviewerMeta?.classList.contains("d-none")).toBe(false);
+    expect(reviewerMeta?.contains(mountNode!)).toBe(true);
+  });
+
+  it("keeps GitHub's desktop metadata wrapper unchanged and mounts beside it", () => {
+    const row = document.querySelector(".js-issue-row")!;
+    const githubMeta = row.querySelector(".d-none.d-md-inline-flex")!;
+
+    const mountNode = ensureReviewerMount(row)!;
+
+    expect(githubMeta.className).toBe("d-none d-md-inline-flex");
+    expect(githubMeta.contains(mountNode)).toBe(false);
+    expect(mountNode.parentElement?.matches("[data-ghpsr-reviewer-meta]")).toBe(
+      true,
+    );
+  });
+
+  it("moves an existing mount into the responsive container and removes duplicates", () => {
+    const row = document.querySelector(".js-issue-row")!;
+    const githubMeta = row.querySelector(".d-none.d-md-inline-flex")!;
+    githubMeta.insertAdjacentHTML(
+      "beforeend",
+      '<span class="ghpsr-root" data-ghpsr-root="true">first</span>' +
+        '<span class="ghpsr-root" data-ghpsr-root="true">duplicate</span>',
+    );
+
+    const mountNode = ensureReviewerMount(row)!;
+
+    expect(mountNode.textContent).toBe("first");
+    expect(row.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    expect(mountNode.parentElement?.matches("[data-ghpsr-reviewer-meta]")).toBe(
+      true,
+    );
   });
 
   it("creates a deterministic fallback mount when GitHub omits the metadata container", async () => {
@@ -309,6 +341,14 @@ describe("renderReviewers", () => {
     expect(css).toContain("outline:");
   });
 
+  it("declares an extension-owned responsive metadata container", () => {
+    ensureReviewerStyles();
+    const styleEl = document.querySelector("[data-ghpsr-style]");
+    const css = styleEl?.textContent ?? "";
+    expect(css).toContain(".ghpsr-reviewer-meta");
+    expect(css).toContain("display: inline-flex;");
+  });
+
   it("keeps reviewer avatar state rings independent from clickable focus styles", () => {
     ensureReviewerStyles();
     const styleEl = document.querySelector("[data-ghpsr-style]");
@@ -359,63 +399,83 @@ describe("renderReviewers — (isRequested, state) display truth table", () => {
   it("case 1 — (true, null): blue ring, no badge", () => {
     renderOne({ login: "u1", isRequested: true, state: null });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(true);
+    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(
+      true,
+    );
     expect(avatar.querySelector(".ghpsr-badge")).toBeNull();
   });
 
   it("case 2 — (true, APPROVED): blue ring, refresh badge", () => {
     renderOne({ login: "u2", isRequested: true, state: "APPROVED" });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(true);
+    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(
+      true,
+    );
     expect(avatar.querySelector(".ghpsr-badge--refresh")).not.toBeNull();
   });
 
   it("case 3 — (true, CHANGES_REQUESTED): blue ring, refresh badge", () => {
     renderOne({ login: "u3", isRequested: true, state: "CHANGES_REQUESTED" });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(true);
+    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(
+      true,
+    );
     expect(avatar.querySelector(".ghpsr-badge--refresh")).not.toBeNull();
   });
 
   it("case 4 — (true, COMMENTED): blue ring, no badge (4b exception)", () => {
     renderOne({ login: "u4", isRequested: true, state: "COMMENTED" });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(true);
+    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(
+      true,
+    );
     expect(avatar.querySelector(".ghpsr-badge")).toBeNull();
   });
 
   it("case 5 — (true, DISMISSED): blue ring, refresh badge", () => {
     renderOne({ login: "u5", isRequested: true, state: "DISMISSED" });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(true);
+    expect(avatar.classList.contains("ghpsr-avatar--border-requested")).toBe(
+      true,
+    );
     expect(avatar.querySelector(".ghpsr-badge--refresh")).not.toBeNull();
   });
 
   it("case 6 — (false, APPROVED): green ring, approved badge", () => {
     renderOne({ login: "u6", isRequested: false, state: "APPROVED" });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-approved")).toBe(true);
+    expect(avatar.classList.contains("ghpsr-avatar--border-approved")).toBe(
+      true,
+    );
     expect(avatar.querySelector(".ghpsr-badge--approved")).not.toBeNull();
   });
 
   it("case 7 — (false, CHANGES_REQUESTED): red ring, changes-requested badge", () => {
     renderOne({ login: "u7", isRequested: false, state: "CHANGES_REQUESTED" });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-changes-requested")).toBe(true);
-    expect(avatar.querySelector(".ghpsr-badge--changes-requested")).not.toBeNull();
+    expect(
+      avatar.classList.contains("ghpsr-avatar--border-changes-requested"),
+    ).toBe(true);
+    expect(
+      avatar.querySelector(".ghpsr-badge--changes-requested"),
+    ).not.toBeNull();
   });
 
   it("case 8 — (false, COMMENTED): gray ring, commented badge", () => {
     renderOne({ login: "u8", isRequested: false, state: "COMMENTED" });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-commented")).toBe(true);
+    expect(avatar.classList.contains("ghpsr-avatar--border-commented")).toBe(
+      true,
+    );
     expect(avatar.querySelector(".ghpsr-badge--commented")).not.toBeNull();
   });
 
   it("case 9 — (false, DISMISSED): purple ring, dismissed badge", () => {
     renderOne({ login: "u9", isRequested: false, state: "DISMISSED" });
     const avatar = document.querySelector<HTMLAnchorElement>("a.ghpsr-avatar")!;
-    expect(avatar.classList.contains("ghpsr-avatar--border-dismissed")).toBe(true);
+    expect(avatar.classList.contains("ghpsr-avatar--border-dismissed")).toBe(
+      true,
+    );
     expect(avatar.querySelector(".ghpsr-badge--dismissed")).not.toBeNull();
   });
 

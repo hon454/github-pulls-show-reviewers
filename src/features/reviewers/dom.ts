@@ -4,6 +4,7 @@ import { STATE_ICONS } from "./state-icons";
 import { githubSelectors } from "../../github/selectors";
 
 const ROOT_ATTRIBUTE = "data-ghpsr-root";
+const META_ATTRIBUTE = "data-ghpsr-reviewer-meta";
 const STYLE_ATTRIBUTE = "data-ghpsr-style";
 const RENDERED_ATTRIBUTE = "data-ghpsr-rendered";
 
@@ -38,6 +39,11 @@ export function ensureReviewerStyles(): void {
   const style = document.createElement("style");
   style.setAttribute(STYLE_ATTRIBUTE, "true");
   style.textContent = `
+    .ghpsr-reviewer-meta {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+    }
     .ghpsr-root {
       display: inline-flex;
       flex-wrap: wrap;
@@ -207,23 +213,30 @@ export function ensureReviewerMount(row: Element): HTMLElement | null {
     createFallbackMetaContainer(row);
   if (metaContainer == null) return null;
 
-  let inlineMetaRow = findFirst<HTMLElement>(
-    metaContainer,
-    githubSelectors.inlineMetaRowSelectors,
-  );
-  if (inlineMetaRow == null) {
-    inlineMetaRow = document.createElement("span");
-    inlineMetaRow.className = "d-none d-md-inline-flex";
-    metaContainer.append(inlineMetaRow);
+  let reviewerMeta = metaContainer.matches(`[${META_ATTRIBUTE}]`)
+    ? metaContainer
+    : metaContainer.querySelector<HTMLElement>(`[${META_ATTRIBUTE}]`);
+  if (reviewerMeta == null) {
+    reviewerMeta = document.createElement("span");
+    reviewerMeta.className = "ghpsr-reviewer-meta";
+    reviewerMeta.setAttribute(META_ATTRIBUTE, "true");
+    metaContainer.append(reviewerMeta);
   }
 
-  let mount = inlineMetaRow.querySelector<HTMLElement>(`[${ROOT_ATTRIBUTE}]`);
+  const mounts = Array.from(
+    row.querySelectorAll<HTMLElement>(`[${ROOT_ATTRIBUTE}]`),
+  );
+  let mount = mounts.shift() ?? null;
+  for (const duplicateMount of mounts) {
+    duplicateMount.remove();
+  }
+
   if (mount == null) {
     mount = document.createElement("span");
     mount.className = "ghpsr-root";
     mount.setAttribute(ROOT_ATTRIBUTE, "true");
-    inlineMetaRow.append(mount);
   }
+  reviewerMeta.append(mount);
 
   return mount;
 }
@@ -236,7 +249,8 @@ function createFallbackMetaContainer(row: Element): HTMLElement | null {
   if (link == null) return null;
 
   const container = document.createElement("span");
-  container.className = "d-none d-md-inline-flex";
+  container.className = "ghpsr-reviewer-meta";
+  container.setAttribute(META_ATTRIBUTE, "true");
   container.setAttribute("data-ghpsr-fallback-meta", "true");
   link.insertAdjacentElement("afterend", container);
   return container;
@@ -288,7 +302,9 @@ export function renderReviewers(
   mount.setAttribute(RENDERED_ATTRIBUTE, "1");
 }
 
-function createTeamNode(entry: Extract<ReviewerEntry, { kind: "team" }>): HTMLElement {
+function createTeamNode(
+  entry: Extract<ReviewerEntry, { kind: "team" }>,
+): HTMLElement {
   const link = document.createElement("a");
   link.className = "ghpsr-chip ghpsr-chip--team";
   link.href = entry.href;
@@ -433,7 +449,10 @@ function initialsBackground(login: string): string {
   return `hsl(${hash % 360}, 40%, 55%)`;
 }
 
-function findFirst<T extends Element>(root: ParentNode, selectors: readonly string[]): T | null {
+function findFirst<T extends Element>(
+  root: ParentNode,
+  selectors: readonly string[],
+): T | null {
   for (const selector of selectors) {
     const match = root.querySelector<T>(selector);
     if (match) {
