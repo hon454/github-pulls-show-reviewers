@@ -53,7 +53,9 @@ describe("describeGitHubApiError", () => {
       githubToken: "ghu_example",
     });
 
-    expect(message).toBe("Sign in again — the account's access was rejected by GitHub.");
+    expect(message).toBe(
+      "Sign in again — the account's access was rejected by GitHub.",
+    );
   });
 
   it("returns a private-repository hint when unauthenticated", () => {
@@ -157,25 +159,23 @@ describe("isRateLimitError", () => {
 
 describe("fetchPullReviewerSummary", () => {
   it("skips the pull endpoint when page-level pull metadata is already available", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              state: "APPROVED",
-              submitted_at: "2026-04-20T12:00:00Z",
-              user: { login: "bob" },
-            },
-            {
-              state: "APPROVED",
-              submitted_at: "2026-04-20T12:05:00Z",
-              user: { login: "hon454" },
-            },
-          ]),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            state: "APPROVED",
+            submitted_at: "2026-04-20T12:00:00Z",
+            user: { login: "bob" },
+          },
+          {
+            state: "APPROVED",
+            submitted_at: "2026-04-20T12:05:00Z",
+            user: { login: "hon454" },
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
 
     const summary = await fetchPullReviewerSummary({
       owner: "hon454",
@@ -283,7 +283,10 @@ describe("fetchPullReviewerSummary", () => {
           JSON.stringify({
             user: { login: "hon454" },
             requested_reviewers: [
-              { login: "alice", avatar_url: "https://avatars.githubusercontent.com/u/1?v=4" },
+              {
+                login: "alice",
+                avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+              },
             ],
             requested_teams: [{ slug: "platform" }],
           }),
@@ -314,7 +317,10 @@ describe("fetchPullReviewerSummary", () => {
     });
 
     expect(summary.requestedUsers).toEqual([
-      { login: "alice", avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4" },
+      {
+        login: "alice",
+        avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
+      },
     ]);
     expect(summary.completedReviews).toEqual([
       {
@@ -427,7 +433,10 @@ describe("fetchPullReviewerSummary", () => {
             user: { login: "hon454" },
             requested_reviewers: [
               { login: "alice", avatar_url: "javascript:alert(1)" },
-              { login: "bella", avatar_url: "data:text/html,<script>alert(1)</script>" },
+              {
+                login: "bella",
+                avatar_url: "data:text/html,<script>alert(1)</script>",
+              },
               { login: "carol", avatar_url: "file:///etc/passwd" },
               {
                 login: "dora",
@@ -652,20 +661,18 @@ describe("fetchPullReviewerSummary", () => {
   });
 
   it("does not fetch issue events when requested reviewers have no non-comment review overlap", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              state: "COMMENTED",
-              submitted_at: "2026-05-07T02:03:16Z",
-              user: { login: "alice", avatar_url: null },
-            },
-          ]),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            state: "COMMENTED",
+            submitted_at: "2026-05-07T02:03:16Z",
+            user: { login: "alice", avatar_url: null },
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
 
     const summary = await fetchPullReviewerSummary({
       owner: "hon454",
@@ -891,7 +898,9 @@ describe("fetchPullReviewerSummary", () => {
         { login: "alice", avatarUrl: null, state: "APPROVED" },
       ]);
       expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(fetchMock.mock.calls.map((call) => call[0])).not.toContain(nextUrl);
+      expect(fetchMock.mock.calls.map((call) => call[0])).not.toContain(
+        nextUrl,
+      );
     },
   );
 
@@ -1170,7 +1179,7 @@ describe("fetchPullReviewerSummary", () => {
     }
   });
 
-  it("follows Link: rel=\"next\" so a later-page review wins over first-page data", async () => {
+  it('follows Link: rel="next" so a later-page review wins over first-page data', async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -1415,17 +1424,14 @@ describe("fetchPullReviewerSummary", () => {
         }),
       )
       .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ message: "API rate limit exceeded" }),
-          {
-            status: 403,
-            headers: {
-              "Content-Type": "application/json",
-              "x-ratelimit-remaining": "0",
-              "x-ratelimit-limit": "60",
-            },
+        new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-limit": "60",
           },
-        ),
+        }),
       );
 
     try {
@@ -1500,32 +1506,30 @@ describe("fetchPullReviewerMetadataBatch", () => {
   });
 
   it("reads requested reviewer metadata for a page of pull requests without a token", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              number: 42,
-              user: { login: "hon454" },
-              requested_reviewers: [
-                {
-                  login: "alice",
-                  avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
-                },
-              ],
-              requested_teams: [{ slug: "platform" }],
-            },
-            {
-              number: 41,
-              user: { login: "octocat" },
-              requested_reviewers: [],
-              requested_teams: [],
-            },
-          ]),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            number: 42,
+            user: { login: "hon454" },
+            requested_reviewers: [
+              {
+                login: "alice",
+                avatar_url: "https://avatars.githubusercontent.com/u/1?v=4",
+              },
+            ],
+            requested_teams: [{ slug: "platform" }],
+          },
+          {
+            number: 41,
+            user: { login: "octocat" },
+            requested_reviewers: [],
+            requested_teams: [],
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
 
     const metadata = await fetchPullReviewerMetadataBatch({
       owner: "hon454",
@@ -1918,10 +1922,10 @@ describe("validateGitHubRepositoryAccess", () => {
 describe("validateAccountToken", () => {
   it("returns ok with limit and remaining for a healthy rate-limit body", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({ rate: { limit: 5000, remaining: 4999 } }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
+      new Response(JSON.stringify({ rate: { limit: 5000, remaining: 4999 } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
     );
 
     const result = await validateAccountToken({ token: "ghu_example" });
