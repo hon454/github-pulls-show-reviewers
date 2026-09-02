@@ -68,8 +68,9 @@ describe("bannerAggregator", () => {
     expect(aggregator.getState().current).toBe("auth-expired");
   });
 
-  it("orders priority: auth-expired > app-uncovered > auth-rate-limit > unauth-rate-limit > signin-required", () => {
+  it("orders specific access guidance above the generic unavailable state", () => {
     const order = [
+      "reviewers-unavailable",
       "signin-required",
       "unauth-rate-limit",
       "auth-rate-limit",
@@ -370,6 +371,15 @@ describe("formatBannerMessage", () => {
     ).toBe("Sign in with GitHub to see reviewers on private repositories.");
   });
 
+  it("returns low-noise reviewers-unavailable copy", () => {
+    expect(
+      formatBannerMessage({
+        current: "reviewers-unavailable",
+        repo: TEST_REPO,
+      }),
+    ).toBe("Reviewer data is temporarily unavailable.");
+  });
+
   it("returns an empty string when current is null", () => {
     expect(formatBannerMessage({ current: null, repo: TEST_REPO })).toBe("");
   });
@@ -493,6 +503,32 @@ describe("banner DOM", () => {
     const el = document.querySelector("[data-ghpsr-banner]")!;
     expect(el.querySelector("a")).toBeNull();
     expect(el.querySelector("button")?.textContent).toBe("Dismiss");
+  });
+
+  it("renders an accessible same-page reload link for reviewer failures", () => {
+    document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
+    const target = document.querySelector<HTMLElement>(".gh-header")!;
+    const banner = mountBanner({
+      insertAfter: target,
+      installUrl: "https://github.com/apps/test-app/installations/new",
+      optionsPageUrl: "chrome-extension://ext-id/options.html",
+      reloadUrl: "https://github.com/cinev/shotloom/pulls",
+      onDismiss: () => {},
+    });
+
+    banner.update({
+      current: "reviewers-unavailable",
+      dismissed: false,
+      repo: TEST_REPO,
+    });
+
+    const element = document.querySelector<HTMLElement>("[data-ghpsr-banner]")!;
+    const link = element.querySelector<HTMLAnchorElement>("a")!;
+    expect(element.getAttribute("role")).toBe("status");
+    expect(element.getAttribute("aria-live")).toBe("polite");
+    expect(link.textContent).toBe("Reload page");
+    expect(link.href).toBe("https://github.com/cinev/shotloom/pulls");
+    expect(link.hasAttribute("target")).toBe(false);
   });
 
   it("attaches focus-visible classes on the CTA link and dismiss button", () => {

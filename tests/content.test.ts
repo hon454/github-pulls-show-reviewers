@@ -18,15 +18,8 @@ beforeEach(() => {
   vi.resetModules();
   bootAccessBannerMock.mockReset();
   bootReviewerListPageMock.mockReset();
-  vi.stubGlobal(
-    "defineContentScript",
-    <T>(config: T) => config,
-  );
-  window.history.replaceState(
-    {},
-    "",
-    "/hon454/github-pulls-show-reviewers",
-  );
+  vi.stubGlobal("defineContentScript", <T>(config: T) => config);
+  window.history.replaceState({}, "", "/hon454/github-pulls-show-reviewers");
 });
 
 afterEach(() => {
@@ -126,9 +119,8 @@ describe("content entrypoint", () => {
     it("emits auth-expired for account + 401", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -143,9 +135,8 @@ describe("content entrypoint", () => {
     it("emits app-uncovered for account + 404 (no rate-limit signal)", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -160,9 +151,8 @@ describe("content entrypoint", () => {
     it("emits app-uncovered for account + 403 without rate-limit signal", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -179,9 +169,8 @@ describe("content entrypoint", () => {
     it("emits auth-rate-limit with the response snapshot for account + 403 + rate-limit headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -210,9 +199,8 @@ describe("content entrypoint", () => {
     it("emits auth-rate-limit without a snapshot for account + 429 with no headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -227,9 +215,8 @@ describe("content entrypoint", () => {
     it("backfills rate-limit details from a later same-kind failure", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -259,9 +246,8 @@ describe("content entrypoint", () => {
     it("emits unauth-rate-limit with the response snapshot for no account + 403 + rate-limit headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -293,9 +279,8 @@ describe("content entrypoint", () => {
     it("emits signin-required for no account + 403 without rate-limit signal", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -310,9 +295,8 @@ describe("content entrypoint", () => {
     it("emits signin-required for no account + 401", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -327,9 +311,8 @@ describe("content entrypoint", () => {
     it("emits unauth-rate-limit without a snapshot for no account + 429 with no headers", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -346,9 +329,8 @@ describe("content entrypoint", () => {
     it("emits signin-required for no account + 404", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -363,9 +345,8 @@ describe("content entrypoint", () => {
     it("picks the highest-priority kind across mixed failures (auth-expired wins over app-uncovered)", async () => {
       const aggregator = makeAggregator();
       const { onRowFailure } = await bootContent(aggregator);
-      const { GitHubApiError, GitHubPullRequestEndpointsError } = await import(
-        "../src/github/api"
-      );
+      const { GitHubApiError, GitHubPullRequestEndpointsError } =
+        await import("../src/github/api");
 
       onRowFailure({
         owner: "cinev",
@@ -382,7 +363,7 @@ describe("content entrypoint", () => {
       expect(winningKind).toBe("auth-expired");
     });
 
-    it("does not emit any kind for unattributed errors (network, schema, unknown envelope, empty failures)", async () => {
+    it("emits reviewers-unavailable for network, schema, unknown, and empty-envelope failures", async () => {
       const cases: unknown[] = [
         new Error("Network down"),
         { kind: "schema", status: null, message: "Response shape changed" },
@@ -399,8 +380,27 @@ describe("content entrypoint", () => {
           account: { id: "acc-1" },
           error,
         });
-        expect(aggregator.reportFailure).not.toHaveBeenCalled();
+        expect(aggregator.reportFailure).toHaveBeenCalledWith(
+          "reviewers-unavailable",
+        );
       }
+    });
+
+    it("emits reviewers-unavailable for an unclassified GitHub status", async () => {
+      const aggregator = makeAggregator();
+      const { onRowFailure } = await bootContent(aggregator);
+      const { GitHubApiError } = await import("../src/github/api");
+
+      onRowFailure({
+        owner: "cinev",
+        repo: "shotloom",
+        account: null,
+        error: new GitHubApiError(500),
+      });
+
+      expect(aggregator.reportFailure).toHaveBeenCalledWith(
+        "reviewers-unavailable",
+      );
     });
 
     it("classifies serialized envelope failures with rateLimited identical to live errors", async () => {

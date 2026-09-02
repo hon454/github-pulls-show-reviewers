@@ -27,13 +27,20 @@ export type BannerMount = {
 };
 
 type CtaSpec =
-  | { kind: "link"; label: string; href: string; action?: "open-options" }
+  | {
+      kind: "link";
+      label: string;
+      href: string;
+      action?: "open-options";
+      target?: "same-page" | "new-tab";
+    }
   | { kind: "none" };
 
 function ctaFor(
   current: BannerKind,
   installUrl: string,
   optionsPageUrl: string,
+  reloadUrl: string,
 ): CtaSpec {
   switch (current) {
     case "app-uncovered":
@@ -49,6 +56,13 @@ function ctaFor(
       };
     case "auth-rate-limit":
       return { kind: "none" };
+    case "reviewers-unavailable":
+      return {
+        kind: "link",
+        label: "Reload page",
+        href: reloadUrl,
+        target: "same-page",
+      };
   }
 }
 
@@ -56,6 +70,7 @@ export function mountBanner(input: {
   insertAfter: HTMLElement;
   installUrl: string;
   optionsPageUrl: string;
+  reloadUrl?: string;
   onOpenOptionsPage?: () => void;
   onDismiss: () => void;
 }): BannerMount {
@@ -74,6 +89,8 @@ export function mountBanner(input: {
     if (element == null) {
       element = document.createElement("div");
       element.setAttribute(BANNER_ATTRIBUTE, "true");
+      element.setAttribute("role", "status");
+      element.setAttribute("aria-live", "polite");
       element.style.cssText = [
         "margin: 12px 0",
         "padding: 12px 16px",
@@ -94,12 +111,19 @@ export function mountBanner(input: {
     message.textContent = formatBannerMessage(state);
     element.append(message);
 
-    const cta = ctaFor(current, input.installUrl, input.optionsPageUrl);
+    const cta = ctaFor(
+      current,
+      input.installUrl,
+      input.optionsPageUrl,
+      input.reloadUrl ?? window.location.href,
+    );
     if (cta.kind === "link") {
       const link = document.createElement("a");
       link.href = cta.href;
-      link.target = "_blank";
-      link.rel = "noreferrer";
+      if (cta.target !== "same-page") {
+        link.target = "_blank";
+        link.rel = "noreferrer";
+      }
       link.textContent = cta.label;
       link.className = "ghpsr-banner-cta";
       if (cta.action === "open-options" && input.onOpenOptionsPage) {

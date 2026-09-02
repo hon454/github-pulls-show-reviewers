@@ -5,7 +5,8 @@ export type BannerKind =
   | "app-uncovered"
   | "auth-rate-limit"
   | "unauth-rate-limit"
-  | "signin-required";
+  | "signin-required"
+  | "reviewers-unavailable";
 
 export type BannerRateLimitSnapshot = {
   limit: number | null;
@@ -38,6 +39,7 @@ const PRIORITY: Record<BannerKind, number> = {
   "auth-rate-limit": 3,
   "unauth-rate-limit": 4,
   "signin-required": 5,
+  "reviewers-unavailable": 6,
 };
 
 export function isHigherPriority(
@@ -111,7 +113,10 @@ export function createBannerAggregator(options: {
       }
       dismissed = true;
       try {
-        window.sessionStorage.setItem(dismissKey(options.pathname, current), "1");
+        window.sessionStorage.setItem(
+          dismissKey(options.pathname, current),
+          "1",
+        );
       } catch {
         // sessionStorage access denied — ignore
       }
@@ -156,14 +161,14 @@ export function formatBannerMessage(
     case "unauth-rate-limit": {
       const usage = formatUsageClause(state.rateLimit);
       const reset = formatResetClause(state.rateLimit, options?.now);
-      const usageSegment = usage
-        ? ` ${usage}`
-        : " (60/hr unauthenticated cap)";
+      const usageSegment = usage ? ` ${usage}` : " (60/hr unauthenticated cap)";
       const resetSegment = reset ? ` Resets ${reset}.` : "";
       return `GitHub's unauthenticated request limit was reached.${usageSegment} Sign in to raise it to 5,000/hr.${resetSegment}`;
     }
     case "signin-required":
       return "Sign in with GitHub to see reviewers on private repositories.";
+    case "reviewers-unavailable":
+      return "Reviewer data is temporarily unavailable.";
     case null:
       return "";
   }

@@ -14,10 +14,13 @@
   covering account per repo via the cached installations and performs the
   GitHub REST calls, so access tokens never enter the content-script
   execution context. No user-typed scope patterns.
-- Row-level failures render an empty reviewer slot. A page-level banner surfaces
-  one of five guidance states — token expired, App not installed, auth rate
-  limit, unauthenticated rate limit, or sign-in required — chosen by severity
-  priority across all row failures on the page.
+- Row-level failures do not render inline error text. A page-level banner
+  aggregates repeated failures into one of six guidance states — token expired,
+  App not installed, auth rate limit, unauthenticated rate limit, sign-in
+  required, or reviewer data temporarily unavailable — chosen by severity
+  priority across all row failures on the page. Successful empty results stay
+  visually empty, while failed background revalidation keeps stale reviewer
+  chips visible.
 - The options page repository diagnostics show structured evidence for reviewer
   access checks: matched account, auth mode, GitHub App installation coverage,
   endpoint result, and any rate-limit headers GitHub returned for the diagnostic
@@ -49,14 +52,16 @@
 6. Send a `fetchPullReviewerSummary` message for each uncached or stale row.
    Fresh cache hits render without refetching. Stale cache hits render the
    cached chips immediately, then revalidate in the background and rerender only
-   the affected row when fresh data arrives. When the page-level metadata
-   contains that pull request number, the background skips the per-row pull
-   endpoint and reads only the reviews endpoint. If the pull number is absent
-   from a successful batch result, the summary request falls back to the
-   original per-row `pull + reviews` REST path. If the page-level metadata batch
-   finally fails with an authentication, access, not-found, or rate-limit
-   failure after eligible fallback-account retry, same-page row fallback is
-   suppressed and the existing page banner receives that failure once.
+   the affected row when fresh data arrives. A failed revalidation preserves
+   those stale chips and reports through the page-level banner. When the
+   page-level metadata contains that pull request number, the background skips
+   the per-row pull endpoint and reads only the reviews endpoint. If the pull
+   number is absent from a successful batch result, the summary request falls
+   back to the original per-row `pull + reviews` REST path. If the page-level
+   metadata batch finally fails with an authentication, access, not-found, or
+   rate-limit failure after eligible fallback-account retry, same-page row
+   fallback is suppressed and the existing page banner receives that failure
+   once.
    If no covering account is found, the first attempt still uses the no-token
    path so public repositories keep working without authentication. When that
    no-token metadata or summary fetch fails with an authentication, access,
@@ -80,7 +85,10 @@
    the reviewer as re-requested.
 8. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge only when the event ordering confirms a later re-request. Requested teams keep the text chip shape. User chip links follow the same primary axis as the ring color: blue-ring (still-requested) chips link to `review-requested:<login>`; colored-ring (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use `is:pr is:open` searches by default.
 9. On API errors, emit a signal to the banner aggregator; do not render
-   row-level error text.
+   row-level error text. Network, schema, and unknown failures use the generic
+   reviewer-unavailable state with a same-page reload link. Repeated failures
+   are deduplicated by the aggregator, and a successful empty reviewer summary
+   does not emit any failure state.
 10. Re-run row processing when GitHub mutates the page or performs SPA
     navigation. Same-repository navigation/render events mark visible row
     summaries stale instead of trusting the active page-session cache forever.
@@ -179,18 +187,18 @@
 
 ## Access banner classification
 
-| Account state | Failure pattern                                      | Banner kind            | CTA              |
-| ------------- | ---------------------------------------------------- | ---------------------- | ---------------- |
-| Signed in     | 401 on any reviewer endpoint                         | `auth-expired`         | Sign in          |
-| Signed in     | 404 / 403 with no rate-limit signal                  | `app-uncovered`        | Configure access |
-| Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`          | `auth-rate-limit`      | (passive wait)   |
-| No account    | 429, or 403 with rate-limit signal                   | `unauth-rate-limit`    | Sign in          |
-| No account    | 401, 403, or 404 without rate-limit signal           | `signin-required`      | Sign in          |
-| Either        | Network / schema / unknown / empty endpoint envelope | (silent, console.warn) | —                |
+| Account state | Failure pattern                                      | Banner kind             | CTA              |
+| ------------- | ---------------------------------------------------- | ----------------------- | ---------------- |
+| Signed in     | 401 on any reviewer endpoint                         | `auth-expired`          | Sign in          |
+| Signed in     | 404 / 403 with no rate-limit signal                  | `app-uncovered`         | Configure access |
+| Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`          | `auth-rate-limit`       | (passive wait)   |
+| No account    | 429, or 403 with rate-limit signal                   | `unauth-rate-limit`     | Sign in          |
+| No account    | 401, 403, or 404 without rate-limit signal           | `signin-required`       | Sign in          |
+| Either        | Network / schema / unknown / empty endpoint envelope | `reviewers-unavailable` | Reload page      |
 
 Severity priority for cross-row resolution: `auth-expired` > `app-uncovered` >
-`auth-rate-limit` > `unauth-rate-limit` > `signin-required`. The highest-priority
-kind seen on a page wins.
+`auth-rate-limit` > `unauth-rate-limit` > `signin-required` >
+`reviewers-unavailable`. The highest-priority kind seen on a page wins.
 
 Banner dismissal is keyed by `pathname + kind`, so dismissing one kind on a page
 does not suppress a later, higher-priority kind on the same page.
@@ -239,7 +247,7 @@ snapshot is in-memory only — it is never persisted.
 
 ## End-to-end banner coverage
 
-- `tests/e2e/extension.spec.ts` covers two access-banner failure flows on the
+- `tests/e2e/extension.spec.ts` covers access-banner failure flows on the
   packaged MV3 build using fixture HTML with a `<main>` mount target:
   - Signed-out 429 with rate-limit headers — asserts the
     `unauth-rate-limit` copy, the `Sign in` CTA, and the relative reset time.
@@ -247,6 +255,11 @@ snapshot is in-memory only — it is never persisted.
     `chrome.storage.local` from a chrome-extension page, then asserts the
     `app-uncovered` copy and the `Configure access` CTA pointing at the App
     installation URL.
+  - Unexpected reviewer schema failure — asserts the deduplicated page-level
+    unavailable copy, accessible status semantics, and same-page reload link.
+  - Failed background revalidation — first renders reviewer chips from a
+    successful response, then verifies those stale chips remain visible beside
+    the unavailable banner when the next response fails schema validation.
 
 ## Device flow
 
