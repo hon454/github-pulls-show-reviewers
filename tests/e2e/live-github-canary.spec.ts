@@ -18,6 +18,17 @@ type CanarySnapshot = {
   mountCount: number;
 };
 
+type ApiResponseObservation = {
+  path: string;
+  status: number;
+  rateLimit: {
+    limit: string | null;
+    remaining: string | null;
+    reset: string | null;
+    resource: string | null;
+  };
+};
+
 test("discovers live GitHub PR rows and creates reviewer mounts", async ({
   browserName,
 }, testInfo) => {
@@ -34,14 +45,33 @@ test("discovers live GitHub PR rows and creates reviewer mounts", async ({
       `--load-extension=${extensionPath}`,
     ],
   });
-  const apiAuthorizationHeaders: string[] = [];
+  let apiRequestCount = 0;
+  let apiRequestsWithAuthorization = 0;
+  const apiResponses: ApiResponseObservation[] = [];
   context.on("request", (request) => {
-    if (request.url().startsWith("https://api.github.com/")) {
-      const authorization = request.headers().authorization;
-      if (authorization != null) {
-        apiAuthorizationHeaders.push(authorization);
-      }
+    if (parseGitHubApiUrl(request.url()) == null) {
+      return;
     }
+    apiRequestCount += 1;
+    if (request.headers().authorization != null) {
+      apiRequestsWithAuthorization += 1;
+    }
+  });
+  context.on("response", (response) => {
+    const url = parseGitHubApiUrl(response.url());
+    if (url == null) {
+      return;
+    }
+    apiResponses.push({
+      path: `${url.pathname}${url.search}`,
+      status: response.status(),
+      rateLimit: {
+        limit: response.headers()["x-ratelimit-limit"] ?? null,
+        remaining: response.headers()["x-ratelimit-remaining"] ?? null,
+        reset: response.headers()["x-ratelimit-reset"] ?? null,
+        resource: response.headers()["x-ratelimit-resource"] ?? null,
+      },
+    });
   });
 
   const page = await context.newPage();
@@ -111,7 +141,22 @@ test("discovers live GitHub PR rows and creates reviewer mounts", async ({
     expect(new Set(verifiedSnapshot.pullNumbers).size).toBe(
       verifiedSnapshot.pullNumbers.length,
     );
-    expect(apiAuthorizationHeaders).toEqual([]);
+    await expect
+      .poll(
+        () =>
+          apiResponses.filter(
+            (observation) =>
+              observation.status >= 200 && observation.status < 300,
+          ).length,
+        {
+          message:
+            "expected the extension background to complete a public GitHub API request",
+          timeout: 15_000,
+        },
+      )
+      .toBeGreaterThan(0);
+    expect(apiRequestCount).toBeGreaterThan(0);
+    expect(apiRequestsWithAuthorization).toBe(0);
   } catch (error) {
     const screenshotPath = testInfo.outputPath("github-pr-list.png");
     const screenshotCaptured = await page
@@ -134,7 +179,9 @@ test("discovers live GitHub PR rows and creates reviewer mounts", async ({
             currentUrl: page.url(),
             responseStatus,
             snapshot: latestSnapshot,
-            apiRequestsWithAuthorization: apiAuthorizationHeaders.length,
+            apiRequestCount,
+            apiRequestsWithAuthorization,
+            apiResponses,
           },
           null,
           2,
@@ -197,4 +244,15 @@ async function readCanarySnapshot(page: Page): Promise<CanarySnapshot> {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parseGitHubApiUrl(value: string): URL | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "api.github.com"
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
 }

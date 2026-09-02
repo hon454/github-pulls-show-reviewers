@@ -9,6 +9,8 @@ profile, and checks that:
 - Every matched row exposes a pull number through the supported ID or link
   paths.
 - The extension creates a reviewer mount for every discovered PR row.
+- The extension background completes at least one successful public GitHub API
+  request.
 - Requests to `api.github.com` carry no authorization header.
 
 The canary does not inspect private data, configure an account, or add any
@@ -45,7 +47,8 @@ Failed runs upload the Playwright `test-results` directory for 14 days. It
 contains the retained trace and failure screenshot plus:
 
 - `canary-diagnostics.json`: target/current URL, HTTP status, row/pull/mount
-  counts, and whether any API request unexpectedly carried authorization.
+  counts, API request and response observations, rate-limit headers, and
+  whether any API request unexpectedly carried authorization.
 - `github-pr-list.html`: the delivered GitHub page DOM at failure time.
 
 Investigate a recurring failure in this order:

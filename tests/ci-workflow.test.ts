@@ -47,6 +47,7 @@ describe("live GitHub DOM canary workflow", () => {
     expect(workflow).toContain("permissions:\n  contents: read");
     expect(workflow).not.toContain("secrets.");
     expect(workflow).not.toContain("GITHUB_TOKEN");
+    expect(workflow).toContain("persist-credentials: false");
   });
 
   it("builds the packaged extension before the live test and uploads failures", async () => {
@@ -58,7 +59,7 @@ describe("live GitHub DOM canary workflow", () => {
     expect(canaryIndex).toBeGreaterThan(buildIndex);
     expect(workflow).toContain("pnpm install --frozen-lockfile");
     expect(workflow).toContain("if: failure()");
-    expect(workflow).toContain("actions/upload-artifact@v4");
+    expect(workflow).toContain("actions/upload-artifact@v7");
     expect(workflow).toContain("path: test-results");
   });
 });
