@@ -1,10 +1,10 @@
 :root {
   color-scheme: dark;
-  --ink: #0a0a0a;
-  --paper: #f3eee3;
-  --paper-muted: #c5beaf;
-  --accent: #f59f45;
-  --line: rgba(243, 238, 227, 0.18);
+  --ink: #0d1117;
+  --paper: #f0f6fc;
+  --paper-muted: #8b949e;
+  --accent: #2ea043;
+  --line: rgba(240, 246, 252, 0.16);
   font-family:
     Inter,
     ui-sans-serif,
@@ -87,11 +87,7 @@ a {
   overflow: hidden;
   padding: 140px clamp(22px, 5vw, 76px) 64px;
   background:
-    radial-gradient(
-      circle at 82% 12%,
-      rgba(245, 159, 69, 0.18),
-      transparent 28%
-    ),
+    radial-gradient(circle at 82% 12%, rgba(46, 160, 67, 0.2), transparent 28%),
     var(--ink);
 }
 
@@ -146,7 +142,7 @@ h1 {
   padding: 0 22px;
   border-radius: 999px;
   background: var(--accent);
-  color: var(--ink);
+  color: #ffffff;
   font-weight: 800;
   text-decoration: none;
   transition:
@@ -156,7 +152,7 @@ h1 {
 
 .primary-cta:hover,
 .primary-cta:focus-visible {
-  background: #ffb968;
+  background: #3fb950;
   transform: translateY(-3px);
 }
 
@@ -211,7 +207,7 @@ h1 {
 }
 
 .proof .eyebrow {
-  color: #a14f06;
+  color: #1a7f37;
 }
 
 .section-heading {
@@ -231,12 +227,12 @@ h2 {
 .proof-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-top: 1px solid rgba(10, 10, 10, 0.2);
+  border-top: 1px solid rgba(13, 17, 23, 0.18);
 }
 
 .proof-list article {
   padding: 26px 28px 10px 0;
-  border-right: 1px solid rgba(10, 10, 10, 0.2);
+  border-right: 1px solid rgba(13, 17, 23, 0.18);
 }
 
 .proof-list article + article {
@@ -248,7 +244,7 @@ h2 {
 }
 
 .proof-list span {
-  color: #a14f06;
+  color: #1a7f37;
   font-size: 0.78rem;
   font-weight: 800;
 }
@@ -262,7 +258,7 @@ h2 {
 .showcase-copy > p:last-child,
 .access > p:last-child {
   max-width: 570px;
-  color: #625d53;
+  color: #57606a;
   line-height: 1.65;
 }
 
@@ -284,12 +280,12 @@ h2 {
 
 .access {
   background: var(--accent);
-  color: var(--ink);
+  color: #07150a;
 }
 
 .access .eyebrow,
 .access > p:last-child {
-  color: rgba(10, 10, 10, 0.68);
+  color: rgba(7, 21, 10, 0.72);
 }
 
 .access > p:last-child {
@@ -406,7 +402,7 @@ footer a {
   .proof-list article + article {
     padding: 24px 0 30px;
     border-right: 0;
-    border-bottom: 1px solid rgba(10, 10, 10, 0.2);
+    border-bottom: 1px solid rgba(13, 17, 23, 0.18);
   }
 
   .proof-list h3 {
