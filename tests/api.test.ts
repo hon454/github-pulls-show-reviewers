@@ -1205,6 +1205,67 @@ describe("fetchPullReviewerSummary", () => {
     expect(String(nextPageUrl)).toContain("page=2");
   });
 
+  describe.each([
+    { authLabel: "authenticated", githubToken: "ghu_example" },
+    { authLabel: "unauthenticated", githubToken: null },
+  ])("$authLabel review pagination", ({ githubToken }) => {
+    it.each([
+      {
+        caseLabel: "cross-origin",
+        nextUrl:
+          "https://example.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2",
+      },
+      {
+        caseLabel: "non-HTTPS",
+        nextUrl:
+          "http://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2",
+      },
+      { caseLabel: "malformed", nextUrl: "not a URL" },
+      {
+        caseLabel: "wrong-path",
+        nextUrl:
+          "https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2",
+      },
+      {
+        caseLabel: "wrong-port",
+        nextUrl:
+          "https://api.github.com:8443/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2",
+      },
+    ])("does not follow a $caseLabel next link", async ({ nextUrl }) => {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            Link: `<${nextUrl}>; rel="next"`,
+          },
+        }),
+      );
+
+      await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [],
+          requestedTeams: [],
+        },
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(
+        "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100",
+      );
+      const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+      expect(headers.get("Authorization")).toBe(
+        githubToken == null ? null : `Bearer ${githubToken}`,
+      );
+    });
+  });
+
   it("forwards AbortSignal to every paginated reviews request", async () => {
     const controller = new AbortController();
     const fetchMock = vi

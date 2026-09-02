@@ -854,6 +854,7 @@ async function collectReviewsAcrossPages(params: {
   signal?: AbortSignal;
 }): Promise<z.infer<typeof reviewsSchema>> {
   const collected: z.infer<typeof reviewsSchema> = [];
+  const expectedPathname = params.endpoint.path.split("?")[0];
 
   let response = params.firstResponse;
   while (true) {
@@ -863,7 +864,10 @@ async function collectReviewsAcrossPages(params: {
     }
     collected.push(...parsed.data);
 
-    const nextUrl = parseNextPageUrl(response.headers.get("Link"));
+    const nextUrl = parseNextPageUrl(
+      response.headers.get("Link"),
+      expectedPathname,
+    );
     if (nextUrl == null) {
       return collected;
     }
@@ -1024,8 +1028,7 @@ function isExpectedGitHubApiUrl(url: string, expectedPathname: string): boolean 
   try {
     const parsed = new URL(url);
     return (
-      parsed.protocol === "https:" &&
-      parsed.hostname === "api.github.com" &&
+      parsed.origin === "https://api.github.com" &&
       parsed.pathname === expectedPathname
     );
   } catch {
