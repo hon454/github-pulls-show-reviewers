@@ -3,8 +3,19 @@ import { describe, expect, it, vi } from "vitest";
 type PlaywrightConfig = {
   retries?: number;
   use?: {
+    screenshot?: string;
     trace?: string;
   };
+  projects?: Array<{
+    name?: string;
+    retries?: number;
+    testIgnore?: string[];
+    testMatch?: string[];
+    use?: {
+      screenshot?: string;
+      trace?: string;
+    };
+  }>;
 };
 
 describe("Playwright config", () => {
@@ -19,6 +30,33 @@ describe("Playwright config", () => {
 
     expect(config.retries).toBe(1);
     expect(config.use?.trace).toBe("on-first-retry");
+  });
+
+  it("keeps the live canary out of the deterministic default project", async () => {
+    const config = await importPlaywrightConfigWithCi("true");
+    const defaultProject = config.projects?.find(
+      (project) => project.name === "default",
+    );
+
+    expect(defaultProject?.testIgnore).toContain(
+      "**/live-github-canary.spec.ts",
+    );
+  });
+
+  it("retains live canary evidence and absorbs brief transient failures", async () => {
+    const config = await importPlaywrightConfigWithCi("true");
+    const liveProject = config.projects?.find(
+      (project) => project.name === "live-github-canary",
+    );
+
+    expect(liveProject).toMatchObject({
+      testMatch: ["**/live-github-canary.spec.ts"],
+      retries: 2,
+      use: {
+        screenshot: "only-on-failure",
+        trace: "retain-on-failure",
+      },
+    });
   });
 });
 

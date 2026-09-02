@@ -112,6 +112,11 @@ jobs. Regenerate Chrome Web Store screenshots with
 and run `pnpm zip` (or `pnpm zip:release` for production
 packaging) only after the checks above are green.
 
+The scheduled [live GitHub DOM canary](./docs/live-github-dom-canary.md)
+checks production GitHub markup separately. It is diagnostic and is not part
+of the blocking pull-request gate; use its runbook for ownership, transient
+failures, and captured evidence.
+
 ## Coding conventions
 
 - Prettier and ESLint are authoritative for formatting and lint.
