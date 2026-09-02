@@ -341,17 +341,45 @@ function createAuthHeaders(token: string): Headers {
   });
 }
 
-function parseNextLink(header: string | null): string | null {
+type AuthPaginationTarget =
+  | { kind: "none" }
+  | { kind: "valid"; url: string }
+  | { kind: "invalid" };
+
+function parseAuthPaginationTarget(
+  header: string | null,
+  expectedPathname: string,
+): AuthPaginationTarget {
   if (header == null) {
-    return null;
+    return { kind: "none" };
   }
+
   for (const part of header.split(",")) {
-    const match = /<([^>]+)>\s*;\s*rel="next"/.exec(part.trim());
-    if (match) {
-      return match[1];
+    const match = /<([^>]+)>\s*;\s*rel="([^"]+)"/.exec(part.trim());
+    if (match == null || !match[2].split(/\s+/).includes("next")) {
+      continue;
     }
+
+    const url = match[1];
+    try {
+      const parsed = new URL(url);
+      if (
+        parsed.origin !== "https://api.github.com" ||
+        parsed.username !== "" ||
+        parsed.password !== "" ||
+        parsed.pathname !== expectedPathname ||
+        url.includes("#")
+      ) {
+        return { kind: "invalid" };
+      }
+    } catch {
+      return { kind: "invalid" };
+    }
+
+    return { kind: "valid", url };
   }
-  return null;
+
+  return { kind: "none" };
 }
 
 const githubUserSchema = z.object({
@@ -424,12 +452,17 @@ export async function fetchUserInstallations(input: {
   signal?: AbortSignal;
 }): Promise<PaginatedResult<ApiInstallation>> {
   const results: ApiInstallation[] = [];
+  const expectedPathname = "/user/installations";
+  let truncated = false;
   let url: string | null =
     "https://api.github.com/user/installations?per_page=100";
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
     const response = await fetch(
       url,
-      withOptionalSignal({ headers: createAuthHeaders(input.token) }, input.signal),
+      withOptionalSignal(
+        { headers: createAuthHeaders(input.token) },
+        input.signal,
+      ),
     );
     if (!response.ok) {
       throw new Error(
@@ -457,9 +490,18 @@ export async function fetchUserInstallations(input: {
         repositorySelection: installation.repository_selection,
       });
     }
-    url = parseNextLink(response.headers.get("link"));
+    const nextTarget = parseAuthPaginationTarget(
+      response.headers.get("link"),
+      expectedPathname,
+    );
+    if (nextTarget.kind === "valid") {
+      url = nextTarget.url;
+    } else {
+      truncated = nextTarget.kind === "invalid";
+      url = null;
+    }
   }
-  return { items: results, truncated: url != null };
+  return { items: results, truncated: truncated || url != null };
 }
 
 const installationRepositoriesSchema = z.object({
@@ -473,11 +515,17 @@ export async function fetchInstallationRepositories(input: {
   signal?: AbortSignal;
 }): Promise<PaginatedResult<string>> {
   const results: string[] = [];
-  let url: string | null = `https://api.github.com/user/installations/${input.installationId}/repositories?per_page=100`;
+  const expectedPathname = `/user/installations/${input.installationId}/repositories`;
+  let truncated = false;
+  let url: string | null =
+    `https://api.github.com${expectedPathname}?per_page=100`;
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
     const response = await fetch(
       url,
-      withOptionalSignal({ headers: createAuthHeaders(input.token) }, input.signal),
+      withOptionalSignal(
+        { headers: createAuthHeaders(input.token) },
+        input.signal,
+      ),
     );
     if (!response.ok) {
       throw new Error(
@@ -496,7 +544,16 @@ export async function fetchInstallationRepositories(input: {
     for (const repository of parsed.data.repositories) {
       results.push(repository.full_name);
     }
-    url = parseNextLink(response.headers.get("link"));
+    const nextTarget = parseAuthPaginationTarget(
+      response.headers.get("link"),
+      expectedPathname,
+    );
+    if (nextTarget.kind === "valid") {
+      url = nextTarget.url;
+    } else {
+      truncated = nextTarget.kind === "invalid";
+      url = null;
+    }
   }
-  return { items: results, truncated: url != null };
+  return { items: results, truncated: truncated || url != null };
 }

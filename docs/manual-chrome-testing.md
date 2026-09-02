@@ -112,6 +112,12 @@ This extension is intentionally narrow. Manual verification should stay focused 
    should show `Installation coverage` as
    `Maybe covered - local snapshot truncated` alongside the endpoint result.
 
+Authenticated pagination-target rejection is covered by `tests/auth.test.ts`
+because a normal Chrome session cannot inject GitHub's `Link` response header.
+Those tests verify that malformed or off-endpoint targets receive no second
+OAuth-authenticated request and leave both installation-list and
+selected-repository results truncated.
+
 ### App-uncovered banner
 
 1. Sign in but do not install the App on `work-org`.

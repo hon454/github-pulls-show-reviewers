@@ -244,6 +244,11 @@ snapshot is in-memory only — it is never persisted.
   is treated as maybe covered, so the extension uses that account token and lets
   the real repository API response decide access instead of silently falling
   back to uncovered guidance.
+- Authenticated installation pagination follows `next` links only when they
+  resolve to the exact HTTPS `api.github.com` origin and the endpoint pathname
+  that issued the response. A malformed or rejected `next` target is never sent
+  the OAuth header and leaves the result marked `truncated`, so an incomplete
+  installation or selected-repository snapshot cannot be persisted as complete.
 - Account installation-list pagination is stricter: if the account-level
   `/user/installations` list hits the local page ceiling while a `next` link
   still exists, the refresh fails without replacing the previous installation

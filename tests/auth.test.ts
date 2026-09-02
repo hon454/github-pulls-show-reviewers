@@ -162,6 +162,63 @@ function paginatedResponse(body: unknown, linkNext?: string): Response {
   return new Response(JSON.stringify(body), { status: 200, headers });
 }
 
+function installationPage(id: number): unknown {
+  return {
+    total_count: 2,
+    installations: [
+      {
+        id,
+        account: {
+          login: `org-${id}`,
+          type: "Organization",
+          avatar_url: null,
+        },
+        repository_selection: "all",
+      },
+    ],
+  };
+}
+
+function repositoryPage(fullName: string): unknown {
+  return {
+    total_count: 2,
+    repositories: [{ full_name: fullName }],
+  };
+}
+
+function invalidPaginationTargets(expectedPathname: string) {
+  return [
+    {
+      caseLabel: "malformed",
+      nextUrl: "not a URL",
+    },
+    {
+      caseLabel: "credential-bearing",
+      nextUrl: `https://attacker:secret@api.github.com${expectedPathname}?page=2`,
+    },
+    {
+      caseLabel: "fragment-bearing",
+      nextUrl: `https://api.github.com${expectedPathname}?page=2#unexpected`,
+    },
+    {
+      caseLabel: "HTTP",
+      nextUrl: `http://api.github.com${expectedPathname}?page=2`,
+    },
+    {
+      caseLabel: "cross-origin",
+      nextUrl: `https://example.com${expectedPathname}?page=2`,
+    },
+    {
+      caseLabel: "non-default-port",
+      nextUrl: `https://api.github.com:8443${expectedPathname}?page=2`,
+    },
+    {
+      caseLabel: "wrong-path",
+      nextUrl: `https://api.github.com${expectedPathname}/unexpected?page=2`,
+    },
+  ];
+}
+
 describe("fetchAuthenticatedUser", () => {
   it("parses login and avatar URL", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
@@ -190,6 +247,50 @@ describe("fetchUserInstallations", () => {
     });
     expect(installations[0].account.login).toBe("hon454");
   });
+
+  it("follows an exact installation endpoint next link with query parameters", async () => {
+    const controller = new AbortController();
+    const nextUrl =
+      "https://api.github.com:443/user/installations?page=2&per_page=100";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(paginatedResponse(installationPage(1), nextUrl))
+      .mockResolvedValueOnce(paginatedResponse(installationPage(2)));
+
+    const result = await fetchUserInstallations({
+      token: "ghu_abc",
+      signal: controller.signal,
+    });
+
+    expect(result.items.map(({ id }) => id)).toEqual([1, 2]);
+    expect(result.truncated).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(nextUrl);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init?.headers as Headers).get("Authorization")).toBe(
+        "Bearer ghu_abc",
+      );
+      expect(init?.signal).toBe(controller.signal);
+    }
+  });
+
+  it.each(invalidPaginationTargets("/user/installations"))(
+    "rejects a $caseLabel installation next link without a second authenticated request",
+    async ({ nextUrl }) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(paginatedResponse(installationPage(1), nextUrl));
+
+      const result = await fetchUserInstallations({ token: "ghu_abc" });
+
+      expect(result.items.map(({ id }) => id)).toEqual([1]);
+      expect(result.truncated).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        (fetchMock.mock.calls[0]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer ghu_abc");
+    },
+  );
 
   it("marks installation pagination truncated when the ceiling leaves a next page", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
@@ -237,6 +338,62 @@ describe("fetchInstallationRepositories", () => {
       truncated: false,
     });
   });
+
+  it("follows an exact selected-repository endpoint next link with query parameters", async () => {
+    const controller = new AbortController();
+    const nextUrl =
+      "https://api.github.com:443/user/installations/1/repositories?page=2&per_page=100";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        paginatedResponse(repositoryPage("cinev/one"), nextUrl),
+      )
+      .mockResolvedValueOnce(paginatedResponse(repositoryPage("cinev/two")));
+
+    const result = await fetchInstallationRepositories({
+      token: "ghu_abc",
+      installationId: 1,
+      signal: controller.signal,
+    });
+
+    expect(result).toEqual({
+      items: ["cinev/one", "cinev/two"],
+      truncated: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(nextUrl);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init?.headers as Headers).get("Authorization")).toBe(
+        "Bearer ghu_abc",
+      );
+      expect(init?.signal).toBe(controller.signal);
+    }
+  });
+
+  it.each(invalidPaginationTargets("/user/installations/1/repositories"))(
+    "rejects a $caseLabel selected-repository next link without a second authenticated request",
+    async ({ nextUrl }) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          paginatedResponse(repositoryPage("cinev/one"), nextUrl),
+        );
+
+      const result = await fetchInstallationRepositories({
+        token: "ghu_abc",
+        installationId: 1,
+      });
+
+      expect(result).toEqual({
+        items: ["cinev/one"],
+        truncated: true,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        (fetchMock.mock.calls[0]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer ghu_abc");
+    },
+  );
 
   it("marks selected-repository pagination truncated when the ceiling leaves a next page", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
