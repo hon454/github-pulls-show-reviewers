@@ -10,11 +10,23 @@ export default defineConfig({
   projects: [
     {
       name: "default",
-      testIgnore: ["**/capture-cws-assets.spec.ts"],
+      testIgnore: [
+        "**/capture-cws-assets.spec.ts",
+        "**/live-github-canary.spec.ts",
+      ],
     },
     {
       name: "capture",
       testMatch: ["**/capture-cws-assets.spec.ts"],
+    },
+    {
+      name: "live-github-canary",
+      testMatch: ["**/live-github-canary.spec.ts"],
+      retries: 2,
+      use: {
+        screenshot: "only-on-failure",
+        trace: "retain-on-failure",
+      },
     },
   ],
 });

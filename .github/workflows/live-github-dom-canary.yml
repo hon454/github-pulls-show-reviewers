@@ -1,0 +1,47 @@
+name: Live GitHub DOM canary
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-github-dom-canary
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  LIVE_GITHUB_REPOSITORY: cli/cli
+  WXT_GITHUB_APP_CLIENT_ID: TESTING_CLIENT_ID
+  WXT_GITHUB_APP_SLUG: test-app
+
+jobs:
+  live-github-dom-canary:
+    name: Live GitHub DOM canary
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prepare
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e:build
+      - run: pnpm test:e2e:live
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-github-dom-canary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results
+          if-no-files-found: warn
+          retention-days: 14

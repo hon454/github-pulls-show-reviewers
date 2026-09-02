@@ -24,6 +24,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e:build": "WXT_GITHUB_APP_CLIENT_ID=TESTING_CLIENT_ID WXT_GITHUB_APP_SLUG=test-app pnpm build",
     "test:e2e:run": "pnpm exec playwright test --project=default",
+    "test:e2e:live": "pnpm exec playwright test --project=live-github-canary",
     "test:e2e:grep": "pnpm exec playwright test --project=default --grep",
     "test:e2e": "pnpm test:e2e:build && pnpm test:e2e:run",
     "verify:release": "pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm test:e2e"
