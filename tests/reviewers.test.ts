@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
@@ -9,6 +12,10 @@ const resolveAccountForRepoMock = vi.fn();
 const listAccountsMock = vi.fn();
 const getPreferencesMock = vi.fn();
 const runtimeSendMessageMock = vi.fn();
+const singleRowFixtureHtml = readFileSync(
+  path.join(process.cwd(), "tests/fixtures/github-pulls-single-row.html"),
+  "utf8",
+);
 
 vi.mock("../src/storage/accounts", () => ({
   resolveAccountForRepo: resolveAccountForRepoMock,
@@ -99,12 +106,11 @@ beforeEach(() => {
   });
 
   document.head.innerHTML = "";
-  document.body.innerHTML = `
-    <div class="js-issue-row" id="issue_42">
-      <a class="Link--primary" href="/cinev/shotloom/pull/42">PR #42</a>
-      <div class="d-flex mt-1 text-small color-fg-muted"></div>
-    </div>
-  `;
+  const fixtureDocument = new DOMParser().parseFromString(
+    singleRowFixtureHtml,
+    "text/html",
+  );
+  document.body.innerHTML = fixtureDocument.body.innerHTML;
   window.history.replaceState({}, "", "/cinev/shotloom/pulls");
 });
 
@@ -115,6 +121,112 @@ afterEach(() => {
 });
 
 describe("bootReviewerListPage", () => {
+  it("keeps a successful empty reviewer result visually empty", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({
+        ok: true,
+        summary: {
+          status: "ok",
+          requestedUsers: [],
+          requestedTeams: [],
+          completedReviews: [],
+        },
+      });
+    });
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
+    expect(onRowFailure).not.toHaveBeenCalled();
+  });
+
+  it("reports a cold unexpected failure while keeping row-level UI empty", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const schemaError = {
+      kind: "schema" as const,
+      status: null,
+      message: "Response shape changed",
+    };
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({ ok: false, error: schemaError });
+    });
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
+    expect(document.querySelector(".ghpsr-status--error")).toBeNull();
+    expect(onRowFailure).toHaveBeenCalledTimes(1);
+    expect(onRowFailure).toHaveBeenCalledWith({
+      owner: "cinev",
+      repo: "shotloom",
+      account: null,
+      error: expect.objectContaining({ envelope: schemaError }),
+    });
+  });
+
+  it("preserves stale reviewer chips when background revalidation fails", async () => {
+    getPreferencesMock.mockResolvedValue({
+      version: 1,
+      showStateBadge: true,
+      showReviewerName: true,
+      openPullsOnly: true,
+    });
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const schemaError = {
+      kind: "schema" as const,
+      status: null,
+      message: "Response shape changed",
+    };
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({ ok: false, error: schemaError });
+    });
+
+    const {
+      buildReviewerCacheKey,
+      markReviewerCacheStale,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    const cacheKey = buildReviewerCacheKey("cinev", "shotloom", "42");
+    setCachedReviewerSummary(cacheKey, {
+      status: "ok",
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    });
+    markReviewerCacheStale(cacheKey);
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@alice");
+    expect(document.body.textContent).not.toContain("Loading reviewers");
+    expect(onRowFailure).toHaveBeenCalledTimes(1);
+  });
+
   it("rerenders on preferences change without refetching reviewer data", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
     const summary: PullReviewerSummary = {
@@ -738,7 +850,9 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
     expect(
       getRuntimeMessages("fetchPullReviewerMetadataBatch")[0],
     ).toMatchObject({
@@ -817,7 +931,9 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
     expect(onRowFailure).toHaveBeenCalledTimes(1);
     expect(onRowFailure).toHaveBeenCalledWith({

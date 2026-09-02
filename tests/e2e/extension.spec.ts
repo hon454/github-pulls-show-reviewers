@@ -504,10 +504,10 @@ test("refreshes an expired selected-installation account before rendering privat
   });
 });
 
-test("clears the reviewer slot silently when review history is denied", async () => {
+test("renders a page-level unavailable state for an unexpected reviewer failure", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(
-      path.join(fixturesDir, singleRowFixture),
+      path.join(fixturesDir, "github-pulls-with-banner-target.html"),
       "utf8",
     );
 
@@ -519,18 +519,12 @@ test("clears the reviewer slot silently when review history is denied", async ()
       requested_teams: [],
     });
     await context.route(
-      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews",
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews**",
       async (route) => {
         await route.fulfill({
-          status: 403,
+          status: 200,
           contentType: "application/json",
-          headers: {
-            "x-ratelimit-limit": "60",
-            "x-ratelimit-remaining": "0",
-          },
-          body: JSON.stringify({
-            message: "API rate limit exceeded for 127.0.0.1.",
-          }),
+          body: JSON.stringify({ unexpected: true }),
         });
       },
     );
@@ -540,14 +534,83 @@ test("clears the reviewer slot silently when review history is denied", async ()
       "https://github.com/hon454/github-pulls-show-reviewers/pulls",
     );
 
-    // Row-level error rendering is removed; failures silently clear the reviewer slot.
     await expect(page.locator(".ghpsr-status--error")).toHaveCount(0);
-    // The root mount is either absent or empty after a fetch failure.
-    const root = page.locator(".ghpsr-root");
-    const rootCount = await root.count();
-    if (rootCount > 0) {
-      await expect(root).toBeEmpty();
-    }
+    await expect(page.locator(".ghpsr-root")).toBeEmpty();
+
+    const banner = page.locator("[data-ghpsr-banner]");
+    await expect(banner).toHaveCount(1);
+    await expect(banner).toContainText(
+      "Reviewer data is temporarily unavailable.",
+    );
+    await expect(banner).toHaveAttribute("role", "status");
+    const retry = banner.locator("a");
+    await expect(retry).toHaveText("Reload page");
+    await expect(retry).toHaveAttribute(
+      "href",
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+    await expect(retry).not.toHaveAttribute("target", "_blank");
+  });
+});
+
+test("keeps stale reviewer chips when packaged-extension revalidation fails", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-with-banner-target.html"),
+      "utf8",
+    );
+    let failRevalidation = false;
+    let reviewsRequestCount = 0;
+
+    await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, [
+      {
+        number: 42,
+        user: { login: "hon454" },
+        requested_reviewers: [{ login: "alice" }],
+        requested_teams: [],
+      },
+    ]);
+    await routePullApi(context, "42", {
+      user: { login: "hon454" },
+      requested_reviewers: [{ login: "alice" }],
+      requested_teams: [],
+    });
+    await context.route(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews**",
+      async (route) => {
+        reviewsRequestCount += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: failRevalidation ? JSON.stringify({ unexpected: true }) : "[]",
+        });
+      },
+    );
+
+    const page = await context.newPage();
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+    expect(reviewsRequestCount).toBe(1);
+
+    failRevalidation = true;
+    await page.evaluate(() => {
+      document.dispatchEvent(new Event("turbo:render", { bubbles: true }));
+    });
+
+    await expect.poll(() => reviewsRequestCount).toBeGreaterThan(1);
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+    const banner = page.locator("[data-ghpsr-banner]");
+    await expect(banner).toHaveCount(1);
+    await expect(banner).toContainText(
+      "Reviewer data is temporarily unavailable.",
+    );
   });
 });
 

@@ -42,13 +42,6 @@ export default defineContentScript({
             }
 
             const classified = classifyRowFailure(error, account);
-            if (classified == null) {
-              console.warn(
-                "[ghpsr] Unclassified reviewer-fetch failure; banner suppressed.",
-                error,
-              );
-              return;
-            }
             if (classified.info == null) {
               aggregator.reportFailure(classified.kind);
             } else {
@@ -76,10 +69,10 @@ type ClassifiedRowFailure = {
 function classifyRowFailure(
   error: unknown,
   account: { id?: string } | null,
-): ClassifiedRowFailure | null {
+): ClassifiedRowFailure {
   const failures = extractReviewerFetchFailures(error);
   if (failures.length === 0) {
-    return null;
+    return { kind: "reviewers-unavailable" };
   }
 
   let best: ClassifiedRowFailure | null = null;
@@ -103,7 +96,7 @@ function classifyRowFailure(
       best = { kind };
     }
   }
-  return best;
+  return best ?? { kind: "reviewers-unavailable" };
 }
 
 function isRateLimitKind(kind: BannerKind): boolean {

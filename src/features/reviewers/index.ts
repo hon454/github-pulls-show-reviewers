@@ -192,8 +192,7 @@ export function bootReviewerListPage(
 
   function pageMetadataCacheIsFresh(cache: PageMetadataCache): boolean {
     return (
-      !cache.stale &&
-      Date.now() - cache.fetchedAt <= PAGE_METADATA_FRESH_MS
+      !cache.stale && Date.now() - cache.fetchedAt <= PAGE_METADATA_FRESH_MS
     );
   }
 
@@ -517,9 +516,7 @@ export function bootReviewerListPage(
       );
       if (pageMetadata.failure?.suppressRowFallback) {
         reportPageMetadataFailure(route, pageMetadata.failure);
-        mount.replaceChildren();
-        mount.removeAttribute("title");
-        clearRenderedReviewerState(mount);
+        clearReviewerMountWithoutCache(mount, cacheKey);
         return;
       }
       const pullMetadata = pageMetadata.metadata.get(pullNumber);
@@ -582,9 +579,7 @@ export function bootReviewerListPage(
             }
           }
         }
-        mount.replaceChildren();
-        mount.removeAttribute("title");
-        clearRenderedReviewerState(mount);
+        clearReviewerMountWithoutCache(mount, cacheKey);
         options?.onRowFailure?.({
           owner: route.owner,
           repo: route.repo,
@@ -734,6 +729,18 @@ export function bootReviewerListPage(
     observer.disconnect();
     browser.storage.onChanged.removeListener(storageListener);
   });
+}
+
+function clearReviewerMountWithoutCache(
+  mount: HTMLElement,
+  cacheKey: ReturnType<typeof buildReviewerCacheKey>,
+): void {
+  if (getReviewerCacheEntry(cacheKey) != null) {
+    return;
+  }
+  mount.replaceChildren();
+  mount.removeAttribute("title");
+  clearRenderedReviewerState(mount);
 }
 
 function createRowFingerprint(row: Element, pullNumber: string): string {
