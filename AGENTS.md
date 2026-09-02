@@ -65,6 +65,28 @@ Agents working in this repository should preserve that narrow product scope. Do 
 4. Use conventional commits with small, reviewable scope.
 5. Push `main` only when changes are intentional and validated as far as practical.
 
+## Chrome Web Store Release Safety
+
+- Treat `.github/workflows/release.yml` and
+  `docs/chrome-web-store.md` as the canonical release automation and runbook.
+- A pushed `v<version>` tag submits the checked Chrome package through the
+  Chrome Web Store API v2 and requests automatic publication after approval.
+- Keep manual workflow runs safe by default: `chrome_web_store: skip` must
+  remain the default, `dry-run` is for credential validation, and `publish`
+  must be selected intentionally.
+- Run the credential-only `dry-run` after changing Chrome Web Store
+  credentials, service-account linkage, the submission dependency, or the
+  publish steps in `release.yml`.
+- Never read, print, echo, commit, or write the value of
+  `CWS_SERVICE_ACCOUNT_JSON` to logs or repository files. Checking that the
+  secret exists is allowed; its contents are not.
+- Do not bypass `pnpm zip:checked` or restore routine manual package uploads.
+  Dashboard listing metadata, screenshots, privacy disclosures, and exceptional
+  recovery actions remain manual.
+- Keep `README.md`, `docs/chrome-web-store.md`, and
+  `docs/chrome-web-store-submission.md` synchronized when release behavior or
+  store submission requirements change.
+
 ## Commands
 
 ```bash

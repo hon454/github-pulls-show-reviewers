@@ -114,6 +114,13 @@ pnpm zip:release
 
 `pnpm zip` produces an inspectable local build only. Production packaging for the Chrome Web Store uses `pnpm zip:release`, which loads the maintainer GitHub App identifiers and verifies the final zip before upload.
 
+Pushing a `v<version>` tag runs the release workflow, attaches the verified
+package to the GitHub Release, submits it through the Chrome Web Store API v2,
+and publishes it automatically after store approval. Use the manual workflow's
+credential-only `dry-run` before relying on changed store credentials or release
+automation. See [Chrome Web Store notes](./docs/chrome-web-store.md) for the
+operational runbook and recovery guidance.
+
 For repository workflow, branch naming, commit style, and pull request requirements, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Documentation
