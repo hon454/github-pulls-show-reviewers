@@ -107,16 +107,20 @@ link and the privacy fields aligned with the shipped behavior.
 6. Open the packaged extension's options page once before upload and
    confirm it never renders as a blank white screen. A missing GitHub App
    build config must surface the explicit configuration warning instead.
-7. Upload `.output/*-chrome.zip` in the Chrome Web Store dashboard.
-8. Confirm the dashboard package version reads the same bare `<version>`
-   from the preflight before submitting for review or publishing.
+7. Push the `v<version>` tag. The release workflow uploads
+   `.output/*-chrome.zip` through the Chrome Web Store API v2 and submits it
+   for automatic publication after approval.
+8. Confirm the release workflow and dashboard package version both read the
+   same bare `<version>`.
 9. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
 10. Paste the short description, detailed description, and privacy policy URL above.
 11. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
-12. If you want review before launch, disable automatic publish and stage the release in the dashboard.
-13. After approval, publish the staged version and confirm the Git tag,
-    GitHub Release, release note, and now-published store version still
-    reference the same bare `<version>` value.
+12. For a credential-only rehearsal, run the release workflow manually with
+    `chrome_web_store: dry-run`; its default `skip` mode never submits a store
+    release.
+13. After approval and automatic publication, confirm the Git tag, GitHub
+    Release, release note, and published store version still reference the
+    same bare `<version>` value.
 
 ## Current package target
 

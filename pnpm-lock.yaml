@@ -48,6 +48,9 @@ importers:
       prettier:
         specifier: ^3.6.2
         version: 3.8.3
+      publish-browser-extension:
+        specifier: ^5.1.0
+        version: 5.1.0
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -2085,6 +2088,11 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
+  publish-browser-extension@5.1.0:
+    resolution: {integrity: sha512-cRP5AV5UhXGheK//GwI3dCKPDtvStbcoqwerh6HZ7McB6RpepQmkHjSAWXmNGik0Eu0sRhPPuRUNmgvCn+cFrg==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
@@ -2332,6 +2340,9 @@ packages:
 
   symbol-tree@3.2.4:
     resolution: {integrity: sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==}
+
+  tasuku@2.3.0:
+    resolution: {integrity: sha512-9Jtk+XAnttslCw4i9RceSZGr2PT5TLn0vUyWnoP2SdlSYzkiYRY6kB5qnPi5IQ/Em8e4oBow1rpaA39iijTIrA==}
 
   test-exclude@7.0.2:
     resolution: {integrity: sha512-u9E6A+ZDYdp7a4WnarkXPZOx8Ilz46+kby6p1yZ8zsGTz9gYa6FIS7lj2oezzNKmtdyyJNNmmXDppga5GB7kSw==}
@@ -4625,6 +4636,15 @@ snapshots:
       ofetch: 1.5.1
       zod: 4.3.6
 
+  publish-browser-extension@5.1.0:
+    dependencies:
+      cac: 6.7.14
+      consola: 3.4.2
+      dotenv: 17.4.2
+      form-data-encoder: 4.1.0
+      formdata-node: 6.0.3
+      tasuku: 2.3.0
+
   punycode@2.3.1: {}
 
   pupa@3.3.0:
@@ -4886,6 +4906,8 @@ snapshots:
       has-flag: 4.0.0
 
   symbol-tree@3.2.4: {}
+
+  tasuku@2.3.0: {}
 
   test-exclude@7.0.2:
     dependencies:
