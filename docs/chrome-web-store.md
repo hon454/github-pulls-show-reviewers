@@ -13,6 +13,10 @@
   - `01-pr-list-before-after.png` — before/after comparison showing GitHub's default PR list beside the extension-enhanced reviewer strip
   - `02-pr-list-avatar-state-showcase.png` — default avatar-only reviewer chips with requested outlines, completed-review badges, and no unrelated floating help button
   - `03-options-repository-check.png` — options page display settings and repository diagnostics
+- Acquisition links owned by the publisher use the campaign naming convention
+  in [growth/attribution.md](./growth/attribution.md). Keep the repository,
+  product-tour, release, and community URLs distinct so store page views and
+  installs can be attributed by channel.
 
 ## Suggested listing copy
 

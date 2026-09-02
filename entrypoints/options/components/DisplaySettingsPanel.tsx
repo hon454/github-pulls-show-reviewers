@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   DEFAULT_PREFERENCES,
@@ -54,53 +54,64 @@ export function DisplaySettingsPanel() {
   }
 
   return (
-    <section style={styles.section}>
-      <h2 style={styles.sectionTitle}>Display</h2>
-      <p style={styles.hint}>
-        Control how reviewer chips look on GitHub pull request lists.
-      </p>
-      <label style={styles.row}>
-        <input
-          data-testid="prefs-show-state-badge"
-          type="checkbox"
-          checked={preferences.showStateBadge}
-          disabled={busy}
-          onChange={(event) =>
-            void handleChange({ showStateBadge: event.target.checked })
-          }
-        />
-        <span>Show review state badge on avatars</span>
-      </label>
-      <label style={styles.row}>
-        <input
-          data-testid="prefs-show-reviewer-name"
-          type="checkbox"
-          checked={preferences.showReviewerName}
-          disabled={busy}
-          onChange={(event) =>
-            void handleChange({ showReviewerName: event.target.checked })
-          }
-        />
-        <span>Show reviewer names</span>
-      </label>
-      <label style={styles.row}>
-        <input
-          data-testid="prefs-open-pulls-only"
-          type="checkbox"
-          checked={preferences.openPullsOnly}
-          disabled={busy}
-          onChange={(event) =>
-            void handleChange({ openPullsOnly: event.target.checked })
-          }
-        />
-        <span>Open pull requests only in reviewer links</span>
-      </label>
+    <section className="settings-section" aria-labelledby="display-title">
+      <div className="section-heading">
+        <span className="section-index">02</span>
+        <div>
+          <h2 id="display-title">Display</h2>
+          <p>Control how reviewer chips look on GitHub pull request lists.</p>
+        </div>
+      </div>
+      <div className="preference-list">
+        <label className="preference-row">
+          <input
+            data-testid="prefs-show-state-badge"
+            type="checkbox"
+            checked={preferences.showStateBadge}
+            disabled={busy}
+            onChange={(event) =>
+              void handleChange({ showStateBadge: event.target.checked })
+            }
+          />
+          <span>
+            <strong>Review state badges</strong>
+            <small>Show approval and request state directly on avatars.</small>
+          </span>
+        </label>
+        <label className="preference-row">
+          <input
+            data-testid="prefs-show-reviewer-name"
+            type="checkbox"
+            checked={preferences.showReviewerName}
+            disabled={busy}
+            onChange={(event) =>
+              void handleChange({ showReviewerName: event.target.checked })
+            }
+          />
+          <span>
+            <strong>Reviewer names</strong>
+            <small>Keep names visible next to reviewer avatars.</small>
+          </span>
+        </label>
+        <label className="preference-row">
+          <input
+            data-testid="prefs-open-pulls-only"
+            type="checkbox"
+            checked={preferences.openPullsOnly}
+            disabled={busy}
+            onChange={(event) =>
+              void handleChange({ openPullsOnly: event.target.checked })
+            }
+          />
+          <span>
+            <strong>Open pull requests only</strong>
+            <small>Limit reviewer links to work that is still open.</small>
+          </span>
+        </label>
+      </div>
       {status ? (
         <p
-          style={{
-            ...styles.status,
-            color: status.tone === "error" ? "#cf222e" : "#52463b",
-          }}
+          className={`inline-status${status.tone === "error" ? " inline-status--error" : ""}`}
           role="status"
           aria-live="polite"
           data-testid={status.tone === "error" ? "prefs-error" : "prefs-status"}
@@ -117,32 +128,3 @@ function errorMessage(error: unknown): string {
     ? error.message
     : "Please try again.";
 }
-
-const styles: Record<string, CSSProperties> = {
-  section: {
-    marginTop: 32,
-    paddingTop: 24,
-    borderTop: "1px solid rgba(34, 29, 24, 0.08)",
-  },
-  sectionTitle: { margin: 0, fontSize: 20 },
-  hint: {
-    color: "#6e5f52",
-    fontSize: 13,
-    lineHeight: 1.6,
-    margin: "8px 0 12px",
-  },
-  row: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 0",
-    fontSize: 14,
-    color: "#221d18",
-    cursor: "pointer",
-  },
-  status: {
-    margin: "8px 0 0",
-    fontSize: 13,
-    lineHeight: 1.5,
-  },
-};
