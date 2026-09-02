@@ -115,13 +115,20 @@
 ## Unit coverage gate
 
 - `pnpm test:coverage` runs the Vitest unit suite with V8 coverage over
-  `src/**/*.ts`.
+  `src/**/*.ts`, `entrypoints/**/*.ts`, and `entrypoints/**/*.tsx`. Generated
+  WXT output under `.output/` and `.wxt/` is excluded from the report.
 - Coverage reports are emitted as terminal text and ignored local HTML output in
   `coverage/`.
-- The gate starts near the measured v1.7.3 baseline: 85% statements, 80%
-  branches, 90% functions, and 85% lines. The threshold is intentionally modest
-  so reviewer-critical code cannot lose broad coverage silently while existing
-  auth and background-worker gaps can be improved incrementally.
+- The expanded v1.13.0 baseline is 91.08% statements, 86.26% branches, 96.46%
+  functions, and 91.08% lines overall. Entrypoints measure 79.46% statements,
+  90.00% branches, 87.50% functions, and 79.46% lines: `content.ts`,
+  `background.ts`, and the options entrypoint modules are present in the
+  report; `options/main.tsx` is a zero-coverage bootstrap module because the
+  unit suite mounts `OptionsPage` directly.
+- The enforced global thresholds are 90% statements, 85% branches, 95%
+  functions, and 90% lines. Each is rounded down only slightly from the
+  expanded baseline, retaining a meaningful branch gate while allowing the
+  known unexecuted options bootstrap and existing incremental coverage gaps.
 
 ## Display preferences
 
