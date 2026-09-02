@@ -33,9 +33,14 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - `entrypoints/options/`
   Options page UI and bootstrapping.
 - `src/github/`
-  GitHub-specific routing, selectors, and API access.
+  GitHub-specific routing, selectors, and API access. `api.ts` is the stable
+  facade; `api/` separates schemas and parsing, authenticated request and
+  pagination helpers, reviewer aggregation, diagnostics, and shared types.
 - `src/features/reviewers/`
-  Reviewer-focused feature orchestration and rendering.
+  Reviewer-focused feature orchestration and rendering. `index.ts` is the
+  stable facade; the page controller delegates page metadata caching, fallback
+  account integration, runtime requests, and row mutation handling to focused
+  modules.
 - `src/storage/`
   Extension settings and persistence.
 - `src/cache/`

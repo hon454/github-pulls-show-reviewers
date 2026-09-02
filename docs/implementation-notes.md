@@ -26,6 +26,25 @@
   endpoint result, and any rate-limit headers GitHub returned for the diagnostic
   request. Rate-limit snapshots are diagnostic output only and are not persisted.
 
+## Module boundaries
+
+- `src/github/api.ts` remains the stable import facade for GitHub API callers.
+  Its implementation is split under `src/github/api/`: `schemas.ts` owns zod
+  response parsing, `request.ts` owns authenticated headers and validated REST
+  pagination, `reviewer-summary.ts` owns page metadata and reviewer-state
+  aggregation, `diagnostics.ts` owns token/repository validation and user-facing
+  API error classification, and `types.ts` owns the shared contracts and errors.
+- `src/features/reviewers/index.ts` remains the content-script facade.
+  `page-controller.ts` coordinates route and row work,
+  `page-metadata.ts` owns the short-lived page metadata cache and in-flight
+  request deduplication, `row-lifecycle.ts` owns row fingerprints and GitHub DOM
+  mutation handling, `fallback-account.ts` owns page-session fallback resolution
+  reuse, and `runtime-requests.ts` owns cancelable background messaging.
+- The facades intentionally export only the pre-existing application contracts.
+  Focused boundary tests exercise pagination validation and budgets, metadata
+  freshness and fallback behavior, fallback lookup deduplication, cancelable
+  runtime requests, and extension-owned versus GitHub-owned DOM mutations.
+
 ## Runtime flow
 
 1. Parse the current repository route from `window.location.pathname`.
@@ -127,9 +146,9 @@
   WXT output under `.output/` and `.wxt/` is excluded from the report.
 - Coverage reports are emitted as terminal text and ignored local HTML output in
   `coverage/`.
-- The expanded v1.13.0 baseline is 91.08% statements, 86.26% branches, 96.46%
-  functions, and 91.08% lines overall. Entrypoints measure 79.46% statements,
-  90.00% branches, 87.50% functions, and 79.46% lines: `content.ts`,
+- The expanded v1.13.0 baseline is 92.11% statements, 88.31% branches, 96.61%
+  functions, and 92.11% lines overall. Entrypoints measure 79.68% statements,
+  92.85% branches, 87.50% functions, and 79.68% lines: `content.ts`,
   `background.ts`, and the options entrypoint modules are present in the
   report; `options/main.tsx` is a zero-coverage bootstrap module because the
   unit suite mounts `OptionsPage` directly.
