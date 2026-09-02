@@ -58,14 +58,9 @@ a {
 }
 
 .brand-mark {
-  display: grid;
   width: 30px;
   height: 30px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--ink);
-  font-weight: 900;
+  flex: 0 0 auto;
 }
 
 .header-link {
