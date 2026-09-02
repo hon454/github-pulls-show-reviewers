@@ -16,10 +16,10 @@ import {
   fetchGitHubApiResponse,
 } from "./request";
 import {
-  GitHubApiError,
   GitHubApiSchemaError,
   GitHubPullRequestEndpointsError,
   type CompletedReview,
+  type GitHubApiError,
   type GitHubEndpointDescriptor,
   type PullReviewerMetadata,
   type PullReviewerSummary,
