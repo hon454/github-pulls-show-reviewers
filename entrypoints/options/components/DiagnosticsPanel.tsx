@@ -1,11 +1,10 @@
-import { useRef, useState, type CSSProperties } from "react";
+import { useRef, useState } from "react";
 
 import { validateRepositoryAccessWithAccount } from "../../../src/auth/account-token-refresh";
 import {
   buildMatchedAccountDiagnostic,
   buildNoTokenDiagnostic,
   buildUncoveredAccountDiagnostic,
-  type RepositoryDiagnosticTone,
   type RepositoryDiagnosticViewModel,
 } from "../../../src/features/repository-diagnostics";
 import { validateGitHubRepositoryAccess } from "../../../src/github/api";
@@ -56,7 +55,10 @@ export function DiagnosticsPanel() {
       return;
     }
     await runDiagnostic(async () => {
-      const resolution = await resolveAccountCoverageForRepo(match[1], match[2]);
+      const resolution = await resolveAccountCoverageForRepo(
+        match[1],
+        match[2],
+      );
       if (resolution.status === "uncovered") {
         setDiagnostic(
           buildUncoveredAccountDiagnostic(
@@ -98,10 +100,16 @@ export function DiagnosticsPanel() {
   }
 
   return (
-    <section style={styles.section}>
-      <h2 style={styles.heading}>Diagnostics</h2>
-      <label htmlFor="diagnostics-repository" style={styles.visuallyHidden}>
-        Repository in owner/name format
+    <section className="settings-section" aria-labelledby="diagnostics-title">
+      <div className="section-heading">
+        <span className="section-index">03</span>
+        <div>
+          <h2 id="diagnostics-title">Repository diagnostics</h2>
+          <p>Confirm which access path the extension will use.</p>
+        </div>
+      </div>
+      <label htmlFor="diagnostics-repository" className="field-label">
+        Repository <span>owner/name</span>
       </label>
       <input
         id="diagnostics-repository"
@@ -109,15 +117,15 @@ export function DiagnosticsPanel() {
         value={repository}
         placeholder="owner/name"
         onChange={(event) => setRepository(event.currentTarget.value)}
-        style={styles.input}
+        className="text-input"
         data-testid="diagnostics-repo"
       />
-      <div style={styles.actions}>
+      <div className="button-row diagnostic-actions">
         <button
           type="button"
           onClick={() => void runMatched()}
           disabled={busy}
-          style={styles.primaryButton}
+          className="button button--primary"
           data-testid="diagnostics-matched"
         >
           Check matched account
@@ -126,7 +134,7 @@ export function DiagnosticsPanel() {
           type="button"
           onClick={() => void runNoToken()}
           disabled={busy}
-          style={styles.secondaryButton}
+          className="button button--secondary"
           data-testid="diagnostics-no-token"
         >
           Check no-token path
@@ -135,7 +143,7 @@ export function DiagnosticsPanel() {
       {diagnostic ? (
         <>
           <p
-            style={{ ...styles.hint, color: toneColor(diagnostic.tone) }}
+            className={`inline-status inline-status--${diagnostic.tone}`}
             role="status"
             aria-live="polite"
             data-testid="diagnostics-status"
@@ -143,15 +151,12 @@ export function DiagnosticsPanel() {
             {diagnostic.message}
           </p>
           {diagnostic.fields.length > 0 ? (
-            <dl style={styles.diagnosticFields} data-testid="diagnostics-fields">
+            <dl className="diagnostic-fields" data-testid="diagnostics-fields">
               {diagnostic.fields.map((field) => (
-                <div key={field.label} style={styles.diagnosticField}>
-                  <dt style={styles.diagnosticLabel}>{field.label}</dt>
+                <div key={field.label} className="diagnostic-field">
+                  <dt>{field.label}</dt>
                   <dd
-                    style={{
-                      ...styles.diagnosticValue,
-                      color: toneColor(field.tone),
-                    }}
+                    className={`diagnostic-value diagnostic-value--${field.tone}`}
                   >
                     {field.value}
                   </dd>
@@ -170,75 +175,3 @@ function errorMessage(error: unknown): string {
     ? error.message
     : "Please try again.";
 }
-
-function toneColor(tone: RepositoryDiagnosticTone): string {
-  if (tone === "success") return "#1a7f37";
-  if (tone === "warning") return "#9a6700";
-  if (tone === "error") return "#cf222e";
-  return "#52463b";
-}
-
-const styles: Record<string, CSSProperties> = {
-  section: { marginTop: 32 },
-  heading: { margin: 0, fontSize: 18 },
-  visuallyHidden: {
-    position: "absolute",
-    width: 1,
-    height: 1,
-    padding: 0,
-    margin: -1,
-    overflow: "hidden",
-    clip: "rect(0, 0, 0, 0)",
-    whiteSpace: "nowrap",
-    border: 0,
-  },
-  input: {
-    width: "100%",
-    boxSizing: "border-box",
-    padding: "14px 16px",
-    borderRadius: 12,
-    border: "1px solid #d3c4ae",
-    background: "#fffdf9",
-    fontSize: 15,
-    marginTop: 12,
-  },
-  actions: { display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" },
-  hint: { fontSize: 13, color: "#52463b", marginTop: 12 },
-  diagnosticFields: {
-    display: "grid",
-    gridTemplateColumns: "max-content minmax(0, 1fr)",
-    gap: "8px 12px",
-    margin: "12px 0 0",
-    fontSize: 13,
-  },
-  diagnosticField: {
-    display: "contents",
-  },
-  diagnosticLabel: {
-    color: "#6e5f4f",
-    fontWeight: 700,
-  },
-  diagnosticValue: {
-    margin: 0,
-    minWidth: 0,
-    overflowWrap: "anywhere",
-  },
-  primaryButton: {
-    border: 0,
-    borderRadius: 999,
-    padding: "10px 16px",
-    background: "#1f6feb",
-    color: "white",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  secondaryButton: {
-    borderRadius: 999,
-    padding: "10px 16px",
-    background: "#fffdf9",
-    border: "1px solid #d3c4ae",
-    color: "#3b3024",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-};

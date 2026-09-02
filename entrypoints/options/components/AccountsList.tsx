@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from "react";
+import { useRef, useState } from "react";
 
 import { retryWithAccountRefresh } from "../../../src/auth/account-token-refresh";
 import { loadAccountInstallations } from "../../../src/github/installations";
@@ -61,7 +61,9 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
         account,
         execute: async (token) => {
           if (token == null) {
-            throw new Error("Account token is required to refresh installations.");
+            throw new Error(
+              "Account token is required to refresh installations.",
+            );
           }
 
           return loadAccountInstallations({ token });
@@ -81,14 +83,20 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
 
   if (accounts.length === 0) {
     return (
-      <p style={styles.hint} data-testid="accounts-empty">
-        No GitHub accounts connected yet.
-      </p>
+      <div className="empty-state" data-testid="accounts-empty">
+        <span className="empty-state-mark" aria-hidden="true">
+          @
+        </span>
+        <div>
+          <strong>No accounts connected</strong>
+          <p>Public repositories will still show reviewer information.</p>
+        </div>
+      </div>
     );
   }
 
   return (
-    <div style={styles.list}>
+    <div className="account-list">
       {accounts.map((account) => {
         const busyAction = busyActions[account.id];
         const isBusy = busyAction != null;
@@ -97,39 +105,40 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
         return (
           <div
             key={account.id}
-            style={{
-              ...styles.card,
-              opacity: account.invalidated ? 0.6 : 1,
-            }}
+            className={`account-row${account.invalidated ? " account-row--invalid" : ""}`}
             data-testid={`account-card-${account.login}`}
           >
-            <p style={styles.login}>@{account.login}</p>
-            <p style={styles.meta}>
-              Installed on:{" "}
-              {account.installations.length === 0
-                ? "none yet"
-                : account.installations
-                    .map((installation) => `@${installation.account.login}`)
-                    .join(", ")}
-            </p>
+            <div className="account-identity">
+              <span className="account-avatar" aria-hidden="true">
+                {account.login.slice(0, 1).toUpperCase()}
+              </span>
+              <div>
+                <p className="account-login">@{account.login}</p>
+                <p className="account-meta">
+                  Installed on:{" "}
+                  {account.installations.length === 0
+                    ? "none yet"
+                    : account.installations
+                        .map((installation) => `@${installation.account.login}`)
+                        .join(", ")}
+                </p>
+              </div>
+            </div>
             {account.invalidated ? (
               <button
                 type="button"
                 onClick={() => onReauthenticate(account)}
-                style={styles.primaryButton}
+                className="button button--primary"
               >
                 Sign in again
               </button>
             ) : (
-              <div style={styles.actions}>
+              <div className="button-row">
                 <button
                   type="button"
                   onClick={() => void handleRefresh(account)}
                   disabled={isBusy}
-                  style={{
-                    ...styles.secondaryButton,
-                    ...(isBusy ? styles.disabledButton : null),
-                  }}
+                  className="button button--secondary"
                 >
                   {busyAction === "refresh"
                     ? "Refreshing..."
@@ -139,10 +148,7 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
                   type="button"
                   onClick={() => void handleRemove(account)}
                   disabled={isBusy}
-                  style={{
-                    ...styles.dangerButton,
-                    ...(isBusy ? styles.disabledButton : null),
-                  }}
+                  className="button button--danger"
                 >
                   {busyAction === "remove" ? "Removing..." : "Remove"}
                 </button>
@@ -150,7 +156,7 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
             )}
             {actionError ? (
               <p
-                style={styles.error}
+                className="inline-status inline-status--error"
                 role="status"
                 aria-live="polite"
                 data-testid={`account-action-error-${account.id}`}
@@ -177,55 +183,3 @@ function errorMessage(error: unknown): string {
     ? error.message
     : "Please try again.";
 }
-
-const styles: Record<string, CSSProperties> = {
-  list: { display: "grid", gap: 12 },
-  card: {
-    padding: 16,
-    borderRadius: 16,
-    background: "#fffdf9",
-    border: "1px solid rgba(34, 29, 24, 0.08)",
-  },
-  login: { margin: 0, fontWeight: 700 },
-  meta: { margin: "6px 0 0", fontSize: 13, color: "#52463b" },
-  actions: { display: "flex", gap: 12, marginTop: 12, flexWrap: "wrap" },
-  hint: { color: "#6e5f52", fontSize: 13 },
-  primaryButton: {
-    border: 0,
-    borderRadius: 999,
-    padding: "10px 16px",
-    background: "#1f6feb",
-    color: "white",
-    fontWeight: 700,
-    cursor: "pointer",
-    marginTop: 12,
-  },
-  secondaryButton: {
-    borderRadius: 999,
-    padding: "10px 16px",
-    background: "#fffdf9",
-    border: "1px solid #d3c4ae",
-    color: "#3b3024",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  dangerButton: {
-    borderRadius: 999,
-    padding: "10px 16px",
-    background: "#fff4f4",
-    border: "1px solid rgba(207, 34, 46, 0.18)",
-    color: "#cf222e",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  disabledButton: {
-    opacity: 0.65,
-    cursor: "not-allowed",
-  },
-  error: {
-    margin: "10px 0 0",
-    color: "#cf222e",
-    fontSize: 13,
-    lineHeight: 1.5,
-  },
-};

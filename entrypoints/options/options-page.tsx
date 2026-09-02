@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { readGitHubAppConfig } from "../../src/config/github-app";
 import { listAccounts, type Account } from "../../src/storage/accounts";
@@ -50,18 +50,57 @@ export function OptionsPage() {
   };
 
   return (
-    <main style={styles.page}>
-      <section style={styles.card}>
-        <p style={styles.eyebrow}>GitHub Pulls Show Reviewers</p>
-        <h1 style={styles.title}>Reviewer visibility for GitHub pull request lists</h1>
-        <p style={styles.body}>
-          {appConfig
-            ? "Sign in with GitHub (via our GitHub App) to see reviewer chips on private-repository pull request lists. Public repositories continue to work without signing in. For organization-owned private repositories, an organization owner may need to install the GitHub App first."
-            : "This build is missing its GitHub App configuration, so account sign-in is unavailable. Public repositories continue to work without signing in."}
+    <main className="options-page">
+      <aside className="options-intro">
+        <div className="brand-lockup">
+          <img
+            className="brand-icon"
+            src="/icon/128.png"
+            alt=""
+            width="52"
+            height="52"
+          />
+          <p className="eyebrow">GitHub Pulls Show Reviewers</p>
+        </div>
+        <h1>Reviewer context, right where you scan.</h1>
+        <p className="intro-copy">
+          Tune how reviewer information appears and connect GitHub only when a
+          private repository needs it.
         </p>
+        <div className="access-note">
+          <span className="status-dot" aria-hidden="true" />
+          <div>
+            <strong>Public repositories are ready</strong>
+            <span>No account or token required.</span>
+          </div>
+        </div>
+        <p className="intro-footnote">
+          Private access uses a GitHub App with <code>Pull requests: Read</code>
+          only.
+        </p>
+      </aside>
 
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>GitHub accounts</h2>
+      <div className="options-workspace">
+        <header className="workspace-header">
+          <p className="eyebrow">Extension settings</p>
+          <h2>Make review status fit your workflow.</h2>
+          <p>
+            {appConfig
+              ? "Connect accounts for private repositories, choose what appears in pull request lists, and test repository access."
+              : "Account sign-in is unavailable in this build. Public repositories continue to work without signing in."}
+          </p>
+        </header>
+
+        <section className="settings-section" aria-labelledby="accounts-title">
+          <div className="section-heading">
+            <span className="section-index">01</span>
+            <div>
+              <h2 id="accounts-title">GitHub accounts</h2>
+              <p>
+                Used only when a private repository requires authentication.
+              </p>
+            </div>
+          </div>
           <AccountsList
             accounts={accounts}
             onChange={reload}
@@ -72,9 +111,14 @@ export function OptionsPage() {
             }}
           />
           {!appConfig ? (
-            <div style={styles.warning} data-testid="options-config-warning">
-              <p style={styles.warningTitle}>GitHub sign-in is unavailable in this build.</p>
-              <p style={styles.warningBody}>
+            <div
+              className="notice notice--error"
+              data-testid="options-config-warning"
+            >
+              <p className="notice-title">
+                GitHub sign-in is unavailable in this build.
+              </p>
+              <p className="notice-body">
                 {configError} Reinstall a build that includes the maintainer
                 GitHub App client ID and slug.
               </p>
@@ -87,7 +131,7 @@ export function OptionsPage() {
           ) : (
             <button
               type="button"
-              style={styles.primaryButton}
+              className="button button--primary add-account-button"
               onClick={openAddPanel}
               data-testid="accounts-add"
             >
@@ -100,15 +144,25 @@ export function OptionsPage() {
 
         <DiagnosticsPanel />
 
-        <section style={styles.section}>
-          <h2 style={styles.sectionTitle}>About</h2>
-          <p style={styles.hint}>
+        <section
+          className="settings-section about-section"
+          aria-labelledby="about-title"
+        >
+          <div className="section-heading">
+            <span className="section-index">04</span>
+            <div>
+              <h2 id="about-title">About access</h2>
+              <p>What the extension can read and how to revoke it.</p>
+            </div>
+          </div>
+          <p className="about-copy">
             {appConfig ? (
               <>
                 This extension signs you in through the{" "}
                 <strong>{appConfig.name}</strong> GitHub App. The App requests{" "}
-                <code>Pull requests: Read</code> only. Removing an account locally
-                does not revoke the authorization on GitHub — manage revocation at{" "}
+                <code>Pull requests: Read</code> only. Removing an account
+                locally does not revoke the authorization on GitHub — manage
+                revocation at{" "}
                 <a
                   href="https://github.com/settings/applications"
                   target="_blank"
@@ -123,64 +177,7 @@ export function OptionsPage() {
             )}
           </p>
         </section>
-      </section>
+      </div>
     </main>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    margin: 0,
-    padding: "40px 24px",
-    fontFamily: "ui-sans-serif, system-ui, sans-serif",
-    background:
-      "radial-gradient(circle at top left, rgba(255, 214, 102, 0.45), transparent 32%), #f4efe6",
-    color: "#221d18",
-  },
-  card: {
-    maxWidth: 720,
-    margin: "0 auto",
-    padding: 32,
-    borderRadius: 20,
-    background: "rgba(255, 255, 255, 0.82)",
-    boxShadow: "0 18px 60px rgba(34, 29, 24, 0.12)",
-    border: "1px solid rgba(34, 29, 24, 0.08)",
-  },
-  section: {
-    marginTop: 32,
-    paddingTop: 24,
-    borderTop: "1px solid rgba(34, 29, 24, 0.08)",
-  },
-  sectionTitle: { margin: 0, fontSize: 20 },
-  eyebrow: {
-    margin: 0,
-    textTransform: "uppercase",
-    letterSpacing: "0.12em",
-    fontSize: 12,
-    color: "#9f5a14",
-    fontWeight: 700,
-  },
-  title: { margin: "12px 0 16px", fontSize: 36, lineHeight: 1.1 },
-  body: { margin: 0, maxWidth: 560, color: "#52463b", lineHeight: 1.6 },
-  hint: { color: "#6e5f52", fontSize: 13, lineHeight: 1.6 },
-  warning: {
-    marginTop: 12,
-    padding: 16,
-    borderRadius: 16,
-    background: "#fff4f4",
-    border: "1px solid rgba(207, 34, 46, 0.18)",
-  },
-  warningTitle: { margin: 0, color: "#cf222e", fontWeight: 700 },
-  warningBody: { margin: "8px 0 0", color: "#6e5f52", lineHeight: 1.6 },
-  primaryButton: {
-    marginTop: 12,
-    border: 0,
-    borderRadius: 999,
-    padding: "12px 18px",
-    background: "#1f6feb",
-    color: "white",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-};

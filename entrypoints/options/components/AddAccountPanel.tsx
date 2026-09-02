@@ -1,5 +1,3 @@
-import { type CSSProperties } from "react";
-
 import type { DeviceFlowController } from "../device-flow-controller";
 
 type Props = {
@@ -16,15 +14,21 @@ export function AddAccountPanel({ controller, onCancel }: Props) {
   };
 
   if (state.phase === "idle" || state.phase === "initiating") {
-    return <div style={styles.panel}>Requesting device code...</div>;
+    return (
+      <div className="connection-panel connection-panel--loading">
+        Requesting device code...
+      </div>
+    );
   }
 
   if (state.phase === "waiting") {
     return (
-      <div style={styles.panel}>
-        <p style={styles.title}>Enter this code on GitHub to authorize:</p>
-        <div style={styles.codeRow}>
-          <code style={styles.code} data-testid="device-user-code">
+      <div className="connection-panel">
+        <p className="connection-title">
+          Enter this code on GitHub to authorize:
+        </p>
+        <div className="device-code-row">
+          <code className="device-code" data-testid="device-user-code">
             {state.userCode}
           </code>
           <button
@@ -32,7 +36,7 @@ export function AddAccountPanel({ controller, onCancel }: Props) {
             onClick={() => {
               void navigator.clipboard?.writeText(state.userCode);
             }}
-            style={styles.secondaryButton}
+            className="button button--secondary"
           >
             Copy
           </button>
@@ -41,15 +45,21 @@ export function AddAccountPanel({ controller, onCancel }: Props) {
           href={state.verificationUriComplete}
           target="_blank"
           rel="noreferrer"
-          style={styles.primaryLink}
+          className="authorization-link"
         >
           Open GitHub to authorize →
         </a>
-        <p style={styles.hint}>Waiting for authorization…</p>
-        <p style={styles.hint}>
+        <p className="connection-hint connection-hint--waiting">
+          Waiting for authorization…
+        </p>
+        <p className="connection-hint">
           Code expires at {new Date(state.expiresAt).toLocaleTimeString()}.
         </p>
-        <button type="button" onClick={handleCancel} style={styles.secondaryButton}>
+        <button
+          type="button"
+          onClick={handleCancel}
+          className="button button--secondary"
+        >
           Cancel
         </button>
       </div>
@@ -57,12 +67,16 @@ export function AddAccountPanel({ controller, onCancel }: Props) {
   }
 
   if (state.phase === "fetching_installations") {
-    return <div style={styles.panel}>Loading your installations…</div>;
+    return (
+      <div className="connection-panel connection-panel--loading">
+        Loading your installations…
+      </div>
+    );
   }
 
   if (state.phase === "connected") {
     return (
-      <div style={styles.panel}>
+      <div className="connection-panel">
         Account connected. You can add another account or close this panel.
       </div>
     );
@@ -70,9 +84,13 @@ export function AddAccountPanel({ controller, onCancel }: Props) {
 
   if (state.phase === "expired") {
     return (
-      <div style={styles.panel}>
+      <div className="connection-panel">
         <p>The device code expired.</p>
-        <button type="button" onClick={controller.start} style={styles.primaryButton}>
+        <button
+          type="button"
+          onClick={controller.start}
+          className="button button--primary"
+        >
           Generate a new code
         </button>
       </div>
@@ -81,9 +99,13 @@ export function AddAccountPanel({ controller, onCancel }: Props) {
 
   if (state.phase === "denied") {
     return (
-      <div style={styles.panel}>
+      <div className="connection-panel">
         <p>Authorization was denied.</p>
-        <button type="button" onClick={controller.start} style={styles.primaryButton}>
+        <button
+          type="button"
+          onClick={controller.start}
+          className="button button--primary"
+        >
           Try again
         </button>
       </div>
@@ -91,57 +113,17 @@ export function AddAccountPanel({ controller, onCancel }: Props) {
   }
 
   return (
-    <div style={styles.panel}>
+    <div className="connection-panel">
       <p>
         Could not complete sign-in: {state.message} ({state.code}).
       </p>
-      <button type="button" onClick={handleCancel} style={styles.secondaryButton}>
+      <button
+        type="button"
+        onClick={handleCancel}
+        className="button button--secondary"
+      >
         Close
       </button>
     </div>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  panel: {
-    padding: 16,
-    borderRadius: 16,
-    background: "#fffdf9",
-    border: "1px solid rgba(34, 29, 24, 0.08)",
-    display: "grid",
-    gap: 12,
-  },
-  title: { margin: 0, fontWeight: 600 },
-  codeRow: { display: "flex", gap: 12, alignItems: "center" },
-  code: {
-    padding: "8px 12px",
-    background: "#f6f8fa",
-    borderRadius: 8,
-    fontSize: 18,
-    letterSpacing: "0.1em",
-  },
-  primaryLink: {
-    color: "#1f6feb",
-    fontWeight: 600,
-    textDecoration: "none",
-  },
-  hint: { margin: 0, color: "#52463b", fontSize: 13 },
-  primaryButton: {
-    border: 0,
-    borderRadius: 999,
-    padding: "12px 18px",
-    background: "#1f6feb",
-    color: "white",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  secondaryButton: {
-    borderRadius: 999,
-    padding: "12px 18px",
-    background: "#fffdf9",
-    border: "1px solid #d3c4ae",
-    color: "#3b3024",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-};
