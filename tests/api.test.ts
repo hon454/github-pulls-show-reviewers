@@ -820,53 +820,80 @@ describe("fetchPullReviewerSummary", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it("does not follow non-GitHub issue-events pagination links with auth headers", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              state: "APPROVED",
-              submitted_at: "2026-05-07T02:03:16Z",
-              user: { login: "alice", avatar_url: null },
+  it.each([
+    {
+      caseLabel: "cross-origin",
+      nextUrl:
+        "https://example.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2",
+    },
+    {
+      caseLabel: "wrong-path",
+      nextUrl:
+        "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2",
+    },
+    {
+      caseLabel: "wrong-port",
+      nextUrl:
+        "https://api.github.com:8443/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2",
+    },
+    {
+      caseLabel: "userinfo",
+      nextUrl:
+        "https://attacker:secret@api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2",
+    },
+    {
+      caseLabel: "fragment",
+      nextUrl:
+        "https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2#unexpected",
+    },
+  ])(
+    "does not follow a $caseLabel issue-events next link with auth headers",
+    async ({ nextUrl }) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                state: "APPROVED",
+                submitted_at: "2026-05-07T02:03:16Z",
+                user: { login: "alice", avatar_url: null },
+              },
+            ]),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: `<${nextUrl}>; rel="next"`,
             },
-          ]),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify([]), {
-          status: 200,
-          headers: {
-            "Content-Type": "application/json",
-            Link: '<https://example.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2>; rel="next"',
-          },
-        }),
-      );
+          }),
+        );
 
-    const summary = await fetchPullReviewerSummary({
-      owner: "hon454",
-      repo: "github-pulls-show-reviewers",
-      pullNumber: "42",
-      githubToken: "gho_token",
-      pullMetadata: {
-        number: "42",
-        authorLogin: "author",
-        requestedUsers: [{ login: "alice", avatarUrl: null }],
-        requestedTeams: [],
-      },
-    });
+      const summary = await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: "gho_token",
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+        },
+      });
 
-    expect(summary.requestedUsers).toEqual([]);
-    expect(summary.completedReviews).toEqual([
-      { login: "alice", avatarUrl: null, state: "APPROVED" },
-    ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls.map((call) => call[0])).not.toContain(
-      "https://example.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2",
-    );
-  });
+      expect(summary.requestedUsers).toEqual([]);
+      expect(summary.completedReviews).toEqual([
+        { login: "alice", avatarUrl: null, state: "APPROVED" },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls.map((call) => call[0])).not.toContain(nextUrl);
+    },
+  );
 
   it("falls back to completed review state when an ambiguous issue-events lookup fails", async () => {
     vi.spyOn(globalThis, "fetch")
@@ -1203,6 +1230,124 @@ describe("fetchPullReviewerSummary", () => {
     expect(String(firstReviewsUrl)).toContain("per_page=100");
     const nextPageUrl = fetchMock.mock.calls[2]?.[0];
     expect(String(nextPageUrl)).toContain("page=2");
+  });
+
+  describe.each([
+    { authLabel: "authenticated", githubToken: "ghu_example" },
+    { authLabel: "unauthenticated", githubToken: null },
+  ])("$authLabel review pagination", ({ githubToken }) => {
+    it.each([
+      {
+        caseLabel: "cross-origin",
+        nextUrl:
+          "https://example.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2",
+      },
+      {
+        caseLabel: "non-HTTPS",
+        nextUrl:
+          "http://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2",
+      },
+      { caseLabel: "malformed", nextUrl: "not a URL" },
+      {
+        caseLabel: "encoded-path",
+        nextUrl:
+          "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/%72eviews?per_page=100&page=2",
+      },
+      {
+        caseLabel: "userinfo",
+        nextUrl:
+          "https://attacker:secret@api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2",
+      },
+      {
+        caseLabel: "wrong-path",
+        nextUrl:
+          "https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2",
+      },
+      {
+        caseLabel: "wrong-port",
+        nextUrl:
+          "https://api.github.com:8443/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2",
+      },
+      {
+        caseLabel: "fragment",
+        nextUrl:
+          "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100&page=2#unexpected",
+      },
+    ])("does not follow a $caseLabel next link", async ({ nextUrl }) => {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            Link: `<${nextUrl}>; rel="next"`,
+          },
+        }),
+      );
+
+      await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [],
+          requestedTeams: [],
+        },
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(
+        "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?per_page=100",
+      );
+      const headers = fetchMock.mock.calls[0]?.[1]?.headers as Headers;
+      expect(headers.get("Authorization")).toBe(
+        githubToken == null ? null : `Bearer ${githubToken}`,
+      );
+    });
+
+    it("follows an exact endpoint next link with query parameters and the default HTTPS port", async () => {
+      const nextUrl =
+        "https://api.github.com:443/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews?page=2&per_page=100";
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: `<${nextUrl}>; rel="next"`,
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+
+      await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [],
+          requestedTeams: [],
+        },
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[1]?.[0]).toBe(nextUrl);
+      const headers = fetchMock.mock.calls[1]?.[1]?.headers as Headers;
+      expect(headers.get("Authorization")).toBe(
+        githubToken == null ? null : `Bearer ${githubToken}`,
+      );
+    });
   });
 
   it("forwards AbortSignal to every paginated reviews request", async () => {

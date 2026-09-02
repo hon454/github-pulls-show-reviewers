@@ -854,6 +854,7 @@ async function collectReviewsAcrossPages(params: {
   signal?: AbortSignal;
 }): Promise<z.infer<typeof reviewsSchema>> {
   const collected: z.infer<typeof reviewsSchema> = [];
+  const expectedPathname = params.endpoint.path.split("?")[0];
 
   let response = params.firstResponse;
   while (true) {
@@ -863,7 +864,10 @@ async function collectReviewsAcrossPages(params: {
     }
     collected.push(...parsed.data);
 
-    const nextUrl = parseNextPageUrl(response.headers.get("Link"));
+    const nextUrl = parseNextPageUrl(
+      response.headers.get("Link"),
+      expectedPathname,
+    );
     if (nextUrl == null) {
       return collected;
     }
@@ -890,6 +894,7 @@ async function collectReviewRequestEventsAcrossPages(params: {
   signal?: AbortSignal;
 }): Promise<z.infer<typeof reviewRequestEventsSchema>> {
   const collected: z.infer<typeof reviewRequestEventsSchema> = [];
+  const expectedPathname = params.endpoint.path.split("?")[0];
 
   let response = params.firstResponse;
   let pageCount = 0;
@@ -905,8 +910,11 @@ async function collectReviewRequestEventsAcrossPages(params: {
       return collected;
     }
 
-    const nextUrl = parseNextPageUrl(response.headers.get("Link"));
-    if (nextUrl == null || !isGitHubApiUrl(nextUrl)) {
+    const nextUrl = parseNextPageUrl(
+      response.headers.get("Link"),
+      expectedPathname,
+    );
+    if (nextUrl == null) {
       return collected;
     }
 
@@ -1024,19 +1032,12 @@ function isExpectedGitHubApiUrl(url: string, expectedPathname: string): boolean 
   try {
     const parsed = new URL(url);
     return (
-      parsed.protocol === "https:" &&
-      parsed.hostname === "api.github.com" &&
-      parsed.pathname === expectedPathname
+      parsed.origin === "https://api.github.com" &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.pathname === expectedPathname &&
+      parsed.hash === ""
     );
-  } catch {
-    return false;
-  }
-}
-
-function isGitHubApiUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" && parsed.hostname === "api.github.com";
   } catch {
     return false;
   }
