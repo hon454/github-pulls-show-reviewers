@@ -22,6 +22,8 @@
   or paginated pull request lists when GitHub's REST pagination exposes those
   rows.
 - Keeps working as GitHub updates the page during normal navigation.
+- Keeps reviewer metadata visible in narrow desktop and split-window layouts
+  without restoring GitHub metadata that GitHub intentionally hides there.
 - Leaves rows visually unchanged when a pull request has no reviewers. If a
   reviewer request fails unexpectedly, shows one page-level reload prompt and
   keeps any previously loaded reviewer chips visible.

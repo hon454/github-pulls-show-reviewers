@@ -98,6 +98,77 @@ for (const fixtureCase of renderCases) {
   });
 }
 
+const narrowRenderCases: FixtureCase[] = [
+  {
+    name: "standard metadata row",
+    fixture: singleRowFixture,
+    pullNumber: "42",
+  },
+  {
+    name: "title-only metadata fallback",
+    fixture: "github-pulls-title-only-metadata.html",
+    pullNumber: "203",
+  },
+];
+
+for (const fixtureCase of narrowRenderCases) {
+  test(`keeps reviewer metadata visible in a narrow viewport for ${fixtureCase.name}`, async () => {
+    await withExtensionContext(async (context) => {
+      const fixtureHtml = await readFile(
+        path.join(fixturesDir, fixtureCase.fixture),
+        "utf8",
+      );
+
+      await routeFixturePage(context, fixtureHtml);
+      await routePullListApi(context, [
+        {
+          number: Number(fixtureCase.pullNumber),
+          user: { login: "hon454" },
+          requested_reviewers: [{ login: "alice" }],
+          requested_teams: [{ slug: "platform" }],
+        },
+      ]);
+      await routePullApi(context, fixtureCase.pullNumber, {
+        user: { login: "hon454" },
+        requested_reviewers: [{ login: "alice" }],
+        requested_teams: [{ slug: "platform" }],
+      });
+      await routeReviewsApi(context, fixtureCase.pullNumber, [
+        {
+          state: "APPROVED",
+          submitted_at: "2026-04-20T12:00:00Z",
+          user: { login: "bob" },
+        },
+      ]);
+
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 640, height: 800 });
+      await page.goto(
+        "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+      );
+      await page.addStyleTag({
+        content: `
+          @media (max-width: 767px) {
+            .d-none.d-md-inline-flex { display: none !important; }
+          }
+        `,
+      });
+
+      const root = page.locator(".ghpsr-root");
+      await expect(root).toHaveCount(1);
+      await expect(root).toBeVisible();
+      await expect(root).toContainText("Reviewers:");
+      await expect(root).toContainText("Team: platform");
+      await expect(root.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+        1,
+      );
+      await expect(
+        root.locator('a.ghpsr-avatar[title*="@bob"][title*="approved"]'),
+      ).toHaveCount(1);
+    });
+  });
+}
+
 test("omits the inline reviewer row when both requested and reviewed are empty", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(
@@ -182,6 +253,7 @@ test("renders reviewer chips after a same-repository GitHub rerender", async () 
     await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
       1,
     );
+    await expect(page.locator("[data-ghpsr-root]")).toHaveCount(1);
 
     await page.evaluate((html) => {
       const nextDocument = new DOMParser().parseFromString(html, "text/html");
@@ -212,6 +284,7 @@ test("renders reviewer chips after a same-repository GitHub rerender", async () 
     await expect(
       root.locator('a.ghpsr-avatar[title*="@dana"][title*="approved"]'),
     ).toHaveCount(1);
+    await expect(page.locator("[data-ghpsr-root]")).toHaveCount(1);
   });
 });
 

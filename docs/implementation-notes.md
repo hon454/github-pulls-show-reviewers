@@ -102,7 +102,24 @@
    targeted issue-event lookup fails, or the confirming event is beyond the
    two-page bound, fall back to the completed review state instead of labeling
    the reviewer as re-requested.
-8. Render a single `Reviewers` section inline in the PR row metadata area. Each reviewer is an avatar chip. Requested reviewers keep the blue requested ring. Completed reviewers show a ring and badge derived from one `(isRequested, state)` mapping. Review selection prefers the latest non-`COMMENTED` review for a reviewer, falling back to the latest `COMMENTED` review only when no non-comment review exists. A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or `DISMISSED` evidence shows the refresh badge only when the event ordering confirms a later re-request. Requested teams keep the text chip shape. User chip links follow the same primary axis as the ring color: blue-ring (still-requested) chips link to `review-requested:<login>`; colored-ring (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use `is:pr is:open` searches by default.
+8. Render a single `Reviewers` section inline in the PR row metadata area. The
+   mount lives in an extension-owned `inline-flex` metadata container instead
+   of GitHub's `d-none d-md-inline-flex` wrapper. Standard desktop placement and
+   chip styling stay unchanged, while narrow desktop and split-window layouts
+   keep reviewer metadata visible without forcing GitHub's hidden row metadata
+   back into view. Repeated processing moves an existing mount into that
+   container and removes duplicate roots. Each reviewer is an avatar chip.
+   Requested reviewers keep the blue requested ring. Completed reviewers show
+   a ring and badge derived from one `(isRequested, state)` mapping. Review
+   selection prefers the latest non-`COMMENTED` review for a reviewer, falling
+   back to the latest `COMMENTED` review only when no non-comment review exists.
+   A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or
+   `DISMISSED` evidence shows the refresh badge only when the event ordering
+   confirms a later re-request. Requested teams keep the text chip shape. User
+   chip links follow the same primary axis as the ring color: blue-ring
+   (still-requested) chips link to `review-requested:<login>`; colored-ring
+   (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use
+   `is:pr is:open` searches by default.
 9. On API errors, emit a signal to the banner aggregator; do not render
    row-level error text. Network, schema, and unknown failures use the generic
    reviewer-unavailable state with a same-page reload link. Repeated failures
