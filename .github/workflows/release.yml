@@ -98,8 +98,8 @@ jobs:
         env:
           CHROME_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
           CHROME_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
-          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ fromJSON(secrets.CWS_SERVICE_ACCOUNT_JSON).client_email }}
-          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ fromJSON(secrets.CWS_SERVICE_ACCOUNT_JSON).private_key }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ vars.CWS_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_PRIVATE_KEY }}
 
       - name: Publish to Chrome Web Store
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.chrome_web_store == 'publish')
@@ -107,5 +107,5 @@ jobs:
         env:
           CHROME_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
           CHROME_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
-          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ fromJSON(secrets.CWS_SERVICE_ACCOUNT_JSON).client_email }}
-          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ fromJSON(secrets.CWS_SERVICE_ACCOUNT_JSON).private_key }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ vars.CWS_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_PRIVATE_KEY }}

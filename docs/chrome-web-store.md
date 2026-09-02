@@ -52,13 +52,17 @@ Required GitHub Actions configuration:
 
 - Repository variable `CWS_EXTENSION_ID`: the existing Chrome Web Store item ID.
 - Repository variable `CWS_PUBLISHER_ID`: the owning publisher ID.
-- Repository secret `CWS_SERVICE_ACCOUNT_JSON`: the complete JSON credential
-  for the linked publishing service account.
+- Repository variable `CWS_SERVICE_ACCOUNT_CLIENT_EMAIL`: the linked service
+  account's email address.
+- Repository secret `CWS_SERVICE_ACCOUNT_PRIVATE_KEY`: the `private_key` value
+  from that service account's JSON credential, including its PEM header,
+  footer, and line breaks.
 
-The workflow derives the service-account email and private key from the JSON
-secret only for the submission step. Do not add a local `.env.submit`, split
-the private key into repository variables, or print the parsed credential while
-debugging.
+Keep the complete JSON credential out of GitHub Actions. In particular, do not
+derive `private_key` with `fromJSON(...)`: GitHub masks the stored secret value,
+but does not reliably mask a field extracted from it. Do not add a local
+`.env.submit`, put the private key in repository variables, or print the
+credential while debugging.
 
 Required external configuration:
 
@@ -79,8 +83,10 @@ uploading a package or changing the store submission.
 Rotate the service-account key in this order:
 
 1. Create a replacement JSON key for the same linked service account.
-2. Replace the `CWS_SERVICE_ACCOUNT_JSON` GitHub Actions secret without
-   printing, downloading into the repository, or logging its contents.
+2. Replace the `CWS_SERVICE_ACCOUNT_PRIVATE_KEY` GitHub Actions secret with the
+   new JSON credential's `private_key` value without printing, downloading into
+   the repository, or logging it. Confirm
+   `CWS_SERVICE_ACCOUNT_CLIENT_EMAIL` still names the same account.
 3. Run `release.yml` on `main` with `chrome_web_store: dry-run` and require a
    successful credential-check step.
 4. Delete the old service-account key only after the dry run succeeds.
@@ -89,6 +95,9 @@ If the dry run fails, leave the old key active, restore or correct the GitHub
 secret, and repeat the check. The Chrome Web Store publisher currently supports
 one linked service account, so key rotation should reuse that account rather
 than replace the publisher linkage unnecessarily.
+
+After migrating from the former complete-JSON secret, remove
+`CWS_SERVICE_ACCOUNT_JSON` from the repository so it cannot be used again.
 
 ## Failure recovery
 

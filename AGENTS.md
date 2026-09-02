@@ -77,8 +77,10 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - Run the credential-only `dry-run` after changing Chrome Web Store
   credentials, service-account linkage, the submission dependency, or the
   publish steps in `release.yml`.
-- Never read, print, echo, commit, or write the value of
-  `CWS_SERVICE_ACCOUNT_JSON` to logs or repository files. Checking that the
+- Never read, print, echo, commit, or write Chrome Web Store credential values
+  to logs or repository files. Store the private key directly in
+  `CWS_SERVICE_ACCOUNT_PRIVATE_KEY`; do not derive it from a complete JSON
+  secret because derived values may bypass GitHub's masking. Checking that the
   secret exists is allowed; its contents are not.
 - Do not bypass `pnpm zip:checked` or restore routine manual package uploads.
   Dashboard listing metadata, screenshots, privacy disclosures, and exceptional
