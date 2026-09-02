@@ -341,17 +341,222 @@ function createAuthHeaders(token: string): Headers {
   });
 }
 
-function parseNextLink(header: string | null): string | null {
+type AuthPaginationTarget =
+  | { kind: "none" }
+  | { kind: "valid"; url: string }
+  | { kind: "invalid" };
+
+type LinkHeaderEntry = {
+  target: string;
+  relations: string[];
+};
+
+function parseAuthPaginationTarget(
+  header: string | null,
+  expectedPathname: string,
+): AuthPaginationTarget {
   if (header == null) {
+    return { kind: "none" };
+  }
+
+  if (header.trim() === "") {
+    return { kind: "none" };
+  }
+
+  const entries = parseLinkHeaderEntries(header);
+  if (entries == null) {
+    return { kind: "invalid" };
+  }
+
+  const nextEntries = entries.filter(({ relations }) =>
+    relations.includes("next"),
+  );
+  if (nextEntries.length === 0) {
+    return { kind: "none" };
+  }
+  if (nextEntries.length !== 1) {
+    return { kind: "invalid" };
+  }
+
+  const url = nextEntries[0].target;
+  return isExpectedAuthPaginationUrl(url, expectedPathname)
+    ? { kind: "valid", url }
+    : { kind: "invalid" };
+}
+
+function parseLinkHeaderEntries(header: string): LinkHeaderEntry[] | null {
+  const segments: string[] = [];
+  let segmentStart = 0;
+  let insideTarget = false;
+  let insideQuotedString = false;
+  let escaped = false;
+
+  for (let index = 0; index < header.length; index++) {
+    const character = header[index];
+    if (insideQuotedString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        insideQuotedString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      if (insideTarget) {
+        return null;
+      }
+      insideQuotedString = true;
+    } else if (character === "<") {
+      if (insideTarget) {
+        return null;
+      }
+      insideTarget = true;
+    } else if (character === ">") {
+      if (!insideTarget) {
+        return null;
+      }
+      insideTarget = false;
+    } else if (character === "," && !insideTarget) {
+      segments.push(header.slice(segmentStart, index));
+      segmentStart = index + 1;
+    }
+  }
+
+  if (insideTarget || insideQuotedString || escaped) {
     return null;
   }
-  for (const part of header.split(",")) {
-    const match = /<([^>]+)>\s*;\s*rel="next"/.exec(part.trim());
-    if (match) {
-      return match[1];
+  segments.push(header.slice(segmentStart));
+
+  const entries: LinkHeaderEntry[] = [];
+  for (const segment of segments) {
+    const entry = parseLinkHeaderEntry(segment);
+    if (entry == null) {
+      return null;
+    }
+    entries.push(entry);
+  }
+  return entries;
+}
+
+function parseLinkHeaderEntry(segment: string): LinkHeaderEntry | null {
+  let index = skipOptionalWhitespace(segment, 0);
+  if (segment[index] !== "<") {
+    return null;
+  }
+
+  const targetEnd = segment.indexOf(">", index + 1);
+  if (targetEnd === -1 || targetEnd === index + 1) {
+    return null;
+  }
+  const target = segment.slice(index + 1, targetEnd);
+  index = targetEnd + 1;
+
+  const relations: string[] = [];
+  while (true) {
+    index = skipOptionalWhitespace(segment, index);
+    if (index === segment.length) {
+      return { target, relations };
+    }
+    if (segment[index] !== ";") {
+      return null;
+    }
+
+    index = skipOptionalWhitespace(segment, index + 1);
+    const nameStart = index;
+    while (index < segment.length && isLinkTokenCharacter(segment[index])) {
+      index += 1;
+    }
+    if (index === nameStart) {
+      return null;
+    }
+    const name = segment.slice(nameStart, index).toLowerCase();
+
+    index = skipOptionalWhitespace(segment, index);
+    if (segment[index] !== "=") {
+      return null;
+    }
+    index = skipOptionalWhitespace(segment, index + 1);
+
+    const parsedValue = parseLinkParameterValue(segment, index);
+    if (parsedValue == null) {
+      return null;
+    }
+    index = parsedValue.end;
+
+    if (name === "rel") {
+      relations.push(...parsedValue.value.split(/\s+/).filter(Boolean));
+    }
+  }
+}
+
+function parseLinkParameterValue(
+  segment: string,
+  start: number,
+): { value: string; end: number } | null {
+  if (segment[start] !== '"') {
+    let end = start;
+    while (end < segment.length && isLinkTokenCharacter(segment[end])) {
+      end += 1;
+    }
+    return end === start ? null : { value: segment.slice(start, end), end };
+  }
+
+  let value = "";
+  for (let index = start + 1; index < segment.length; index++) {
+    const character = segment[index];
+    if (character === '"') {
+      return { value, end: index + 1 };
+    }
+    if (character === "\\") {
+      index += 1;
+      if (index === segment.length) {
+        return null;
+      }
+      value += segment[index];
+    } else {
+      value += character;
     }
   }
   return null;
+}
+
+function skipOptionalWhitespace(value: string, start: number): number {
+  let index = start;
+  while (value[index] === " " || value[index] === "\t") {
+    index += 1;
+  }
+  return index;
+}
+
+function isLinkTokenCharacter(character: string | undefined): boolean {
+  return character != null && /^[!#$%&'*+\-.^_`|~0-9A-Za-z]$/.test(character);
+}
+
+function isExpectedAuthPaginationUrl(
+  url: string,
+  expectedPathname: string,
+): boolean {
+  const rawTarget =
+    /^https:\/\/api\.github\.com(?::443)?(\/[^?#]*)(?:\?[^#]*)?$/i.exec(url);
+  if (rawTarget?.[1] !== expectedPathname) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.origin === "https://api.github.com" &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.pathname === expectedPathname &&
+      parsed.hash === ""
+    );
+  } catch {
+    return false;
+  }
 }
 
 const githubUserSchema = z.object({
@@ -424,12 +629,17 @@ export async function fetchUserInstallations(input: {
   signal?: AbortSignal;
 }): Promise<PaginatedResult<ApiInstallation>> {
   const results: ApiInstallation[] = [];
+  const expectedPathname = "/user/installations";
+  let truncated = false;
   let url: string | null =
     "https://api.github.com/user/installations?per_page=100";
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
     const response = await fetch(
       url,
-      withOptionalSignal({ headers: createAuthHeaders(input.token) }, input.signal),
+      withOptionalSignal(
+        { headers: createAuthHeaders(input.token) },
+        input.signal,
+      ),
     );
     if (!response.ok) {
       throw new Error(
@@ -457,9 +667,18 @@ export async function fetchUserInstallations(input: {
         repositorySelection: installation.repository_selection,
       });
     }
-    url = parseNextLink(response.headers.get("link"));
+    const nextTarget = parseAuthPaginationTarget(
+      response.headers.get("link"),
+      expectedPathname,
+    );
+    if (nextTarget.kind === "valid") {
+      url = nextTarget.url;
+    } else {
+      truncated = nextTarget.kind === "invalid";
+      url = null;
+    }
   }
-  return { items: results, truncated: url != null };
+  return { items: results, truncated: truncated || url != null };
 }
 
 const installationRepositoriesSchema = z.object({
@@ -473,11 +692,17 @@ export async function fetchInstallationRepositories(input: {
   signal?: AbortSignal;
 }): Promise<PaginatedResult<string>> {
   const results: string[] = [];
-  let url: string | null = `https://api.github.com/user/installations/${input.installationId}/repositories?per_page=100`;
+  const expectedPathname = `/user/installations/${input.installationId}/repositories`;
+  let truncated = false;
+  let url: string | null =
+    `https://api.github.com${expectedPathname}?per_page=100`;
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
     const response = await fetch(
       url,
-      withOptionalSignal({ headers: createAuthHeaders(input.token) }, input.signal),
+      withOptionalSignal(
+        { headers: createAuthHeaders(input.token) },
+        input.signal,
+      ),
     );
     if (!response.ok) {
       throw new Error(
@@ -496,7 +721,16 @@ export async function fetchInstallationRepositories(input: {
     for (const repository of parsed.data.repositories) {
       results.push(repository.full_name);
     }
-    url = parseNextLink(response.headers.get("link"));
+    const nextTarget = parseAuthPaginationTarget(
+      response.headers.get("link"),
+      expectedPathname,
+    );
+    if (nextTarget.kind === "valid") {
+      url = nextTarget.url;
+    } else {
+      truncated = nextTarget.kind === "invalid";
+      url = null;
+    }
   }
-  return { items: results, truncated: url != null };
+  return { items: results, truncated: truncated || url != null };
 }

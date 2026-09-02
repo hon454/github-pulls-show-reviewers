@@ -153,13 +153,126 @@ describe("pollForAccessToken", () => {
 });
 
 function paginatedResponse(body: unknown, linkNext?: string): Response {
+  return linkResponse(
+    body,
+    linkNext == null ? undefined : `<${linkNext}>; rel="next"`,
+  );
+}
+
+function linkResponse(body: unknown, link?: string): Response {
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (linkNext) {
-    headers["link"] = `<${linkNext}>; rel="next"`;
+  if (link != null) {
+    headers["link"] = link;
   }
   return new Response(JSON.stringify(body), { status: 200, headers });
+}
+
+function installationPage(id: number): unknown {
+  return {
+    total_count: 2,
+    installations: [
+      {
+        id,
+        account: {
+          login: `org-${id}`,
+          type: "Organization",
+          avatar_url: null,
+        },
+        repository_selection: "all",
+      },
+    ],
+  };
+}
+
+function repositoryPage(fullName: string): unknown {
+  return {
+    total_count: 2,
+    repositories: [{ full_name: fullName }],
+  };
+}
+
+function invalidPaginationTargets(expectedPathname: string) {
+  const pathSegments = expectedPathname.split("/");
+  const finalSegment = pathSegments.pop();
+  const parentPath = pathSegments.join("/");
+  return [
+    {
+      caseLabel: "malformed",
+      nextUrl: "not a URL",
+    },
+    {
+      caseLabel: "credential-bearing",
+      nextUrl: `https://attacker:secret@api.github.com${expectedPathname}?page=2`,
+    },
+    {
+      caseLabel: "fragment-bearing",
+      nextUrl: `https://api.github.com${expectedPathname}?page=2#unexpected`,
+    },
+    {
+      caseLabel: "HTTP",
+      nextUrl: `http://api.github.com${expectedPathname}?page=2`,
+    },
+    {
+      caseLabel: "cross-origin",
+      nextUrl: `https://example.com${expectedPathname}?page=2`,
+    },
+    {
+      caseLabel: "non-default-port",
+      nextUrl: `https://api.github.com:8443${expectedPathname}?page=2`,
+    },
+    {
+      caseLabel: "wrong-path",
+      nextUrl: `https://api.github.com${expectedPathname}/unexpected?page=2`,
+    },
+    {
+      caseLabel: "dot-segment path",
+      nextUrl: `https://api.github.com${parentPath}/unexpected/../${finalSegment}?page=2`,
+    },
+    {
+      caseLabel: "encoded dot-segment path",
+      nextUrl: `https://api.github.com${parentPath}/unexpected/%2e%2e/${finalSegment}?page=2`,
+    },
+    {
+      caseLabel: "encoded path",
+      nextUrl: `https://api.github.com${expectedPathname.replace("/user", "/%75ser")}?page=2`,
+    },
+    {
+      caseLabel: "backslash-normalized path",
+      nextUrl: `https://api.github.com${expectedPathname.replaceAll("/", "\\")}?page=2`,
+    },
+    {
+      caseLabel: "empty explicit port",
+      nextUrl: `https://api.github.com:${expectedPathname}?page=2`,
+    },
+    ...(expectedPathname.includes("/1/")
+      ? [
+          {
+            caseLabel: "wrong installation ID",
+            nextUrl: `https://api.github.com${expectedPathname.replace("/1/", "/2/")}?page=2`,
+          },
+        ]
+      : []),
+  ];
+}
+
+function malformedPaginationHeaders(expectedPathname: string) {
+  const nextUrl = `https://api.github.com${expectedPathname}?page=2`;
+  return [
+    {
+      caseLabel: "missing target brackets",
+      link: `${nextUrl}; rel="next"`,
+    },
+    {
+      caseLabel: "unterminated relation value",
+      link: `<${nextUrl}>; rel="next`,
+    },
+    {
+      caseLabel: "ambiguous duplicate next relation",
+      link: `<${nextUrl}>; rel="next", <${nextUrl}&page=3>; rel="next"`,
+    },
+  ];
 }
 
 describe("fetchAuthenticatedUser", () => {
@@ -190,6 +303,86 @@ describe("fetchUserInstallations", () => {
     });
     expect(installations[0].account.login).toBe("hon454");
   });
+
+  it("follows an exact installation endpoint next link with query parameters", async () => {
+    const controller = new AbortController();
+    const nextUrl =
+      "HTTPS://API.GITHUB.COM:443/user/installations?page=2&per_page=100";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(paginatedResponse(installationPage(1), nextUrl))
+      .mockResolvedValueOnce(paginatedResponse(installationPage(2)));
+
+    const result = await fetchUserInstallations({
+      token: "ghu_abc",
+      signal: controller.signal,
+    });
+
+    expect(result.items.map(({ id }) => id)).toEqual([1, 2]);
+    expect(result.truncated).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(nextUrl);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init?.headers as Headers).get("Authorization")).toBe(
+        "Bearer ghu_abc",
+      );
+      expect(init?.signal).toBe(controller.signal);
+    }
+  });
+
+  it("finds next among multiple links, parameters, and relation values", async () => {
+    const previousUrl = "https://api.github.com/user/installations?page=1";
+    const nextUrl = "https://api.github.com/user/installations?page=2";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        linkResponse(
+          installationPage(1),
+          `<${previousUrl}>; rel="prev"; title="page, one", <${nextUrl}>; type="application/json"; rel="next last"`,
+        ),
+      )
+      .mockResolvedValueOnce(paginatedResponse(installationPage(2)));
+
+    const result = await fetchUserInstallations({ token: "ghu_abc" });
+
+    expect(result.items.map(({ id }) => id)).toEqual([1, 2]);
+    expect(result.truncated).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(nextUrl);
+  });
+
+  it.each(invalidPaginationTargets("/user/installations"))(
+    "rejects a $caseLabel installation next link without a second authenticated request",
+    async ({ nextUrl }) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(paginatedResponse(installationPage(1), nextUrl));
+
+      const result = await fetchUserInstallations({ token: "ghu_abc" });
+
+      expect(result.items.map(({ id }) => id)).toEqual([1]);
+      expect(result.truncated).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        (fetchMock.mock.calls[0]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer ghu_abc");
+    },
+  );
+
+  it.each(malformedPaginationHeaders("/user/installations"))(
+    "rejects $caseLabel without treating the installation snapshot as complete",
+    async ({ link }) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(linkResponse(installationPage(1), link));
+
+      const result = await fetchUserInstallations({ token: "ghu_abc" });
+
+      expect(result.items.map(({ id }) => id)).toEqual([1]);
+      expect(result.truncated).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("marks installation pagination truncated when the ceiling leaves a next page", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
@@ -237,6 +430,82 @@ describe("fetchInstallationRepositories", () => {
       truncated: false,
     });
   });
+
+  it("follows an exact selected-repository endpoint next link with query parameters", async () => {
+    const controller = new AbortController();
+    const nextUrl =
+      "https://api.github.com:443/user/installations/1/repositories?page=2&per_page=100";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        paginatedResponse(repositoryPage("cinev/one"), nextUrl),
+      )
+      .mockResolvedValueOnce(paginatedResponse(repositoryPage("cinev/two")));
+
+    const result = await fetchInstallationRepositories({
+      token: "ghu_abc",
+      installationId: 1,
+      signal: controller.signal,
+    });
+
+    expect(result).toEqual({
+      items: ["cinev/one", "cinev/two"],
+      truncated: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(nextUrl);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init?.headers as Headers).get("Authorization")).toBe(
+        "Bearer ghu_abc",
+      );
+      expect(init?.signal).toBe(controller.signal);
+    }
+  });
+
+  it.each(invalidPaginationTargets("/user/installations/1/repositories"))(
+    "rejects a $caseLabel selected-repository next link without a second authenticated request",
+    async ({ nextUrl }) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          paginatedResponse(repositoryPage("cinev/one"), nextUrl),
+        );
+
+      const result = await fetchInstallationRepositories({
+        token: "ghu_abc",
+        installationId: 1,
+      });
+
+      expect(result).toEqual({
+        items: ["cinev/one"],
+        truncated: true,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(
+        (fetchMock.mock.calls[0]?.[1]?.headers as Headers).get("Authorization"),
+      ).toBe("Bearer ghu_abc");
+    },
+  );
+
+  it.each(malformedPaginationHeaders("/user/installations/1/repositories"))(
+    "rejects $caseLabel without treating the repository snapshot as complete",
+    async ({ link }) => {
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(linkResponse(repositoryPage("cinev/one"), link));
+
+      const result = await fetchInstallationRepositories({
+        token: "ghu_abc",
+        installationId: 1,
+      });
+
+      expect(result).toEqual({
+        items: ["cinev/one"],
+        truncated: true,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("marks selected-repository pagination truncated when the ceiling leaves a next page", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
