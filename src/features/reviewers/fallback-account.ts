@@ -10,6 +10,7 @@ export function createFallbackAccountIntegration(
   resolveFallbackAccount: (owner: string) => Promise<Account | null>,
 ): FallbackAccountIntegration {
   let cache: { owner: string; account: Account | null } | null = null;
+  let generation = 0;
   let request: { owner: string; promise: Promise<Account | null> } | null =
     null;
 
@@ -27,10 +28,13 @@ export function createFallbackAccountIntegration(
       return request.promise;
     }
 
+    const requestGeneration = generation;
     const nextRequest = {
       owner,
       promise: resolveFallbackAccount(owner).then((account) => {
-        cache = { owner, account };
+        if (generation === requestGeneration) {
+          cache = { owner, account };
+        }
         return account;
       }),
     };
@@ -48,6 +52,7 @@ export function createFallbackAccountIntegration(
     read,
     get,
     clear(): void {
+      generation += 1;
       cache = null;
       request = null;
     },

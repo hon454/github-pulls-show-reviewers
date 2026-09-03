@@ -20,6 +20,17 @@ function makeAccount(id: string): Account {
   };
 }
 
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
 describe("fallback account integration", () => {
   it("deduplicates concurrent owner lookups and caches the result", async () => {
     const account = makeAccount("acc-1");
@@ -62,5 +73,42 @@ describe("fallback account integration", () => {
     integration.clear();
     expect(integration.read("acme")).toBeUndefined();
     await expect(integration.get("acme")).resolves.toBe(second);
+  });
+
+  it("does not cache a deferred lookup that completes after clear", async () => {
+    const deferred = createDeferred<Account | null>();
+    const resolve = vi.fn(() => deferred.promise);
+    const integration = createFallbackAccountIntegration(resolve);
+
+    const request = integration.get("acme");
+    integration.clear();
+    deferred.resolve(makeAccount("old"));
+
+    await expect(request).resolves.toEqual(makeAccount("old"));
+    expect(integration.read("acme")).toBeUndefined();
+  });
+
+  it("resolves again after clear and only caches the current generation", async () => {
+    const oldLookup = createDeferred<Account | null>();
+    const currentLookup = createDeferred<Account | null>();
+    const resolve = vi
+      .fn<(owner: string) => Promise<Account | null>>()
+      .mockImplementationOnce(() => oldLookup.promise)
+      .mockImplementationOnce(() => currentLookup.promise);
+    const integration = createFallbackAccountIntegration(resolve);
+
+    const oldRequest = integration.get("acme");
+    integration.clear();
+    const currentRequest = integration.get("acme");
+
+    expect(resolve).toHaveBeenCalledTimes(2);
+
+    oldLookup.resolve(makeAccount("old"));
+    await expect(oldRequest).resolves.toEqual(makeAccount("old"));
+    expect(integration.read("acme")).toBeUndefined();
+
+    currentLookup.resolve(makeAccount("current"));
+    await expect(currentRequest).resolves.toEqual(makeAccount("current"));
+    expect(integration.read("acme")).toEqual(makeAccount("current"));
   });
 });

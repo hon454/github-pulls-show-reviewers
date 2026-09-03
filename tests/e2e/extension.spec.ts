@@ -5,6 +5,11 @@ import path from "node:path";
 
 import { chromium, expect, test } from "@playwright/test";
 
+import {
+  createPullListFixtureHtml,
+  REPRESENTATIVE_PULL_LIST_PULL_NUMBERS,
+} from "../helpers/pull-list-fixtures";
+
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "../..");
 const extensionPath = path.join(projectRoot, ".output/chrome-mv3");
@@ -97,6 +102,60 @@ for (const fixtureCase of renderCases) {
     });
   });
 }
+
+test("bounds reviewer-summary API concurrency for a representative 25-row list", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = createPullListFixtureHtml(
+      REPRESENTATIVE_PULL_LIST_PULL_NUMBERS,
+    );
+    let activeReviewsRequests = 0;
+    let peakReviewsConcurrency = 0;
+    let reviewsRequestCount = 0;
+
+    await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(
+      context,
+      REPRESENTATIVE_PULL_LIST_PULL_NUMBERS.map((pullNumber) => ({
+        number: Number(pullNumber),
+        user: { login: "hon454" },
+        requested_reviewers: [{ login: `reviewer-${pullNumber}` }],
+        requested_teams: [],
+      })),
+    );
+    await context.route(
+      /^https:\/\/api\.github\.com\/repos\/hon454\/github-pulls-show-reviewers\/pulls\/\d+\/reviews/,
+      async (route) => {
+        reviewsRequestCount += 1;
+        activeReviewsRequests += 1;
+        peakReviewsConcurrency = Math.max(
+          peakReviewsConcurrency,
+          activeReviewsRequests,
+        );
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: "[]",
+          });
+        } finally {
+          activeReviewsRequests -= 1;
+        }
+      },
+    );
+
+    const page = await context.newPage();
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+
+    await expect.poll(() => reviewsRequestCount).toBe(25);
+    await expect(page.locator("[data-ghpsr-root] a.ghpsr-avatar")).toHaveCount(
+      25,
+    );
+    expect(peakReviewsConcurrency).toBe(4);
+  });
+});
 
 const narrowRenderCases: FixtureCase[] = [
   {

@@ -71,16 +71,17 @@
 6. Send a `fetchPullReviewerSummary` message for each uncached or stale row.
    Fresh cache hits render without refetching. Stale cache hits render the
    cached chips immediately, then revalidate in the background and rerender only
-   the affected row when fresh data arrives. A failed revalidation preserves
-   those stale chips and reports through the page-level banner. When the
-   page-level metadata contains that pull request number, the background skips
-   the per-row pull endpoint and reads only the reviews endpoint. If the pull
-   number is absent from a successful batch result, the summary request falls
-   back to the original per-row `pull + reviews` REST path. If the page-level
-   metadata batch finally fails with an authentication, access, not-found, or
-   rate-limit failure after eligible fallback-account retry, same-page row
-   fallback is suppressed and the existing page banner receives that failure
-   once.
+   the affected row when fresh data arrives. Network-backed summary messages
+   enter a four-slot, abort-aware FIFO queue after cache lookup and same-row
+   in-flight deduplication. A failed revalidation preserves those stale chips
+   and reports through the page-level banner. When the page-level metadata
+   contains that pull request number, the background skips the per-row pull
+   endpoint and reads only the reviews endpoint. If the pull number is absent
+   from a successful batch result, the summary request falls back to the
+   original per-row `pull + reviews` REST path. If the page-level metadata batch
+   finally fails with an authentication, access, not-found, or rate-limit
+   failure after eligible fallback-account retry, same-page row fallback is
+   suppressed and the existing page banner receives that failure once.
    If no covering account is found, the first attempt still uses the no-token
    path so public repositories keep working without authentication. When that
    no-token metadata or summary fetch fails with an authentication, access,
@@ -249,6 +250,37 @@ continue to force route refreshes.
   caches the page-level metadata result per `owner/repo/account` and visible
   pull-number set with a shorter freshness window. When page metadata already
   covers a row, row-level duplicate pull endpoint fetches are avoided.
+- Reviewer-summary runtime messages use
+  `REVIEWER_SUMMARY_CONCURRENCY_LIMIT = 4`. The queue is FIFO in the order rows
+  reach the network boundary, so the initial DOM-order scan remains ordered when
+  its shared metadata request resolves. Fresh and stale cache entries are read
+  and rendered before the queue. Duplicate processing of the same pull joins
+  the existing in-flight promise instead of consuming another slot. Route
+  changes, account changes, and content-script invalidation abort both active
+  and queued row work; queued work never sends a background message.
+- The concurrency choice is backed by the deterministic 100 ms-per-summary
+  timing model in `tests/reviewer-request-scheduler.test.ts`. The fixture uses a
+  normal 25-row list and an 8-row non-contiguous filtered list. “Before” models
+  the previous unbounded dispatch; “after” uses the four-slot scheduler. These
+  are request-shape measurements, not a production GitHub latency SLA:
+
+  | Fixture         | Summary requests before → after | Peak concurrency before → after | First render-ready latency before → after | All render-ready latency before → after |
+  | --------------- | ------------------------------- | ------------------------------- | ----------------------------------------- | --------------------------------------- |
+  | 25 rows         | 25 → 25                         | 25 → 4                          | 100 ms → 100 ms                           | 100 ms → 700 ms                         |
+  | Filtered 8 rows | 8 → 8                           | 8 → 4                           | 100 ms → 100 ms                           | 100 ms → 200 ms                         |
+
+  Four slots reduce the 25-row burst by 84% while preserving time to the first
+  result. Under the same model, a two-slot limit would need 13 waves for 25
+  rows, while six slots would reduce completion to five waves at the cost of
+  50% more simultaneous traffic than four. Four therefore keeps useful
+  parallelism without leaving the browser's connection pool as the only burst
+  control. Packaged-extension E2E coverage independently delays all 25 reviews
+  endpoints and asserts a peak of four active requests.
+
+- The limit changes request shape, not request count or authentication
+  semantics. Each no-token public request remains the first attempt when no
+  covering account exists. An eligible authenticated fallback retry enters the
+  same queue as a second, sequential attempt for that row.
 - Issue-event requests are targeted to ambiguous requested+completed reviewer
   overlaps only, and follow at most two GitHub API issue-event pages
   (`REVIEW_REQUEST_EVENT_PAGE_BUDGET`). Rows whose requested users do not

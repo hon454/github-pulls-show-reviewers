@@ -30,6 +30,17 @@ function makeAccount(id = "acc-1"): Account {
   };
 }
 
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
 function fallbackAccounts(
   overrides: Partial<FallbackAccountIntegration> = {},
 ): FallbackAccountIntegration {
@@ -42,6 +53,30 @@ function fallbackAccounts(
 }
 
 describe("page metadata coordinator", () => {
+  it("does not start a request for an already-aborted parent signal", async () => {
+    const fetchMetadata = vi.fn().mockResolvedValue([metadata]);
+    const fallback = fallbackAccounts();
+    const coordinator = createPageMetadataCoordinator({
+      fallbackAccounts: fallback,
+      fetchMetadata,
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await coordinator.get({
+      route,
+      account: null,
+      targetPullNumbers: ["42"],
+      signal: controller.signal,
+    });
+
+    expect(result.metadata.size).toBe(0);
+    expect(result.failure).toBeNull();
+    expect(fetchMetadata).not.toHaveBeenCalled();
+    expect(fallback.read).not.toHaveBeenCalled();
+    expect(fallback.get).not.toHaveBeenCalled();
+  });
+
   it("deduplicates matching in-flight requests", async () => {
     let resolveFetch: ((value: PullReviewerMetadata[]) => void) | undefined;
     const fetchMetadata = vi.fn(
@@ -152,5 +187,49 @@ describe("page metadata coordinator", () => {
       reported: false,
       suppressRowFallback: true,
     });
+  });
+
+  it("does not cache or retry after aborting during a fallback lookup", async () => {
+    const lookup = createDeferred<Account | null>();
+    const fetchMetadata = vi
+      .fn()
+      .mockRejectedValueOnce({ status: 403 })
+      .mockResolvedValueOnce([metadata]);
+    const fallback = fallbackAccounts({
+      get: vi.fn(() => lookup.promise),
+    });
+    const coordinator = createPageMetadataCoordinator({
+      fallbackAccounts: fallback,
+      fetchMetadata,
+    });
+    const controller = new AbortController();
+
+    const abortedRequest = coordinator.get({
+      route,
+      account: null,
+      targetPullNumbers: ["42"],
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => {
+      expect(fallback.get).toHaveBeenCalledTimes(1);
+    });
+
+    controller.abort();
+    lookup.resolve(makeAccount("fallback"));
+
+    const abortedResult = await abortedRequest;
+    expect(abortedResult.metadata.size).toBe(0);
+    expect(abortedResult.failure).toBeNull();
+    expect(fetchMetadata).toHaveBeenCalledTimes(1);
+
+    const nextResult = await coordinator.get({
+      route,
+      account: null,
+      targetPullNumbers: ["42"],
+      signal: new AbortController().signal,
+    });
+    expect(nextResult.metadata.get("42")).toEqual(metadata);
+    expect(nextResult.failure).toBeNull();
+    expect(fetchMetadata).toHaveBeenCalledTimes(2);
   });
 });

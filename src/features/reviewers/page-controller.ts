@@ -44,7 +44,10 @@ import {
   requestInstallationsRefresh,
   shouldRetryWithFallbackAccount,
 } from "./runtime-requests";
+import { createAbortAwareRequestScheduler } from "./request-scheduler";
 import { buildReviewers } from "./view-model";
+
+export const REVIEWER_SUMMARY_CONCURRENCY_LIMIT = 4;
 
 export type ReviewerBootOptions = {
   onRowFailure?: (signal: {
@@ -76,6 +79,9 @@ export function bootReviewerListPage(
     accountResolver.resolveFallbackAccount(owner),
   );
   const pageMetadata = createPageMetadataCoordinator({ fallbackAccounts });
+  const reviewerSummaryScheduler = createAbortAwareRequestScheduler(
+    REVIEWER_SUMMARY_CONCURRENCY_LIMIT,
+  );
   const rowLifecycle = createReviewerRowLifecycle({
     getRoute: () => currentRoute,
     processRow,
@@ -181,12 +187,18 @@ export function bootReviewerListPage(
         route.owner,
         route.repo,
       );
+      if (controller.signal.aborted) {
+        return;
+      }
       const metadataResult = await pageMetadata.get({
         route,
         account,
         targetPullNumbers: collectVisiblePullNumbers(),
         signal: controller.signal,
       });
+      if (controller.signal.aborted) {
+        return;
+      }
       if (metadataResult.failure?.suppressRowFallback) {
         reportPageMetadataFailure(route, metadataResult.failure);
         clearReviewerMountWithoutCache(mount, cacheKey);
@@ -201,14 +213,18 @@ export function bootReviewerListPage(
       }
 
       try {
-        const summary = await fetchReviewerSummary({
-          account: summaryAccount,
-          owner: route.owner,
-          repo: route.repo,
-          pullNumber,
-          signal: controller.signal,
-          ...(pullMetadata == null ? {} : { pullMetadata }),
-        });
+        const summary = await reviewerSummaryScheduler.run(
+          () =>
+            fetchReviewerSummary({
+              account: summaryAccount,
+              owner: route.owner,
+              repo: route.repo,
+              pullNumber,
+              signal: controller.signal,
+              ...(pullMetadata == null ? {} : { pullMetadata }),
+            }),
+          controller.signal,
+        );
         if (controller.signal.aborted) {
           return;
         }
@@ -230,14 +246,18 @@ export function bootReviewerListPage(
           }
           if (fallbackAccount != null) {
             try {
-              const summary = await fetchReviewerSummary({
-                account: fallbackAccount,
-                owner: route.owner,
-                repo: route.repo,
-                pullNumber,
-                signal: controller.signal,
-                ...(pullMetadata == null ? {} : { pullMetadata }),
-              });
+              const summary = await reviewerSummaryScheduler.run(
+                () =>
+                  fetchReviewerSummary({
+                    account: fallbackAccount,
+                    owner: route.owner,
+                    repo: route.repo,
+                    pullNumber,
+                    signal: controller.signal,
+                    ...(pullMetadata == null ? {} : { pullMetadata }),
+                  }),
+                controller.signal,
+              );
               if (controller.signal.aborted) {
                 return;
               }
@@ -342,6 +362,7 @@ export function bootReviewerListPage(
   ctx.onInvalidated(() => {
     observer.disconnect();
     browser.storage.onChanged.removeListener(storageListener);
+    abortInflightRequests();
   });
 }
 

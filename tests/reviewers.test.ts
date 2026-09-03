@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import type { PullReviewerSummary } from "../src/github/api";
+import type { Account } from "../src/storage/accounts";
 import type * as PreferencesModule from "../src/storage/preferences";
+import {
+  createPullListFixtureHtml,
+  FILTERED_PULL_LIST_PULL_NUMBERS,
+  REPRESENTATIVE_PULL_LIST_PULL_NUMBERS,
+} from "./helpers/pull-list-fixtures";
 
 const resolveAccountForRepoMock = vi.fn();
 const listAccountsMock = vi.fn();
@@ -1659,6 +1665,494 @@ describe("bootReviewerListPage", () => {
     expect(document.body.textContent).toContain("Loading reviewers");
   });
 
+  it.each(["route change", "account change", "content-script invalidation"])(
+    "does not start reviewer requests when %s wins a deferred account-resolution race",
+    async (trigger) => {
+      const staleResolution = createDeferred<Account | null>();
+      const freshResolution = createDeferred<Account | null>();
+      resolveAccountForRepoMock
+        .mockImplementationOnce(() => staleResolution.promise)
+        .mockImplementation(() => freshResolution.promise);
+      runtimeSendMessageMock.mockResolvedValue(undefined);
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx, { onRowFailure });
+      await flushMicrotasks();
+
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(1);
+
+      if (trigger === "route change") {
+        window.history.replaceState({}, "", "/cinev/shotloom/pull/42");
+        getRegisteredListener(ctx, "wxt:locationchange")?.();
+      } else if (trigger === "account change") {
+        capturedStorageListener!(
+          {
+            settings: {
+              oldValue: { version: 4, accountIds: [] },
+              newValue: { version: 4, accountIds: ["acc-1"] },
+            },
+          },
+          "local",
+        );
+      } else {
+        const invalidate = ctx.onInvalidated.mock.calls[0]?.[0] as
+          | (() => void)
+          | undefined;
+        expect(invalidate).toBeTypeOf("function");
+        invalidate!();
+      }
+
+      await flushMicrotasks();
+      staleResolution.resolve(null);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      const { buildReviewerCacheKey, getReviewerCacheEntry } =
+        await import("../src/cache/reviewer-cache");
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        0,
+      );
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+      expect(
+        getReviewerCacheEntry(buildReviewerCacheKey("cinev", "shotloom", "42")),
+      ).toBeUndefined();
+      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
+    },
+  );
+
+  it("drops a late metadata failure after route invalidation without summary, banner, or cache side effects", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const metadataRequest = createDeferred<{
+      ok: false;
+      error: {
+        kind: "github-api";
+        status: number;
+        failures: Array<{
+          status: number;
+          endpoint: null;
+          rateLimited: boolean;
+        }>;
+      };
+    }>();
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return metadataRequest.promise;
+      }
+      if (message.type === "cancelPullReviewerSummary") {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(undefined);
+    });
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    const ctx = makeCtx();
+    bootReviewerListPage(ctx, { onRowFailure });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+
+    window.history.replaceState({}, "", "/cinev/shotloom/pull/42");
+    getRegisteredListener(ctx, "wxt:locationchange")?.();
+    await flushMicrotasks();
+
+    metadataRequest.resolve({
+      ok: false,
+      error: {
+        kind: "github-api",
+        status: 429,
+        failures: [{ status: 429, endpoint: null, rateLimited: true }],
+      },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const { buildReviewerCacheKey, getReviewerCacheEntry } =
+      await import("../src/cache/reviewer-cache");
+    expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+    expect(
+      getReviewerCacheEntry(buildReviewerCacheKey("cinev", "shotloom", "42")),
+    ).toBeUndefined();
+    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
+  });
+
+  it("keeps public failures and authenticated fallback retries within four summary slots", async () => {
+    const pullNumbers = FILTERED_PULL_LIST_PULL_NUMBERS;
+    installPullListFixture(pullNumbers);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const fallbackAccount: Account = {
+      id: "acc-owner",
+      login: "cinev",
+      avatarUrl: null,
+      token: "ghu_owner",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    };
+    listAccountsMock.mockResolvedValue([fallbackAccount]);
+    const rateLimitError = {
+      kind: "github-api" as const,
+      status: 429,
+      failures: [{ status: 429, endpoint: null, rateLimited: true }],
+    };
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+    let activeCount = 0;
+    let peakConcurrency = 0;
+    const completions: Array<() => void> = [];
+
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type?: string; accountId?: string | null }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch") {
+          return Promise.resolve({
+            ok: true,
+            metadata: pullNumbers.map((pullNumber) => ({
+              number: pullNumber,
+              authorLogin: "cinev",
+              requestedUsers: [],
+              requestedTeams: [],
+            })),
+          });
+        }
+        if (message.type === "cancelPullReviewerSummary") {
+          return Promise.resolve(undefined);
+        }
+        if (message.type === "fetchPullReviewerSummary") {
+          activeCount += 1;
+          peakConcurrency = Math.max(peakConcurrency, activeCount);
+          return new Promise((resolve) => {
+            completions.push(() => {
+              activeCount -= 1;
+              resolve(
+                message.accountId == null
+                  ? { ok: false, error: rateLimitError }
+                  : { ok: true, summary },
+              );
+            });
+          });
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(activeCount).toBe(4);
+    for (let index = 0; index < pullNumbers.length * 2; index += 1) {
+      const completeNext = completions.shift();
+      expect(completeNext).toBeDefined();
+      completeNext!();
+      await flushMicrotasks();
+    }
+    await flushMicrotasks();
+
+    const accountIds = getRuntimeMessages("fetchPullReviewerSummary").map(
+      (message) => message.accountId,
+    );
+    expect(accountIds.filter((accountId) => accountId == null)).toHaveLength(
+      pullNumbers.length,
+    );
+    expect(
+      accountIds.filter((accountId) => accountId === fallbackAccount.id),
+    ).toHaveLength(pullNumbers.length);
+    expect(peakConcurrency).toBe(4);
+    expect(activeCount).toBe(0);
+    expect(onRowFailure).not.toHaveBeenCalled();
+  });
+
+  it("does not start queued summary work after an account-change invalidation", async () => {
+    const pullNumbers = REPRESENTATIVE_PULL_LIST_PULL_NUMBERS.slice(0, 6);
+    installPullListFixture(pullNumbers);
+    const blockedResolution = createDeferred<Account | null>();
+    let blockAccountResolution = false;
+    resolveAccountForRepoMock.mockImplementation(() =>
+      blockAccountResolution
+        ? blockedResolution.promise
+        : Promise.resolve(null),
+    );
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "cancelPullReviewerSummary") {
+        return Promise.resolve(undefined);
+      }
+      return new Promise<void>(() => undefined);
+    });
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+
+    blockAccountResolution = true;
+    capturedStorageListener!(
+      {
+        settings: {
+          oldValue: { version: 4, accountIds: [] },
+          newValue: { version: 4, accountIds: ["acc-1"] },
+        },
+      },
+      "local",
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(4);
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+    expect(onRowFailure).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "representative 25-row list",
+      pullNumbers: REPRESENTATIVE_PULL_LIST_PULL_NUMBERS,
+    },
+    {
+      name: "filtered 8-row list",
+      pullNumbers: FILTERED_PULL_LIST_PULL_NUMBERS,
+    },
+  ])(
+    "keeps reviewer-summary concurrency at four for a $name",
+    async ({ pullNumbers }) => {
+      installPullListFixture(pullNumbers);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      const summary: PullReviewerSummary = {
+        status: "ok",
+        requestedUsers: [],
+        requestedTeams: [],
+        completedReviews: [],
+      };
+      let activeCount = 0;
+      let peakConcurrency = 0;
+      const startedPullNumbers: string[] = [];
+      const completions: Array<() => void> = [];
+
+      runtimeSendMessageMock.mockImplementation(
+        (message: { type?: string; pullNumber?: string }) => {
+          if (message.type === "fetchPullReviewerMetadataBatch") {
+            return Promise.resolve({
+              ok: true,
+              metadata: pullNumbers.map((pullNumber) => ({
+                number: pullNumber,
+                authorLogin: "cinev",
+                requestedUsers: [],
+                requestedTeams: [],
+              })),
+            });
+          }
+          if (message.type === "cancelPullReviewerSummary") {
+            return Promise.resolve(undefined);
+          }
+          if (message.type === "fetchPullReviewerSummary") {
+            activeCount += 1;
+            peakConcurrency = Math.max(peakConcurrency, activeCount);
+            startedPullNumbers.push(message.pullNumber!);
+            return new Promise<{ ok: true; summary: PullReviewerSummary }>(
+              (resolve) => {
+                completions.push(() => {
+                  activeCount -= 1;
+                  resolve({ ok: true, summary });
+                });
+              },
+            );
+          }
+          return Promise.resolve(undefined);
+        },
+      );
+
+      const { bootReviewerListPage, REVIEWER_SUMMARY_CONCURRENCY_LIMIT } =
+        await import("../src/features/reviewers/page-controller");
+      bootReviewerListPage(makeCtx());
+
+      await flushMicrotasks();
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(REVIEWER_SUMMARY_CONCURRENCY_LIMIT).toBe(4);
+      expect(activeCount).toBe(4);
+      expect(startedPullNumbers).toEqual(pullNumbers.slice(0, 4));
+
+      for (let index = 0; index < pullNumbers.length; index += 1) {
+        const completeNext = completions.shift();
+        expect(completeNext).toBeDefined();
+        completeNext!();
+        await flushMicrotasks();
+      }
+
+      expect(startedPullNumbers).toEqual(pullNumbers);
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+        pullNumbers.length,
+      );
+      expect(peakConcurrency).toBe(4);
+      expect(activeCount).toBe(0);
+    },
+  );
+
+  it("renders a fresh cached row while all reviewer-summary slots are occupied", async () => {
+    const pullNumbers = ["46", "45", "44", "43", "42"];
+    installPullListFixture(pullNumbers);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(buildReviewerCacheKey("cinev", "shotloom", "42"), {
+      status: "ok",
+      requestedUsers: [{ login: "cached-reviewer", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [],
+    });
+
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "cancelPullReviewerSummary") {
+        return Promise.resolve(undefined);
+      }
+      return new Promise<void>(() => undefined);
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+    expect(
+      document.querySelector(
+        '#issue_42 a.ghpsr-avatar[title*="@cached-reviewer"]',
+      ),
+    ).not.toBeNull();
+    expect(document.querySelector("#issue_42")?.textContent).not.toContain(
+      "Loading reviewers",
+    );
+
+    clearReviewerCache();
+  });
+
+  it("deduplicates duplicate processing of one pull while its summary is in flight", async () => {
+    installPullListFixture(["42", "42"]);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const summaryRequest = createDeferred<{
+      ok: true;
+      summary: PullReviewerSummary;
+    }>();
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "fetchPullReviewerSummary") {
+        return summaryRequest.promise;
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
+    summaryRequest.resolve({
+      ok: true,
+      summary: {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(
+      document.querySelectorAll('a.ghpsr-avatar[title*="@alice"]'),
+    ).toHaveLength(2);
+  });
+
+  it.each(["route change", "content-script invalidation"])(
+    "cancels queued reviewer-summary work on %s",
+    async (trigger) => {
+      const pullNumbers = REPRESENTATIVE_PULL_LIST_PULL_NUMBERS.slice(0, 6);
+      installPullListFixture(pullNumbers);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      runtimeSendMessageMock.mockImplementation(
+        (message: { type?: string }) => {
+          if (message.type === "fetchPullReviewerMetadataBatch") {
+            return Promise.resolve({ ok: true, metadata: [] });
+          }
+          if (message.type === "cancelPullReviewerSummary") {
+            return Promise.resolve(undefined);
+          }
+          return new Promise<void>(() => undefined);
+        },
+      );
+
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx);
+      await flushMicrotasks();
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+
+      if (trigger === "route change") {
+        window.history.replaceState({}, "", "/cinev/shotloom/pull/125");
+        getRegisteredListener(ctx, "wxt:locationchange")?.();
+      } else {
+        const invalidate = ctx.onInvalidated.mock.calls[0]?.[0] as
+          | (() => void)
+          | undefined;
+        invalidate?.();
+      }
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(4);
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+    },
+  );
+
   it("aborts in-flight summary fetches when navigation leaves the pull-list route", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
 
@@ -1684,3 +2178,26 @@ describe("bootReviewerListPage", () => {
     });
   });
 });
+
+function installPullListFixture(pullNumbers: readonly string[]): void {
+  const fixtureDocument = new DOMParser().parseFromString(
+    createPullListFixtureHtml(pullNumbers, {
+      owner: "cinev",
+      repo: "shotloom",
+    }),
+    "text/html",
+  );
+  document.body.innerHTML = fixtureDocument.body.innerHTML;
+  window.history.replaceState({}, "", "/cinev/shotloom/pulls");
+}
+
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
