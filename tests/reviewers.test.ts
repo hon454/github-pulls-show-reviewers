@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import type { PullReviewerSummary } from "../src/github/api";
+import type { Account } from "../src/storage/accounts";
 import type * as PreferencesModule from "../src/storage/preferences";
 import {
   createPullListFixtureHtml,
@@ -1662,6 +1663,275 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
 
     expect(document.body.textContent).toContain("Loading reviewers");
+  });
+
+  it.each(["route change", "account change", "content-script invalidation"])(
+    "does not start reviewer requests when %s wins a deferred account-resolution race",
+    async (trigger) => {
+      const staleResolution = createDeferred<Account | null>();
+      const freshResolution = createDeferred<Account | null>();
+      resolveAccountForRepoMock
+        .mockImplementationOnce(() => staleResolution.promise)
+        .mockImplementation(() => freshResolution.promise);
+      runtimeSendMessageMock.mockResolvedValue(undefined);
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx, { onRowFailure });
+      await flushMicrotasks();
+
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(1);
+
+      if (trigger === "route change") {
+        window.history.replaceState({}, "", "/cinev/shotloom/pull/42");
+        getRegisteredListener(ctx, "wxt:locationchange")?.();
+      } else if (trigger === "account change") {
+        capturedStorageListener!(
+          {
+            settings: {
+              oldValue: { version: 4, accountIds: [] },
+              newValue: { version: 4, accountIds: ["acc-1"] },
+            },
+          },
+          "local",
+        );
+      } else {
+        const invalidate = ctx.onInvalidated.mock.calls[0]?.[0] as
+          | (() => void)
+          | undefined;
+        expect(invalidate).toBeTypeOf("function");
+        invalidate!();
+      }
+
+      await flushMicrotasks();
+      staleResolution.resolve(null);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      const { buildReviewerCacheKey, getReviewerCacheEntry } =
+        await import("../src/cache/reviewer-cache");
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        0,
+      );
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+      expect(
+        getReviewerCacheEntry(buildReviewerCacheKey("cinev", "shotloom", "42")),
+      ).toBeUndefined();
+      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
+    },
+  );
+
+  it("drops a late metadata failure after route invalidation without summary, banner, or cache side effects", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const metadataRequest = createDeferred<{
+      ok: false;
+      error: {
+        kind: "github-api";
+        status: number;
+        failures: Array<{
+          status: number;
+          endpoint: null;
+          rateLimited: boolean;
+        }>;
+      };
+    }>();
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return metadataRequest.promise;
+      }
+      if (message.type === "cancelPullReviewerSummary") {
+        return Promise.resolve(undefined);
+      }
+      return Promise.resolve(undefined);
+    });
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    const ctx = makeCtx();
+    bootReviewerListPage(ctx, { onRowFailure });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+
+    window.history.replaceState({}, "", "/cinev/shotloom/pull/42");
+    getRegisteredListener(ctx, "wxt:locationchange")?.();
+    await flushMicrotasks();
+
+    metadataRequest.resolve({
+      ok: false,
+      error: {
+        kind: "github-api",
+        status: 429,
+        failures: [{ status: 429, endpoint: null, rateLimited: true }],
+      },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const { buildReviewerCacheKey, getReviewerCacheEntry } =
+      await import("../src/cache/reviewer-cache");
+    expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+    expect(
+      getReviewerCacheEntry(buildReviewerCacheKey("cinev", "shotloom", "42")),
+    ).toBeUndefined();
+    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
+  });
+
+  it("keeps public failures and authenticated fallback retries within four summary slots", async () => {
+    const pullNumbers = FILTERED_PULL_LIST_PULL_NUMBERS;
+    installPullListFixture(pullNumbers);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const fallbackAccount: Account = {
+      id: "acc-owner",
+      login: "cinev",
+      avatarUrl: null,
+      token: "ghu_owner",
+      createdAt: 1,
+      installations: [],
+      installationsRefreshedAt: 1,
+      invalidated: false,
+      invalidatedReason: null,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    };
+    listAccountsMock.mockResolvedValue([fallbackAccount]);
+    const rateLimitError = {
+      kind: "github-api" as const,
+      status: 429,
+      failures: [{ status: 429, endpoint: null, rateLimited: true }],
+    };
+    const summary: PullReviewerSummary = {
+      status: "ok",
+      requestedUsers: [],
+      requestedTeams: [],
+      completedReviews: [],
+    };
+    let activeCount = 0;
+    let peakConcurrency = 0;
+    const completions: Array<() => void> = [];
+
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type?: string; accountId?: string | null }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch") {
+          return Promise.resolve({
+            ok: true,
+            metadata: pullNumbers.map((pullNumber) => ({
+              number: pullNumber,
+              authorLogin: "cinev",
+              requestedUsers: [],
+              requestedTeams: [],
+            })),
+          });
+        }
+        if (message.type === "cancelPullReviewerSummary") {
+          return Promise.resolve(undefined);
+        }
+        if (message.type === "fetchPullReviewerSummary") {
+          activeCount += 1;
+          peakConcurrency = Math.max(peakConcurrency, activeCount);
+          return new Promise((resolve) => {
+            completions.push(() => {
+              activeCount -= 1;
+              resolve(
+                message.accountId == null
+                  ? { ok: false, error: rateLimitError }
+                  : { ok: true, summary },
+              );
+            });
+          });
+        }
+        return Promise.resolve(undefined);
+      },
+    );
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(activeCount).toBe(4);
+    for (let index = 0; index < pullNumbers.length * 2; index += 1) {
+      const completeNext = completions.shift();
+      expect(completeNext).toBeDefined();
+      completeNext!();
+      await flushMicrotasks();
+    }
+    await flushMicrotasks();
+
+    const accountIds = getRuntimeMessages("fetchPullReviewerSummary").map(
+      (message) => message.accountId,
+    );
+    expect(accountIds.filter((accountId) => accountId == null)).toHaveLength(
+      pullNumbers.length,
+    );
+    expect(
+      accountIds.filter((accountId) => accountId === fallbackAccount.id),
+    ).toHaveLength(pullNumbers.length);
+    expect(peakConcurrency).toBe(4);
+    expect(activeCount).toBe(0);
+    expect(onRowFailure).not.toHaveBeenCalled();
+  });
+
+  it("does not start queued summary work after an account-change invalidation", async () => {
+    const pullNumbers = REPRESENTATIVE_PULL_LIST_PULL_NUMBERS.slice(0, 6);
+    installPullListFixture(pullNumbers);
+    const blockedResolution = createDeferred<Account | null>();
+    let blockAccountResolution = false;
+    resolveAccountForRepoMock.mockImplementation(() =>
+      blockAccountResolution
+        ? blockedResolution.promise
+        : Promise.resolve(null),
+    );
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      if (message.type === "cancelPullReviewerSummary") {
+        return Promise.resolve(undefined);
+      }
+      return new Promise<void>(() => undefined);
+    });
+
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+
+    blockAccountResolution = true;
+    capturedStorageListener!(
+      {
+        settings: {
+          oldValue: { version: 4, accountIds: [] },
+          newValue: { version: 4, accountIds: ["acc-1"] },
+        },
+      },
+      "local",
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(4);
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+    expect(onRowFailure).not.toHaveBeenCalled();
   });
 
   it.each([

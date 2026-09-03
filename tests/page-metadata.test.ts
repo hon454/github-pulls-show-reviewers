@@ -42,6 +42,30 @@ function fallbackAccounts(
 }
 
 describe("page metadata coordinator", () => {
+  it("does not start a request for an already-aborted parent signal", async () => {
+    const fetchMetadata = vi.fn().mockResolvedValue([metadata]);
+    const fallback = fallbackAccounts();
+    const coordinator = createPageMetadataCoordinator({
+      fallbackAccounts: fallback,
+      fetchMetadata,
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await coordinator.get({
+      route,
+      account: null,
+      targetPullNumbers: ["42"],
+      signal: controller.signal,
+    });
+
+    expect(result.metadata.size).toBe(0);
+    expect(result.failure).toBeNull();
+    expect(fetchMetadata).not.toHaveBeenCalled();
+    expect(fallback.read).not.toHaveBeenCalled();
+    expect(fallback.get).not.toHaveBeenCalled();
+  });
+
   it("deduplicates matching in-flight requests", async () => {
     let resolveFetch: ((value: PullReviewerMetadata[]) => void) | undefined;
     const fetchMetadata = vi.fn(

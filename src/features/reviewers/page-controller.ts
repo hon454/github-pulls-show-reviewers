@@ -187,12 +187,18 @@ export function bootReviewerListPage(
         route.owner,
         route.repo,
       );
+      if (controller.signal.aborted) {
+        return;
+      }
       const metadataResult = await pageMetadata.get({
         route,
         account,
         targetPullNumbers: collectVisiblePullNumbers(),
         signal: controller.signal,
       });
+      if (controller.signal.aborted) {
+        return;
+      }
       if (metadataResult.failure?.suppressRowFallback) {
         reportPageMetadataFailure(route, metadataResult.failure);
         clearReviewerMountWithoutCache(mount, cacheKey);

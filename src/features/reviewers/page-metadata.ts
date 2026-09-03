@@ -136,6 +136,10 @@ export function createPageMetadataCoordinator(input: {
     targetPullNumbers: string[];
     signal: AbortSignal;
   }): Promise<PageMetadataResult> {
+    if (args.signal.aborted) {
+      return emptyResult();
+    }
+
     const cachedFallbackAccount =
       args.account == null
         ? input.fallbackAccounts.read(args.route.owner)

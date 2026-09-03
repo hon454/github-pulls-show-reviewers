@@ -68,6 +68,71 @@ describe("abort-aware reviewer request scheduler", () => {
     expect(nextTask).toHaveBeenCalledTimes(1);
   });
 
+  it("returns an active permit after task rejection and starts the next task once", async () => {
+    const scheduler = createAbortAwareRequestScheduler(1);
+    const failure = createDeferred<string>();
+    const failingTask = vi.fn(() => failure.promise);
+    const failingRequest = scheduler.run(
+      failingTask,
+      new AbortController().signal,
+    );
+    const nextTask = vi.fn(async () => "next");
+    const nextRequest = scheduler.run(nextTask, new AbortController().signal);
+    const rejection = expect(failingRequest).rejects.toThrow("failed");
+
+    await Promise.resolve();
+    expect(failingTask).toHaveBeenCalledTimes(1);
+    failure.reject(new Error("failed"));
+
+    await rejection;
+    await expect(nextRequest).resolves.toBe("next");
+    expect(nextTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an active permit after a synchronous throw and starts the next task once", async () => {
+    const scheduler = createAbortAwareRequestScheduler(1);
+    const failingTask = vi.fn(() => {
+      throw new Error("synchronous failure");
+    });
+    const failingRequest = scheduler.run(
+      failingTask,
+      new AbortController().signal,
+    );
+    const nextTask = vi.fn(async () => "next");
+    const nextRequest = scheduler.run(nextTask, new AbortController().signal);
+
+    await expect(failingRequest).rejects.toThrow("synchronous failure");
+    await expect(nextRequest).resolves.toBe("next");
+    expect(failingTask).toHaveBeenCalledTimes(1);
+    expect(nextTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an active permit after abort and starts the next task once", async () => {
+    const scheduler = createAbortAwareRequestScheduler(1);
+    const controller = new AbortController();
+    const activeTask = vi.fn(
+      () =>
+        new Promise<string>((_resolve, reject) => {
+          controller.signal.addEventListener(
+            "abort",
+            () => reject(createAbortError()),
+            { once: true },
+          );
+        }),
+    );
+    const activeRequest = scheduler.run(activeTask, controller.signal);
+    const nextTask = vi.fn(async () => "next");
+    const nextRequest = scheduler.run(nextTask, new AbortController().signal);
+
+    await Promise.resolve();
+    expect(activeTask).toHaveBeenCalledTimes(1);
+    controller.abort();
+
+    await expect(activeRequest).rejects.toMatchObject({ name: "AbortError" });
+    await expect(nextRequest).resolves.toBe("next");
+    expect(nextTask).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects work whose signal was already aborted", async () => {
     const scheduler = createAbortAwareRequestScheduler(1);
     const controller = new AbortController();
@@ -127,10 +192,19 @@ async function measureScenario(
 function createDeferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason?: unknown) => void;
 } {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((nextResolve) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve;
+    reject = nextReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
+}
+
+function createAbortError(): Error {
+  const error = new Error("aborted");
+  error.name = "AbortError";
+  return error;
 }
