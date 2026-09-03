@@ -11,4 +11,5 @@ export const githubSelectors = {
   ],
   fallbackMetaContainer: "[data-ghpsr-fallback-meta]",
   volatileMetadataSelectors: ["relative-time", "time-ago", ".js-timeago"],
+  observedRowAttributes: ["class", "href", "id"],
 } as const;

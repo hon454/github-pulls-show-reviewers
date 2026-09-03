@@ -128,10 +128,50 @@
 10. Re-run row processing when GitHub mutates the page or performs SPA
     navigation. Same-repository navigation/render events mark visible row
     summaries stale instead of trusting the active page-session cache forever.
-    Existing-row DOM mutations use a lightweight row fingerprint so unrelated
-    attribute changes do not trigger reviewer API requests. The fingerprint
-    excludes extension-rendered reviewer nodes and GitHub's volatile relative
-    timestamp nodes, so automatic time text updates do not refetch reviewers.
+    The observer stays rooted at `document.body` with `subtree`, `childList`,
+    and `characterData` coverage so rows inserted under current, future, or
+    fallback list containers remain discoverable. Attribute observation is
+    filtered to `class`, `href`, and `id`, which determine row/metadata
+    selector matches and pull identity. Each observer delivery collects added
+    and mutated PR rows in sets, then fingerprints each affected existing row
+    at most once. The fingerprint excludes extension-rendered reviewer nodes
+    and GitHub's volatile relative timestamp nodes; mutations inside those
+    subtrees are rejected before cloning metadata. Same-repository route events
+    remain the fallback for full-page GitHub renders.
+
+## Mutation observation decision
+
+The deterministic `github-pulls-mutation-stress.html` fixture emits one
+synchronous burst containing 20 mutations each of unrelated link/page
+attributes, relative-time text replacement, row-local subtree additions outside
+metadata, and page-local subtree additions.
+
+The Vitest lifecycle test records observer callbacks, delivered records,
+fingerprint calculations, and `processRow` calls. The controller test records
+the actual background runtime requests and confirms the same burst emits no
+metadata or reviewer-summary request.
+
+| Work per synchronous stress burst | Before | After |
+| --------------------------------- | -----: | ----: |
+| Observer callbacks                |      1 |     1 |
+| Delivered mutation records        |    100 |    60 |
+| Row fingerprint calculations      |     60 |     1 |
+| `processRow` calls                |      0 |     0 |
+| Reviewer API requests             |      0 |     0 |
+
+The retained body boundary trades a small amount of cheap mutation
+classification for reliable discovery of added rows and fallback mount
+variants without encoding GitHub's current list-container hierarchy. Filtering
+attributes to selector- and identity-relevant names removes the 40 unrelated
+attribute records in the fixture; row-set batching reduces duplicate
+fingerprint work by 59 of 60 calculations.
+
+`childList` and `characterData` remain enabled because review-request metadata
+can change through either form. Added rows are processed directly, while
+changed metadata invalidates and processes its existing row once. Reviewer
+roots and volatile relative-time elements remain excluded from fingerprint
+input, and `wxt:locationchange`, `popstate`, `turbo:render`, and `pjax:end`
+continue to force route refreshes.
 
 ## Current limitations
 
