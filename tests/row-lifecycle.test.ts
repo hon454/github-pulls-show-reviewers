@@ -13,6 +13,10 @@ const fixtureHtml = readFileSync(
   path.join(process.cwd(), "tests/fixtures/github-pulls-single-row.html"),
   "utf8",
 );
+const stressFixtureHtml = readFileSync(
+  path.join(process.cwd(), "tests/fixtures/github-pulls-mutation-stress.html"),
+  "utf8",
+);
 const route = { owner: "hon454", repo: "github-pulls-show-reviewers" };
 
 function flushMutations(): Promise<void> {
@@ -80,5 +84,66 @@ describe("reviewer row lifecycle", () => {
 
     expect(processRow).not.toHaveBeenCalled();
     expect(markPageMetadataStale).not.toHaveBeenCalled();
+  });
+
+  it("measures deterministic work for unrelated mutation bursts", async () => {
+    const fixtureDocument = new DOMParser().parseFromString(
+      stressFixtureHtml,
+      "text/html",
+    );
+    document.body.innerHTML = fixtureDocument.body.innerHTML;
+    const work = {
+      observerCallbacks: 0,
+      mutationRecords: 0,
+      fingerprints: 0,
+      processRowCalls: 0,
+      reviewerApiRequests: 0,
+    };
+    const lifecycle = createReviewerRowLifecycle({
+      getRoute: () => route,
+      processRow: () => {
+        work.reviewerApiRequests += 1;
+      },
+      markPageMetadataStale: vi.fn(),
+      diagnostics: {
+        onObserverCallback(mutationCount) {
+          work.observerCallbacks += 1;
+          work.mutationRecords += mutationCount;
+        },
+        onFingerprint() {
+          work.fingerprints += 1;
+        },
+        onProcessRow() {
+          work.processRowCalls += 1;
+        },
+      },
+    });
+    const row = document.querySelector(".js-issue-row")!;
+    lifecycle.recordFingerprint(row, "42", route);
+    work.fingerprints = 0;
+    const observer = lifecycle.observe();
+
+    const link = document.querySelector<HTMLAnchorElement>("a.Link--primary")!;
+    const relativeTime = document.querySelector("relative-time")!;
+    const rowNoise = document.querySelector("[data-stress-row-noise]")!;
+    const pageNoise = document.querySelector("[data-stress-page-noise]")!;
+    for (let index = 0; index < 20; index += 1) {
+      link.setAttribute("data-hovercard-url", `/pull/42?hover=${index}`);
+      relativeTime.textContent = `${index + 2} hours ago`;
+      rowNoise.append(document.createElement("span"));
+      pageNoise.setAttribute("data-refresh", String(index));
+      pageNoise.append(document.createElement("span"));
+    }
+
+    await flushMutations();
+    observer.disconnect();
+
+    expect(work).toEqual({
+      observerCallbacks: 1,
+      mutationRecords: 60,
+      fingerprints: 1,
+      processRowCalls: 0,
+      reviewerApiRequests: 0,
+    });
   });
 });

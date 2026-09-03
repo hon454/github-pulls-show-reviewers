@@ -16,6 +16,10 @@ const singleRowFixtureHtml = readFileSync(
   path.join(process.cwd(), "tests/fixtures/github-pulls-single-row.html"),
   "utf8",
 );
+const mutationStressFixtureHtml = readFileSync(
+  path.join(process.cwd(), "tests/fixtures/github-pulls-mutation-stress.html"),
+  "utf8",
+);
 
 vi.mock("../src/storage/accounts", () => ({
   resolveAccountForRepo: resolveAccountForRepoMock,
@@ -1327,6 +1331,63 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
 
     expect(document.body.textContent).toContain("@dana");
+
+    clearReviewerCache();
+  });
+
+  it("does not request reviewer data for the deterministic unrelated mutation burst", async () => {
+    const stressDocument = new DOMParser().parseFromString(
+      mutationStressFixtureHtml,
+      "text/html",
+    );
+    document.body.innerHTML = stressDocument.body.innerHTML;
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      buildReviewerCacheKey("cinev", "shotloom", "42"),
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+      { fetchedAt: Date.now() },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    runtimeSendMessageMock.mockClear();
+
+    const link = document.querySelector<HTMLAnchorElement>("a.Link--primary")!;
+    const relativeTime = document.querySelector("relative-time")!;
+    const rowNoise = document.querySelector("[data-stress-row-noise]")!;
+    const pageNoise = document.querySelector("[data-stress-page-noise]")!;
+    for (let index = 0; index < 20; index += 1) {
+      link.setAttribute("data-hovercard-url", `/pull/42?hover=${index}`);
+      relativeTime.textContent = `${index + 2} hours ago`;
+      rowNoise.append(document.createElement("span"));
+      pageNoise.setAttribute("data-refresh", String(index));
+      pageNoise.append(document.createElement("span"));
+    }
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      0,
+    );
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+    expect(
+      document.querySelector('a.ghpsr-avatar[title*="@alice"]'),
+    ).not.toBeNull();
 
     clearReviewerCache();
   });
