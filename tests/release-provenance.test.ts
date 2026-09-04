@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { GitHubProvenance } from "../scripts/release/provenance.ts";
+import { executeRelease } from "../scripts/release/engine.ts";
 import type { Receipt } from "../scripts/release/policy.ts";
 
 const repository = "hon454/github-pulls-show-reviewers";
@@ -118,6 +119,64 @@ describe("durable receipt provenance", () => {
     expect(history).toEqual([{ receipt, complete: false }]);
     expect(github.artifacts).toHaveBeenCalledWith(
       `cws-intent-${receipt.itemId}`,
+    );
+  });
+  it("blocks upload-only when a result remains without its durable intent", async () => {
+    const github = new GitHubProvenance(repository, "fake-token", vi.fn());
+    vi.spyOn(github, "artifacts").mockImplementation(async (name) =>
+      name.startsWith("cws-result") ? [artifact] : [],
+    );
+    const download = vi.spyOn(github, "download");
+    const store = {
+      status: vi.fn(async () => ({
+        name: `publishers/publisher/items/${receipt.itemId}`,
+        itemId: receipt.itemId,
+        publishedItemRevisionStatus: {
+          state: "PUBLISHED",
+          distributionChannels: [{ crxVersion: "1.15.0" }],
+        },
+      })),
+      upload: vi.fn(async () => "SUCCEEDED" as const),
+      publish: vi.fn(async () => {}),
+    };
+    await expect(
+      github.history(receipt.itemId, "200").then((history) =>
+        executeRelease({
+          receipt: { ...receipt, sourceSha: "e".repeat(40) },
+          history,
+          store,
+          checkpoint: async () => {},
+        }),
+      ),
+    ).rejects.toThrow("Missing or ambiguous durable intent");
+    expect(download).not.toHaveBeenCalled();
+    expect(store.status).not.toHaveBeenCalled();
+    expect(store.upload).not.toHaveBeenCalled();
+    expect(store.publish).not.toHaveBeenCalled();
+  });
+  it("rejects an orphan result even when another run has a complete pair", async () => {
+    const github = new GitHubProvenance(repository, "fake-token", vi.fn());
+    const orphan = {
+      ...artifact,
+      id: 12,
+      workflow_run: { ...artifact.workflow_run, id: 101 },
+    };
+    vi.spyOn(github, "artifacts").mockImplementation(async (name) =>
+      name.startsWith("cws-result") ? [artifact, orphan] : [artifact],
+    );
+    const download = vi.spyOn(github, "download");
+    await expect(github.history(receipt.itemId, "200")).rejects.toThrow(
+      "Missing or ambiguous durable intent",
+    );
+    expect(download).not.toHaveBeenCalled();
+  });
+  it("rejects duplicate intents for the same run instead of trusting one", async () => {
+    const github = new GitHubProvenance(repository, "fake-token", vi.fn());
+    vi.spyOn(github, "artifacts").mockImplementation(async (name) =>
+      name.startsWith("cws-intent") ? [artifact, { ...artifact, id: 12 }] : [],
+    );
+    await expect(github.history(receipt.itemId, "200")).rejects.toThrow(
+      "Missing or ambiguous durable intent",
     );
   });
   it("rejects altered result provenance and mismatched checked package artifacts", async () => {

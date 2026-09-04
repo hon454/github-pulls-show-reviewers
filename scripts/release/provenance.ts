@@ -202,10 +202,34 @@ export class GitHubProvenance {
       this.artifacts(`cws-intent-${itemId}`),
       this.artifacts(`cws-result-${itemId}`),
     ]);
+    const runs = new Map<
+      string,
+      { intents: Artifact[]; results: Artifact[] }
+    >();
+    for (const [kind, artifacts] of [
+      ["intents", intents],
+      ["results", results],
+    ] as const) {
+      for (const artifact of artifacts) {
+        const runId = artifact.workflow_run.id.toString();
+        if (runId === currentRunId) continue;
+        const pair = runs.get(runId) ?? { intents: [], results: [] };
+        pair[kind].push(artifact);
+        runs.set(runId, pair);
+      }
+    }
+    // Validate both directions before accepting any history. A result whose
+    // intent was deleted is evidence of an operation, never an empty history.
+    for (const pair of runs.values()) {
+      requireCondition(
+        pair.intents.length === 1,
+        "Missing or ambiguous durable intent for a CWS receipt run.",
+      );
+      requireCondition(pair.results.length <= 1, "Ambiguous receipt results.");
+    }
     const history: HistoryEntry[] = [];
-    for (const artifact of intents.filter(
-      (a) => a.workflow_run.id.toString() !== currentRunId,
-    )) {
+    for (const pair of runs.values()) {
+      const artifact = pair.intents[0]!;
       const intent = parse(
         receiptSchema,
         JSON.parse((await this.download(artifact, "intent.json")).toString()),
@@ -221,10 +245,7 @@ export class GitHubProvenance {
         "Invalid durable upload intent.",
       );
       await this.verifyRun(intent, artifact);
-      const matches = results.filter(
-        (a) => a.workflow_run.id.toString() === intent.runId,
-      );
-      requireCondition(matches.length <= 1, "Ambiguous receipt results.");
+      const matches = pair.results;
       if (!matches.length) {
         history.push({ receipt: intent, complete: false });
         continue;
