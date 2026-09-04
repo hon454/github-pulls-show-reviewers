@@ -85,7 +85,7 @@
     "description": "Options page about subtitle. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_about_description": {
-    "message": "이 확장 프로그램은 $APP$ GitHub App을 통해 로그인하며, $PERMISSION$ 권한만 요청합니다. 계정을 기기에서 삭제해도 GitHub의 승인은 취소되지 않습니다.",
+    "message": "이 확장 프로그램은 $APP$ GitHub App을 통해 로그인하며, $PERMISSION$ 권한만 요청합니다. 계정을 기기에서 삭제해도 GitHub의 접근 권한 승인은 취소되지 않습니다.",
     "description": "Options page about description. Visible text; keep GitHub names, codes and identifiers unchanged.",
     "placeholders": {
       "app": {
@@ -97,7 +97,7 @@
     }
   },
   "options_revoke_link": {
-    "message": "GitHub에서 승인 관리",
+    "message": "GitHub에서 접근 권한 관리",
     "description": "Options page revoke link. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_metadata_unavailable": {
@@ -194,16 +194,16 @@
     "description": "Options page badges description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_names": {
-    "message": "리뷰어 이름",
-    "description": "Options page names. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "리뷰어 사용자 이름",
+    "description": "Display toggle label. Shows immutable GitHub login/usernames, not personal display names."
   },
   "options_names_description": {
-    "message": "리뷰어 아바타 옆에 이름을 표시합니다.",
-    "description": "Options page names description. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "리뷰어 아바타 옆에 사용자 이름을 표시합니다.",
+    "description": "Help for the username display toggle; the value is the GitHub login identifier."
   },
   "options_open_only": {
-    "message": "열린 PR만 표시",
-    "description": "Options page open only. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "리뷰어 링크: 열린 PR만 표시",
+    "description": "Toggle for the destination filter of reviewer links; does not hide reviewer information on closed PR list rows."
   },
   "options_open_only_description": {
     "message": "리뷰어 링크에서 아직 열려 있는 PR만 보여줍니다.",
@@ -355,7 +355,7 @@
     "description": "Repository diagnostics repository. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_check_matched": {
-    "message": "연결된 계정으로 확인",
+    "message": "저장소에 맞는 계정으로 확인",
     "description": "Repository diagnostics check matched. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_check_no_token": {
@@ -388,7 +388,7 @@
     }
   },
   "diagnostics_matched_account": {
-    "message": "연결된 계정",
+    "message": "저장소에 맞는 계정",
     "description": "Repository diagnostics matched account. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_auth_mode": {
@@ -396,7 +396,7 @@
     "description": "Repository diagnostics auth mode. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_matched_token": {
-    "message": "연결된 계정 토큰",
+    "message": "저장소에 맞는 계정 토큰",
     "description": "Repository diagnostics matched token. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_no_token": {

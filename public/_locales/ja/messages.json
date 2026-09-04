@@ -16,11 +16,11 @@
     "description": "Options page title. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_heading": {
-    "message": "一覧で、レビュアーの状況をひと目で。",
+    "message": "レビュアーの状況を一覧で。",
     "description": "Options page heading. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_intro": {
-    "message": "レビュアー情報の表示を調整し、プライベートリポジトリが必要なときだけGitHubを接続します。",
+    "message": "レビュアー情報の表示を調整し、非公開リポジトリへのアクセスが必要なときだけGitHubアカウントを接続します。",
     "description": "Options page intro. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_public_ready": {
@@ -32,7 +32,7 @@
     "description": "Options page no account. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_private_permission": {
-    "message": "プライベートリポジトリへのアクセスには、$PERMISSION$のみを要求するGitHub Appを使用します。",
+    "message": "非公開リポジトリへのアクセスには、$PERMISSION$のみを要求するGitHub Appを使用します。",
     "description": "Options page private permission. Visible text; keep GitHub names, codes and identifiers unchanged.",
     "placeholders": {
       "permission": {
@@ -49,7 +49,7 @@
     "description": "Options page workspace heading. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_workspace_description": {
-    "message": "プライベートリポジトリ用のアカウントを接続し、一覧の表示内容を選び、アクセスを確認できます。",
+    "message": "非公開リポジトリ用のアカウントを接続し、一覧の表示内容を選び、アクセスを確認できます。",
     "description": "Options page workspace description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_signin_unavailable_description": {
@@ -61,7 +61,7 @@
     "description": "Options page accounts title. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_accounts_description": {
-    "message": "プライベートリポジトリで認証が必要な場合にのみ使用します。",
+    "message": "非公開リポジトリで認証が必要な場合にのみ使用します。",
     "description": "Options page accounts description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_config_title": {
@@ -194,16 +194,16 @@
     "description": "Options page badges description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_names": {
-    "message": "レビュアー名",
-    "description": "Options page names. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "レビュアーのユーザー名",
+    "description": "Display toggle label. Shows immutable GitHub login/usernames, not personal display names."
   },
   "options_names_description": {
-    "message": "レビュアーのアバターの横に名前を表示します。",
-    "description": "Options page names description. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "レビュアーのアバターの横にユーザー名を表示します。",
+    "description": "Help for the username display toggle; the value is the GitHub login identifier."
   },
   "options_open_only": {
-    "message": "未完了のプルリクエストのみ",
-    "description": "Options page open only. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "レビュアーリンク：未完了のPRのみ",
+    "description": "Toggle for the destination filter of reviewer links; does not hide reviewer information on closed PR list rows."
   },
   "options_open_only_description": {
     "message": "レビュアーのリンク先を未完了の作業に限定します。",
@@ -379,7 +379,7 @@
     "description": "Repository diagnostics input no token. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_uncovered": {
-    "message": "$REPOSITORY$に対応する接続済みアカウントがありません。所有者にGitHub Appをインストールしてください。",
+    "message": "$REPOSITORY$にアクセスできる接続済みアカウントがありません。リポジトリ所有者のアカウントにGitHub Appをインストールしてください。",
     "description": "Repository diagnostics uncovered. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -714,7 +714,7 @@
     "description": "Reviewer review state: approved."
   },
   "reviewers_changes_requested": {
-    "message": "変更を要求",
+    "message": "変更要求済み",
     "description": "Reviewer review state: changes_requested."
   },
   "reviewers_commented": {
@@ -730,7 +730,7 @@
     "description": "Completed approved review while the reviewer is still requested."
   },
   "reviewers_changes_requested_requested": {
-    "message": "変更を要求（引き続きレビュー依頼中）",
+    "message": "変更要求済み（引き続きレビュー依頼中）",
     "description": "Completed changes_requested review while the reviewer is still requested."
   },
   "reviewers_commented_requested": {

@@ -194,16 +194,16 @@
     "description": "Options page badges description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_names": {
-    "message": "Reviewer names",
-    "description": "Options page names. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "Reviewer usernames",
+    "description": "Display toggle label. Shows immutable GitHub login/usernames, not personal display names."
   },
   "options_names_description": {
-    "message": "Keep names visible next to reviewer avatars.",
-    "description": "Options page names description. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "Keep usernames visible next to reviewer avatars.",
+    "description": "Help for the username display toggle; the value is the GitHub login identifier."
   },
   "options_open_only": {
-    "message": "Open pull requests only",
-    "description": "Options page open only. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "Reviewer links: open PRs only",
+    "description": "Toggle for the destination filter of reviewer links; does not hide reviewer information on closed PR list rows."
   },
   "options_open_only_description": {
     "message": "Limit reviewer links to work that is still open.",

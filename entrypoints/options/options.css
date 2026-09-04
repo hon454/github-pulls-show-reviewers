@@ -832,6 +832,7 @@ code {
 .workspace-header h2:lang(zh) {
   line-height: 1.25;
   letter-spacing: -0.03em;
+  text-wrap: balance;
 }
 
 .options-intro h1:lang(ko),
