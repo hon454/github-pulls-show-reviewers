@@ -57,7 +57,15 @@ export type RepositoryValidationOutcome =
   | "token-not-found"
   | "unknown-error";
 
+export type RepositoryValidationEndpointFailure = {
+  kind: "http" | "schema" | "network" | "unknown";
+  endpoint?: GitHubEndpointDescriptor;
+  httpStatus?: number;
+  rateLimit?: GitHubRateLimitSnapshot;
+};
+
 export type RepositoryValidationFailureEvidence = {
+  failures?: RepositoryValidationEndpointFailure[];
   endpoint?: GitHubEndpointDescriptor;
   httpStatus?: number;
   rateLimit?: GitHubRateLimitSnapshot;
