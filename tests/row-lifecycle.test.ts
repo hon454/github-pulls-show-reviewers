@@ -147,3 +147,46 @@ describe("reviewer row lifecycle", () => {
     });
   });
 });
+
+it("ignores localized mount lang, text, title and aria changes without fingerprint work", async () => {
+  const { ensureReviewerMount, renderReviewers } =
+    await import("../src/features/reviewers/dom");
+  const { createTranslator, toLanguageTag, SUPPORTED_LOCALES } =
+    await import("../src/i18n");
+  const processRow = vi.fn();
+  const onFingerprint = vi.fn();
+  const markPageMetadataStale = vi.fn();
+  const lifecycle = createReviewerRowLifecycle({
+    getRoute: () => route,
+    processRow,
+    markPageMetadataStale,
+    diagnostics: { onFingerprint },
+  });
+  const row = document.querySelector(".js-issue-row")!;
+  const mount = ensureReviewerMount(row)!;
+  lifecycle.recordFingerprint(row, "42", route);
+  onFingerprint.mockClear();
+  const observer = lifecycle.observe();
+  for (const locale of SUPPORTED_LOCALES) {
+    renderReviewers(
+      mount,
+      [
+        {
+          kind: "user",
+          login: "alice",
+          avatarUrl: null,
+          state: "APPROVED",
+          isRequested: true,
+          href: "https://github.com/org/repo/pulls",
+        },
+      ],
+      { showStateBadge: true, showReviewerName: true },
+      { t: createTranslator(locale), lang: toLanguageTag(locale) },
+    );
+    await flushMutations();
+  }
+  observer.disconnect();
+  expect(onFingerprint).not.toHaveBeenCalled();
+  expect(processRow).not.toHaveBeenCalled();
+  expect(markPageMetadataStale).not.toHaveBeenCalled();
+});

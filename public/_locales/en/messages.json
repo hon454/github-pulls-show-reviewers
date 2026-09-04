@@ -663,5 +663,258 @@
   "diagnostics_rate_reset": {
     "message": "Rate-limit reset",
     "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "reviewers_loading": {
+    "message": "Loading reviewers...",
+    "description": "Loading status in a pull request reviewer mount."
+  },
+  "reviewers_section": {
+    "message": "Reviewers:",
+    "description": "Label before reviewer chips."
+  },
+  "reviewers_team": {
+    "message": "Team: $SLUG$",
+    "description": "Requested team chip; preserve the team slug.",
+    "placeholders": {
+      "slug": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewers_title": {
+    "message": "@$LOGIN$ · $STATE$",
+    "description": "Reviewer tooltip with login and localized review state.",
+    "placeholders": {
+      "login": {
+        "content": "$1"
+      },
+      "state": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewers_aria": {
+    "message": "@$LOGIN$, $STATE$",
+    "description": "Accessible reviewer link name with login and localized review state.",
+    "placeholders": {
+      "login": {
+        "content": "$1"
+      },
+      "state": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewers_requested": {
+    "message": "requested",
+    "description": "Reviewer review state: requested."
+  },
+  "reviewers_approved": {
+    "message": "approved",
+    "description": "Reviewer review state: approved."
+  },
+  "reviewers_changes_requested": {
+    "message": "changes requested",
+    "description": "Reviewer review state: changes_requested."
+  },
+  "reviewers_commented": {
+    "message": "commented",
+    "description": "Reviewer review state: commented."
+  },
+  "reviewers_dismissed": {
+    "message": "dismissed",
+    "description": "Reviewer review state: dismissed."
+  },
+  "reviewers_approved_requested": {
+    "message": "approved (still requested)",
+    "description": "Completed approved review while the reviewer is still requested."
+  },
+  "reviewers_changes_requested_requested": {
+    "message": "changes requested (still requested)",
+    "description": "Completed changes_requested review while the reviewer is still requested."
+  },
+  "reviewers_commented_requested": {
+    "message": "commented (still requested)",
+    "description": "Completed commented review while the reviewer is still requested."
+  },
+  "reviewers_dismissed_requested": {
+    "message": "dismissed (still requested)",
+    "description": "Completed dismissed review while the reviewer is still requested."
+  },
+  "banner_auth_expired": {
+    "message": "Your GitHub session expired. Sign in again to keep loading reviewers.",
+    "description": "Expired GitHub session guidance."
+  },
+  "banner_app_uncovered": {
+    "message": "Add $REPOSITORY$ to @$OWNER$'s GitHub App installation to see reviewers on this page.",
+    "description": "App installation coverage guidance; identifiers remain unchanged.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      },
+      "owner": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_signin_required": {
+    "message": "Sign in with GitHub to see reviewers on private repositories.",
+    "description": "Private repository sign-in guidance."
+  },
+  "banner_reviewers_unavailable": {
+    "message": "Reviewer data is temporarily unavailable.",
+    "description": "Temporary reviewer data failure."
+  },
+  "banner_configure": {
+    "message": "Configure access",
+    "description": "Access banner configure action label."
+  },
+  "banner_signin": {
+    "message": "Sign in",
+    "description": "Access banner signin action label."
+  },
+  "banner_reload": {
+    "message": "Reload page",
+    "description": "Access banner reload action label."
+  },
+  "banner_dismiss": {
+    "message": "Dismiss",
+    "description": "Access banner dismiss action label."
+  },
+  "banner_usage": {
+    "message": "($USED$/$LIMIT$ used)",
+    "description": "Rate-limit usage clause; used and limit are unchanged numeric evidence.",
+    "placeholders": {
+      "used": {
+        "content": "$1"
+      },
+      "limit": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_cap": {
+    "message": "(60/hr unauthenticated cap)",
+    "description": "Fallback quota when no numeric rate-limit evidence is available."
+  },
+  "banner_auth_rate_unknown": {
+    "message": "GitHub's hourly request limit was reached. $USAGE$ Reviewers will resume automatically when the limit resets.",
+    "description": "auth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_unknown": {
+    "message": "GitHub's unauthenticated request limit was reached. $USAGE$ Sign in to raise it to 5,000/hr.",
+    "description": "unauth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_shortly": {
+    "message": "GitHub's hourly request limit was reached. $USAGE$ Reviewers will resume shortly.",
+    "description": "auth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_shortly": {
+    "message": "GitHub's unauthenticated request limit was reached. $USAGE$ Sign in to raise it to 5,000/hr. Resets shortly.",
+    "description": "unauth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_minute": {
+    "message": "GitHub's hourly request limit was reached. $USAGE$ Reviewers will resume in about 1 minute.",
+    "description": "auth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_minute": {
+    "message": "GitHub's unauthenticated request limit was reached. $USAGE$ Sign in to raise it to 5,000/hr. Resets in about 1 minute.",
+    "description": "unauth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_minutes": {
+    "message": "GitHub's hourly request limit was reached. $USAGE$ Reviewers will resume in about $COUNT$ minutes.",
+    "description": "auth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_rate_minutes": {
+    "message": "GitHub's unauthenticated request limit was reached. $USAGE$ Sign in to raise it to 5,000/hr. Resets in about $COUNT$ minutes.",
+    "description": "unauth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_auth_rate_hour": {
+    "message": "GitHub's hourly request limit was reached. $USAGE$ Reviewers will resume in about 1 hour.",
+    "description": "auth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_hour": {
+    "message": "GitHub's unauthenticated request limit was reached. $USAGE$ Sign in to raise it to 5,000/hr. Resets in about 1 hour.",
+    "description": "unauth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_hours": {
+    "message": "GitHub's hourly request limit was reached. $USAGE$ Reviewers will resume in about $COUNT$ hours.",
+    "description": "auth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_rate_hours": {
+    "message": "GitHub's unauthenticated request limit was reached. $USAGE$ Sign in to raise it to 5,000/hr. Resets in about $COUNT$ hours.",
+    "description": "unauth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
   }
 }

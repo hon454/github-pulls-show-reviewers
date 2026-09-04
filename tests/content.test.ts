@@ -441,3 +441,62 @@ describe("content entrypoint", () => {
     });
   });
 });
+
+it("shares one locale subscription across content features and releases it on route/context teardown", async () => {
+  vi.doUnmock("../src/features/access-banner");
+  vi.doUnmock("../src/features/reviewers");
+  vi.resetModules();
+  const storageListeners = new Set<(changes: object, area: string) => void>();
+  const routeListeners = new Map<string, Array<() => void>>();
+  const invalidations: Array<() => void> = [];
+  vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "Iv1.testclient");
+  vi.stubGlobal("__GITHUB_APP_SLUG__", "test-app");
+  vi.stubGlobal("__GITHUB_APP_NAME__", "Test App");
+  vi.stubGlobal("__PROD__", true);
+  vi.stubGlobal("browser", {
+    i18n: { getUILanguage: () => "en" },
+    runtime: {
+      getURL: (path: string) => `chrome-extension://test${path}`,
+      sendMessage: vi.fn(),
+    },
+    storage: {
+      local: { get: async () => ({}) },
+      onChanged: {
+        addListener: (fn: (changes: object, area: string) => void) =>
+          storageListeners.add(fn),
+        removeListener: (fn: (changes: object, area: string) => void) =>
+          storageListeners.delete(fn),
+      },
+    },
+  });
+  document.body.innerHTML = "<main></main>";
+  window.history.replaceState({}, "", "/org/repo/pulls");
+  const ctx = {
+    addEventListener: (_target: EventTarget, name: string, fn: () => void) =>
+      routeListeners.set(name, [...(routeListeners.get(name) ?? []), fn]),
+    setInterval: vi.fn(),
+    onInvalidated: (fn: () => void) => invalidations.push(fn),
+  };
+  try {
+    const { default: content } = await import("../entrypoints/content");
+    content.main(ctx as never);
+    // One central locale listener plus the reviewer's data preference listener.
+    expect(storageListeners.size).toBe(2);
+    window.history.replaceState({}, "", "/org/repo/issues");
+    routeListeners.get("wxt:locationchange")!.forEach((fn) => fn());
+    expect(storageListeners.size).toBe(1);
+    window.history.replaceState({}, "", "/org/repo/pulls");
+    routeListeners.get("wxt:locationchange")!.forEach((fn) => fn());
+    expect(storageListeners.size).toBe(2);
+    invalidations.forEach((fn) => fn());
+    expect(storageListeners.size).toBe(0);
+  } finally {
+    invalidations.forEach((fn) => fn());
+    vi.doMock("../src/features/access-banner", () => ({
+      bootAccessBanner: bootAccessBannerMock,
+    }));
+    vi.doMock("../src/features/reviewers", () => ({
+      bootReviewerListPage: bootReviewerListPageMock,
+    }));
+  }
+});

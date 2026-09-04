@@ -49,9 +49,9 @@ the manual Chrome verification flow. Firefox support is also out of scope until
 its MV3 behavior, extension packaging, and GitHub sign-in flow are tested
 explicitly.
 
-Chrome metadata, options, sign-in, and repository diagnostics support English,
-Korean, Japanese, Simplified Chinese, and Traditional Chinese. Reviewer-list
-labels and access banners remain English pending their localization integration.
+Chrome metadata, options, sign-in, repository diagnostics, reviewer chips, and
+access banners support English, Korean, Japanese, Simplified Chinese, and
+Traditional Chinese.
 
 ## Public and Private Repositories
 
@@ -159,7 +159,10 @@ account actions and GitHub device sign-in flow support all five languages.
 Changing language updates other open options tabs without restarting sign-in,
 clearing repository input or repeating an account action. Repository diagnostics
 reformat existing results and running status without another API request.
-Reviewer surfaces are being integrated separately.
+Reviewer labels, loading status, tooltips, accessible names, and access banners
+update on open PR lists without fetching data again or restarting queued work.
+Dismissed banners stay dismissed. GitHub content, reviewer identifiers, search
+links, and the existing review-state colors, badges, and precedence are unchanged.
 Product and GitHub App names remain unchanged. See the
 [localization contract](./docs/adr/0006-bundled-localization-and-render-only-language.md)
 for the manifest/UI boundary and shared APIs.

@@ -407,7 +407,8 @@ store owns one local-storage listener while subscribed, safely orders hydration
 against events and writes, and exposes React and DOM adapters with disposal.
 Language is presentation state; no translated strings belong in reviewer caches,
 request keys or technical error evidence. Options and diagnostics integration is
-implemented in #148–#149; content integration follows in #150. The full API, key
+implemented in #148–#149; reviewer and access-banner integration is implemented
+in #150. The full API, key
 ownership, migration, error
 and render-only rules are in
 [ADR 0006](./adr/0006-bundled-localization-and-render-only-language.md).
@@ -478,3 +479,40 @@ Validate catalogs with the i18n unit tests and emitted metadata with
   dual endpoint failures, partial and exhausted quota evidence, UTC reset values,
   safe schema/network/unknown errors, and language changes during/after both
   matched-account and no-token requests with unchanged API call counts.
+
+## Reviewer and access-banner language integration
+
+- Reviewer and banner DOM roots share the context locale store. Each feature
+  subscribes once; the store owns a single locale storage listener. Reviewer
+  subscriptions stop outside PR-list routes and on context invalidation; banner
+  teardown releases its subscription on route changes and invalidation.
+- `page-controller.ts` compares only display fields for preference-driven data
+  refresh. A language-only event never calls `processRows`, resolves accounts,
+  invalidates page metadata or caches, or aborts/restarts queued requests. Mixed
+  display/account changes still take the existing data-refresh path.
+- A weak map keeps each mounted loading or resolved presentation (including
+  empty/error-cleared results) independently of cache freshness or eviction.
+  Locale callbacks reformat these presentations synchronously. In-flight and
+  queued results read the latest locale when they render. The four-slot FIFO
+  scheduler, mutation batching/attribute filtering, and row fingerprints remain
+  unchanged; extension-owned localized nodes are excluded from row mutations.
+- All reviewer state labels and completed-plus-still-requested combinations are
+  full catalog messages. APPROVED, CHANGES_REQUESTED, COMMENTED, and DISMISSED
+  retain the existing mapping: requested reviewers keep the blue ring; approved,
+  changes-requested, or dismissed evidence adds the optional refresh badge.
+  Requested COMMENTED has no refresh badge. Completed-only states retain their
+  green/red/gray/purple ring and matching optional badge, sort order and links.
+- All six access-banner kinds, CTAs, dismiss labels, usage clauses and reset
+  cases are localized. Reset timing still uses ceiling minutes, then rounded
+  hours; past resets say shortly. Existing retry claims are preserved. Locale
+  changes read `aggregator.getState()` without reporting failures or resetting
+  dismissal. Banner actions wrap on narrow screens.
+- Translation uses text content and safe attributes. `lang` is set only on
+  extension reviewer mounts and banners. GitHub HTML language, PR text, logins,
+  team slugs, URLs, API enums and diagnostic evidence are unchanged.
+- Regression coverage checks all five locales, nine reviewer-state combinations,
+  all banner kinds and reset cases, dismissed/teardown behavior, no extra work
+  for fresh/stale/missing/empty/error cache cases, loading/eventual locale,
+  FIFO concurrency and observer stress. The isolated Chromium fixture switches
+  the options preference while eight rows load, then checks seven completed rows
+  and one error banner in all five locales at 360px with exact request counts.

@@ -1,3 +1,7 @@
+import { getLocaleStore } from "../../i18n/browser";
+import type { ReviewerEntry } from "./view-model";
+import type { RenderReviewersOptions } from "./dom";
+
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import {
@@ -16,6 +20,7 @@ import {
   getPreferences,
   isAccountsChange,
   isPreferencesChange,
+  parsePreferences,
   type Preferences,
 } from "../../storage/preferences";
 
@@ -70,6 +75,43 @@ export function bootReviewerListPage(
     promise: Promise<void>;
     controller: AbortController;
   };
+  const localeStore = getLocaleStore();
+  type Presentation =
+    | { kind: "loading" }
+    | {
+        kind: "resolved";
+        entries: ReviewerEntry[];
+        options: RenderReviewersOptions;
+      };
+  const presentations = new WeakMap<HTMLElement, Presentation>();
+  function renderPresentation(mount: HTMLElement): void {
+    const state = presentations.get(mount);
+    if (!state) return;
+    const locale = localeStore.getSnapshot();
+    if (state.kind === "loading") renderLoading(mount, locale);
+    else renderReviewers(mount, state.entries, state.options, locale);
+  }
+  function showLoading(mount: HTMLElement): void {
+    presentations.set(mount, { kind: "loading" });
+    renderPresentation(mount);
+  }
+  function renderLocale(): void {
+    // Never enter processRows: even missing/stale caches must remain untouched.
+    document
+      .querySelectorAll<HTMLElement>("[data-ghpsr-root]")
+      .forEach(renderPresentation);
+  }
+  let unsubscribeLocale: (() => void) | undefined;
+  function syncLocaleSubscription(): void {
+    if (currentRoute != null && !unsubscribeLocale) {
+      unsubscribeLocale = localeStore.subscribe(renderLocale);
+      renderLocale();
+    } else if (currentRoute == null) {
+      unsubscribeLocale?.();
+      unsubscribeLocale = undefined;
+    }
+  }
+  syncLocaleSubscription();
   const inflightRequests = new Map<string, InflightRequest>();
   let cachedPreferences: Promise<Preferences> | null = null;
   const accountResolver = createSelfHealingAccountResolver({
@@ -113,10 +155,15 @@ export function bootReviewerListPage(
     const reviewers = buildReviewers(route, summary, {
       openPullsOnly: preferences.openPullsOnly,
     });
-    renderReviewers(mount, reviewers, {
-      showStateBadge: preferences.showStateBadge,
-      showReviewerName: preferences.showReviewerName,
+    presentations.set(mount, {
+      kind: "resolved",
+      entries: reviewers,
+      options: {
+        showStateBadge: preferences.showStateBadge,
+        showReviewerName: preferences.showReviewerName,
+      },
     });
+    renderPresentation(mount);
   }
 
   function reportPageMetadataFailure(
@@ -161,7 +208,7 @@ export function bootReviewerListPage(
       if (existingEntry != null) {
         await renderSummaryForMount(mount, route, existingEntry.summary);
       } else if (!mountHasRenderedChips(mount)) {
-        renderLoading(mount);
+        showLoading(mount);
       }
       try {
         await existingRequest.promise;
@@ -177,7 +224,7 @@ export function bootReviewerListPage(
     }
 
     if (cachedEntry == null && !mountHasRenderedChips(mount)) {
-      renderLoading(mount);
+      showLoading(mount);
     }
 
     const controller = new AbortController();
@@ -313,6 +360,7 @@ export function bootReviewerListPage(
     const previousRoute = currentRoute;
     currentRoute = parsePullListRoute(window.location.pathname);
     abortInflightRequests();
+    syncLocaleSubscription();
 
     if (
       previousRoute?.owner !== currentRoute?.owner ||
@@ -343,16 +391,23 @@ export function bootReviewerListPage(
   >[0] = (changes, areaName) => {
     if (areaName !== "local") return;
 
+    let displayChanged = false;
     if (isPreferencesChange(changes)) {
-      cachedPreferences = null;
-      rowLifecycle.processRows();
-      return;
+      const previous = parsePreferences(changes.preferences?.oldValue);
+      const next = parsePreferences(changes.preferences?.newValue);
+      displayChanged =
+        previous.showStateBadge !== next.showStateBadge ||
+        previous.showReviewerName !== next.showReviewerName ||
+        previous.openPullsOnly !== next.openPullsOnly;
+      if (displayChanged) cachedPreferences = null;
     }
 
     if (isAccountsChange(changes)) {
       clearReviewerCache();
       fallbackAccounts.clear();
       abortInflightRequests();
+      rowLifecycle.processRows();
+    } else if (displayChanged) {
       rowLifecycle.processRows();
     }
   };
@@ -361,19 +416,30 @@ export function bootReviewerListPage(
   ctx.setInterval(() => refreshRoute(), 1000);
   ctx.onInvalidated(() => {
     observer.disconnect();
+    unsubscribeLocale?.();
+    unsubscribeLocale = undefined;
     browser.storage.onChanged.removeListener(storageListener);
     abortInflightRequests();
   });
-}
 
-function clearReviewerMountWithoutCache(
-  mount: HTMLElement,
-  cacheKey: ReturnType<typeof buildReviewerCacheKey>,
-): void {
-  if (getReviewerCacheEntry(cacheKey) != null) {
-    return;
+  function clearReviewerMountWithoutCache(
+    mount: HTMLElement,
+    cacheKey: ReturnType<typeof buildReviewerCacheKey>,
+  ): void {
+    if (getReviewerCacheEntry(cacheKey) != null) {
+      return;
+    }
+    mount.replaceChildren();
+    mount.removeAttribute("title");
+    clearRenderedReviewerState(mount);
+    presentations.set(mount, {
+      kind: "resolved",
+      entries: [],
+      options: {
+        showStateBadge: true,
+        showReviewerName: false,
+      },
+    });
+    renderPresentation(mount);
   }
-  mount.replaceChildren();
-  mount.removeAttribute("title");
-  clearRenderedReviewerState(mount);
 }

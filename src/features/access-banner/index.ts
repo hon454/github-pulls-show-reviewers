@@ -1,3 +1,5 @@
+import { getLocaleStore } from "../../i18n/browser";
+
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import {
@@ -57,7 +59,9 @@ export function bootAccessBanner(
     );
   }
 
-  const unsubscribe = aggregator.subscribe((state) => {
+  const localeStore = getLocaleStore();
+  const render = () => {
+    const state = aggregator.getState();
     if (mount == null) {
       const target = ensureMountTarget();
       if (target == null) {
@@ -71,11 +75,14 @@ export function bootAccessBanner(
         onDismiss: () => aggregator.dismiss(),
       });
     }
-    mount.update(state);
-  });
+    mount.update(state, localeStore.getSnapshot());
+  };
+  const unsubscribeLocale = localeStore.subscribe(render);
+  const unsubscribe = aggregator.subscribe(render);
 
   const teardown = () => {
     unsubscribe();
+    unsubscribeLocale();
     mount?.teardown();
     mount = null;
   };

@@ -493,3 +493,85 @@ describe("renderReviewers — (isRequested, state) display truth table", () => {
     expect(document.querySelector(".ghpsr-badge")).toBeNull();
   });
 });
+
+describe("five-locale reviewer presentation", () => {
+  it.each(["en", "ko", "ja", "zh_CN", "zh_TW"] as const)(
+    "preserves all nine review states, identifiers and safe names in %s",
+    async (locale) => {
+      const { createTranslator, toLanguageTag } = await import("../src/i18n");
+      const { renderLoading } = await import("../src/features/reviewers/dom");
+      const t = createTranslator(locale);
+      const context = { t, lang: toLanguageTag(locale) };
+      const root = ensureReviewerMount(
+        document.querySelector(".js-issue-row")!,
+      )!;
+      renderLoading(root, context);
+      expect(root.textContent).toBe(t("reviewers_loading"));
+      const login = "alice<$STATE$>";
+      const states = [
+        "APPROVED",
+        "CHANGES_REQUESTED",
+        "COMMENTED",
+        "DISMISSED",
+      ] as const;
+      for (const requested of [false, true]) {
+        for (const state of states) {
+          const key = state.toLowerCase() as
+            | "approved"
+            | "changes_requested"
+            | "commented"
+            | "dismissed";
+          const label = t(
+            requested ? `reviewers_${key}_requested` : `reviewers_${key}`,
+          );
+          const entries = buildReviewers(
+            { owner: "org", repo: "repo" },
+            {
+              status: "ok",
+              requestedUsers: requested ? [{ login, avatarUrl: null }] : [],
+              completedReviews: [{ login, avatarUrl: null, state }],
+              requestedTeams: ["platform"],
+            },
+          );
+          renderReviewers(
+            root,
+            entries,
+            { showReviewerName: requested, showStateBadge: true },
+            context,
+          );
+          const link = root.querySelector<HTMLAnchorElement>("a")!;
+          expect(link.title).toBe(
+            t("reviewers_title", { login, state: label }),
+          );
+          expect(link.getAttribute("aria-label")).toBe(
+            t("reviewers_aria", { login, state: label }),
+          );
+          expect(link.href).toBe(entries[0].href);
+          expect(root.querySelector(".ghpsr-chip--team")?.textContent).toBe(
+            t("reviewers_team", { slug: "platform" }),
+          );
+          expect(root.querySelector("script")).toBeNull();
+          expect(root.lang).toBe(context.lang);
+        }
+      }
+      renderReviewers(
+        root,
+        [
+          {
+            kind: "user",
+            login,
+            href: "https://github.com/org/repo/pulls",
+            avatarUrl: null,
+            state: null,
+            isRequested: true,
+          },
+        ],
+        { showReviewerName: false, showStateBadge: true },
+        context,
+      );
+      expect(root.querySelector("a")?.title).toBe(
+        t("reviewers_title", { login, state: t("reviewers_requested") }),
+      );
+    },
+  );
+});

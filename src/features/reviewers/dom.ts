@@ -1,4 +1,8 @@
-import type { ReviewState } from "../../github/api";
+import {
+  createTranslator,
+  type LocaleSnapshot,
+  type Translator,
+} from "../../i18n";
 import type { ReviewerEntry } from "./view-model";
 import { STATE_ICONS } from "./state-icons";
 import { githubSelectors } from "../../github/selectors";
@@ -26,7 +30,7 @@ type ReviewerDisplay = {
   badgeIcon: BadgeIcon | null;
 };
 
-type RenderReviewersOptions = {
+export type RenderReviewersOptions = {
   showStateBadge: boolean;
   showReviewerName: boolean;
 };
@@ -256,10 +260,21 @@ function createFallbackMetaContainer(row: Element): HTMLElement | null {
   return container;
 }
 
-export function renderLoading(mount: HTMLElement): void {
+export const DEFAULT_REVIEWER_LOCALE = {
+  lang: "en",
+  t: createTranslator("en"),
+};
+
+export type ReviewerLocale = Pick<LocaleSnapshot, "lang" | "t">;
+
+export function renderLoading(
+  mount: HTMLElement,
+  locale: ReviewerLocale = DEFAULT_REVIEWER_LOCALE,
+): void {
+  mount.lang = locale.lang;
   const node = document.createElement("span");
   node.className = "ghpsr-status";
-  node.textContent = "Loading reviewers...";
+  node.textContent = locale.t("reviewers_loading");
   mount.replaceChildren(node);
   mount.removeAttribute("title");
   clearRenderedReviewerState(mount);
@@ -277,7 +292,9 @@ export function renderReviewers(
   mount: HTMLElement,
   entries: ReviewerEntry[],
   options: RenderReviewersOptions,
+  locale: ReviewerLocale = DEFAULT_REVIEWER_LOCALE,
 ): void {
+  mount.lang = locale.lang;
   if (entries.length === 0) {
     mount.replaceChildren();
     mount.removeAttribute("title");
@@ -287,14 +304,14 @@ export function renderReviewers(
 
   const label = document.createElement("span");
   label.className = "ghpsr-section-label";
-  label.textContent = "Reviewers:";
+  label.textContent = locale.t("reviewers_section");
 
   const nodes: Node[] = [label];
   for (const entry of entries) {
     if (entry.kind === "team") {
-      nodes.push(createTeamNode(entry));
+      nodes.push(createTeamNode(entry, locale.t));
     } else {
-      nodes.push(createUserNode(entry, options));
+      nodes.push(createUserNode(entry, options, locale.t));
     }
   }
   mount.replaceChildren(...nodes);
@@ -304,22 +321,30 @@ export function renderReviewers(
 
 function createTeamNode(
   entry: Extract<ReviewerEntry, { kind: "team" }>,
+  t: Translator,
 ): HTMLElement {
   const link = document.createElement("a");
   link.className = "ghpsr-chip ghpsr-chip--team";
   link.href = entry.href;
-  link.textContent = `Team: ${entry.slug}`;
+  link.textContent = t("reviewers_team", { slug: entry.slug });
   return link;
 }
 
 function createUserNode(
   entry: Extract<ReviewerEntry, { kind: "user" }>,
   options: RenderReviewersOptions,
+  t: Translator,
 ): HTMLElement {
   const display = resolveDisplay(entry);
-  const stateLabel = resolveStateLabel(entry);
-  const titleText = `@${entry.login} · ${stateLabel}`;
-  const ariaText = `@${entry.login}, ${stateLabel}`;
+  const stateLabel = resolveStateLabel(entry, t);
+  const titleText = t("reviewers_title", {
+    login: entry.login,
+    state: stateLabel,
+  });
+  const ariaText = t("reviewers_aria", {
+    login: entry.login,
+    state: stateLabel,
+  });
 
   if (options.showReviewerName) {
     const pill = document.createElement("a");
@@ -425,20 +450,28 @@ function resolveDisplay(
 
 function resolveStateLabel(
   entry: Extract<ReviewerEntry, { kind: "user" }>,
+  t: Translator,
 ): string {
-  const base = stateLabelBase(entry.state);
-  if (entry.state != null && entry.isRequested) {
-    return `${base} (still requested)`;
+  switch (entry.state) {
+    case "APPROVED":
+      return entry.isRequested
+        ? t("reviewers_approved_requested")
+        : t("reviewers_approved");
+    case "CHANGES_REQUESTED":
+      return entry.isRequested
+        ? t("reviewers_changes_requested_requested")
+        : t("reviewers_changes_requested");
+    case "COMMENTED":
+      return entry.isRequested
+        ? t("reviewers_commented_requested")
+        : t("reviewers_commented");
+    case "DISMISSED":
+      return entry.isRequested
+        ? t("reviewers_dismissed_requested")
+        : t("reviewers_dismissed");
+    default:
+      return t("reviewers_requested");
   }
-  return base;
-}
-
-function stateLabelBase(state: ReviewState | null): string {
-  if (state === "APPROVED") return "approved";
-  if (state === "CHANGES_REQUESTED") return "changes requested";
-  if (state === "COMMENTED") return "commented";
-  if (state === "DISMISSED") return "dismissed";
-  return "requested";
 }
 
 function initialsBackground(login: string): string {
