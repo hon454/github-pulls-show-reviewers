@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to package and publish or refresh
+        description: Existing version tag for skip or publish (not staging)
         required: false
         type: string
       chrome_web_store:
-        description: Chrome Web Store action for a manual run
+        description: Explicit CWS action; dry-run is credential-only
         required: true
         default: skip
         type: choice
@@ -19,9 +19,33 @@ on:
           - skip
           - dry-run
           - publish
+          - upload-only
+          - submit-existing
+      source_sha:
+        description: Exact reviewed release commit SHA (required for both staging actions)
+        required: false
+        type: string
+      expected_version:
+        description: Bare manifest version (required for both staging actions)
+        required: false
+        type: string
+      receipt_run_id:
+        description: Original upload workflow run ID (required for submit-existing)
+        required: false
+        type: string
+      listing_evidence:
+        description: Listing-ready JSON from docs/cws-agent-handoff.md (submit-existing only)
+        required: false
+        type: string
 
 permissions:
   contents: write
+  actions: read
+
+# All mutations for this item share one queue; never cancel an in-flight write.
+concurrency:
+  group: cws-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -30,82 +54,141 @@ jobs:
   package:
     runs-on: ubuntu-latest
     env:
+      RELEASE_INPUTS_JSON: ${{ toJSON(inputs) }}
+      RELEASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
       WXT_GITHUB_APP_CLIENT_ID: ${{ vars.WXT_GITHUB_APP_CLIENT_ID }}
       WXT_GITHUB_APP_SLUG: ${{ vars.WXT_GITHUB_APP_SLUG }}
       WXT_GITHUB_APP_NAME: ${{ vars.WXT_GITHUB_APP_NAME }}
+      CHROME_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+      CHROME_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
     steps:
+      # Keep control code separate from the explicitly selected package source.
       - uses: actions/checkout@v6
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
-
       - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
-
       - run: pnpm install --frozen-lockfile
-      - run: pnpm prepare
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm preflight:release
-      - run: pnpm verify:release
-      - run: pnpm zip:checked
 
-      - name: Resolve release metadata
-        id: release_meta
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
-            tag="${{ inputs.tag }}"
-          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            tag="${GITHUB_REF#refs/tags/}"
-          else
-            tag=""
-          fi
-
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$tag" ] && [ -f "docs/releases/$tag.md" ]; then
-            echo "has_notes=true" >> "$GITHUB_OUTPUT"
-            echo "notes_path=docs/releases/$tag.md" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_notes=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: chrome-extension-package
-          path: .output/*-chrome.zip
-          include-hidden-files: true
-
-      - if: steps.release_meta.outputs.tag != '' && steps.release_meta.outputs.has_notes == 'true'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.release_meta.outputs.tag }}
-          files: .output/*-chrome.zip
-          body_path: ${{ steps.release_meta.outputs.notes_path }}
-
-      - if: steps.release_meta.outputs.tag != '' && steps.release_meta.outputs.has_notes != 'true'
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.release_meta.outputs.tag }}
-          files: .output/*-chrome.zip
-          generate_release_notes: true
+      - name: Resolve release action
+        id: action
+        run: node --experimental-strip-types scripts/release/cli.ts resolve
 
       - name: Check Chrome Web Store credentials
-        if: github.event_name == 'workflow_dispatch' && inputs.chrome_web_store == 'dry-run'
-        run: pnpm submit:chrome --dry-run
+        if: steps.action.outputs.action == 'dry-run'
+        run: node --experimental-strip-types scripts/release/cli.ts dry-run
         env:
-          CHROME_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
-          CHROME_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
           CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ vars.CWS_SERVICE_ACCOUNT_CLIENT_EMAIL }}
           CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_PRIVATE_KEY }}
 
-      - name: Publish to Chrome Web Store
-        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.chrome_web_store == 'publish')
-        run: pnpm submit:chrome
+      - if: steps.action.outputs.action != 'dry-run'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.action.outputs.source_ref }}
+          path: release-source
+          fetch-depth: 0
+      - if: steps.action.outputs.action != 'dry-run'
+        run: git fetch origin main --tags
+      - if: steps.action.outputs.action != 'dry-run'
+        run: pnpm install --frozen-lockfile
+        working-directory: release-source
+      - if: steps.action.outputs.action != 'dry-run'
+        run: pnpm prepare
+        working-directory: release-source
+      - if: steps.action.outputs.action != 'dry-run'
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: release-source
+      - name: Production preflight
+        if: steps.action.outputs.action != 'dry-run'
+        run: pnpm preflight:release
+        working-directory: release-source
+      - name: Release verification
+        if: steps.action.outputs.action != 'dry-run'
+        run: pnpm verify:release
+        working-directory: release-source
+      - name: Checked package
+        if: steps.action.outputs.action != 'dry-run'
+        run: pnpm zip:checked
+        working-directory: release-source
+
+      - name: Verify source and previous receipts
+        if: steps.action.outputs.action != 'dry-run'
+        id: package_meta
+        run: node --experimental-strip-types scripts/release/cli.ts prepare
         env:
-          CHROME_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
-          CHROME_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Save checked package
+        if: steps.action.outputs.action != 'dry-run'
+        id: package_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: chrome-package-${{ github.run_id }}
+          path: ${{ steps.package_meta.outputs.zip }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Record checked package
+        if: contains(fromJSON('["publish","upload-only","submit-existing"]'), steps.action.outputs.action)
+        run: node --experimental-strip-types scripts/release/cli.ts record
+        env:
+          PACKAGE_ARTIFACT_ID: ${{ steps.package_artifact.outputs.artifact-id }}
+          PACKAGE_ARTIFACT_DIGEST: ${{ steps.package_artifact.outputs.artifact-digest }}
+
+      - name: Save durable CWS intent
+        if: contains(fromJSON('["publish","upload-only","submit-existing"]'), steps.action.outputs.action)
+        id: intent_artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: cws-intent-${{ vars.CWS_EXTENSION_ID }}
+          path: .release/intent.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Execute resolved CWS action
+        if: contains(fromJSON('["publish","upload-only","submit-existing"]'), steps.action.outputs.action)
+        run: node --experimental-strip-types scripts/release/cli.ts execute
+        env:
+          INTENT_ARTIFACT_ID: ${{ steps.intent_artifact.outputs.artifact-id }}
           CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ vars.CWS_SERVICE_ACCOUNT_CLIENT_EMAIL }}
           CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_PRIVATE_KEY }}
+
+      - name: Save CWS result even on uncertain failure
+        if: always() && hashFiles('.release/result.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: cws-result-${{ vars.CWS_EXTENSION_ID }}
+          path: .release/result.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Save listing-ready handoff
+        if: always() && hashFiles('.release/listing-evidence.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: cws-listing-ready-${{ github.run_id }}
+          path: .release/listing-evidence.json
+          include-hidden-files: true
+          retention-days: 90
+
+      - if: steps.package_meta.outputs.create_release == 'true' && steps.package_meta.outputs.has_notes == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.package_meta.outputs.tag }}
+          files: ${{ steps.package_meta.outputs.zip }}
+          body_path: ${{ steps.package_meta.outputs.notes_path }}
+
+      - if: steps.package_meta.outputs.create_release == 'true' && steps.package_meta.outputs.has_notes != 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.package_meta.outputs.tag }}
+          files: ${{ steps.package_meta.outputs.zip }}
+          generate_release_notes: true

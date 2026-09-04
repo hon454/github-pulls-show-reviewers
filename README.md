@@ -120,12 +120,18 @@ pnpm zip:release
 
 `pnpm zip` produces an inspectable local build only. Production packaging for the Chrome Web Store uses `pnpm zip:release`, which loads the maintainer GitHub App identifiers and verifies the final zip before upload.
 
-Pushing a `v<version>` tag runs the release workflow, attaches the verified
-package to the GitHub Release, submits it through the Chrome Web Store API v2,
-and publishes it automatically after store approval. Use the manual workflow's
-credential-only `dry-run` before relying on changed store credentials or release
-automation. See [Chrome Web Store notes](./docs/chrome-web-store.md) for the
-operational runbook and recovery guidance.
+Pushing a new `v<version>` tag attaches the verified package to a GitHub Release
+and submits it through CWS API v2 for automatic publication after normal review.
+For new listing languages, the manual `upload-only` and `submit-existing` stages
+allow a pause to register descriptions/screenshots; neither creates a GitHub
+Release. The later tag reuses the original checked package and skips CWS writes
+when its exact source receipt is already pending or published. With the updated
+workflow, manual `skip` remains safe against a tag, and credential-only `dry-run`
+never creates a release or changes store state. Legacy tags retain their old
+workflow: select updated `main` or a reviewed branch as the control ref and pass
+an old package tag through the separate `tag` input. See [Chrome Web Store notes](./docs/chrome-web-store.md)
+and the [agent handoff runbook](./docs/cws-agent-handoff.md) for inputs, provenance,
+fresh dashboard evidence, and uncertain-outcome recovery.
 
 For repository workflow, branch naming, commit style, and pull request requirements, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
@@ -135,6 +141,7 @@ For repository workflow, branch naming, commit style, and pull request requireme
 - [Manual Chrome testing](./docs/manual-chrome-testing.md)
 - [Chrome Web Store notes](./docs/chrome-web-store.md)
 - [Chrome Web Store submission packet](./docs/chrome-web-store-submission.md)
+- [Staged CWS agent handoff](./docs/cws-agent-handoff.md)
 - [Store acquisition attribution](./docs/growth/attribution.md)
 - [Launch and community copy](./docs/growth/launch-kit.md)
 - [Privacy policy](./docs/privacy-policy.md)

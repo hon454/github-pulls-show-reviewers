@@ -93,6 +93,14 @@ link and the privacy fields aligned with the shipped behavior.
 
 ## Release and upload checklist
 
+For a first localized listing release, use the
+[staged agent handoff](./cws-agent-handoff.md): checked `upload-only`, register
+the five approved locale descriptions/screenshots, then `submit-existing` with
+fresh dashboard evidence tied to the immutable upload receipt. Neither staging
+action creates a GitHub Release. Do not execute the normal tag-first step below
+until the localized handoff is complete; the later tag must point to the same
+reviewed source and reuses its verified artifact without another CWS submission.
+
 1. Run `pnpm preflight:release` in an environment with `WXT_GITHUB_APP_CLIENT_ID`, `WXT_GITHUB_APP_SLUG`, and `WXT_GITHUB_APP_NAME` populated. For local release builds, `pnpm build:release` and `pnpm zip:release` load these from GitHub Actions repository variables through `gh` and run the same preflight.
 2. Run `pnpm verify:release`.
 3. Run `pnpm cws:assets` if the submission screenshots need to reflect UI changes.
@@ -107,7 +115,7 @@ link and the privacy fields aligned with the shipped behavior.
 6. Open the packaged extension's options page once before upload and
    confirm it never renders as a blank white screen. A missing GitHub App
    build config must surface the explicit configuration warning instead.
-7. Push the `v<version>` tag. The release workflow uploads
+7. For an ordinary new version, push the `v<version>` tag. The release workflow uploads
    `.output/*-chrome.zip` through the Chrome Web Store API v2 and submits it
    for automatic publication after approval.
 8. Confirm the release workflow and dashboard package version both read the
@@ -115,9 +123,14 @@ link and the privacy fields aligned with the shipped behavior.
 9. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
 10. Paste the short description, detailed description, and privacy policy URL above.
 11. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
-12. For a credential-only rehearsal, run the release workflow manually with
-    `chrome_web_store: dry-run`; its default `skip` mode never submits a store
-    release.
+12. For a credential-only rehearsal, run the reviewed release workflow with
+    `chrome_web_store: dry-run`; it performs no build, package upload, review
+    submission, or GitHub Release creation. The default `skip` never mutates CWS,
+    including a dispatch against a tag. A tag-scoped skip may refresh the GitHub
+    Release artifact. These guarantees require the updated workflow: do not
+    dispatch legacy control refs such as `--ref v1.15.0`. Select updated `main`
+    or a reviewed branch and pass old package tags via the separate `tag` input
+    as shown in the [handoff](./cws-agent-handoff.md).
 13. After approval and automatic publication, confirm the Git tag, GitHub
     Release, release note, and published store version still reference the
     same bare `<version>` value.

@@ -3,12 +3,14 @@
   "compilerOptions": {
     "strict": true,
     "exactOptionalPropertyTypes": true,
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx"
   },
   "include": [
     ".wxt/wxt.d.ts",
     "entrypoints",
     "src",
+    "scripts/release",
     "tests",
     "vitest.config.ts",
     "playwright.config.ts",

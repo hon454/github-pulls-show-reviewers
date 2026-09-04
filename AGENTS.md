@@ -50,6 +50,8 @@ Agents working in this repository should preserve that narrow product scope. Do 
   Request and page-session caching helpers.
 - `tests/`
   Automated tests, including future extension regression coverage.
+- `scripts/release/`
+  Release action policy, CWS adapter, checked-package receipts, and workflow orchestration.
 
 ## Implementation Guidelines
 
@@ -77,11 +79,32 @@ Agents working in this repository should preserve that narrow product scope. Do 
 
 - Treat `.github/workflows/release.yml` and
   `docs/chrome-web-store.md` as the canonical release automation and runbook.
-- A pushed `v<version>` tag submits the checked Chrome package through the
-  Chrome Web Store API v2 and requests automatic publication after approval.
+- A pushed new `v<version>` tag submits the checked Chrome package through CWS
+  API v2 for normal review and automatic publication after approval. If that
+  exact source already has a validated upload receipt and is pending/published,
+  reuse its checked artifact for the GitHub Release without another CWS write.
 - Keep manual workflow runs safe by default: `chrome_web_store: skip` must
-  remain the default, `dry-run` is for credential validation, and `publish`
-  must be selected intentionally.
+  remain the default, even when dispatching against a tag. `dry-run` only checks
+  credentials and never builds, uploads, submits, or creates a GitHub Release.
+  `publish`, `upload-only`, and `submit-existing` require intentional selection.
+- These guarantees apply only to control refs containing the updated workflow.
+  Never dispatch a legacy workflow with `--ref v1.15.0`. Use updated `main` or a
+  reviewed branch as the control ref and the separate `tag` input for old tags;
+  do not move existing tags to retrofit workflow changes.
+- Both staging actions require an exact reviewed source SHA and expected
+  manifest version. Neither creates a tag or GitHub Release. Follow
+  `docs/cws-agent-handoff.md`; submit-existing also requires the original upload
+  run and fresh listing-ready dashboard evidence for all five locales.
+- Serialize the same CWS item without cancel-in-progress. Preserve intent,
+  result, and checked-package artifacts. Never blindly retry an uncertain
+  upload/submission, cancel pending review, or infer draft identity from version
+  equality/local package.json. CWS status has no remote draft ZIP digest.
+- All CWS mutations require workflow/source commits reachable from freshly
+  fetched origin/main and successful production preflight, release verification,
+  and checked packaging. A reviewed PR branch may run credential-only dry-run.
+  Do not rerun a mutating workflow attempt; start a new dispatch to inspect the
+  earlier receipts. `submit:chrome` is the guarded workflow entrypoint, not a
+  standalone publishing shortcut.
 - Run the credential-only `dry-run` after changing Chrome Web Store
   credentials, service-account linkage, the submission dependency, or the
   publish steps in `release.yml`.
