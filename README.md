@@ -126,9 +126,11 @@ and submits it through CWS API v2 for automatic publication after normal review.
 For new listing languages, the manual `upload-only` and `submit-existing` stages
 allow a pause to register descriptions/screenshots; neither creates a GitHub
 Release. The later tag reuses the original checked package and skips CWS writes
-when its exact source receipt is already pending or published. Manual `skip`
-remains safe against a tag, and credential-only `dry-run` never creates a release
-or changes store state. See [Chrome Web Store notes](./docs/chrome-web-store.md)
+when its exact source receipt is already pending or published. With the updated
+workflow, manual `skip` remains safe against a tag, and credential-only `dry-run`
+never creates a release or changes store state. Legacy tags retain their old
+workflow: select updated `main` or a reviewed branch as the control ref and pass
+an old package tag through the separate `tag` input. See [Chrome Web Store notes](./docs/chrome-web-store.md)
 and the [agent handoff runbook](./docs/cws-agent-handoff.md) for inputs, provenance,
 fresh dashboard evidence, and uncertain-outcome recovery.
 

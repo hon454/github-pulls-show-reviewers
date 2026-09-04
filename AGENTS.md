@@ -87,6 +87,10 @@ Agents working in this repository should preserve that narrow product scope. Do 
   remain the default, even when dispatching against a tag. `dry-run` only checks
   credentials and never builds, uploads, submits, or creates a GitHub Release.
   `publish`, `upload-only`, and `submit-existing` require intentional selection.
+- These guarantees apply only to control refs containing the updated workflow.
+  Never dispatch a legacy workflow with `--ref v1.15.0`. Use updated `main` or a
+  reviewed branch as the control ref and the separate `tag` input for old tags;
+  do not move existing tags to retrofit workflow changes.
 - Both staging actions require an exact reviewed source SHA and expected
   manifest version. Neither creates a tag or GitHub Release. Follow
   `docs/cws-agent-handoff.md`; submit-existing also requires the original upload

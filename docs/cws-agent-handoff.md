@@ -9,6 +9,11 @@ the #154 dashboard handoff. The five locales are `en`, `ko`, `ja`, `zh_CN`, and
 
 ## Action matrix
 
+This matrix applies only when the selected **control ref contains the updated
+workflow**. GitHub executes workflow code from `--ref`; old tags are immutable
+snapshots, so `--ref v1.15.0` still runs the legacy publish condition and is not
+safe for skip/dry-run. Do not dispatch a legacy workflow ref or move old tags.
+
 | Event/input                                                     | CWS behavior                                                         | GitHub Release                              |
 | --------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------- |
 | Push a new `v<version>` tag                                     | Checked upload, then normal review/automatic publication             | Create/refresh after success                |
@@ -25,6 +30,19 @@ against a tag still obeys its explicit action. All mutations require both the
 workflow control commit and package source to be reachable from freshly fetched
 `origin/main`; source code is checked out separately from control code. All
 mutations rerun production preflight, release verification and checked packaging.
+
+After the new workflow is integrated, select updated `main` as the control ref
+and choose an old package tag separately:
+
+```bash
+gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
+  --ref main -f tag=v1.15.0 -f chrome_web_store=skip
+```
+
+This skips CWS but may refresh the GitHub Release for that existing tag. For
+credential-only checks, use updated `main` after integration or the exact
+reviewed branch before integration, as in the next example; do not use an old
+tag as the workflow control ref.
 
 ## Credential-only rehearsal
 

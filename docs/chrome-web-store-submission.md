@@ -127,7 +127,10 @@ reviewed source and reuses its verified artifact without another CWS submission.
     `chrome_web_store: dry-run`; it performs no build, package upload, review
     submission, or GitHub Release creation. The default `skip` never mutates CWS,
     including a dispatch against a tag. A tag-scoped skip may refresh the GitHub
-    Release artifact.
+    Release artifact. These guarantees require the updated workflow: do not
+    dispatch legacy control refs such as `--ref v1.15.0`. Select updated `main`
+    or a reviewed branch and pass old package tags via the separate `tag` input
+    as shown in the [handoff](./cws-agent-handoff.md).
 13. After approval and automatic publication, confirm the Git tag, GitHub
     Release, release note, and published store version still reference the
     same bare `<version>` value.
