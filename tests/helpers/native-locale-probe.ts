@@ -99,7 +99,7 @@ const launch = () =>
 let context = await launch();
 try {
   await context.route("https://**/*", (route) => route.abort());
-  const { page, url } = await installedOptions(context);
+  const { page } = await installedOptions(context);
   const native = await chromeLanguage(page);
   const resolved = resolveLocale(native.uiLanguage);
   // Manifest and renderer messages share Chromium's browser-side bundle loader.
@@ -190,9 +190,17 @@ try {
   await context.close();
   context = await launch();
   await context.route("https://**/*", (route) => route.abort());
-  // onInstalled does not run again on process restart; navigate explicitly.
-  const restored = await context.newPage();
-  await restored.goto(url);
+  // Let Chrome own options-page navigation on restart as well. A direct goto
+  // raced another Chrome-owned navigation to the same options URL in review.
+  const restartedWorker = context.serviceWorkers()[0] ??
+    (await context.waitForEvent("serviceworker"));
+  await restartedWorker.evaluate(async () => {
+    const api = (globalThis as unknown as {
+      chrome: { runtime: { openOptionsPage(): Promise<void> } };
+    }).chrome;
+    await api.runtime.openOptionsPage();
+  });
+  const { page: restored } = await installedOptions(context);
   await expect(restored.getByTestId("language-select")).toHaveValue("zh_TW");
   await expect(restored.locator("html")).toHaveAttribute("lang", "zh-TW");
   const restartedUI = await uiSnapshot(restored);

@@ -172,7 +172,11 @@ Its [predefined message implementation](https://chromium.googlesource.com/chromi
 sets `@@ui_locale` from the process locale, which need not select that bundle.
 The Chromium-specific `current_locale` field is used only by the test probe,
 not application code.
-The Linux message/toolbar result remains pending until the corrected CI runs.
+Read each platform result from its recorded observations; the macOS result does
+not establish Linux outcomes. On process restart the probe requests
+`runtime.openOptionsPage()` and waits for the actual options UI. This avoids a
+direct `goto` competing with Chrome-owned navigation, observed once during
+independent review. It does not assume which browser lifecycle event opened it.
 
 Independent review caught that the original in-runner probe omitted an explicit
 locale but still received Playwright Test 1.59.1's **default `en-US` injection**.

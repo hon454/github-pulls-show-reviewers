@@ -334,8 +334,9 @@ text and manifest/action/toolbar against Chromium's `manifest.current_locale`
 the same browser-side bundle loader. `@@ui_locale` is retained separately as a
 process-locale observation, not a message-catalog selector. Linux
 CI run `33855860843` observed a Korean manifest with an English-resolved
-`@@ui_locale` and stopped before the remaining assertions. A corrected Linux run
-is required before claiming its message/toolbar or restart results.
+`@@ui_locale` and stopped before the remaining assertions. Use the corrected run's raw evidence for Linux message/toolbar and restart
+results. Restart requests `runtime.openOptionsPage()` and waits for the actual
+options UI to avoid competing direct navigation.
 
 Executed on macOS Chromium 147 on 2026-09-04: the standalone Node subprocess
 with headless Chromium, `--lang=ko` and no runner-injected locale observed
