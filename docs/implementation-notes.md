@@ -218,6 +218,7 @@ continue to force route refreshes.
 ## Display preferences
 
 - Stored under a separate `preferences` key in `browser.storage.local` (schema `version: 1`).
+- `language` (default `auto`) stores the UI locale override. Missing or invalid language values recover to `auto` without resetting valid display choices.
 - `showStateBadge` (default `true`) toggles the SVG state badge on each avatar.
 - `showReviewerName` (default `false`) switches each user chip between avatar-only and a rounded pill containing the avatar and `@login` text.
 - `openPullsOnly` (default `true`) keeps reviewer chip links scoped to open pull requests. When disabled, links preserve the previous `is:pr <reviewer qualifier>` query so closed PRs can appear too.
@@ -396,3 +397,20 @@ WXT_GITHUB_APP_NAME=<optional display name>
 
 3. Run `pnpm dev` and open the options page to exercise the device flow against
    your personal App.
+
+## Localization foundation
+
+Five canonical Chrome catalogs under `public/_locales/` are statically bundled
+by the pure `src/i18n/` formatter. English is the fallback. Auto detection reads
+Chrome's UI language; an explicit local preference overrides extension UI only.
+Chrome-owned manifest metadata follows Chrome independently. The shared locale
+store owns one local-storage listener while subscribed, safely orders hydration
+against events and writes, and exposes React and DOM adapters with disposal.
+Language is presentation state; no translated strings belong in reviewer caches,
+request keys or technical error evidence. Options, diagnostics and content
+integration follow in #148–#150. The full API, key ownership, migration, error
+and render-only rules are in
+[ADR 0006](./adr/0006-bundled-localization-and-render-only-language.md).
+
+Validate catalogs with the i18n unit tests and emitted metadata with
+`pnpm build && pnpm verify:locales`. No release or publishing behavior changes.

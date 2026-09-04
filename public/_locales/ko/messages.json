@@ -1,0 +1,14 @@
+{
+  "extension_name": {
+    "message": "GitHub Pulls Show Reviewers",
+    "description": "Extension product name. Keep this brand identical in every locale."
+  },
+  "extension_description": {
+    "message": "GitHub 풀 리퀘스트 목록에서 요청된 리뷰어와 팀, 완료된 리뷰 상태를 바로 확인하세요.",
+    "description": "Chrome manifest description. Maximum 132 characters."
+  },
+  "extension_action_title": {
+    "message": "GitHub Pulls Show Reviewers — 설정 열기",
+    "description": "Chrome toolbar action tooltip that opens extension options. Preserve the product name."
+  }
+}

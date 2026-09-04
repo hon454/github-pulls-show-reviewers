@@ -142,3 +142,14 @@ For repository workflow, branch naming, commit style, and pull request requireme
 - [Security policy](./SECURITY.md)
 - [Release notes](./docs/releases/)
 - [MIT license](./LICENSE)
+
+## Localization
+
+The localization foundation supports English (fallback), Korean, Japanese,
+Simplified Chinese and Traditional Chinese. Chrome metadata follows Chrome's
+language. The local `language` preference defaults to `auto` and supports a
+manual override for extension-owned UI; the language selector and translated
+options, diagnostics and reviewer surfaces are being integrated separately.
+Product and GitHub App names remain unchanged. See the
+[localization contract](./docs/adr/0006-bundled-localization-and-render-only-language.md)
+for the manifest/UI boundary and shared APIs.

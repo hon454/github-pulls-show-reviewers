@@ -17,9 +17,9 @@ export default defineConfig({
     },
   }),
   manifest: {
-    name: "GitHub Pulls Show Reviewers",
-    description:
-      "See requested reviewers, teams, and completed review state directly in GitHub pull request lists.",
+    default_locale: "en",
+    name: "__MSG_extension_name__",
+    description: "__MSG_extension_description__",
     icons: {
       16: "/icon/16.png",
       32: "/icon/32.png",
@@ -29,7 +29,7 @@ export default defineConfig({
     permissions: ["storage", "alarms"],
     host_permissions: ["https://github.com/*", "https://api.github.com/*"],
     action: {
-      default_title: "GitHub Pulls Show Reviewers — Open options",
+      default_title: "__MSG_extension_action_title__",
       default_icon: {
         16: "/icon/16.png",
         32: "/icon/32.png",

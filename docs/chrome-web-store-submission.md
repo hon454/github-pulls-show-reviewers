@@ -52,7 +52,7 @@ Single purpose:
 
 Permission justification:
 
-- `storage`: stores locally the GitHub App accounts (user-to-server access token, refresh token, and token-expiry timestamps per account) so the user can access private repositories. It also stores the review-chip display preferences (`showStateBadge`, `showReviewerName`, and `openPullsOnly`) under the local `preferences` key.
+- `storage`: stores locally the GitHub App accounts (user-to-server access token, refresh token, and token-expiry timestamps per account) so the user can access private repositories. It also stores the review-chip display preferences (`showStateBadge`, `showReviewerName`, and `openPullsOnly`) and UI language preference (`language`, default `auto`) under the local `preferences` key.
 - `alarms`: schedules a recurring 15-minute background task that refreshes GitHub App access tokens ahead of expiry. Without this, every eight-hour token lifetime would force the user to sign in again even while actively using the extension, and reviewer lookups on private repositories would stall until the next sign-in.
 - `https://github.com/*`: reads the current GitHub pull request list page to find repository context and render reviewer chips inline.
 - `https://api.github.com/*`: fetches requested reviewers, requested teams, and review history from GitHub's REST API. Requests originate from the extension's background service worker; the access token never enters the content-script execution context.
@@ -129,3 +129,13 @@ Expected package path after `pnpm zip:release`:
 ```text
 .output/github-pulls-show-reviewers-1.15.0-chrome.zip
 ```
+
+## Localization boundary
+
+The extension bundles English, Korean, Japanese, Simplified Chinese and
+Traditional Chinese catalogs. Manifest metadata follows Chrome's language;
+a manual extension UI language preference cannot override Chrome-owned metadata.
+Names of the product and GitHub App stay unchanged. No remote translation
+service, new permission, or additional data collection is introduced. This
+foundation does not edit or publish dashboard listing translations; store copy
+and screenshots remain separate release work.
