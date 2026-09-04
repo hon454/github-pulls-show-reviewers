@@ -1,3 +1,4 @@
+import type { Translator, MessageKey } from "../../../src/i18n";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -7,13 +8,18 @@ import {
   type Preferences,
 } from "../../../src/storage/preferences";
 
-export function DisplaySettingsPanel() {
+export function DisplaySettingsPanel({ t }: { t: Translator }) {
   const [preferences, setPreferences] =
     useState<Preferences>(DEFAULT_PREFERENCES);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{
     tone: "neutral" | "error";
-    message: string;
+    key: Extract<
+      MessageKey,
+      | "options_display_load_failed"
+      | "options_display_save_failed"
+      | "options_display_saving"
+    >;
   } | null>(null);
   const busyRef = useRef(false);
 
@@ -21,10 +27,10 @@ export function DisplaySettingsPanel() {
     void (async () => {
       try {
         setPreferences(await getPreferences());
-      } catch (error) {
+      } catch {
         setStatus({
           tone: "error",
-          message: `Could not load display settings. ${errorMessage(error)}`,
+          key: "options_display_load_failed",
         });
       }
     })();
@@ -37,15 +43,15 @@ export function DisplaySettingsPanel() {
 
     busyRef.current = true;
     setBusy(true);
-    setStatus({ tone: "neutral", message: "Saving display settings..." });
+    setStatus({ tone: "neutral", key: "options_display_saving" });
     try {
       const next = await updatePreferences(patch);
       setPreferences(next);
       setStatus(null);
-    } catch (error) {
+    } catch {
       setStatus({
         tone: "error",
-        message: `Could not save display settings. ${errorMessage(error)}`,
+        key: "options_display_save_failed",
       });
     } finally {
       busyRef.current = false;
@@ -58,8 +64,8 @@ export function DisplaySettingsPanel() {
       <div className="section-heading">
         <span className="section-index">02</span>
         <div>
-          <h2 id="display-title">Display</h2>
-          <p>Control how reviewer chips look on GitHub pull request lists.</p>
+          <h2 id="display-title">{t("options_display_title")}</h2>
+          <p>{t("options_display_description")}</p>
         </div>
       </div>
       <div className="preference-list">
@@ -74,8 +80,8 @@ export function DisplaySettingsPanel() {
             }
           />
           <span>
-            <strong>Review state badges</strong>
-            <small>Show approval and request state directly on avatars.</small>
+            <strong>{t("options_badges")}</strong>
+            <small>{t("options_badges_description")}</small>
           </span>
         </label>
         <label className="preference-row">
@@ -89,8 +95,8 @@ export function DisplaySettingsPanel() {
             }
           />
           <span>
-            <strong>Reviewer names</strong>
-            <small>Keep names visible next to reviewer avatars.</small>
+            <strong>{t("options_names")}</strong>
+            <small>{t("options_names_description")}</small>
           </span>
         </label>
         <label className="preference-row">
@@ -104,8 +110,8 @@ export function DisplaySettingsPanel() {
             }
           />
           <span>
-            <strong>Open pull requests only</strong>
-            <small>Limit reviewer links to work that is still open.</small>
+            <strong>{t("options_open_only")}</strong>
+            <small>{t("options_open_only_description")}</small>
           </span>
         </label>
       </div>
@@ -116,15 +122,9 @@ export function DisplaySettingsPanel() {
           aria-live="polite"
           data-testid={status.tone === "error" ? "prefs-error" : "prefs-status"}
         >
-          {status.message}
+          {t(status.key)}
         </p>
       ) : null}
     </section>
   );
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Please try again.";
 }

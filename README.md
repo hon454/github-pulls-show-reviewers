@@ -148,8 +148,11 @@ For repository workflow, branch naming, commit style, and pull request requireme
 The localization foundation supports English (fallback), Korean, Japanese,
 Simplified Chinese and Traditional Chinese. Chrome metadata follows Chrome's
 language. The local `language` preference defaults to `auto` and supports a
-manual override for extension-owned UI; the language selector and translated
-options, diagnostics and reviewer surfaces are being integrated separately.
+manual override for extension-owned UI. The options page, display settings,
+account actions and GitHub device sign-in flow support all five languages.
+Changing language updates other open options tabs without restarting sign-in,
+clearing repository input or repeating an account action. Diagnostics and
+reviewer surfaces are being integrated separately.
 Product and GitHub App names remain unchanged. See the
 [localization contract](./docs/adr/0006-bundled-localization-and-render-only-language.md)
 for the manifest/UI boundary and shared APIs.

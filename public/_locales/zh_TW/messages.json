@@ -10,5 +10,336 @@
   "extension_action_title": {
     "message": "GitHub Pulls Show Reviewers — 開啟設定",
     "description": "Chrome toolbar action tooltip that opens extension options. Preserve the product name."
+  },
+  "options_title": {
+    "message": "設定 — GitHub Pulls Show Reviewers",
+    "description": "Options page title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_heading": {
+    "message": "瀏覽清單時，一眼掌握審查情況。",
+    "description": "Options page heading. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_intro": {
+    "message": "調整審查者資訊的顯示方式，僅在存取私人儲存庫時連結 GitHub。",
+    "description": "Options page intro. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_public_ready": {
+    "message": "公開儲存庫可直接使用",
+    "description": "Options page public ready. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_no_account": {
+    "message": "無需帳號或權杖。",
+    "description": "Options page no account. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_private_permission": {
+    "message": "透過 GitHub App 存取私人儲存庫，僅要求 $PERMISSION$ 權限。",
+    "description": "Options page private permission. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "permission": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_settings": {
+    "message": "擴充功能設定",
+    "description": "Options page settings. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_workspace_heading": {
+    "message": "依工作習慣查看審查狀態。",
+    "description": "Options page workspace heading. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_workspace_description": {
+    "message": "連結用於私人儲存庫的帳號，選擇提取要求清單的顯示內容，並測試儲存庫存取權限。",
+    "description": "Options page workspace description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_signin_unavailable_description": {
+    "message": "此版本不支援帳號登入。公開儲存庫仍可在未登入時使用。",
+    "description": "Options page signin unavailable description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_title": {
+    "message": "GitHub 帳號",
+    "description": "Options page accounts title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_description": {
+    "message": "僅在私人儲存庫需要驗證時使用。",
+    "description": "Options page accounts description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_config_title": {
+    "message": "此版本不支援 GitHub 登入。",
+    "description": "Options page config title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_config_guidance": {
+    "message": "請重新安裝包含維護者 GitHub App 用戶端 ID 與 slug 的版本。",
+    "description": "Options page config guidance. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_add_account": {
+    "message": "+ 新增其他帳號",
+    "description": "Options page add account. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_title": {
+    "message": "關於存取權限",
+    "description": "Options page about title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_subtitle": {
+    "message": "了解擴充功能可讀取的資訊及撤銷授權的方法。",
+    "description": "Options page about subtitle. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_description": {
+    "message": "此擴充功能透過 $APP$ GitHub App 登入，僅要求 $PERMISSION$ 權限。在本機移除帳號不會撤銷 GitHub 上的授權。",
+    "description": "Options page about description. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "app": {
+        "content": "$1"
+      },
+      "permission": {
+        "content": "$2"
+      }
+    }
+  },
+  "options_revoke_link": {
+    "message": "在 GitHub 管理授權",
+    "description": "Options page revoke link. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_metadata_unavailable": {
+    "message": "無法從此版本載入 GitHub App 資訊。",
+    "description": "Options page metadata unavailable. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_load_failed": {
+    "message": "無法載入帳號，請重試。",
+    "description": "Options page accounts load failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_retry": {
+    "message": "重試",
+    "description": "Options page retry. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_empty": {
+    "message": "尚未連結帳號",
+    "description": "Options page accounts empty. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_empty_description": {
+    "message": "公開儲存庫仍會顯示審查者資訊。",
+    "description": "Options page accounts empty description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_installed_none": {
+    "message": "安裝位置：尚無",
+    "description": "Options page installed none. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_installed_on": {
+    "message": "安裝位置：$ACCOUNTS$",
+    "description": "Options page installed on. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "accounts": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_signin_again": {
+    "message": "重新登入",
+    "description": "Options page signin again. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refresh": {
+    "message": "重新整理安裝資訊",
+    "description": "Options page refresh. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refreshing": {
+    "message": "正在重新整理…",
+    "description": "Options page refreshing. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_remove": {
+    "message": "移除",
+    "description": "Options page remove. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_removing": {
+    "message": "正在移除…",
+    "description": "Options page removing. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refresh_failed": {
+    "message": "無法重新整理安裝資訊，請重試。",
+    "description": "Options page refresh failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_remove_failed": {
+    "message": "無法移除帳號，請重試。",
+    "description": "Options page remove failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_token_required": {
+    "message": "請重新登入後再重新整理安裝資訊。",
+    "description": "Options page token required. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_title": {
+    "message": "顯示",
+    "description": "Options page display title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_description": {
+    "message": "設定 GitHub 提取要求清單中審查者標籤的顯示方式。",
+    "description": "Options page display description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_load_failed": {
+    "message": "無法載入顯示設定，請重試。",
+    "description": "Options page display load failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_save_failed": {
+    "message": "無法儲存顯示設定，請重試。",
+    "description": "Options page display save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_saving": {
+    "message": "正在儲存顯示設定…",
+    "description": "Options page display saving. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_badges": {
+    "message": "審查狀態徽章",
+    "description": "Options page badges. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_badges_description": {
+    "message": "直接在頭像上顯示核准與審查要求狀態。",
+    "description": "Options page badges description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_names": {
+    "message": "審查者名稱",
+    "description": "Options page names. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_names_description": {
+    "message": "在審查者頭像旁顯示名稱。",
+    "description": "Options page names description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_open_only": {
+    "message": "僅顯示未關閉的提取要求",
+    "description": "Options page open only. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_open_only_description": {
+    "message": "審查者連結僅列出尚未關閉的工作。",
+    "description": "Options page open only description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_label": {
+    "message": "語言",
+    "description": "Options page label. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_auto": {
+    "message": "自動（Chrome 語言）",
+    "description": "Options page auto. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_en": {
+    "message": "English",
+    "description": "Options page en. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_ko": {
+    "message": "한국어",
+    "description": "Options page ko. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_ja": {
+    "message": "日本語",
+    "description": "Options page ja. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_zh_cn": {
+    "message": "简体中文",
+    "description": "Options page zh cn. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_zh_tw": {
+    "message": "繁體中文",
+    "description": "Options page zh tw. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_help": {
+    "message": "Chrome 工具列與擴充功能資訊獨立使用 Chrome 的語言。",
+    "description": "Options page help. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_saving": {
+    "message": "正在儲存語言…",
+    "description": "Options page saving. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_saved": {
+    "message": "語言已儲存。",
+    "description": "Options page saved. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_save_failed": {
+    "message": "無法儲存語言，仍使用先前的選擇。請重試。",
+    "description": "Options page save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_requesting": {
+    "message": "正在要求裝置代碼…",
+    "description": "Options page requesting. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_enter_code": {
+    "message": "在 GitHub 輸入此代碼以授權：",
+    "description": "Options page enter code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_copy": {
+    "message": "複製",
+    "description": "Options page copy. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_open_github": {
+    "message": "開啟 GitHub 以授權 →",
+    "description": "Options page open github. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_waiting": {
+    "message": "正在等待授權…",
+    "description": "Options page waiting. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_expires_at": {
+    "message": "代碼將於 $TIME$ 到期。",
+    "description": "Options page expires at. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "time": {
+        "content": "$1"
+      }
+    }
+  },
+  "auth_cancel": {
+    "message": "取消",
+    "description": "Options page cancel. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_loading_installations": {
+    "message": "正在載入安裝資訊…",
+    "description": "Options page loading installations. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_connected": {
+    "message": "帳號已連結。您可以新增其他帳號或關閉此面板。",
+    "description": "Options page connected. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_expired": {
+    "message": "裝置代碼已到期。",
+    "description": "Options page expired. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_new_code": {
+    "message": "產生新代碼",
+    "description": "Options page new code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_denied": {
+    "message": "授權遭到拒絕。",
+    "description": "Options page denied. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_try_again": {
+    "message": "重試",
+    "description": "Options page try again. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_close": {
+    "message": "關閉",
+    "description": "Options page close. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_network": {
+    "message": "無法完成登入，請檢查網路連線後重試。",
+    "description": "Options page error network. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_invalid_response": {
+    "message": "GitHub 傳回非預期的回應，請重新登入。",
+    "description": "Options page error invalid response. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_disabled": {
+    "message": "此 GitHub App 未啟用裝置流程，請聯絡維護者。",
+    "description": "Options page error disabled. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_grant": {
+    "message": "此 GitHub App 不支援要求的登入方式，請聯絡維護者。",
+    "description": "Options page error grant. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_client": {
+    "message": "此版本的 GitHub App 憑證無效，請重新安裝設定正確的版本。",
+    "description": "Options page error client. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_device_code": {
+    "message": "GitHub 無法辨識裝置代碼，請關閉面板並要求新代碼。",
+    "description": "Options page error device code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_unknown": {
+    "message": "無法完成登入，請關閉面板後重試。",
+    "description": "Options page error unknown. Visible text; keep GitHub names, codes and identifiers unchanged."
   }
 }

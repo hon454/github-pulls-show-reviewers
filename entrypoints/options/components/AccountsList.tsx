@@ -1,3 +1,4 @@
+import type { Translator } from "../../../src/i18n";
 import { useRef, useState } from "react";
 
 import { retryWithAccountRefresh } from "../../../src/auth/account-token-refresh";
@@ -9,6 +10,7 @@ import {
 } from "../../../src/storage/accounts";
 
 type Props = {
+  t: Translator;
   accounts: Account[];
   onChange: () => Promise<void>;
   onReauthenticate: (account: Account) => void;
@@ -16,13 +18,18 @@ type Props = {
 
 type AccountAction = "refresh" | "remove";
 
-export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
+export function AccountsList({
+  accounts,
+  onChange,
+  onReauthenticate,
+  t,
+}: Props) {
   const inFlightAccountIds = useRef(new Set<string>());
   const [busyActions, setBusyActions] = useState<
     Record<string, AccountAction | undefined>
   >({});
   const [actionErrors, setActionErrors] = useState<
-    Record<string, string | undefined>
+    Record<string, AccountAction | "token_required" | undefined>
   >({});
 
   async function runAccountAction(
@@ -43,7 +50,8 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
     } catch (error) {
       setActionErrors((current) => ({
         ...current,
-        [account.id]: `${actionFailureLabel(action)} ${errorMessage(error)}`,
+        [account.id]:
+          error instanceof MissingAccountTokenError ? "token_required" : action,
       }));
     } finally {
       inFlightAccountIds.current.delete(account.id);
@@ -61,9 +69,7 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
         account,
         execute: async (token) => {
           if (token == null) {
-            throw new Error(
-              "Account token is required to refresh installations.",
-            );
+            throw new MissingAccountTokenError();
           }
 
           return loadAccountInstallations({ token });
@@ -88,8 +94,8 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
           @
         </span>
         <div>
-          <strong>No accounts connected</strong>
-          <p>Public repositories will still show reviewer information.</p>
+          <strong>{t("options_accounts_empty")}</strong>
+          <p>{t("options_accounts_empty_description")}</p>
         </div>
       </div>
     );
@@ -115,12 +121,15 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
               <div>
                 <p className="account-login">@{account.login}</p>
                 <p className="account-meta">
-                  Installed on:{" "}
                   {account.installations.length === 0
-                    ? "none yet"
-                    : account.installations
-                        .map((installation) => `@${installation.account.login}`)
-                        .join(", ")}
+                    ? t("options_installed_none")
+                    : t("options_installed_on", {
+                        accounts: account.installations
+                          .map(
+                            (installation) => `@${installation.account.login}`,
+                          )
+                          .join(", "),
+                      })}
                 </p>
               </div>
             </div>
@@ -130,7 +139,7 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
                 onClick={() => onReauthenticate(account)}
                 className="button button--primary"
               >
-                Sign in again
+                {t("options_signin_again")}
               </button>
             ) : (
               <div className="button-row">
@@ -141,8 +150,8 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
                   className="button button--secondary"
                 >
                   {busyAction === "refresh"
-                    ? "Refreshing..."
-                    : "Refresh installations"}
+                    ? t("options_refreshing")
+                    : t("options_refresh")}
                 </button>
                 <button
                   type="button"
@@ -150,7 +159,9 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
                   disabled={isBusy}
                   className="button button--danger"
                 >
-                  {busyAction === "remove" ? "Removing..." : "Remove"}
+                  {busyAction === "remove"
+                    ? t("options_removing")
+                    : t("options_remove")}
                 </button>
               </div>
             )}
@@ -161,7 +172,13 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
                 aria-live="polite"
                 data-testid={`account-action-error-${account.id}`}
               >
-                {actionError}
+                {t(
+                  actionError === "token_required"
+                    ? "options_token_required"
+                    : actionError === "refresh"
+                      ? "options_refresh_failed"
+                      : "options_remove_failed",
+                )}
               </p>
             ) : null}
           </div>
@@ -171,15 +188,4 @@ export function AccountsList({ accounts, onChange, onReauthenticate }: Props) {
   );
 }
 
-function actionFailureLabel(action: AccountAction): string {
-  if (action === "refresh") {
-    return "Could not refresh installations.";
-  }
-  return "Could not remove account.";
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Please try again.";
-}
+class MissingAccountTokenError extends Error {}

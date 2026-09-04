@@ -10,5 +10,336 @@
   "extension_action_title": {
     "message": "GitHub Pulls Show Reviewers — 打开设置",
     "description": "Chrome toolbar action tooltip that opens extension options. Preserve the product name."
+  },
+  "options_title": {
+    "message": "设置 — GitHub Pulls Show Reviewers",
+    "description": "Options page title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_heading": {
+    "message": "在浏览列表时，一眼掌握审阅情况。",
+    "description": "Options page heading. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_intro": {
+    "message": "调整审阅者信息的显示方式，仅在访问私有仓库时连接 GitHub。",
+    "description": "Options page intro. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_public_ready": {
+    "message": "公开仓库可直接使用",
+    "description": "Options page public ready. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_no_account": {
+    "message": "无需账号或令牌。",
+    "description": "Options page no account. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_private_permission": {
+    "message": "通过 GitHub App 访问私有仓库，仅请求 $PERMISSION$ 权限。",
+    "description": "Options page private permission. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "permission": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_settings": {
+    "message": "扩展程序设置",
+    "description": "Options page settings. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_workspace_heading": {
+    "message": "按工作习惯查看审阅状态。",
+    "description": "Options page workspace heading. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_workspace_description": {
+    "message": "连接用于私有仓库的账号，选择拉取请求列表中的显示内容，并测试仓库访问权限。",
+    "description": "Options page workspace description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_signin_unavailable_description": {
+    "message": "此构建不支持账号登录。公开仓库仍可在未登录时使用。",
+    "description": "Options page signin unavailable description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_title": {
+    "message": "GitHub 账号",
+    "description": "Options page accounts title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_description": {
+    "message": "仅在私有仓库需要身份验证时使用。",
+    "description": "Options page accounts description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_config_title": {
+    "message": "此构建不支持 GitHub 登录。",
+    "description": "Options page config title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_config_guidance": {
+    "message": "请重新安装包含维护者 GitHub App 客户端 ID 和 slug 的构建。",
+    "description": "Options page config guidance. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_add_account": {
+    "message": "+ 添加其他账号",
+    "description": "Options page add account. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_title": {
+    "message": "关于访问权限",
+    "description": "Options page about title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_subtitle": {
+    "message": "了解扩展程序可读取的信息及撤销授权的方法。",
+    "description": "Options page about subtitle. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_description": {
+    "message": "此扩展程序通过 $APP$ GitHub App 登录，仅请求 $PERMISSION$ 权限。在本地移除账号不会撤销 GitHub 上的授权。",
+    "description": "Options page about description. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "app": {
+        "content": "$1"
+      },
+      "permission": {
+        "content": "$2"
+      }
+    }
+  },
+  "options_revoke_link": {
+    "message": "在 GitHub 上管理授权",
+    "description": "Options page revoke link. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_metadata_unavailable": {
+    "message": "无法从此构建加载 GitHub App 信息。",
+    "description": "Options page metadata unavailable. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_load_failed": {
+    "message": "无法加载账号，请重试。",
+    "description": "Options page accounts load failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_retry": {
+    "message": "重试",
+    "description": "Options page retry. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_empty": {
+    "message": "尚未连接账号",
+    "description": "Options page accounts empty. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_empty_description": {
+    "message": "公开仓库仍会显示审阅者信息。",
+    "description": "Options page accounts empty description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_installed_none": {
+    "message": "安装位置：暂无",
+    "description": "Options page installed none. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_installed_on": {
+    "message": "安装位置：$ACCOUNTS$",
+    "description": "Options page installed on. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "accounts": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_signin_again": {
+    "message": "重新登录",
+    "description": "Options page signin again. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refresh": {
+    "message": "刷新安装信息",
+    "description": "Options page refresh. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refreshing": {
+    "message": "正在刷新…",
+    "description": "Options page refreshing. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_remove": {
+    "message": "移除",
+    "description": "Options page remove. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_removing": {
+    "message": "正在移除…",
+    "description": "Options page removing. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refresh_failed": {
+    "message": "无法刷新安装信息，请重试。",
+    "description": "Options page refresh failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_remove_failed": {
+    "message": "无法移除账号，请重试。",
+    "description": "Options page remove failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_token_required": {
+    "message": "请重新登录后再刷新安装信息。",
+    "description": "Options page token required. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_title": {
+    "message": "显示",
+    "description": "Options page display title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_description": {
+    "message": "设置 GitHub 拉取请求列表中审阅者标签的显示方式。",
+    "description": "Options page display description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_load_failed": {
+    "message": "无法加载显示设置，请重试。",
+    "description": "Options page display load failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_save_failed": {
+    "message": "无法保存显示设置，请重试。",
+    "description": "Options page display save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_saving": {
+    "message": "正在保存显示设置…",
+    "description": "Options page display saving. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_badges": {
+    "message": "审阅状态徽章",
+    "description": "Options page badges. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_badges_description": {
+    "message": "直接在头像上显示批准和审阅请求状态。",
+    "description": "Options page badges description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_names": {
+    "message": "审阅者姓名",
+    "description": "Options page names. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_names_description": {
+    "message": "在审阅者头像旁显示姓名。",
+    "description": "Options page names description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_open_only": {
+    "message": "仅显示未关闭的拉取请求",
+    "description": "Options page open only. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_open_only_description": {
+    "message": "审阅者链接仅列出尚未关闭的工作。",
+    "description": "Options page open only description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_label": {
+    "message": "语言",
+    "description": "Options page label. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_auto": {
+    "message": "自动（Chrome 语言）",
+    "description": "Options page auto. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_en": {
+    "message": "English",
+    "description": "Options page en. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_ko": {
+    "message": "한국어",
+    "description": "Options page ko. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_ja": {
+    "message": "日本語",
+    "description": "Options page ja. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_zh_cn": {
+    "message": "简体中文",
+    "description": "Options page zh cn. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_zh_tw": {
+    "message": "繁體中文",
+    "description": "Options page zh tw. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_help": {
+    "message": "Chrome 工具栏和扩展程序信息独立使用 Chrome 的语言。",
+    "description": "Options page help. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_saving": {
+    "message": "正在保存语言…",
+    "description": "Options page saving. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_saved": {
+    "message": "语言已保存。",
+    "description": "Options page saved. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_save_failed": {
+    "message": "无法保存语言，仍使用之前的选择。请重试。",
+    "description": "Options page save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_requesting": {
+    "message": "正在请求设备代码…",
+    "description": "Options page requesting. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_enter_code": {
+    "message": "在 GitHub 输入此代码以授权：",
+    "description": "Options page enter code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_copy": {
+    "message": "复制",
+    "description": "Options page copy. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_open_github": {
+    "message": "打开 GitHub 以授权 →",
+    "description": "Options page open github. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_waiting": {
+    "message": "正在等待授权…",
+    "description": "Options page waiting. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_expires_at": {
+    "message": "代码将于 $TIME$ 过期。",
+    "description": "Options page expires at. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "time": {
+        "content": "$1"
+      }
+    }
+  },
+  "auth_cancel": {
+    "message": "取消",
+    "description": "Options page cancel. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_loading_installations": {
+    "message": "正在加载安装信息…",
+    "description": "Options page loading installations. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_connected": {
+    "message": "账号已连接。您可以添加其他账号或关闭此面板。",
+    "description": "Options page connected. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_expired": {
+    "message": "设备代码已过期。",
+    "description": "Options page expired. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_new_code": {
+    "message": "生成新代码",
+    "description": "Options page new code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_denied": {
+    "message": "授权被拒绝。",
+    "description": "Options page denied. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_try_again": {
+    "message": "重试",
+    "description": "Options page try again. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_close": {
+    "message": "关闭",
+    "description": "Options page close. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_network": {
+    "message": "无法完成登录，请检查网络连接后重试。",
+    "description": "Options page error network. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_invalid_response": {
+    "message": "GitHub 返回了意外响应，请重新登录。",
+    "description": "Options page error invalid response. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_disabled": {
+    "message": "此 GitHub App 未启用设备流程，请联系维护者。",
+    "description": "Options page error disabled. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_grant": {
+    "message": "此 GitHub App 不支持所请求的登录方式，请联系维护者。",
+    "description": "Options page error grant. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_client": {
+    "message": "此构建的 GitHub App 凭据无效，请重新安装配置正确的构建。",
+    "description": "Options page error client. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_device_code": {
+    "message": "GitHub 无法识别设备代码，请关闭面板并请求新代码。",
+    "description": "Options page error device code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_unknown": {
+    "message": "无法完成登录，请关闭面板后重试。",
+    "description": "Options page error unknown. Visible text; keep GitHub names, codes and identifiers unchanged."
   }
 }

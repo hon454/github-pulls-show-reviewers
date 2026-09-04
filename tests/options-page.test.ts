@@ -3,6 +3,13 @@ import { fireEvent } from "@testing-library/react";
 import { act, createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  createLocaleStore,
+  type LanguagePreference,
+  type LocaleStore,
+} from "../src/i18n";
+import type { Root } from "react-dom/client";
+
 import type * as GitHubApiModule from "../src/github/api";
 import type { RepositoryValidationResult } from "../src/github/api";
 import type { Account } from "../src/storage/accounts";
@@ -30,12 +37,14 @@ const resolveAccountCoverageForRepoMock = vi.fn<
 
 const getPreferencesMock = vi.fn(async () => ({
   version: 1 as const,
+  language: "auto" as const,
   showStateBadge: true,
   showReviewerName: false,
   openPullsOnly: true,
 }));
 const updatePreferencesMock = vi.fn(async (patch: Record<string, unknown>) => ({
   version: 1 as const,
+  language: "auto" as const,
   showStateBadge: true,
   showReviewerName: false,
   openPullsOnly: true,
@@ -75,6 +84,7 @@ vi.mock("../src/storage/preferences", () => ({
   updatePreferences: updatePreferencesMock,
   DEFAULT_PREFERENCES: {
     version: 1,
+    language: "auto",
     showStateBadge: true,
     showReviewerName: false,
     openPullsOnly: true,
@@ -101,7 +111,8 @@ vi.mock("../src/github/api", async (importActual) => ({
   validateGitHubRepositoryAccess: validateGitHubRepositoryAccessMock,
 }));
 
-async function renderOptionsPage() {
+const mountedRoots: Root[] = [];
+async function renderOptionsPage(localeStore?: LocaleStore) {
   vi.resetModules();
   document.body.innerHTML = '<div id="root"></div>';
   const [{ createRoot }, { OptionsPage }] = await Promise.all([
@@ -109,9 +120,9 @@ async function renderOptionsPage() {
     import("../entrypoints/options/options-page"),
   ]);
   await act(async () => {
-    createRoot(document.getElementById("root")!).render(
-      createElement(OptionsPage),
-    );
+    const root = createRoot(document.getElementById("root")!);
+    mountedRoots.push(root);
+    root.render(createElement(OptionsPage, localeStore ? { localeStore } : {}));
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
@@ -126,9 +137,9 @@ async function renderOptionsPageInStrictMode() {
     import("../entrypoints/options/options-page"),
   ]);
   await act(async () => {
-    createRoot(document.getElementById("root")!).render(
-      createElement(StrictMode, null, createElement(OptionsPage)),
-    );
+    const root = createRoot(document.getElementById("root")!);
+    mountedRoots.push(root);
+    root.render(createElement(StrictMode, null, createElement(OptionsPage)));
     await Promise.resolve();
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
@@ -184,12 +195,14 @@ beforeEach(() => {
   updatePreferencesMock.mockClear();
   getPreferencesMock.mockResolvedValue({
     version: 1,
+    language: "auto",
     showStateBadge: true,
     showReviewerName: false,
     openPullsOnly: true,
   });
   updatePreferencesMock.mockResolvedValue({
     version: 1,
+    language: "auto",
     showStateBadge: true,
     showReviewerName: false,
     openPullsOnly: true,
@@ -200,6 +213,8 @@ beforeEach(() => {
     validationResult({ message: "Repository is accessible." }),
   );
   vi.stubGlobal("browser", {
+    i18n: { getUILanguage: () => "en-US" },
+    storage: { onChanged: { addListener: vi.fn(), removeListener: vi.fn() } },
     runtime: {
       sendMessage: vi.fn(),
     },
@@ -207,6 +222,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  act(() => {
+    for (const root of mountedRoots.splice(0)) root.unmount();
+  });
   vi.unstubAllGlobals();
 });
 
@@ -299,7 +317,9 @@ describe("OptionsPage", () => {
     );
     expect(
       document.querySelector('[data-testid="diagnostics-fields"]')?.textContent,
-    ).toContain("Installation coverageMaybe covered - local snapshot truncated");
+    ).toContain(
+      "Installation coverageMaybe covered - local snapshot truncated",
+    );
   });
 
   it("renders structured diagnostics for a matched account success", async () => {
@@ -325,7 +345,9 @@ describe("OptionsPage", () => {
 
     await act(async () => {
       document
-        .querySelector<HTMLButtonElement>('[data-testid="diagnostics-matched"]')!
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-matched"]',
+        )!
         .click();
       await Promise.resolve();
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -359,7 +381,9 @@ describe("OptionsPage", () => {
 
     await act(async () => {
       document
-        .querySelector<HTMLButtonElement>('[data-testid="diagnostics-matched"]')!
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-matched"]',
+        )!
         .click();
       await Promise.resolve();
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -403,7 +427,9 @@ describe("OptionsPage", () => {
 
     await act(async () => {
       document
-        .querySelector<HTMLButtonElement>('[data-testid="diagnostics-no-token"]')!
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-no-token"]',
+        )!
         .click();
       await Promise.resolve();
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -496,6 +522,8 @@ describe("OptionsPage", () => {
       .fn()
       .mockResolvedValue({ ok: true, token: "ghu_new" });
     vi.stubGlobal("browser", {
+      i18n: { getUILanguage: () => "en-US" },
+      storage: { onChanged: { addListener: vi.fn(), removeListener: vi.fn() } },
       runtime: {
         sendMessage: sendMessageMock,
       },
@@ -600,9 +628,7 @@ describe("OptionsPage", () => {
         refreshTokenExpiresAt: null,
       },
     ]);
-    removeAccountMock.mockRejectedValueOnce(
-      new Error("Storage write failed."),
-    );
+    removeAccountMock.mockRejectedValueOnce(new Error("Storage write failed."));
     await renderOptionsPage();
 
     const removeButton = Array.from(
@@ -828,6 +854,7 @@ describe("OptionsPage", () => {
   it("reflects stored preferences in checkbox state on mount", async () => {
     getPreferencesMock.mockResolvedValueOnce({
       version: 1,
+      language: "auto",
       showStateBadge: false,
       showReviewerName: true,
       openPullsOnly: false,
@@ -917,5 +944,283 @@ describe("OptionsPage", () => {
     expect(
       document.querySelector('[data-testid="diagnostics-status"]')?.textContent,
     ).toContain("Could not run diagnostics");
+  });
+});
+
+function languageHarness(
+  initial: LanguagePreference = "auto",
+  chromeLanguage = "en-US",
+) {
+  let language = initial;
+  const listeners = new Set<(next: LanguagePreference) => void>();
+  const save = vi.fn<(next: LanguagePreference) => Promise<void>>(
+    async () => undefined,
+  );
+  const newStore = () =>
+    createLocaleStore({
+      getUILanguage: () => chromeLanguage,
+      readLanguage: async () => language,
+      writeLanguage: async (next) => {
+        await save(next);
+        language = next;
+        for (const listener of listeners) listener(next);
+      },
+      subscribe(listener) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+    });
+  return { store: newStore(), newStore, save, listeners };
+}
+async function chooseLanguage(language: LanguagePreference) {
+  await act(async () => {
+    fireEvent.change(
+      document.querySelector('[data-testid="language-select"]')!,
+      { target: { value: language } },
+    );
+    await Promise.resolve();
+  });
+}
+function pending<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe("options live language selection", () => {
+  it.each([
+    ["en", "GitHub accounts", "Display", "Settings —"],
+    ["ko", "GitHub 계정", "표시", "설정 —"],
+    ["ja", "GitHubアカウント", "表示", "設定 —"],
+    ["zh_CN", "GitHub 账号", "显示", "设置 —"],
+    ["zh_TW", "GitHub 帳號", "顯示", "設定 —"],
+  ] as const)(
+    "renders meaningful %s shell/display copy and document metadata",
+    async (language, accounts, display, title) => {
+      const h = languageHarness(language);
+      await renderOptionsPage(h.store);
+      expect(document.querySelector("#accounts-title")?.textContent).toBe(
+        accounts,
+      );
+      expect(document.querySelector("#display-title")?.textContent).toBe(
+        display,
+      );
+      expect(document.documentElement.lang).toBe(language.replace("_", "-"));
+      expect(document.title).toContain(title);
+      expect(
+        document.querySelector<HTMLSelectElement>("#language-select")!.labels,
+      ).toHaveLength(1);
+      expect(document.body.textContent).toContain("Pull requests: Read");
+      expect(document.body.textContent).not.toContain("__MSG_");
+    },
+  );
+
+  it("persists manual and auto selection, updates another context, and falls back for unsupported Chrome language", async () => {
+    const h = languageHarness("auto", "fr-FR");
+    const other = h.newStore();
+    const notify = vi.fn();
+    const stop = other.subscribe(notify);
+    await other.ready();
+    await renderOptionsPage(h.store);
+    expect(document.documentElement.lang).toBe("en");
+    await chooseLanguage("ko");
+    expect(h.save).toHaveBeenCalledWith("ko");
+    expect(other.getSnapshot().locale).toBe("ko");
+    expect(document.querySelector("#language-status")?.textContent).toBe(
+      "언어를 저장했습니다.",
+    );
+    await chooseLanguage("auto");
+    expect(document.documentElement.lang).toBe("en");
+    expect(other.getSnapshot().language).toBe("auto");
+    expect(notify).toHaveBeenCalledTimes(2);
+    stop();
+    const reopened = h.newStore();
+    await reopened.ready();
+    expect(reopened.getSnapshot().language).toBe("auto");
+  });
+
+  it("keeps the persisted selection on save failure and localizes the visible error on a remote update", async () => {
+    const h = languageHarness();
+    h.save.mockRejectedValueOnce(new Error("private browser details"));
+    await renderOptionsPage(h.store);
+    await chooseLanguage("ja");
+    const select =
+      document.querySelector<HTMLSelectElement>("#language-select")!;
+    expect(select.value).toBe("auto");
+    expect(select.disabled).toBe(false);
+    expect(document.querySelector("#language-status")?.textContent).toContain(
+      "Could not save language",
+    );
+    expect(document.body.textContent).not.toContain("private browser details");
+    const other = h.newStore();
+    await act(() => other.setLanguage("ko"));
+    expect(select.value).toBe("ko");
+    expect(document.querySelector("#language-status")?.textContent).toContain(
+      "언어를 저장하지 못했습니다",
+    );
+  });
+
+  it("preserves pending device initiation, device code, repository input and cancellation across switches", async () => {
+    const h = languageHarness();
+    await renderOptionsPage(h.store);
+    const auth = await import("../src/github/auth");
+    const init = pending<Awaited<ReturnType<typeof auth.initiateDeviceFlow>>>();
+    vi.mocked(auth.initiateDeviceFlow).mockReturnValueOnce(init.promise);
+    const repository = document.querySelector<HTMLInputElement>(
+      '[data-testid="diagnostics-repo"]',
+    )!;
+    fireEvent.change(repository, {
+      target: { value: "owner/repository-kept" },
+    });
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+    });
+    await chooseLanguage("ko");
+    expect(document.body.textContent).toContain("기기 코드 요청 중");
+    expect(auth.initiateDeviceFlow).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      init.resolve({
+        deviceCode: "dc",
+        userCode: "ABCD-EFGH",
+        verificationUri: "https://github.com/login/device",
+        verificationUriComplete:
+          "https://github.com/login/device?user_code=ABCD-EFGH",
+        interval: 60,
+        expiresIn: 900,
+      });
+    });
+    const code = document.querySelector('[data-testid="device-user-code"]');
+    await chooseLanguage("ja");
+    expect(document.querySelector('[data-testid="device-user-code"]')).toBe(
+      code,
+    );
+    expect(code?.textContent).toBe("ABCD-EFGH");
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '[data-testid="diagnostics-repo"]',
+      ),
+    ).toBe(repository);
+    expect(repository.value).toBe("owner/repository-kept");
+    expect(document.body.textContent).toContain("認可を待っています");
+    expect(
+      document.querySelector<HTMLAnchorElement>(".authorization-link")?.href,
+    ).toBe("https://github.com/login/device?user_code=ABCD-EFGH");
+    expect(auth.initiateDeviceFlow).toHaveBeenCalledTimes(1);
+    expect(auth.pollForAccessToken).not.toHaveBeenCalled();
+    expect(listAccountsMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent === "キャンセル")!
+        .click();
+    });
+    expect(
+      document.querySelector('[data-testid="device-user-code"]'),
+    ).toBeNull();
+  });
+
+  it("keeps an in-flight account refresh and its eventual error while changing language", async () => {
+    const h = languageHarness();
+    const existing = account();
+    listAccountsMock.mockResolvedValue([existing]);
+    getAccountByIdMock.mockResolvedValue(existing);
+    await renderOptionsPage(h.store);
+    const auth = await import("../src/github/auth");
+    const result =
+      pending<Awaited<ReturnType<typeof auth.fetchUserInstallations>>>();
+    vi.mocked(auth.fetchUserInstallations).mockReturnValueOnce(result.promise);
+    await act(async () => {
+      Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent === "Refresh installations")!
+        .click();
+    });
+    await chooseLanguage("ko");
+    expect(document.body.textContent).toContain("새로고침 중");
+    expect(
+      document.querySelector('[data-testid="account-card-hon454"]'),
+    ).not.toBeNull();
+    expect(auth.fetchUserInstallations).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      result.resolve({ items: [], truncated: false });
+    });
+    expect(replaceInstallationsMock).toHaveBeenCalledTimes(1);
+    expect(auth.fetchUserInstallations).toHaveBeenCalledTimes(1);
+    removeAccountMock.mockRejectedValueOnce(
+      new Error("unknown technical failure"),
+    );
+    await act(async () => {
+      Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent === "삭제")!
+        .click();
+    });
+    expect(
+      document.querySelector('[data-testid="account-action-error-acc"]')
+        ?.textContent,
+    ).toContain("계정을 삭제하지 못했습니다");
+    await chooseLanguage("en");
+    expect(
+      document.querySelector('[data-testid="account-action-error-acc"]')
+        ?.textContent,
+    ).toContain("Could not remove account");
+    expect(removeAccountMock).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).not.toContain(
+      "unknown technical failure",
+    );
+  });
+
+  it("reformats display saving/error and account load failure without reloading on language changes", async () => {
+    const h = languageHarness();
+    listAccountsMock.mockRejectedValueOnce(
+      new Error("unknown storage failure"),
+    );
+    await renderOptionsPage(h.store);
+    expect(document.body.textContent).toContain("Could not load accounts");
+    const saving = pending<Awaited<ReturnType<typeof updatePreferencesMock>>>();
+    updatePreferencesMock.mockReturnValueOnce(saving.promise);
+    await act(async () => {
+      document
+        .querySelector<HTMLInputElement>(
+          '[data-testid="prefs-show-state-badge"]',
+        )!
+        .click();
+    });
+    await chooseLanguage("ko");
+    expect(document.body.textContent).toContain("표시 설정 저장 중");
+    expect(document.body.textContent).toContain("계정을 불러오지 못했습니다");
+    expect(listAccountsMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      saving.resolve({
+        version: 1,
+        language: "auto",
+        showStateBadge: false,
+        showReviewerName: false,
+        openPullsOnly: true,
+      });
+    });
+    expect(
+      document.querySelector<HTMLInputElement>(
+        '[data-testid="prefs-show-state-badge"]',
+      )!.checked,
+    ).toBe(false);
+    updatePreferencesMock.mockRejectedValueOnce(
+      new Error("not translated evidence"),
+    );
+    await act(async () => {
+      document
+        .querySelector<HTMLInputElement>(
+          '[data-testid="prefs-show-reviewer-name"]',
+        )!
+        .click();
+    });
+    await chooseLanguage("ja");
+    expect(
+      document.querySelector('[data-testid="prefs-error"]')?.textContent,
+    ).toContain("表示設定を保存できませんでした");
+    expect(updatePreferencesMock).toHaveBeenCalledTimes(2);
   });
 });

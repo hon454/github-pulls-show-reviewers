@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { getLocaleStore } from "../../src/i18n/browser";
+import { useLocale } from "../../src/i18n/react";
+import type { LocaleStore } from "../../src/i18n";
+import { LanguageSelector } from "./components/LanguageSelector";
+
 import { readGitHubAppConfig } from "../../src/config/github-app";
 import { listAccounts, type Account } from "../../src/storage/accounts";
 
@@ -9,15 +14,30 @@ import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { DisplaySettingsPanel } from "./components/DisplaySettingsPanel";
 import { useDeviceFlowController } from "./device-flow-controller";
 
-export function OptionsPage() {
+export function OptionsPage({
+  localeStore = getLocaleStore(),
+}: {
+  localeStore?: LocaleStore;
+}) {
+  const locale = useLocale(localeStore);
+  const { t } = locale;
+  const [loadFailed, setLoadFailed] = useState(false);
+  useEffect(() => {
+    document.documentElement.lang = locale.lang;
+    document.title = t("options_title");
+  }, [locale.lang, t]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showAddPanel, setShowAddPanel] = useState(false);
   const appConfigResult = readGitHubAppConfig();
   const appConfig = appConfigResult.ok ? appConfigResult.config : null;
-  const configError = appConfigResult.ok ? null : appConfigResult.message;
 
   const reload = useCallback(async () => {
-    setAccounts(await listAccounts());
+    try {
+      setAccounts(await listAccounts());
+      setLoadFailed(false);
+    } catch {
+      setLoadFailed(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -62,46 +82,60 @@ export function OptionsPage() {
           />
           <p className="eyebrow">GitHub Pulls Show Reviewers</p>
         </div>
-        <h1>Reviewer context, right where you scan.</h1>
-        <p className="intro-copy">
-          Tune how reviewer information appears and connect GitHub only when a
-          private repository needs it.
-        </p>
+        <h1>{t("options_heading")}</h1>
+        <p className="intro-copy">{t("options_intro")}</p>
         <div className="access-note">
           <span className="status-dot" aria-hidden="true" />
           <div>
-            <strong>Public repositories are ready</strong>
-            <span>No account or token required.</span>
+            <strong>{t("options_public_ready")}</strong>
+            <span>{t("options_no_account")}</span>
           </div>
         </div>
         <p className="intro-footnote">
-          Private access uses a GitHub App with <code>Pull requests: Read</code>
-          only.
+          {t("options_private_permission", {
+            permission: "Pull requests: Read",
+          })}
         </p>
       </aside>
 
       <div className="options-workspace">
         <header className="workspace-header">
-          <p className="eyebrow">Extension settings</p>
-          <h2>Make review status fit your workflow.</h2>
+          <p className="eyebrow">{t("options_settings")}</p>
+          <h2>{t("options_workspace_heading")}</h2>
           <p>
             {appConfig
-              ? "Connect accounts for private repositories, choose what appears in pull request lists, and test repository access."
-              : "Account sign-in is unavailable in this build. Public repositories continue to work without signing in."}
+              ? t("options_workspace_description")
+              : t("options_signin_unavailable_description")}
           </p>
+          <LanguageSelector store={localeStore} locale={locale} />
         </header>
 
         <section className="settings-section" aria-labelledby="accounts-title">
           <div className="section-heading">
             <span className="section-index">01</span>
             <div>
-              <h2 id="accounts-title">GitHub accounts</h2>
-              <p>
-                Used only when a private repository requires authentication.
-              </p>
+              <h2 id="accounts-title">{t("options_accounts_title")}</h2>
+              <p>{t("options_accounts_description")}</p>
             </div>
           </div>
+          {loadFailed ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="inline-status inline-status--error"
+            >
+              <p>{t("options_accounts_load_failed")}</p>
+              <button
+                type="button"
+                className="button button--secondary"
+                onClick={() => void reload()}
+              >
+                {t("options_retry")}
+              </button>
+            </div>
+          ) : null}
           <AccountsList
+            t={t}
             accounts={accounts}
             onChange={reload}
             onReauthenticate={() => {
@@ -115,16 +149,12 @@ export function OptionsPage() {
               className="notice notice--error"
               data-testid="options-config-warning"
             >
-              <p className="notice-title">
-                GitHub sign-in is unavailable in this build.
-              </p>
-              <p className="notice-body">
-                {configError} Reinstall a build that includes the maintainer
-                GitHub App client ID and slug.
-              </p>
+              <p className="notice-title">{t("options_config_title")}</p>
+              <p className="notice-body">{t("options_config_guidance")}</p>
             </div>
           ) : showAddPanel ? (
             <AddAccountPanel
+              locale={locale}
               controller={controller}
               onCancel={() => setShowAddPanel(false)}
             />
@@ -135,12 +165,12 @@ export function OptionsPage() {
               onClick={openAddPanel}
               data-testid="accounts-add"
             >
-              + Add another account
+              {t("options_add_account")}
             </button>
           )}
         </section>
 
-        <DisplaySettingsPanel />
+        <DisplaySettingsPanel t={t} />
 
         <DiagnosticsPanel />
 
@@ -151,29 +181,28 @@ export function OptionsPage() {
           <div className="section-heading">
             <span className="section-index">04</span>
             <div>
-              <h2 id="about-title">About access</h2>
-              <p>What the extension can read and how to revoke it.</p>
+              <h2 id="about-title">{t("options_about_title")}</h2>
+              <p>{t("options_about_subtitle")}</p>
             </div>
           </div>
           <p className="about-copy">
             {appConfig ? (
               <>
-                This extension signs you in through the{" "}
-                <strong>{appConfig.name}</strong> GitHub App. The App requests{" "}
-                <code>Pull requests: Read</code> only. Removing an account
-                locally does not revoke the authorization on GitHub — manage
-                revocation at{" "}
+                {t("options_about_description", {
+                  app: appConfig.name,
+                  permission: "Pull requests: Read",
+                })}{" "}
                 <a
                   href="https://github.com/settings/applications"
                   target="_blank"
                   rel="noreferrer"
                 >
-                  github.com/settings/applications
+                  {t("options_revoke_link")}
                 </a>
                 .
               </>
             ) : (
-              <>GitHub App metadata could not be loaded from this build.</>
+              <>{t("options_metadata_unavailable")}</>
             )}
           </p>
         </section>

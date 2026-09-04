@@ -407,10 +407,41 @@ Chrome-owned manifest metadata follows Chrome independently. The shared locale
 store owns one local-storage listener while subscribed, safely orders hydration
 against events and writes, and exposes React and DOM adapters with disposal.
 Language is presentation state; no translated strings belong in reviewer caches,
-request keys or technical error evidence. Options, diagnostics and content
-integration follow in #148–#150. The full API, key ownership, migration, error
+request keys or technical error evidence. Options integration is implemented in #148; diagnostics and content
+integration follow in #149–#150. The full API, key ownership, migration, error
 and render-only rules are in
 [ADR 0006](./adr/0006-bundled-localization-and-render-only-language.md).
 
 Validate catalogs with the i18n unit tests and emitted metadata with
 `pnpm build && pnpm verify:locales`. No release or publishing behavior changes.
+
+## Options language integration
+
+- The options root hydrates the shared locale store before mounting, then sets
+  its own HTML language and translated document title. English HTML defaults
+  contain readable text, never unresolved Chrome message references.
+- The labelled selector offers Auto (Chrome language) and five native language
+  names. It commits after a successful local save, announces a failure while
+  retaining the previous selection, and receives changes from other options
+  tabs through the shared store. Unsupported Chrome languages fall back to
+  English. Chrome-owned metadata remains independent of this selector.
+- The parent retains the device-flow controller across language changes. Its
+  state stores phase, code, URLs and timestamps; known DeviceFlowError codes
+  select translated guidance at render time. Unknown failures use a translated
+  fallback instead of displaying raw external exception prose. Cancellation
+  also ignores delayed failures. Poll intervals, credentials, account order,
+  permission scope and refresh behavior are unchanged.
+- Device codes, verification URLs, account identifiers, product/App names and
+  `Pull requests: Read` remain literal. Expiry is formatted with the selected
+  BCP 47 locale and the user's existing timezone; UTC instants are not changed.
+- Display saves and account refresh/remove/load status keep keys/actions, not
+  translated sentences. Changing language reformats visible status without
+  repeating work. Preference writes within one context are serialized so
+  overlapping language/display changes merge against the latest saved record.
+- `DiagnosticsPanel` retains its current behavior and state until #149. The
+  parent never keys or remounts the subtree by locale, so repository input and
+  active operations survive. Layout wraps long identifiers and actions at 360px.
+- Regression coverage includes a real isolated Chrome two-tab language switch,
+  persisted selection after reload, five-language 360px/desktop layout checks,
+  pending authentication/refresh request counts, error rerendering, timezone
+  formatting, native label associations and existing English behavior.

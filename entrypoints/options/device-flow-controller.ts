@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  upsertAccountByLogin,
-  type Account,
-} from "../../src/storage/accounts";
+import { upsertAccountByLogin, type Account } from "../../src/storage/accounts";
 import {
   DeviceFlowError,
   fetchAuthenticatedUser,
@@ -30,7 +27,7 @@ export type DeviceFlowState =
   | { phase: "connected"; accountId: string }
   | { phase: "expired" }
   | { phase: "denied" }
-  | { phase: "fatal"; code: string; message: string };
+  | { phase: "fatal"; code: string };
 
 export type DeviceFlowController = {
   state: DeviceFlowState;
@@ -112,6 +109,7 @@ export function useDeviceFlowController(input: {
             }
             setState({ phase: "connected", accountId: "pending" });
           } catch (error) {
+            if (cancelledRef.current) return;
             if (error instanceof DeviceFlowError) {
               if (error.code === "expired_token") {
                 setState({ phase: "expired" });
@@ -124,14 +122,12 @@ export function useDeviceFlowController(input: {
               setState({
                 phase: "fatal",
                 code: error.code,
-                message: error.message,
               });
               return;
             }
             setState({
               phase: "fatal",
-              code: "network_error",
-              message: error instanceof Error ? error.message : "Unknown error",
+              code: "unknown_error",
             });
           }
         }, intervalRef.current * 1000);
@@ -163,10 +159,10 @@ export function useDeviceFlowController(input: {
         });
         runPollLoop(init, expiresAt);
       } catch (error) {
+        if (cancelledRef.current) return;
         setState({
           phase: "fatal",
-          code: "network_error",
-          message: error instanceof Error ? error.message : "Unknown error",
+          code: error instanceof DeviceFlowError ? error.code : "unknown_error",
         });
       }
     })();

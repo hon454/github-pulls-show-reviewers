@@ -261,3 +261,28 @@ If reviewer data is missing only on private repositories:
 
 - Re-check that the signed-in account has the GitHub App installed for the target repository.
 - Use the options page diagnostics to confirm the same GitHub API paths used by the background reviewer fetch can be reached.
+
+## Options language and account continuity
+
+Use controlled fixture accounts; do not expose live tokens in screenshots.
+
+1. Open two options tabs. Select each of English, 한국어, 日本語, 简体中文 and
+   繁體中文 in the first tab. Verify the shell, accounts and display settings in
+   both tabs update, the title/HTML language changes, and the selection persists
+   after reload. Auto follows Chrome's language (unsupported locales use English).
+   Chrome toolbar metadata continues to follow Chrome independently.
+2. Begin sign-in and change language while requesting a device code, waiting for
+   authorization, and loading installations. Check that the same code and URL
+   remain, polling does not restart, and cancellation still works. Expiry uses
+   the chosen locale in your existing timezone. Verify expired, denied, connected
+   and known/unknown failure guidance; technical codes and identifiers stay literal.
+3. Enter a diagnostic repository, start an account refresh, and switch language.
+   Input and accounts stay in place and the refresh runs once. Repeat for a
+   pending display save and a failed remove/save. Visible statuses change language
+   without restarting actions. Diagnostics prose is handled separately in #149.
+4. Simulate a local language save rejection with test fixtures. Verify an
+   accessible failure message, an enabled selector, and the previous saved
+   language retained. Then save successfully and verify both tabs recover.
+5. Check 360px and desktop widths with a long GitHub App name and long account/
+   repository identifiers. No horizontal page overflow or hidden action buttons;
+   labels, keyboard focus and live status announcements remain usable.
