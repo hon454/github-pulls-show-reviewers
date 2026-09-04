@@ -1,3 +1,5 @@
+import { createTranslator, type Translator } from "../../i18n";
+
 export type BannerRepo = { readonly owner: string; readonly name: string };
 
 export type BannerKind =
@@ -142,72 +144,58 @@ function readDismissed(pathname: string, kind: BannerKind | null): boolean {
 
 export function formatBannerMessage(
   state: Pick<BannerState, "current" | "repo" | "rateLimit">,
-  options?: { now?: () => number },
+  options?: { now?: () => number; t?: Translator },
 ): string {
+  const t = options?.t ?? createTranslator("en");
   switch (state.current) {
     case "auth-expired":
-      return "Your GitHub session expired. Sign in again to keep loading reviewers.";
+      return t("banner_auth_expired");
     case "app-uncovered":
-      return `Add ${state.repo.owner}/${state.repo.name} to @${state.repo.owner}'s GitHub App installation to see reviewers on this page.`;
-    case "auth-rate-limit": {
-      const usage = formatUsageClause(state.rateLimit);
-      const reset = formatResetClause(state.rateLimit, options?.now);
-      const usageSegment = usage ? ` ${usage}` : "";
-      const resetSegment = reset
-        ? ` Reviewers will resume ${reset}.`
-        : " Reviewers will resume automatically when the limit resets.";
-      return `GitHub's hourly request limit was reached.${usageSegment}${resetSegment}`;
-    }
-    case "unauth-rate-limit": {
-      const usage = formatUsageClause(state.rateLimit);
-      const reset = formatResetClause(state.rateLimit, options?.now);
-      const usageSegment = usage ? ` ${usage}` : " (60/hr unauthenticated cap)";
-      const resetSegment = reset ? ` Resets ${reset}.` : "";
-      return `GitHub's unauthenticated request limit was reached.${usageSegment} Sign in to raise it to 5,000/hr.${resetSegment}`;
-    }
+      return t("banner_app_uncovered", {
+        repository: `${state.repo.owner}/${state.repo.name}`,
+        owner: state.repo.owner,
+      });
     case "signin-required":
-      return "Sign in with GitHub to see reviewers on private repositories.";
+      return t("banner_signin_required");
     case "reviewers-unavailable":
-      return "Reviewer data is temporarily unavailable.";
+      return t("banner_reviewers_unavailable");
     case null:
       return "";
+    case "auth-rate-limit":
+    case "unauth-rate-limit": {
+      const prefix =
+        state.current === "auth-rate-limit"
+          ? "banner_auth_rate"
+          : "banner_unauth_rate";
+      const rate = state.rateLimit;
+      const usage =
+        rate?.limit != null && rate.remaining != null && rate.limit > 0
+          ? t("banner_usage", {
+              used: Math.max(0, rate.limit - rate.remaining),
+              limit: rate.limit,
+            })
+          : state.current === "unauth-rate-limit"
+            ? t("banner_unauth_cap")
+            : "";
+      if (rate?.resetAt == null)
+        return t(`${prefix}_unknown`, { usage }).replace(/ {2,}/g, " ");
+      const deltaMs = rate.resetAt * 1000 - (options?.now ?? Date.now)();
+      if (deltaMs <= 0)
+        return t(`${prefix}_shortly`, { usage }).replace(/ {2,}/g, " ");
+      const minutes = Math.ceil(deltaMs / 60_000);
+      if (minutes <= 1)
+        return t(`${prefix}_minute`, { usage }).replace(/ {2,}/g, " ");
+      if (minutes < 60)
+        return t(`${prefix}_minutes`, { usage, count: minutes }).replace(
+          / {2,}/g,
+          " ",
+        );
+      const hours = Math.round(minutes / 60);
+      return (
+        hours === 1
+          ? t(`${prefix}_hour`, { usage })
+          : t(`${prefix}_hours`, { usage, count: hours })
+      ).replace(/ {2,}/g, " ");
+    }
   }
-}
-
-function formatUsageClause(
-  rateLimit: BannerRateLimitSnapshot | undefined,
-): string {
-  if (
-    rateLimit?.limit == null ||
-    rateLimit.remaining == null ||
-    rateLimit.limit <= 0
-  ) {
-    return "";
-  }
-  const used = Math.max(0, rateLimit.limit - rateLimit.remaining);
-  return `(${used}/${rateLimit.limit} used)`;
-}
-
-function formatResetClause(
-  rateLimit: BannerRateLimitSnapshot | undefined,
-  now?: () => number,
-): string {
-  if (rateLimit?.resetAt == null) {
-    return "";
-  }
-  const resetAtMs = rateLimit.resetAt * 1000;
-  const nowMs = (now ?? Date.now)();
-  const deltaMs = resetAtMs - nowMs;
-  if (deltaMs <= 0) {
-    return "shortly";
-  }
-  const minutes = Math.ceil(deltaMs / 60_000);
-  if (minutes <= 1) {
-    return "in about 1 minute";
-  }
-  if (minutes < 60) {
-    return `in about ${minutes} minutes`;
-  }
-  const hours = Math.round(minutes / 60);
-  return hours === 1 ? "in about 1 hour" : `in about ${hours} hours`;
 }

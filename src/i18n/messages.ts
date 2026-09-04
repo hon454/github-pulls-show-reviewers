@@ -1,6 +1,42 @@
 // Feature owners add each key here and in every catalog in the same change.
 // Named argument properties match Chrome placeholder names (lowercase).
 export interface MessageArgs {
+  reviewers_loading: undefined;
+  reviewers_section: undefined;
+  reviewers_team: { slug: string };
+  reviewers_title: { login: string; state: string };
+  reviewers_aria: { login: string; state: string };
+  reviewers_requested: undefined;
+  reviewers_approved: undefined;
+  reviewers_changes_requested: undefined;
+  reviewers_commented: undefined;
+  reviewers_dismissed: undefined;
+  reviewers_approved_requested: undefined;
+  reviewers_changes_requested_requested: undefined;
+  reviewers_commented_requested: undefined;
+  reviewers_dismissed_requested: undefined;
+  banner_auth_expired: undefined;
+  banner_app_uncovered: { repository: string; owner: string };
+  banner_signin_required: undefined;
+  banner_reviewers_unavailable: undefined;
+  banner_configure: undefined;
+  banner_signin: undefined;
+  banner_reload: undefined;
+  banner_dismiss: undefined;
+  banner_usage: { used: number; limit: number };
+  banner_unauth_cap: undefined;
+  banner_auth_rate_unknown: { usage: string };
+  banner_unauth_rate_unknown: { usage: string };
+  banner_auth_rate_shortly: { usage: string };
+  banner_unauth_rate_shortly: { usage: string };
+  banner_auth_rate_minute: { usage: string };
+  banner_unauth_rate_minute: { usage: string };
+  banner_auth_rate_minutes: { usage: string; count: number };
+  banner_unauth_rate_minutes: { usage: string; count: number };
+  banner_auth_rate_hour: { usage: string };
+  banner_unauth_rate_hour: { usage: string };
+  banner_auth_rate_hours: { usage: string; count: number };
+  banner_unauth_rate_hours: { usage: string; count: number };
   diagnostics_title: undefined;
   diagnostics_description: undefined;
   diagnostics_repository: undefined;

@@ -663,5 +663,258 @@
   "diagnostics_rate_reset": {
     "message": "速率限制重置",
     "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "reviewers_loading": {
+    "message": "正在加载审阅者…",
+    "description": "Loading status in a pull request reviewer mount."
+  },
+  "reviewers_section": {
+    "message": "审阅者：",
+    "description": "Label before reviewer chips."
+  },
+  "reviewers_team": {
+    "message": "团队：$SLUG$",
+    "description": "Requested team chip; preserve the team slug.",
+    "placeholders": {
+      "slug": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewers_title": {
+    "message": "@$LOGIN$ · $STATE$",
+    "description": "Reviewer tooltip with login and localized review state.",
+    "placeholders": {
+      "login": {
+        "content": "$1"
+      },
+      "state": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewers_aria": {
+    "message": "@$LOGIN$，$STATE$",
+    "description": "Accessible reviewer link name with login and localized review state.",
+    "placeholders": {
+      "login": {
+        "content": "$1"
+      },
+      "state": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewers_requested": {
+    "message": "已请求审阅",
+    "description": "Reviewer review state: requested."
+  },
+  "reviewers_approved": {
+    "message": "已批准",
+    "description": "Reviewer review state: approved."
+  },
+  "reviewers_changes_requested": {
+    "message": "已请求更改",
+    "description": "Reviewer review state: changes_requested."
+  },
+  "reviewers_commented": {
+    "message": "已评论",
+    "description": "Reviewer review state: commented."
+  },
+  "reviewers_dismissed": {
+    "message": "审阅已撤销",
+    "description": "Reviewer review state: dismissed."
+  },
+  "reviewers_approved_requested": {
+    "message": "已批准（仍请求审阅）",
+    "description": "Completed approved review while the reviewer is still requested."
+  },
+  "reviewers_changes_requested_requested": {
+    "message": "已请求更改（仍请求审阅）",
+    "description": "Completed changes_requested review while the reviewer is still requested."
+  },
+  "reviewers_commented_requested": {
+    "message": "已评论（仍请求审阅）",
+    "description": "Completed commented review while the reviewer is still requested."
+  },
+  "reviewers_dismissed_requested": {
+    "message": "审阅已撤销（仍请求审阅）",
+    "description": "Completed dismissed review while the reviewer is still requested."
+  },
+  "banner_auth_expired": {
+    "message": "GitHub 会话已过期。请重新登录以继续加载审阅者。",
+    "description": "Expired GitHub session guidance."
+  },
+  "banner_app_uncovered": {
+    "message": "要查看此页面的审阅者，请将 $REPOSITORY$ 添加到 @$OWNER$ 的 GitHub App 安装中。",
+    "description": "App installation coverage guidance; identifiers remain unchanged.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      },
+      "owner": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_signin_required": {
+    "message": "请使用 GitHub 登录以查看私有仓库的审阅者。",
+    "description": "Private repository sign-in guidance."
+  },
+  "banner_reviewers_unavailable": {
+    "message": "暂时无法获取审阅者数据。",
+    "description": "Temporary reviewer data failure."
+  },
+  "banner_configure": {
+    "message": "配置访问权限",
+    "description": "Access banner configure action label."
+  },
+  "banner_signin": {
+    "message": "登录",
+    "description": "Access banner signin action label."
+  },
+  "banner_reload": {
+    "message": "重新加载页面",
+    "description": "Access banner reload action label."
+  },
+  "banner_dismiss": {
+    "message": "关闭",
+    "description": "Access banner dismiss action label."
+  },
+  "banner_usage": {
+    "message": "（已使用 $USED$/$LIMIT$）",
+    "description": "Rate-limit usage clause; used and limit are unchanged numeric evidence.",
+    "placeholders": {
+      "used": {
+        "content": "$1"
+      },
+      "limit": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_cap": {
+    "message": "（未登录时每小时限 60 次）",
+    "description": "Fallback quota when no numeric rate-limit evidence is available."
+  },
+  "banner_auth_rate_unknown": {
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 限额重置后将自动恢复加载审阅者。",
+    "description": "auth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_unknown": {
+    "message": "已达到 GitHub 未登录请求上限。$USAGE$ 登录后可提升至每小时 5,000 次。",
+    "description": "unauth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_shortly": {
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 即将恢复加载审阅者。",
+    "description": "auth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_shortly": {
+    "message": "已达到 GitHub 未登录请求上限。$USAGE$ 登录后可提升至每小时 5,000 次。 限额即将重置。",
+    "description": "unauth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_minute": {
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 约 1 分钟后恢复加载审阅者。",
+    "description": "auth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_minute": {
+    "message": "已达到 GitHub 未登录请求上限。$USAGE$ 登录后可提升至每小时 5,000 次。 限额约 1 分钟后重置。",
+    "description": "unauth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_minutes": {
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 约 $COUNT$ 分钟后恢复加载审阅者。",
+    "description": "auth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_rate_minutes": {
+    "message": "已达到 GitHub 未登录请求上限。$USAGE$ 登录后可提升至每小时 5,000 次。 限额约 $COUNT$ 分钟后重置。",
+    "description": "unauth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_auth_rate_hour": {
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 约 1 小时后恢复加载审阅者。",
+    "description": "auth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_hour": {
+    "message": "已达到 GitHub 未登录请求上限。$USAGE$ 登录后可提升至每小时 5,000 次。 限额约 1 小时后重置。",
+    "description": "unauth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_hours": {
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 约 $COUNT$ 小时后恢复加载审阅者。",
+    "description": "auth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_rate_hours": {
+    "message": "已达到 GitHub 未登录请求上限。$USAGE$ 登录后可提升至每小时 5,000 次。 限额约 $COUNT$ 小时后重置。",
+    "description": "unauth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
   }
 }

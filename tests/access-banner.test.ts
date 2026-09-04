@@ -569,6 +569,11 @@ describe("bootAccessBanner", () => {
     vi.stubGlobal("__GITHUB_APP_NAME__", "Test Reviewer App");
     vi.stubGlobal("__PROD__", true);
     vi.stubGlobal("browser", {
+      i18n: { getUILanguage: () => "en" },
+      storage: {
+        local: { get: async () => ({}) },
+        onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+      },
       runtime: {
         getURL: (path: string) => `chrome-extension://ext-id${path}`,
         sendMessage,
@@ -607,6 +612,11 @@ describe("bootAccessBanner", () => {
     vi.stubGlobal("__GITHUB_APP_NAME__", "");
     vi.stubGlobal("__PROD__", true);
     vi.stubGlobal("browser", {
+      i18n: { getUILanguage: () => "en" },
+      storage: {
+        local: { get: async () => ({}) },
+        onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+      },
       runtime: {
         getURL: (path: string) => `chrome-extension://ext-id${path}`,
         sendMessage: vi.fn(async () => ({ ok: true })),
@@ -728,5 +738,152 @@ describe("bootAccessBanner", () => {
     invalidationCallbacks[0]?.();
 
     expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
+  });
+});
+
+describe("localized banner states", () => {
+  it.each(["en", "ko", "ja", "zh_CN", "zh_TW"] as const)(
+    "renders six kinds, actions and reset grammatical cases in %s",
+    async (locale) => {
+      const { createTranslator, toLanguageTag } = await import("../src/i18n");
+      const { mountBanner } = await import("../src/features/access-banner/dom");
+      const t = createTranslator(locale);
+      document.body.innerHTML = "<main></main>";
+      const mount = mountBanner({
+        insertAfter: document.querySelector("main")!,
+        installUrl: "https://github.com/apps/test/installations/new",
+        optionsPageUrl: "chrome-extension://test/options.html",
+        onDismiss: vi.fn(),
+      });
+      for (const current of [
+        "auth-expired",
+        "app-uncovered",
+        "auth-rate-limit",
+        "unauth-rate-limit",
+        "signin-required",
+        "reviewers-unavailable",
+      ] as const) {
+        const state = {
+          current,
+          dismissed: false,
+          repo: { owner: "org<$USAGE$>", name: "repo" },
+        };
+        mount.update(state, { t, lang: toLanguageTag(locale) });
+        const banner = document.querySelector<HTMLElement>(
+          "[data-ghpsr-banner]",
+        )!;
+        expect(banner.lang).toBe(toLanguageTag(locale));
+        expect(banner.querySelector("span")?.textContent).toBe(
+          formatBannerMessage(state, { t }),
+        );
+        expect(banner.querySelector("button")?.textContent).toBe(
+          t("banner_dismiss"),
+        );
+        const cta = banner.querySelector<HTMLAnchorElement>("a");
+        if (current === "auth-rate-limit") expect(cta).toBeNull();
+        else
+          expect(cta?.textContent).toBe(
+            t(
+              current === "app-uncovered"
+                ? "banner_configure"
+                : current === "reviewers-unavailable"
+                  ? "banner_reload"
+                  : "banner_signin",
+            ),
+          );
+        expect(banner.querySelector("script")).toBeNull();
+      }
+      for (const current of ["auth-rate-limit", "unauth-rate-limit"] as const) {
+        const prefix =
+          current === "auth-rate-limit"
+            ? "banner_auth_rate"
+            : "banner_unauth_rate";
+        for (const [seconds, suffix, count] of [
+          [-1, "shortly", 0],
+          [1, "minute", 1],
+          [61, "minutes", 2],
+          [3599, "hour", 1],
+          [5400, "hours", 2],
+        ] as const) {
+          const usage = t("banner_usage", { used: 60, limit: 60 });
+          const actual = formatBannerMessage(
+            {
+              current,
+              repo: TEST_REPO,
+              rateLimit: {
+                limit: 60,
+                remaining: 0,
+                resource: "core",
+                resetAt: 1000 + seconds,
+              },
+            },
+            { t, now: () => 1000000 },
+          );
+          const expected =
+            suffix === "minutes" || suffix === "hours"
+              ? t(`${prefix}_${suffix}`, { usage, count })
+              : t(`${prefix}_${suffix}`, { usage });
+          expect(actual).toBe(expected);
+        }
+      }
+      mount.teardown();
+    },
+  );
+
+  it("reformats aggregator state without new failure and preserves dismissal and listener teardown", async () => {
+    vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "Iv1.testclient");
+    vi.stubGlobal("__GITHUB_APP_SLUG__", "test-reviewer-app");
+    vi.stubGlobal("__GITHUB_APP_NAME__", "Test Reviewer App");
+    vi.stubGlobal("__PROD__", true);
+    const listeners = new Set<(changes: object, area: string) => void>();
+    const sendMessage = vi.fn();
+    vi.stubGlobal("browser", {
+      i18n: { getUILanguage: () => "en" },
+      runtime: {
+        getURL: (path: string) => `chrome-extension://test${path}`,
+        sendMessage,
+      },
+      storage: {
+        local: { get: async () => ({}) },
+        onChanged: {
+          addListener: (fn: (changes: object, area: string) => void) =>
+            listeners.add(fn),
+          removeListener: (fn: (changes: object, area: string) => void) =>
+            listeners.delete(fn),
+        },
+      },
+    });
+    window.history.replaceState({}, "", "/cinev/shotloom/pulls");
+    document.body.innerHTML = "<main></main>";
+    const { bootAccessBanner } = await import("../src/features/access-banner");
+    const handle = bootAccessBanner({ onInvalidated: vi.fn() } as never)!;
+    handle.reportFailure("signin-required");
+    const state = handle.getState();
+    const prefs = {
+      version: 1,
+      showStateBadge: true,
+      showReviewerName: false,
+      openPullsOnly: true,
+    };
+    for (const language of ["ko", "ja", "zh_CN", "zh_TW"]) {
+      listeners.forEach((fn) =>
+        fn({ preferences: { newValue: { ...prefs, language } } }, "local"),
+      );
+      expect(handle.getState()).toEqual(state);
+      expect(
+        document.querySelector("[data-ghpsr-banner]")?.getAttribute("lang"),
+      ).toBe(language.replace("_", "-"));
+    }
+    handle.dismiss();
+    listeners.forEach((fn) =>
+      fn({ preferences: { newValue: { ...prefs, language: "en" } } }, "local"),
+    );
+    expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
+    expect(handle.getState().dismissed).toBe(true);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(listeners.size).toBe(1);
+    handle.teardown();
+    handle.teardown();
+    expect(listeners.size).toBe(0);
   });
 });

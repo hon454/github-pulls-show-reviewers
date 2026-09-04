@@ -1,3 +1,9 @@
+import {
+  createTranslator,
+  type LocaleSnapshot,
+  type Translator,
+} from "../../i18n";
+
 import type { BannerKind, BannerState } from "./aggregator";
 import { formatBannerMessage } from "./aggregator";
 
@@ -22,7 +28,7 @@ function ensureBannerStyles(): void {
 }
 
 export type BannerMount = {
-  update(state: BannerState): void;
+  update(state: BannerState, locale?: Pick<LocaleSnapshot, "t" | "lang">): void;
   teardown(): void;
 };
 
@@ -41,16 +47,17 @@ function ctaFor(
   installUrl: string,
   optionsPageUrl: string,
   reloadUrl: string,
+  t: Translator,
 ): CtaSpec {
   switch (current) {
     case "app-uncovered":
-      return { kind: "link", label: "Configure access", href: installUrl };
+      return { kind: "link", label: t("banner_configure"), href: installUrl };
     case "auth-expired":
     case "unauth-rate-limit":
     case "signin-required":
       return {
         kind: "link",
-        label: "Sign in",
+        label: t("banner_signin"),
         href: optionsPageUrl,
         action: "open-options",
       };
@@ -59,7 +66,7 @@ function ctaFor(
     case "reviewers-unavailable":
       return {
         kind: "link",
-        label: "Reload page",
+        label: t("banner_reload"),
         href: reloadUrl,
         target: "same-page",
       };
@@ -76,7 +83,10 @@ export function mountBanner(input: {
 }): BannerMount {
   let element: HTMLElement | null = null;
 
-  function render(state: BannerState): void {
+  function render(
+    state: BannerState,
+    locale = { lang: "en", t: createTranslator("en") },
+  ): void {
     const current = state.current;
     if (state.dismissed || current == null) {
       element?.remove();
@@ -98,6 +108,8 @@ export function mountBanner(input: {
         "background: #ddf4ff",
         "color: #0969da",
         "display: flex",
+        "flex-wrap: wrap",
+        "overflow-wrap: anywhere",
         "gap: 12px",
         "align-items: center",
         "font-size: 13px",
@@ -105,10 +117,12 @@ export function mountBanner(input: {
       input.insertAfter.insertAdjacentElement("afterend", element);
     }
 
-    element.innerHTML = "";
+    element.replaceChildren();
+    element.lang = locale.lang;
 
     const message = document.createElement("span");
-    message.textContent = formatBannerMessage(state);
+    message.style.flex = "1 1 240px";
+    message.textContent = formatBannerMessage(state, { t: locale.t });
     element.append(message);
 
     const cta = ctaFor(
@@ -116,6 +130,7 @@ export function mountBanner(input: {
       input.installUrl,
       input.optionsPageUrl,
       input.reloadUrl ?? window.location.href,
+      locale.t,
     );
     if (cta.kind === "link") {
       const link = document.createElement("a");
@@ -137,7 +152,7 @@ export function mountBanner(input: {
 
     const dismissBtn = document.createElement("button");
     dismissBtn.type = "button";
-    dismissBtn.textContent = "Dismiss";
+    dismissBtn.textContent = locale.t("banner_dismiss");
     dismissBtn.className = "ghpsr-banner-dismiss";
     dismissBtn.addEventListener("click", () => input.onDismiss());
     element.append(dismissBtn);

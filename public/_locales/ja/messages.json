@@ -663,5 +663,258 @@
   "diagnostics_rate_reset": {
     "message": "レート制限のリセット",
     "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "reviewers_loading": {
+    "message": "レビュアーを読み込み中...",
+    "description": "Loading status in a pull request reviewer mount."
+  },
+  "reviewers_section": {
+    "message": "レビュアー:",
+    "description": "Label before reviewer chips."
+  },
+  "reviewers_team": {
+    "message": "チーム: $SLUG$",
+    "description": "Requested team chip; preserve the team slug.",
+    "placeholders": {
+      "slug": {
+        "content": "$1"
+      }
+    }
+  },
+  "reviewers_title": {
+    "message": "@$LOGIN$ · $STATE$",
+    "description": "Reviewer tooltip with login and localized review state.",
+    "placeholders": {
+      "login": {
+        "content": "$1"
+      },
+      "state": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewers_aria": {
+    "message": "@$LOGIN$、$STATE$",
+    "description": "Accessible reviewer link name with login and localized review state.",
+    "placeholders": {
+      "login": {
+        "content": "$1"
+      },
+      "state": {
+        "content": "$2"
+      }
+    }
+  },
+  "reviewers_requested": {
+    "message": "レビュー依頼中",
+    "description": "Reviewer review state: requested."
+  },
+  "reviewers_approved": {
+    "message": "承認済み",
+    "description": "Reviewer review state: approved."
+  },
+  "reviewers_changes_requested": {
+    "message": "変更を要求",
+    "description": "Reviewer review state: changes_requested."
+  },
+  "reviewers_commented": {
+    "message": "コメント済み",
+    "description": "Reviewer review state: commented."
+  },
+  "reviewers_dismissed": {
+    "message": "レビュー取り消し済み",
+    "description": "Reviewer review state: dismissed."
+  },
+  "reviewers_approved_requested": {
+    "message": "承認済み（引き続きレビュー依頼中）",
+    "description": "Completed approved review while the reviewer is still requested."
+  },
+  "reviewers_changes_requested_requested": {
+    "message": "変更を要求（引き続きレビュー依頼中）",
+    "description": "Completed changes_requested review while the reviewer is still requested."
+  },
+  "reviewers_commented_requested": {
+    "message": "コメント済み（引き続きレビュー依頼中）",
+    "description": "Completed commented review while the reviewer is still requested."
+  },
+  "reviewers_dismissed_requested": {
+    "message": "レビュー取り消し済み（引き続きレビュー依頼中）",
+    "description": "Completed dismissed review while the reviewer is still requested."
+  },
+  "banner_auth_expired": {
+    "message": "GitHub のセッションが期限切れです。レビュアーを引き続き読み込むには、もう一度ログインしてください。",
+    "description": "Expired GitHub session guidance."
+  },
+  "banner_app_uncovered": {
+    "message": "このページでレビュアーを表示するには、@$OWNER$ の GitHub App インストールに $REPOSITORY$ を追加してください。",
+    "description": "App installation coverage guidance; identifiers remain unchanged.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      },
+      "owner": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_signin_required": {
+    "message": "非公開リポジトリのレビュアーを表示するには、GitHub でログインしてください。",
+    "description": "Private repository sign-in guidance."
+  },
+  "banner_reviewers_unavailable": {
+    "message": "レビュアーのデータを一時的に取得できません。",
+    "description": "Temporary reviewer data failure."
+  },
+  "banner_configure": {
+    "message": "アクセスを設定",
+    "description": "Access banner configure action label."
+  },
+  "banner_signin": {
+    "message": "ログイン",
+    "description": "Access banner signin action label."
+  },
+  "banner_reload": {
+    "message": "ページを再読み込み",
+    "description": "Access banner reload action label."
+  },
+  "banner_dismiss": {
+    "message": "閉じる",
+    "description": "Access banner dismiss action label."
+  },
+  "banner_usage": {
+    "message": "（$LIMIT$ 回中 $USED$ 回使用）",
+    "description": "Rate-limit usage clause; used and limit are unchanged numeric evidence.",
+    "placeholders": {
+      "used": {
+        "content": "$1"
+      },
+      "limit": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_cap": {
+    "message": "（未認証時は毎時 60 回まで）",
+    "description": "Fallback quota when no numeric rate-limit evidence is available."
+  },
+  "banner_auth_rate_unknown": {
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 上限がリセットされると、レビュアーの読み込みが自動的に再開されます。",
+    "description": "auth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_unknown": {
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。",
+    "description": "unauth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_shortly": {
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ まもなくレビュアーの読み込みが再開されます。",
+    "description": "auth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_shortly": {
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 まもなくリセットされます。",
+    "description": "unauth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_minute": {
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 約 1 分後にレビュアーの読み込みが再開されます。",
+    "description": "auth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_minute": {
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 約 1 分後にリセットされます。",
+    "description": "unauth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_minutes": {
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 約 $COUNT$ 分後にレビュアーの読み込みが再開されます。",
+    "description": "auth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_rate_minutes": {
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 約 $COUNT$ 分後にリセットされます。",
+    "description": "unauth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_auth_rate_hour": {
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 約 1 時間後にレビュアーの読み込みが再開されます。",
+    "description": "auth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_unauth_rate_hour": {
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 約 1 時間後にリセットされます。",
+    "description": "unauth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      }
+    }
+  },
+  "banner_auth_rate_hours": {
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 約 $COUNT$ 時間後にレビュアーの読み込みが再開されます。",
+    "description": "auth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
+  },
+  "banner_unauth_rate_hours": {
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 約 $COUNT$ 時間後にリセットされます。",
+    "description": "unauth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "placeholders": {
+      "usage": {
+        "content": "$1"
+      },
+      "count": {
+        "content": "$2"
+      }
+    }
   }
 }

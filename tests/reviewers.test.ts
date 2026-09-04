@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
+import type { Locale } from "../src/i18n";
 import type { PullReviewerSummary } from "../src/github/api";
 import type { Account } from "../src/storage/accounts";
 import type * as PreferencesModule from "../src/storage/preferences";
@@ -53,6 +54,7 @@ type StorageListener = (
 ) => void;
 
 let capturedStorageListener: StorageListener | null = null;
+let storageListeners = new Set<StorageListener>();
 let pendingTeardowns: Array<() => void>;
 
 type TestCtx = {
@@ -94,20 +96,27 @@ beforeEach(() => {
   runtimeSendMessageMock.mockReset();
   getPreferencesMock.mockResolvedValue({
     version: 1,
+    language: "auto",
     showStateBadge: true,
     showReviewerName: false,
     openPullsOnly: true,
   });
   capturedStorageListener = null;
+  storageListeners = new Set();
   pendingTeardowns = [];
 
   vi.stubGlobal("browser", {
+    i18n: { getUILanguage: () => "en" },
     storage: {
       onChanged: {
         addListener: vi.fn((listener: StorageListener) => {
-          capturedStorageListener = listener;
+          storageListeners.add(listener);
+          capturedStorageListener = (changes, area) =>
+            storageListeners.forEach((fn) => fn(changes, area));
         }),
-        removeListener: vi.fn(),
+        removeListener: vi.fn((listener: StorageListener) =>
+          storageListeners.delete(listener),
+        ),
       },
     },
     runtime: {
@@ -194,6 +203,7 @@ describe("bootReviewerListPage", () => {
   it("preserves stale reviewer chips when background revalidation fails", async () => {
     getPreferencesMock.mockResolvedValue({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: true,
       openPullsOnly: true,
@@ -263,6 +273,7 @@ describe("bootReviewerListPage", () => {
 
     getPreferencesMock.mockResolvedValueOnce({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: true,
       openPullsOnly: true,
@@ -272,12 +283,14 @@ describe("bootReviewerListPage", () => {
         preferences: {
           oldValue: {
             version: 1,
+            language: "auto",
             showStateBadge: true,
             showReviewerName: false,
             openPullsOnly: true,
           },
           newValue: {
             version: 1,
+            language: "auto",
             showStateBadge: true,
             showReviewerName: true,
             openPullsOnly: true,
@@ -1123,6 +1136,7 @@ describe("bootReviewerListPage", () => {
   it("renders stale cached reviewers immediately then revalidates and rerenders the row", async () => {
     getPreferencesMock.mockResolvedValue({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: true,
       openPullsOnly: true,
@@ -1192,6 +1206,7 @@ describe("bootReviewerListPage", () => {
   it("treats same-repository render events as reviewer cache revalidation triggers", async () => {
     getPreferencesMock.mockResolvedValue({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: true,
       openPullsOnly: true,
@@ -1267,6 +1282,7 @@ describe("bootReviewerListPage", () => {
   it("only revalidates mutated existing rows when the row fingerprint changes", async () => {
     getPreferencesMock.mockResolvedValue({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: true,
       openPullsOnly: true,
@@ -1401,6 +1417,7 @@ describe("bootReviewerListPage", () => {
   it("does not revalidate existing rows when GitHub relative-time text updates", async () => {
     getPreferencesMock.mockResolvedValue({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: true,
       openPullsOnly: true,
@@ -1455,6 +1472,7 @@ describe("bootReviewerListPage", () => {
   it("revalidates mutated existing rows when metadata children are added", async () => {
     getPreferencesMock.mockResolvedValue({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: true,
       openPullsOnly: true,
@@ -2201,3 +2219,186 @@ function createDeferred<T>(): {
   });
   return { promise, resolve };
 }
+
+describe("render-only reviewer locale events", () => {
+  const summary: PullReviewerSummary = {
+    status: "ok",
+    requestedUsers: [{ login: "alice", avatarUrl: null }],
+    requestedTeams: ["platform"],
+    completedReviews: [],
+  };
+  async function switchLanguage(language: string, previous = "auto") {
+    const prefs = {
+      version: 1,
+      language: "auto",
+      showStateBadge: true,
+      showReviewerName: false,
+      openPullsOnly: true,
+    };
+    capturedStorageListener!(
+      {
+        preferences: {
+          oldValue: { ...prefs, language: previous },
+          newValue: { ...prefs, language },
+        },
+      },
+      "local",
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  it.each(["fresh", "stale", "missing", "empty", "error"])(
+    "reformats %s presentation without cache/account/metadata/request work",
+    async (state) => {
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve({ ok: true, metadata: [] });
+        if (state === "error")
+          return Promise.resolve({
+            ok: false,
+            error: { kind: "network", message: "offline" },
+          });
+        return Promise.resolve({
+          ok: true,
+          summary:
+            state === "empty"
+              ? { ...summary, requestedUsers: [], requestedTeams: [] }
+              : summary,
+        });
+      });
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const cache = await import("../src/cache/reviewer-cache");
+      const lifecycle = await import("../src/features/reviewers/row-lifecycle");
+      const fingerprint = vi.spyOn(lifecycle, "createReviewerRowLifecycle");
+      const onRowFailure = vi.fn();
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx, { onRowFailure });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      if (state === "stale") cache.markReviewerCacheStale(key);
+      if (state === "missing") cache.clearReviewerCache();
+      const before = cache.getReviewerCacheEntry(key);
+      const calls = runtimeSendMessageMock.mock.calls.length;
+      const accounts = resolveAccountForRepoMock.mock.calls.length;
+      const prefs = getPreferencesMock.mock.calls.length;
+      const failures = onRowFailure.mock.calls.length;
+      const process = vi.spyOn(
+        fingerprint.mock.results[0].value,
+        "processRows",
+      );
+      const initialHtmlLang = document.documentElement.lang;
+      const originalText =
+        document.querySelector(".Link--primary")?.textContent;
+      for (const language of ["ko", "ja", "zh_CN", "zh_TW", "en"]) {
+        await switchLanguage(language);
+        const { createTranslator, toLanguageTag } = await import("../src/i18n");
+        const locale = language as Locale;
+        const root = document.querySelector<HTMLElement>(".ghpsr-root")!;
+        expect(root.lang).toBe(toLanguageTag(locale));
+        if (state === "empty" || state === "error")
+          expect(root.textContent).toBe("");
+        else
+          expect(root.textContent).toContain(
+            createTranslator(locale)("reviewers_section"),
+          );
+        expect(cache.getReviewerCacheEntry(key)).toBe(before);
+        expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+        expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
+        expect(getPreferencesMock).toHaveBeenCalledTimes(prefs);
+        expect(onRowFailure).toHaveBeenCalledTimes(failures);
+        expect(process).not.toHaveBeenCalled();
+      }
+      expect(document.documentElement.lang).toBe(initialHtmlLang);
+      expect(document.querySelector(".Link--primary")?.textContent).toBe(
+        originalText,
+      );
+      // Navigating out releases the locale store listener, leaving only data events.
+      expect(storageListeners.size).toBe(2);
+      window.history.replaceState({}, "", "/cinev/shotloom/issues");
+      getRegisteredListener(ctx, "wxt:locationchange")!();
+      expect(storageListeners.size).toBe(1);
+      pendingTeardowns.forEach((fn) => fn());
+      expect(storageListeners.size).toBe(0);
+      fingerprint.mockRestore();
+    },
+  );
+
+  it("keeps four in-flight slots and FIFO queued work through locale switches and mutation stress", async () => {
+    document.body.innerHTML = new DOMParser().parseFromString(
+      mutationStressFixtureHtml,
+      "text/html",
+    ).body.innerHTML;
+    // Reuse the stress row shape for eight requests, including four queued rows.
+    const source = document.querySelector(".js-issue-row")!;
+    document.body.replaceChildren(
+      ...Array.from({ length: 8 }, (_, index) => {
+        const row = source.cloneNode(true) as HTMLElement;
+        row.id = `issue_${42 + index}`;
+        return row;
+      }),
+    );
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const completions: Array<() => void> = [];
+    let active = 0;
+    let peak = 0;
+    runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch")
+        return Promise.resolve({ ok: true, metadata: [] });
+      if (message.type === "cancelPullReviewerSummary")
+        return Promise.resolve();
+      active++;
+      peak = Math.max(peak, active);
+      return new Promise((resolve) =>
+        completions.push(() => {
+          active--;
+          resolve({ ok: true, summary });
+        }),
+      );
+    });
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+    const accountCalls = resolveAccountForRepoMock.mock.calls.length;
+    for (const locale of ["ko", "ja", "zh_CN", "zh_TW"]) {
+      await switchLanguage(locale);
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+      expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(0);
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accountCalls);
+      const { createTranslator } = await import("../src/i18n");
+      expect(document.querySelector(".ghpsr-status")?.textContent).toBe(
+        createTranslator(locale as Locale)("reviewers_loading"),
+      );
+    }
+    for (let index = 0; index < 8; index++) {
+      completions.shift()!();
+      await flushMicrotasks();
+    }
+    expect(peak).toBe(4);
+    expect(active).toBe(0);
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map(
+        (message) => message.pullNumber,
+      ),
+    ).toEqual(Array.from({ length: 8 }, (_, i) => String(42 + i)));
+    expect(
+      document.querySelectorAll(
+        '[data-ghpsr-root][lang="zh-TW"] .ghpsr-section-label',
+      ),
+    ).toHaveLength(8);
+    expect(document.querySelector(".ghpsr-section-label")?.textContent).toBe(
+      "審查者：",
+    );
+    for (let i = 0; i < 40; i++) await switchLanguage(i % 2 ? "ko" : "ja");
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(8);
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+    expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(0);
+  });
+});
