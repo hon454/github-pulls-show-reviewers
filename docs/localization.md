@@ -154,6 +154,20 @@ client ID/slug; this is packaged UI QA, not a production-config ZIP receipt.
   Evidence records native/manifest/toolbar snapshots before and after override,
   after reload and after restart, along with launch args and execution mode.
 
+Linux CI run `33855860843` exposed a separate test assumption: the manifest
+returned Korean text while `@@ui_locale` resolved to English. That failed run
+stopped before checking message text or toolbar, so it does not establish their
+locale. The probe now records raw API values and the selected `LANG`, `LANGUAGE`,
+`LC_ALL`, and `LC_MESSAGES` environment values before assertions, including in CI
+logs. It checks Auto against `getUILanguage`, all 172 native messages against
+`@@ui_locale`, and manifest/action/toolbar against the manifest's `current_locale`.
+These are separate exact catalog comparisons, with all snapshots still required
+to remain identical through manual override, reload and process restart.
+Chromium's [manifest localization implementation](https://chromium.googlesource.com/chromium/src/+/master/extensions/common/extension_l10n_util.cc)
+sets `current_locale` alongside localized description and action title. This
+Chromium-specific field is used only by the test probe, not application code.
+The Linux message/toolbar result remains pending until the corrected CI runs.
+
 Independent review caught that the original in-runner probe omitted an explicit
 locale but still received Playwright Test 1.59.1's **default `en-US` injection**.
 Its en-US UI / Korean metadata split was an emulated-context observation, not a

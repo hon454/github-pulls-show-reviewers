@@ -61,7 +61,7 @@ test("observes native Chrome language outside runner emulation and retains prefe
       "tests/helpers/native-locale-probe.ts",
       output,
     ],
-    { timeout: 25000 },
+    { timeout: 25000, stdio: "inherit" },
   );
   const evidence = JSON.parse(readFileSync(output, "utf8"));
   expect(evidence.execution).toBe("standalone-node-subprocess");

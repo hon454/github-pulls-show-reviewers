@@ -37,7 +37,12 @@ async function chromeLanguage(page: Page) {
             getUILanguage(): string;
             getMessage(key: string, values?: string[]): string;
           };
-          runtime: { getManifest(): { name: string; description: string } };
+          runtime: { getManifest(): {
+            name: string;
+            description: string;
+            current_locale: string;
+            action: { default_title: string };
+          } };
           action: { getTitle(details: object): Promise<string> };
         };
       }
@@ -97,8 +102,32 @@ try {
   const { page, url } = await installedOptions(context);
   const native = await chromeLanguage(page);
   const resolved = resolveLocale(native.uiLanguage);
-  const metadataLocale = resolveLocale(native.catalogLanguage);
-  const messages = catalog(metadataLocale);
+  // Chromium records the manifest localization separately from the renderer's
+  // @@ui_locale. Linux CI can report English here with a Korean manifest.
+  const messageLocale = resolveLocale(native.catalogLanguage);
+  expect(native.manifest.current_locale).toBeTruthy();
+  const metadataLocale = resolveLocale(native.manifest.current_locale);
+  const messages = catalog(messageLocale);
+  const metadata = catalog(metadataLocale);
+  const observation = {
+    execution: "standalone-node-subprocess",
+    platform: process.platform,
+    languageEnvironment: Object.fromEntries(
+      ["LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES"].map((key) => [
+        key, process.env[key] ?? null,
+      ]),
+    ),
+    requestedFlag: "ko",
+    playwrightLocale: null,
+    beforeOverride: native,
+    autoLocale: resolved,
+    messageLocale,
+    metadataLocale,
+  };
+  // Preserve raw observations even if a later contract fails. CI has no artifact
+  // upload step, so also emit this non-sensitive fixture data to its test log.
+  await writeFile(output, JSON.stringify(observation, null, 2));
+  process.stdout.write(`Native locale observation: ${JSON.stringify(observation)}\n`);
   await expect(page.locator("html")).toHaveAttribute(
     "lang",
     toLanguageTag(resolved),
@@ -110,10 +139,13 @@ try {
   const autoUI = await uiSnapshot(page);
   expect(native.manifest.name).toBe("GitHub Pulls Show Reviewers");
   expect(native.manifest.description).toBe(
-    messages.extension_description.message,
+    metadata.extension_description.message,
   );
   expect(native.description).toBe(messages.extension_description.message);
-  expect(native.toolbar).toBe(messages.extension_action_title.message);
+  expect(native.manifest.action.default_title).toBe(
+    metadata.extension_action_title.message,
+  );
+  expect(native.toolbar).toBe(metadata.extension_action_title.message);
   // Chrome must accept and interpolate every emitted message in its selected catalog.
   const nativeMessages = await page.evaluate((keys) => {
     const api = (
@@ -179,8 +211,7 @@ try {
     output,
     JSON.stringify(
       {
-        execution: "standalone-node-subprocess",
-        platform: process.platform,
+        ...observation,
         headless: true,
         channel: "chromium",
         launchArgs: [

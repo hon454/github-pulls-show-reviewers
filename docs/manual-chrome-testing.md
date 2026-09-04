@@ -327,6 +327,14 @@ OS language unchanged during agent QA.
    the selected language. Actual screen-reader pronunciation still needs manual
    assistive-technology testing; ARIA assertions do not establish pronunciation.
 
+The probe records initial observations before asserting, so failed checks also
+retain raw evidence. It validates Auto against `getUILanguage`, native message
+text against `@@ui_locale`, and manifest/action/toolbar against Chromium's
+`manifest.current_locale`; do not assume these locale channels coincide. Linux
+CI run `33855860843` observed a Korean manifest with an English-resolved
+`@@ui_locale` and stopped before the remaining assertions. A corrected Linux run
+is required before claiming its message/toolbar or restart results.
+
 Executed on macOS Chromium 147 on 2026-09-04: the standalone Node subprocess
 with headless Chromium, `--lang=ko` and no runner-injected locale observed
 `getUILanguage()=ko`, `@@ui_locale=ko`, `navigator.language=ko-KR`, and Korean
