@@ -4,44 +4,115 @@ This file turns the store notes into concrete submission materials for the curre
 
 ## Listing fields
 
-Title:
-`GitHub Pulls Show Reviewers`
+The canonical name is `GitHub Pulls Show Reviewers` in every locale. Packaged
+name and summary come from `extension_name.message` and
+`extension_description.message` in `public/_locales/<locale>/messages.json`.
+The reviewed locale files link directly to that summary; use its current value
+verbatim, without an independently edited duplicate. `pnpm verify:cws` prints
+all current values and validates the 75/132 character limits and identity.
 
-Short description:
-`See requested reviewers, teams, and completed review state directly in GitHub pull request lists.`
+Category: `Developer Tools`. English is the default/fallback language; prepare
+all five supported locale variants below. The `Detailed description` section
+between the comments in each locale file is the text to paste (omit Markdown
+headings, comments, screenshot inventory and maintenance notes).
 
-Detailed description:
+## Per-locale dashboard checklist
 
-`GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds a single inline Reviewers section with requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
+These are listing-preparation instructions. Actual registration and publication
+evidence belongs in the release tracking issue, using the existing
+[staged handoff](./cws-agent-handoff.md) and its authorized operator procedure.
+The unchecked boxes below are a reusable checklist, not claims of completed writes.
 
-`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, revalidates stale reviewer rows as GitHub updates the list, lets users toggle reviewer names and state badges from the options page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only reads repository data; the only POST requests are to GitHub's OAuth device-flow endpoints for sign-in and access-token refresh.`
+| Dashboard locale | Reviewed description and catalog link | Matching screenshots | Saved/reopened evidence |
+| --- | --- | --- | --- |
+| English (`en`) | [English](./chrome-web-store-locales/en.md) | [English root](./chrome-web-store-assets/) | [ ] |
+| 한국어 (`ko`) | [한국어](./chrome-web-store-locales/ko.md) | [ko/](./chrome-web-store-assets/ko/) | [ ] |
+| 日本語 (`ja`) | [日本語](./chrome-web-store-locales/ja.md) | [ja/](./chrome-web-store-assets/ja/) | [ ] |
+| 简体中文 (`zh_CN`) | [简体中文](./chrome-web-store-locales/zh_CN.md) | [zh_CN/](./chrome-web-store-assets/zh_CN/) | [ ] |
+| 繁體中文 (`zh_TW`) | [繁體中文](./chrome-web-store-locales/zh_TW.md) | [zh_TW/](./chrome-web-store-assets/zh_TW/) | [ ] |
 
-Suggested category:
-`Developer Tools`
+For each row:
 
-Suggested language:
-`English (United States)`
+- [ ] Confirm the checked package contains all five `_locales` catalogs and
+  `default_locale: en`; run `pnpm verify:locales` against that package's extracted
+  output. Confirm the unchanged name and catalog summary match the displayed
+  metadata. Adding catalogs does not populate detailed descriptions.
+- [ ] Select the matching language in the Store listing language dropdown.
+- [ ] Paste that file's detailed description and upload its three screenshots
+  in `01`, `02`, `03` order to the localized screenshots area.
+- [ ] Check the preview for the right language, readable CJK text and no clipping.
+  Confirm reviewer-only features, no-token public use, private GitHub App access,
+  multiple accounts and `Pull requests: Read` agree across every language.
+- [ ] Save, reopen that locale, and record the actual evidence permalink and
+  source identity in the release issue following the existing handoff schema.
+
+Chrome chooses packaged metadata independently of the extension's saved manual
+UI language. That selector does not choose or update a dashboard listing locale.
+GitHub content and its external authorization page are not translated by the
+extension. Landing, privacy and developer-document links remain English.
+
+Small and marquee promotional tiles are global fields and cannot be localized;
+there are no per-locale tile-upload steps. The inventories describe the scenes
+for review and do not invent a separate dashboard caption field. See
+[Chrome's listing localization guidance](https://developer.chrome.com/docs/webstore/cws-dashboard-listing#localize_your_listing).
 
 ## Screenshot inventory
 
-Chrome's listing guidance expects at least one screenshot and recommends up to five. Upload these screenshots to the Chrome Web Store dashboard in this order:
+Every locale uses three `1280x800` 24-bit RGB PNGs without alpha, in this order:
 
-- `01-pr-list-before-after.png`
-  Dashboard caption: `Before and after: reviewer chips added directly to the GitHub pull request list.`
-- `02-pr-list-avatar-state-showcase.png`
-  Dashboard caption: `Requested reviewers and completed review states shown as avatar chips with outlines and badges.`
-- `03-options-repository-check.png`
-  Dashboard caption: `Display settings and repository diagnostics on the options page.`
+1. `01-pr-list-before-after.png` — default GitHub PR list and reviewer-enhanced list.
+2. `02-pr-list-avatar-state-showcase.png` — requested outlines, team chips and completed review badges.
+3. `03-options-repository-check.png` — display settings and a no-token public repository result.
 
-All generated screenshots are `1280x800` 24-bit PNG files without alpha, so they satisfy Chrome Web Store's screenshot upload constraints.
+English stays at `docs/chrome-web-store-assets/` so existing landing references
+remain valid. The other twelve images live in `ko/`, `ja/`, `zh_CN/`, and `zh_TW/`.
+The PR titles, usernames, team slugs and avatar images are synthetic fixtures;
+GitHub/user content remains unchanged across locales. No real accounts, private
+data or live dummy PRs are used.
 
-The PR-list screenshots are generated from a deterministic GitHub-style fixture for `hon454/github-pulls-show-reviewers` with synthetic PR titles, authors, reviewer states, and avatar images. They should remain realistic enough for store review while avoiding live dummy PRs, real project data, and unrelated UI noise such as floating help buttons.
+## Capture maintenance
 
-Regenerate them with:
+After canonical catalog/glossary corrections have merged, update the five
+listing files and regenerate from the integrated source:
 
 ```bash
 pnpm cws:assets
+pnpm verify:locales
+pnpm verify:cws
 ```
+
+`pnpm cws:assets` retains the separate Playwright capture project; ordinary E2E
+runs do not rewrite listing assets. It builds with `TESTING_CLIENT_ID`,
+`test-app`, and `GitHub Pulls Show Reviewers (testing)`. These are synthetic
+**TESTING** captures, not production-config artifacts or private-access proof.
+No account is connected. Captures use isolated disposable Chromium profiles and
+block external HTTPS except explicit fixture responses.
+
+Each locale is selected and persisted before capture. Fixture spacing frames all
+eight PR rows; source/user text is unchanged. The options image composes native
+language, display and completed-diagnostics section screenshots side by side,
+without changing their text or controls, to avoid cutting off settings at scroll
+boundaries. Extension labels are
+checked against its catalog, while the before/after composition captions come
+from `capture-before` / `capture-after` comments in its reviewed listing file.
+Fonts and images finish loading, focus/hover is cleared, motion is disabled,
+and scale, timezone and synthetic host locale are fixed. The generated
+[capture manifest](./chrome-web-store-assets/capture-manifest.json) records source
+and image hashes, browser version, platform and rendering settings. It contains
+no credentials. Byte-for-byte reproducibility requires the same Chromium,
+platform and installed system fonts; cross-platform font rasterization can differ.
+Run the command twice and compare image hashes on the capture host when validating
+reproducibility. Review and commit the final images and manifest together.
+
+`pnpm verify:cws` validates the five source-linked names/summaries, ordered links,
+15 PNG headers/dimensions/RGB format, and source/image hashes. It does not replace
+linguistic or visual review. Inspect **each of the 15 images**, including CJK
+glyphs, line wraps, cropping, labels, focus rings, and caption/content overlap.
+Recheck copy against the [shared glossary](./localization.md) and
+[localization contract](./adr/0006-bundled-localization-and-render-only-language.md).
+Document exact source, commands, all fifteen visual verdicts and limitations in
+the review/release handoff. Preparing artifacts alone does not attest dashboard
+registration or publication.
 
 ## Current privacy practices
 
@@ -120,8 +191,8 @@ reviewed source and reuses its verified artifact without another CWS submission.
    for automatic publication after approval.
 8. Confirm the release workflow and dashboard package version both read the
    same bare `<version>`.
-9. Attach the three screenshots listed above, in order, with the dashboard captions from the screenshot inventory.
-10. Paste the short description, detailed description, and privacy policy URL above.
+9. Register each locale's three matching screenshots in order using the per-locale checklist above.
+10. Verify catalog-sourced name/summary, paste each reviewed detailed description, and keep the privacy policy URL above.
 11. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
 12. For a credential-only rehearsal, run the reviewed release workflow with
     `chrome_web_store: dry-run`; it performs no build, package upload, review
@@ -149,6 +220,5 @@ The extension bundles English, Korean, Japanese, Simplified Chinese and
 Traditional Chinese catalogs. Manifest metadata follows Chrome's language;
 a manual extension UI language preference cannot override Chrome-owned metadata.
 Names of the product and GitHub App stay unchanged. No remote translation
-service, new permission, or additional data collection is introduced. This
-foundation does not edit or publish dashboard listing translations; store copy
-and screenshots remain separate release work.
+service, new permission, or additional data collection is introduced. The five reviewed listing files and screenshots are preparation materials;
+saved dashboard entries and publication require separate release evidence.

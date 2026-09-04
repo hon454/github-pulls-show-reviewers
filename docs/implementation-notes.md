@@ -529,3 +529,21 @@ switches, native API/metadata observations, reload and process-restart persisten
 The native probe runs in a standalone Node subprocess to avoid Playwright
 Test's default locale injection. Actual Korean Auto/metadata selection and
 remaining manual platform checks are recorded, not inferred from launch flags.
+
+## Localized store artifacts
+
+The five descriptions under `docs/chrome-web-store-locales/` reference catalog
+metadata directly. `pnpm cws:assets` uses persisted locale selection, synthetic
+GitHub/API/avatar fixtures and TESTING GitHub App configuration to generate three
+RGB 1280x800 scenes per locale. English remains in the asset root, preserving
+landing references; four regional directories hold the other images. The options
+scene composes actual language/display/diagnostic sections, and PR fixture spacing
+keeps all eight rows visible without translating host content. Screenshot text is
+read from the final catalogs and reviewed composition comments.
+
+`pnpm verify:cws` verifies metadata identity/limits, listing and image links/order,
+PNG format, and recorded capture source/image hashes. The capture manifest records
+browser/platform/system-font assumptions; identical pixels require the same render
+environment. Per-image visual review and dashboard registration are separate
+steps in the [submission packet](./chrome-web-store-submission.md#capture-maintenance).
+These artifacts are not production-config package or publication evidence.

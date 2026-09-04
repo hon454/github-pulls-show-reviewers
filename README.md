@@ -151,7 +151,7 @@ For repository workflow, branch naming, commit style, and pull request requireme
 
 ## Localization
 
-The localization foundation supports English (fallback), Korean, Japanese,
+The extension supports English (fallback), Korean, Japanese,
 Simplified Chinese and Traditional Chinese. Chrome metadata follows Chrome's
 language. The local `language` preference defaults to `auto` and supports a
 manual override for extension-owned UI. The options page, display settings,
@@ -168,3 +168,10 @@ Product and GitHub App names remain unchanged. See the
 for the manifest/UI boundary and shared APIs, and the
 [five-language glossary and QA report](./docs/localization.md) for translation
 coverage, packaged tests and native browser-language limitations.
+
+Five-language [Chrome Web Store copy and screenshots](./docs/chrome-web-store-submission.md#per-locale-dashboard-checklist)
+are maintained separately from packaged name/summary catalogs. Regenerate the
+15 synthetic **TESTING** screenshots with `pnpm cws:assets` and validate copy,
+links and image provenance with `pnpm verify:cws`. Existing English screenshots
+and landing-page references retain their paths. These artifacts do not attest
+production configuration, dashboard registration or publication.

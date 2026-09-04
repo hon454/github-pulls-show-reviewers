@@ -9,7 +9,9 @@
 - Chrome Web Store screenshots are generated under [chrome-web-store-assets/](./chrome-web-store-assets/) with `pnpm cws:assets`.
 - Generated screenshots are `1280x800` 24-bit PNG files without alpha, matching Chrome Web Store upload requirements.
 - The pull-list screenshots use a deterministic GitHub-style fixture for `hon454/github-pulls-show-reviewers` with generated PR titles, authors, reviewer states, and synthetic avatar images. Do not create live dummy PRs for store screenshots.
-- Current screenshot set:
+- English screenshots retain the existing root paths and landing-page links.
+  Korean, Japanese, Simplified Chinese and Traditional Chinese use `ko/`, `ja/`,
+  `zh_CN/` and `zh_TW/` below the same asset directory. All five locales use this order:
   - `01-pr-list-before-after.png` — before/after comparison showing GitHub's default PR list beside the extension-enhanced reviewer strip
   - `02-pr-list-avatar-state-showcase.png` — default avatar-only reviewer chips with requested outlines, completed-review badges, and no unrelated floating help button
   - `03-options-repository-check.png` — options page display settings and repository diagnostics
@@ -18,16 +20,30 @@
   product-tour, release, and community URLs distinct so store page views and
   installs can be attributed by channel.
 
-## Suggested listing copy
+## Reviewed listing materials
 
-Short description:
-`See requested reviewers, teams, and completed review state directly in GitHub pull request lists.`
+Use the five source-controlled descriptions and ordered screenshot inventories:
+[English](./chrome-web-store-locales/en.md),
+[한국어](./chrome-web-store-locales/ko.md),
+[日本語](./chrome-web-store-locales/ja.md),
+[简体中文](./chrome-web-store-locales/zh_CN.md), and
+[繁體中文](./chrome-web-store-locales/zh_TW.md).
+Each short description links to `extension_description.message` in its canonical
+catalog; do not maintain a separate summary in this document or the dashboard
+handoff. The product name is always `GitHub Pulls Show Reviewers`.
 
-Detailed description:
+Run `pnpm cws:assets`, `pnpm verify:locales`, and `pnpm verify:cws` for the capture,
+packaged metadata, and source-linked listing/image checks. The capture command
+builds with **TESTING** GitHub App configuration and synthetic fixtures; its
+output is not production-config package evidence. Final release packaging still
+uses the existing checked production workflow.
 
-`GitHub Pulls Show Reviewers keeps reviewer context visible on GitHub pull request list pages. It adds a single inline Reviewers section with requested reviewers, requested teams, and each reviewer's latest completed review state without turning the page into a general PR dashboard.`
-
-`The extension is designed for a narrow workflow: reviewer visibility first. It caches reviewer lookups per page, revalidates stale reviewer rows as GitHub updates the list, lets users toggle reviewer names and state badges from the options page, keeps GitHub selectors isolated for DOM resilience, and uses a sign-in-with-GitHub flow (via our GitHub App, with Pull requests: Read access only) when private repositories need authentication. The extension only reads repository data; the only POST requests are to GitHub's OAuth device-flow endpoints for sign-in and access-token refresh.`
+Follow the [per-locale dashboard checklist](./chrome-web-store-submission.md#per-locale-dashboard-checklist)
+for registration. Catalogs supply packaged name/summary; detailed descriptions
+and screenshots require separate dashboard entry. Small and marquee promo tiles
+are global and cannot be localized. This preparation does not register or
+publish listings. See [capture maintenance](./chrome-web-store-submission.md#capture-maintenance)
+for reproducibility and visual review.
 
 ## Release workflow
 
@@ -241,7 +257,7 @@ Expected release gate behavior:
    that exact reviewed source. Its validated receipt prevents duplicate CWS writes.
 7. Confirm the workflow's Chrome Web Store step reports the same bare
    `<version>` before considering the submission complete.
-8. Use the short and detailed descriptions above for the store listing.
+8. Use the source-linked metadata and reviewed detailed description for each locale in the listing materials above.
 9. Refresh screenshots so they show reviewer chips on GitHub pull request lists only, using the generated fixture rather than live dummy PRs.
 10. Confirm the privacy disclosure matches the shipped behavior:
     no sale of data, no advertising, no remote code, GitHub page access only,
@@ -301,4 +317,4 @@ The product name stays `GitHub Pulls Show Reviewers`. Run
 `pnpm build && pnpm verify:locales` to verify emitted metadata. Chrome selects
 this metadata independently of the local UI language preference. Dashboard
 listing translations and screenshots remain manual, separate release work;
-this foundation does not publish or change dashboard assets.
+the reviewed descriptions and screenshots above are preparation artifacts, not evidence of saved or published dashboard listings.
