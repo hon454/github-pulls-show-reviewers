@@ -124,7 +124,10 @@ pnpm zip:release
 
 Pushing a new `v<version>` tag attaches the verified package to a GitHub Release
 and submits it through CWS API v2 for automatic publication after normal review.
-For new listing languages, the manual `upload-only` and `submit-existing` stages
+Authorized agents can perform manual listing UI steps, save and reopen each
+locale, and preserve evidence without asking again at every step. Review
+submission and tagging require separate scope. For new listing languages,
+the `upload-only` and `submit-existing` stages
 allow a pause to register descriptions/screenshots; neither creates a GitHub
 Release. The later tag reuses the original checked package and skips CWS writes
 when its exact source receipt is already pending or published. With the updated
@@ -132,7 +135,7 @@ workflow, manual `skip` remains safe against a tag, and credential-only `dry-run
 never creates a release or changes store state. Legacy tags retain their old
 workflow: select updated `main` or a reviewed branch as the control ref and pass
 an old package tag through the separate `tag` input. See [Chrome Web Store notes](./docs/chrome-web-store.md)
-and the [agent handoff runbook](./docs/cws-agent-handoff.md) for inputs, provenance,
+and the [canonical agent runbook](./docs/chrome-web-store-agent-runbook.md) for inputs, provenance,
 fresh dashboard evidence, and uncertain-outcome recovery.
 
 For repository workflow, branch naming, commit style, and pull request requirements, see [CONTRIBUTING.md](./CONTRIBUTING.md).
@@ -143,7 +146,8 @@ For repository workflow, branch naming, commit style, and pull request requireme
 - [Manual Chrome testing](./docs/manual-chrome-testing.md)
 - [Chrome Web Store notes](./docs/chrome-web-store.md)
 - [Chrome Web Store submission packet](./docs/chrome-web-store-submission.md)
-- [Staged CWS agent handoff](./docs/cws-agent-handoff.md)
+- [Chrome Web Store agent runbook](./docs/chrome-web-store-agent-runbook.md)
+- [Staged CWS action reference](./docs/cws-agent-handoff.md)
 - [Store acquisition attribution](./docs/growth/attribution.md)
 - [Launch and community copy](./docs/growth/launch-kit.md)
 - [Privacy policy](./docs/privacy-policy.md)

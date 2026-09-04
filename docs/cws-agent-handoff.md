@@ -1,11 +1,13 @@
 # Staged Chrome Web Store agent handoff
 
-This runbook separates a checked package upload from listing registration and
-review submission. It does not authorize a release by itself. Use the assigned
-release source and approved listing materials; do not manufacture a production
-test upload. For v1.16.0, wait for the actual #152/#153 artifacts before doing
-the #154 dashboard handoff. The five locales are `en`, `ko`, `ja`, `zh_CN`, and
-`zh_TW`; runtime language UI and store listing languages are separate surfaces.
+This is the staged workflow action/provenance reference. Start with the
+[canonical agent runbook](./chrome-web-store-agent-runbook.md) for the executable
+assignment, authorization boundaries, all five locale steps, saved-state evidence,
+mock walkthroughs and completion report. Manual listing UI work is agent-executable
+under existing session scope; it does not itself authorize submission or tags.
+The five locales are `en`, `ko`, `ja`, `zh_CN`, and `zh_TW`. Their reviewed copy
+and ordered images are linked from the [submission packet](./chrome-web-store-submission.md).
+Runtime UI language and store listing language are separate surfaces.
 
 ## Action matrix
 
@@ -46,12 +48,12 @@ tag as the workflow control ref.
 
 ## Credential-only rehearsal
 
-After independent review and CI on the exact PR head, verify the branch still
-points to that reviewed SHA, then dispatch:
+When a credential/linkage/dependency/publish change requires this check, use
+updated main below, or an exact independently reviewed PR branch before merge:
 
 ```bash
 gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
-  --ref codex/issue-153-staged-cws-release -f chrome_web_store=dry-run
+  --ref main -f chrome_web_store=dry-run
 ```
 
 Record the resulting run URL, head SHA, and successful **Check Chrome Web Store
@@ -92,7 +94,9 @@ ancestry and all checked build steps before a later consumer accepts it.
 ## 2. Register listing materials and record the handoff
 
 After upload succeeds, let the workflow finish. No runner waits for dashboard
-editing. Use the separately approved #152 materials to save descriptions and
+editing. Follow the canonical runbook to match account/item/draft, preserve
+before-state and save then navigate away/back to compare full text and ordered
+images. Use the separately approved listing materials to save descriptions and
 screenshots for English, Korean, Japanese, Simplified Chinese and Traditional
 Chinese. Record each saved locale and the evidence permalink in the release
 tracking issue. Do not press a dashboard submit/publish/cancel button or upload
@@ -104,7 +108,9 @@ saved listings, and that no package upload intervened. API `fetchStatus` does
 not provide a remote draft ZIP digest or a reliable draft-version field; a
 matching local hash/package.json is not proof of remote draft identity.
 
-Create a local JSON handoff file, substituting the actual receipt values:
+The [canonical JSON contract](./chrome-web-store-agent-runbook.md#listing-ready-json-and-separate-submission)
+is the executable handoff format. This equivalent example uses synthetic values;
+substitute the actual receipt and freshly observed evidence:
 
 ```json
 {
