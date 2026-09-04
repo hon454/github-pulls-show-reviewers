@@ -10,5 +10,336 @@
   "extension_action_title": {
     "message": "GitHub Pulls Show Reviewers — 설정 열기",
     "description": "Chrome toolbar action tooltip that opens extension options. Preserve the product name."
+  },
+  "options_title": {
+    "message": "설정 — GitHub Pulls Show Reviewers",
+    "description": "Options page title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_heading": {
+    "message": "PR 목록에서 리뷰어 정보를 한눈에.",
+    "description": "Options page heading. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_intro": {
+    "message": "리뷰어 정보 표시 방식을 조정하고, 비공개 저장소에 접근할 때만 GitHub 계정을 연결하세요.",
+    "description": "Options page intro. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_public_ready": {
+    "message": "공개 저장소는 바로 사용 가능",
+    "description": "Options page public ready. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_no_account": {
+    "message": "계정이나 토큰이 필요하지 않습니다.",
+    "description": "Options page no account. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_private_permission": {
+    "message": "비공개 저장소 접근에는 $PERMISSION$ 권한만 요청하는 GitHub App을 사용합니다.",
+    "description": "Options page private permission. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "permission": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_settings": {
+    "message": "확장 프로그램 설정",
+    "description": "Options page settings. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_workspace_heading": {
+    "message": "내 작업 방식에 맞게 리뷰 상태를 확인하세요.",
+    "description": "Options page workspace heading. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_workspace_description": {
+    "message": "비공개 저장소용 계정을 연결하고, PR 목록에 표시할 정보를 선택하고, 저장소 접근을 확인하세요.",
+    "description": "Options page workspace description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_signin_unavailable_description": {
+    "message": "이 빌드에서는 로그인할 수 없습니다. 공개 저장소는 로그인 없이 계속 사용할 수 있습니다.",
+    "description": "Options page signin unavailable description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_title": {
+    "message": "GitHub 계정",
+    "description": "Options page accounts title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_description": {
+    "message": "비공개 저장소에서 인증이 필요할 때만 사용합니다.",
+    "description": "Options page accounts description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_config_title": {
+    "message": "이 빌드에서는 GitHub 로그인을 사용할 수 없습니다.",
+    "description": "Options page config title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_config_guidance": {
+    "message": "관리자의 GitHub App 클라이언트 ID와 슬러그가 포함된 빌드를 다시 설치하세요.",
+    "description": "Options page config guidance. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_add_account": {
+    "message": "+ 다른 계정 추가",
+    "description": "Options page add account. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_title": {
+    "message": "접근 권한 안내",
+    "description": "Options page about title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_subtitle": {
+    "message": "확장 프로그램이 읽는 정보와 권한 취소 방법입니다.",
+    "description": "Options page about subtitle. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_about_description": {
+    "message": "이 확장 프로그램은 $APP$ GitHub App을 통해 로그인하며, $PERMISSION$ 권한만 요청합니다. 계정을 기기에서 삭제해도 GitHub의 승인은 취소되지 않습니다.",
+    "description": "Options page about description. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "app": {
+        "content": "$1"
+      },
+      "permission": {
+        "content": "$2"
+      }
+    }
+  },
+  "options_revoke_link": {
+    "message": "GitHub에서 승인 관리",
+    "description": "Options page revoke link. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_metadata_unavailable": {
+    "message": "이 빌드에서 GitHub App 정보를 불러올 수 없습니다.",
+    "description": "Options page metadata unavailable. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_load_failed": {
+    "message": "계정을 불러오지 못했습니다. 다시 시도하세요.",
+    "description": "Options page accounts load failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_retry": {
+    "message": "다시 시도",
+    "description": "Options page retry. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_empty": {
+    "message": "연결된 계정 없음",
+    "description": "Options page accounts empty. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_accounts_empty_description": {
+    "message": "공개 저장소의 리뷰어 정보는 계속 표시됩니다.",
+    "description": "Options page accounts empty description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_installed_none": {
+    "message": "설치된 계정: 아직 없음",
+    "description": "Options page installed none. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_installed_on": {
+    "message": "설치된 계정: $ACCOUNTS$",
+    "description": "Options page installed on. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "accounts": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_signin_again": {
+    "message": "다시 로그인",
+    "description": "Options page signin again. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refresh": {
+    "message": "설치 정보 새로고침",
+    "description": "Options page refresh. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refreshing": {
+    "message": "새로고침 중...",
+    "description": "Options page refreshing. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_remove": {
+    "message": "삭제",
+    "description": "Options page remove. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_removing": {
+    "message": "삭제 중...",
+    "description": "Options page removing. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_refresh_failed": {
+    "message": "설치 정보를 새로고침하지 못했습니다. 다시 시도하세요.",
+    "description": "Options page refresh failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_remove_failed": {
+    "message": "계정을 삭제하지 못했습니다. 다시 시도하세요.",
+    "description": "Options page remove failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_token_required": {
+    "message": "설치 정보를 새로고침하려면 다시 로그인하세요.",
+    "description": "Options page token required. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_title": {
+    "message": "표시",
+    "description": "Options page display title. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_description": {
+    "message": "GitHub PR 목록의 리뷰어 표시 방식을 설정합니다.",
+    "description": "Options page display description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_load_failed": {
+    "message": "표시 설정을 불러오지 못했습니다. 다시 시도하세요.",
+    "description": "Options page display load failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_save_failed": {
+    "message": "표시 설정을 저장하지 못했습니다. 다시 시도하세요.",
+    "description": "Options page display save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_display_saving": {
+    "message": "표시 설정 저장 중...",
+    "description": "Options page display saving. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_badges": {
+    "message": "리뷰 상태 배지",
+    "description": "Options page badges. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_badges_description": {
+    "message": "아바타에 승인과 리뷰 요청 상태를 표시합니다.",
+    "description": "Options page badges description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_names": {
+    "message": "리뷰어 이름",
+    "description": "Options page names. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_names_description": {
+    "message": "리뷰어 아바타 옆에 이름을 표시합니다.",
+    "description": "Options page names description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_open_only": {
+    "message": "열린 PR만 표시",
+    "description": "Options page open only. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "options_open_only_description": {
+    "message": "리뷰어 링크에서 아직 열려 있는 PR만 보여줍니다.",
+    "description": "Options page open only description. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_label": {
+    "message": "언어",
+    "description": "Options page label. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_auto": {
+    "message": "자동 (Chrome 언어)",
+    "description": "Options page auto. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_en": {
+    "message": "English",
+    "description": "Options page en. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_ko": {
+    "message": "한국어",
+    "description": "Options page ko. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_ja": {
+    "message": "日本語",
+    "description": "Options page ja. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_zh_cn": {
+    "message": "简体中文",
+    "description": "Options page zh cn. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_zh_tw": {
+    "message": "繁體中文",
+    "description": "Options page zh tw. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_help": {
+    "message": "Chrome 툴바와 확장 프로그램 정보는 이 설정과 별개로 Chrome 언어를 따릅니다.",
+    "description": "Options page help. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_saving": {
+    "message": "언어 저장 중...",
+    "description": "Options page saving. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_saved": {
+    "message": "언어를 저장했습니다.",
+    "description": "Options page saved. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "language_save_failed": {
+    "message": "언어를 저장하지 못했습니다. 이전 선택을 유지합니다. 다시 시도하세요.",
+    "description": "Options page save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_requesting": {
+    "message": "기기 코드 요청 중...",
+    "description": "Options page requesting. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_enter_code": {
+    "message": "GitHub에서 다음 코드를 입력해 승인하세요:",
+    "description": "Options page enter code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_copy": {
+    "message": "복사",
+    "description": "Options page copy. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_open_github": {
+    "message": "GitHub에서 승인하기 →",
+    "description": "Options page open github. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_waiting": {
+    "message": "승인 대기 중…",
+    "description": "Options page waiting. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_expires_at": {
+    "message": "코드 만료 시각: $TIME$.",
+    "description": "Options page expires at. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "placeholders": {
+      "time": {
+        "content": "$1"
+      }
+    }
+  },
+  "auth_cancel": {
+    "message": "취소",
+    "description": "Options page cancel. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_loading_installations": {
+    "message": "설치 정보 불러오는 중…",
+    "description": "Options page loading installations. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_connected": {
+    "message": "계정을 연결했습니다. 다른 계정을 추가하거나 이 패널을 닫을 수 있습니다.",
+    "description": "Options page connected. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_expired": {
+    "message": "기기 코드가 만료되었습니다.",
+    "description": "Options page expired. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_new_code": {
+    "message": "새 코드 생성",
+    "description": "Options page new code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_denied": {
+    "message": "승인이 거부되었습니다.",
+    "description": "Options page denied. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_try_again": {
+    "message": "다시 시도",
+    "description": "Options page try again. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_close": {
+    "message": "닫기",
+    "description": "Options page close. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_network": {
+    "message": "로그인을 완료하지 못했습니다. 연결 상태를 확인하고 다시 시도하세요.",
+    "description": "Options page error network. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_invalid_response": {
+    "message": "GitHub에서 예상하지 못한 응답을 받았습니다. 다시 로그인하세요.",
+    "description": "Options page error invalid response. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_disabled": {
+    "message": "이 GitHub App에서 기기 인증이 비활성화되어 있습니다. 관리자에게 문의하세요.",
+    "description": "Options page error disabled. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_grant": {
+    "message": "이 GitHub App은 요청한 로그인 방식을 지원하지 않습니다. 관리자에게 문의하세요.",
+    "description": "Options page error grant. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_client": {
+    "message": "이 빌드의 GitHub App 설정이 유효하지 않습니다. 올바르게 설정된 빌드를 다시 설치하세요.",
+    "description": "Options page error client. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_device_code": {
+    "message": "GitHub에서 기기 코드를 인식하지 못했습니다. 패널을 닫고 새 코드를 요청하세요.",
+    "description": "Options page error device code. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_error_unknown": {
+    "message": "로그인을 완료하지 못했습니다. 패널을 닫고 다시 시도하세요.",
+    "description": "Options page error unknown. Visible text; keep GitHub names, codes and identifiers unchanged."
   }
 }

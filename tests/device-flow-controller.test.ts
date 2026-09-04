@@ -308,3 +308,56 @@ describe("useDeviceFlowController", () => {
     expect(onConnected).not.toHaveBeenCalled();
   });
 });
+
+describe("locale-independent authentication evidence", () => {
+  it.each([
+    "device_flow_disabled",
+    "incorrect_client_credentials",
+    "invalid_response",
+  ] as const)(
+    "preserves known initiation code %s without freezing raw error prose",
+    async (code) => {
+      vi.mocked(auth.initiateDeviceFlow).mockRejectedValueOnce(
+        new auth.DeviceFlowError(
+          code,
+          "external text must not become UI state",
+        ),
+      );
+      const { result } = renderHook(() =>
+        useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+      );
+      await act(async () => {
+        result.current.start();
+      });
+      expect(result.current.state).toEqual({ phase: "fatal", code });
+    },
+  );
+  it("stores a stable unknown code and ignores a rejected request after cancellation", async () => {
+    let reject!: (error: Error) => void;
+    vi.mocked(auth.initiateDeviceFlow).mockImplementationOnce(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        }),
+    );
+    const { result } = renderHook(() =>
+      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+    );
+    await act(async () => {
+      result.current.start();
+      result.current.cancel();
+      reject(new Error("private raw details"));
+    });
+    expect(result.current.state).toEqual({ phase: "idle" });
+    vi.mocked(auth.initiateDeviceFlow).mockRejectedValueOnce(
+      new Error("private raw details"),
+    );
+    await act(async () => {
+      result.current.start();
+    });
+    expect(result.current.state).toEqual({
+      phase: "fatal",
+      code: "unknown_error",
+    });
+  });
+});
