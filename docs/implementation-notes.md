@@ -192,9 +192,9 @@ continue to force route refreshes.
   the Chromium MV3 output, but they are compatibility expectations rather than
   supported targets. Firefox support would need separate MV3 behavior checks,
   packaging validation, store guidance, and private-repository sign-in testing.
-- Chrome metadata, options/auth, and repository diagnostics use the five bundled
-  catalogs. Content reviewer labels and access banners remain English until
-  their separate integration; no runtime translation service is used.
+- Chrome metadata, options/auth, repository diagnostics, content reviewer labels,
+  and access banners use the five bundled catalogs. No runtime translation
+  service is used.
 
 ## Unit coverage gate
 
