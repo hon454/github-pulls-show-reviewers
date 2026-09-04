@@ -26,8 +26,22 @@ test("keeps options state across tabs and readable actions in five languages at 
       context.serviceWorkers()[0] ??
       (await context.waitForEvent("serviceworker"));
     const url = `chrome-extension://${new URL(worker.url()).host}/options.html`;
-    const first = await context.newPage();
-    await first.goto(url);
+    // onInstalled owns the first options navigation. Reuse that page only
+    // after it has arrived and rendered, instead of racing openOptionsPage().
+    await expect
+      .poll(
+        () =>
+          context
+            .pages()
+            .find((page) => page.url() === url)
+            ?.url(),
+        {
+          message: "Wait for the installed extension to open its options page",
+        },
+      )
+      .toBe(url);
+    const first = context.pages().find((page) => page.url() === url)!;
+    await expect(first.getByTestId("language-select")).toBeVisible();
     await first.evaluate(async () => {
       const storage = (
         globalThis as unknown as {
