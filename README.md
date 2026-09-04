@@ -6,7 +6,7 @@
 
 > See requested reviewers, teams, and completed review state directly in GitHub pull request lists.
 
-`GitHub Pulls Show Reviewers` is a Chrome extension for one focused workflow: make reviewer status visible from the pull request list, so you do not need to open every PR just to see who is requested or how the latest review landed.
+`GitHub Pulls Show Reviewers` is a Chrome extension for one focused workflow: make reviewer status visible from the pull request list, so you do not need to open every PR just to see who is requested or see completed review state.
 
 [See the 30-second product tour](https://hon454.github.io/github-pulls-show-reviewers/).
 
@@ -16,7 +16,9 @@
 
 - Shows requested user reviewers on GitHub pull request list rows.
 - Shows requested team reviewers on GitHub pull request list rows.
-- Shows each reviewer's latest completed review state: `approved`, `changes requested`, `commented`, or `dismissed`.
+- Shows each reviewer's completed review state: `approved`, `changes requested`,
+  `commented`, or `dismissed`. The latest non-comment review takes precedence over
+  later comments; comments are used when no non-comment review exists.
 - Links reviewer chips to GitHub PR searches.
 - Reuses page-level reviewer metadata across visible rows, including searched
   or paginated pull request lists when GitHub's REST pagination exposes those
@@ -30,7 +32,7 @@
 
 ## Why Use It
 
-GitHub's pull request list is great for scanning titles, authors, and status, but reviewer context can be easy to miss. Without opening each PR, it is hard to tell who is requested, which teams are requested, and how the latest review landed. This extension answers those questions inline by adding a lightweight `Reviewers:` strip to each PR row.
+GitHub's pull request list is great for scanning titles, authors, and status, but reviewer context can be easy to miss. Without opening each PR, it is hard to tell who is requested, which teams are requested, and each reviewer's completed review state. This extension answers those questions inline by adding a lightweight `Reviewers:` strip to each PR row.
 
 ![Before and after reviewer chips on a GitHub PR list](./docs/chrome-web-store-assets/01-pr-list-before-after.png)
 
@@ -151,7 +153,7 @@ For repository workflow, branch naming, commit style, and pull request requireme
 
 ## Localization
 
-The localization foundation supports English (fallback), Korean, Japanese,
+The extension supports English (fallback), Korean, Japanese,
 Simplified Chinese and Traditional Chinese. Chrome metadata follows Chrome's
 language. The local `language` preference defaults to `auto` and supports a
 manual override for extension-owned UI. The options page, display settings,
@@ -168,3 +170,10 @@ Product and GitHub App names remain unchanged. See the
 for the manifest/UI boundary and shared APIs, and the
 [five-language glossary and QA report](./docs/localization.md) for translation
 coverage, packaged tests and native browser-language limitations.
+
+Five-language [Chrome Web Store copy and screenshots](./docs/chrome-web-store-submission.md#per-locale-dashboard-checklist)
+are maintained separately from packaged name/summary catalogs. Regenerate the
+15 synthetic **TESTING** screenshots with `pnpm cws:assets` and validate copy,
+links and image provenance with `pnpm verify:cws`. Existing English screenshots
+and landing-page references retain their paths. These artifacts do not attest
+production configuration, dashboard registration or publication.

@@ -1,15 +1,43 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium, expect, type Page, test } from "@playwright/test";
 
+import {
+  SUPPORTED_LOCALES,
+  toLanguageTag,
+  type Locale,
+} from "../../src/i18n/locale";
+import {
+  assetPaths,
+  fileHashes,
+  sourcePaths,
+} from "../../scripts/verify-cws-assets.mjs";
+
+// Read canonical catalog text directly: Node's Playwright loader does not bundle
+// JSON imports like WXT does. No independent expected translations live here.
+function messages(locale: Locale): Record<string, { message: string }> {
+  return JSON.parse(
+    readFileSync(
+      path.resolve(`public/_locales/${locale}/messages.json`),
+      "utf8",
+    ),
+  );
+}
+let chromiumVersion = "";
+const capturedLocales: Locale[] = [];
+
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "../..");
 const extensionPath = path.join(projectRoot, ".output/chrome-mv3");
 const outputDir = path.join(projectRoot, "docs/chrome-web-store-assets");
-const pullsFixturePath = path.join(projectRoot, "tests/fixtures/github-pulls.html");
+const pullsFixturePath = path.join(
+  projectRoot,
+  "tests/fixtures/github-pulls.html",
+);
 const storeScreenshotSize = { width: 1280, height: 800 } as const;
 const storeScreenshotFiles = [
   "01-pr-list-before-after.png",
@@ -48,7 +76,7 @@ type PullScene = {
   reviews: ReviewPayload[];
   reviewRequestEvents?: ReviewRequestEventPayload[];
   expectedLogins: string[];
-  expectedTeamText?: string;
+  expectedTeamSlug?: string;
   expectedBadgeClasses: string[];
 };
 
@@ -60,9 +88,7 @@ const avatarStateScenes: PullScene[] = [
     pullNumber: "200",
     summary: {
       user: { login: "mira" },
-      requested_reviewers: [
-        { login: "ava", avatar_url: avatarUrl("ava") },
-      ],
+      requested_reviewers: [{ login: "ava", avatar_url: avatarUrl("ava") }],
       requested_teams: [{ slug: "design-systems" }],
     },
     reviews: [
@@ -73,16 +99,14 @@ const avatarStateScenes: PullScene[] = [
       },
     ],
     expectedLogins: ["ava", "ben"],
-    expectedTeamText: "Team: design-systems",
+    expectedTeamSlug: "design-systems",
     expectedBadgeClasses: ["ghpsr-badge--approved"],
   },
   {
     pullNumber: "199",
     summary: {
       user: { login: "mira" },
-      requested_reviewers: [
-        { login: "mona", avatar_url: avatarUrl("mona") },
-      ],
+      requested_reviewers: [{ login: "mona", avatar_url: avatarUrl("mona") }],
       requested_teams: [],
     },
     reviews: [],
@@ -110,9 +134,7 @@ const avatarStateScenes: PullScene[] = [
     pullNumber: "197",
     summary: {
       user: { login: "soren" },
-      requested_reviewers: [
-        { login: "jules", avatar_url: avatarUrl("jules") },
-      ],
+      requested_reviewers: [{ login: "jules", avatar_url: avatarUrl("jules") }],
       requested_teams: [],
     },
     reviews: [
@@ -141,9 +163,7 @@ const avatarStateScenes: PullScene[] = [
     pullNumber: "192",
     summary: {
       user: { login: "mira" },
-      requested_reviewers: [
-        { login: "nara", avatar_url: avatarUrl("nara") },
-      ],
+      requested_reviewers: [{ login: "nara", avatar_url: avatarUrl("nara") }],
       requested_teams: [],
     },
     reviews: [
@@ -177,9 +197,7 @@ const avatarStateScenes: PullScene[] = [
     pullNumber: "186",
     summary: {
       user: { login: "devon" },
-      requested_reviewers: [
-        { login: "sol", avatar_url: avatarUrl("sol") },
-      ],
+      requested_reviewers: [{ login: "sol", avatar_url: avatarUrl("sol") }],
       requested_teams: [],
     },
     reviews: [],
@@ -207,17 +225,67 @@ const avatarStateScenes: PullScene[] = [
 
 test.describe.configure({ mode: "serial" });
 
-test("capture Chrome Web Store assets", async () => {
-  await mkdir(outputDir, { recursive: true });
-
-  await withExtensionContext(async (context, extensionId) => {
-    await routePullsFixture(context);
-    await routeSyntheticAvatars(context);
-    await captureBeforeAfterScreenshot(context);
-    await captureAvatarStateShowcase(context);
-    await captureOptionsScreenshot(context, extensionId);
-    await assertStoreScreenshotFiles();
+for (const locale of SUPPORTED_LOCALES) {
+  test(`capture Chrome Web Store assets: ${locale}`, async () => {
+    const localeDir = path.join(outputDir, locale === "en" ? "" : locale);
+    await mkdir(localeDir, { recursive: true });
+    await withExtensionContext(async (context, extensionId) => {
+      // All external traffic is blocked unless explicitly fulfilled by a fixture.
+      await context.route("https://**/*", (route) => route.abort());
+      await routePullsFixture(context);
+      await routeSyntheticAvatars(context);
+      const optionsUrl = `chrome-extension://${extensionId}/options.html`;
+      // Let onInstalled finish its owned navigation before manipulating options.
+      await expect
+        .poll(() =>
+          context
+            .pages()
+            .find((page) => page.url() === optionsUrl)
+            ?.url(),
+        )
+        .toBe(optionsUrl);
+      const options = context
+        .pages()
+        .find((page) => page.url() === optionsUrl)!;
+      await expect(options.getByTestId("language-select")).toBeVisible();
+      await options.getByTestId("language-select").selectOption(locale);
+      await expect(options.locator("html")).toHaveAttribute(
+        "lang",
+        toLanguageTag(locale),
+      );
+      await captureBeforeAfterScreenshot(context, locale, localeDir);
+      await captureAvatarStateShowcase(context, locale, localeDir);
+      await captureOptionsScreenshot(context, extensionId, locale, localeDir);
+      await assertStoreScreenshotFiles(localeDir);
+      capturedLocales.push(locale);
+    });
   });
+}
+
+test("record complete capture provenance", async () => {
+  expect(capturedLocales).toEqual([...SUPPORTED_LOCALES]);
+  expect(chromiumVersion).not.toBe("");
+  await writeFile(
+    path.join(outputDir, "capture-manifest.json"),
+    JSON.stringify(
+      {
+        build:
+          "TESTING GitHub App; synthetic fixtures; not production-config evidence",
+        rendering: {
+          chromium: chromiumVersion,
+          platform: process.platform,
+          arch: process.arch,
+          fonts: "host system fonts",
+          viewport: storeScreenshotSize,
+          deviceScaleFactor: 1,
+        },
+        sources: fileHashes(sourcePaths),
+        images: fileHashes(assetPaths),
+      },
+      null,
+      2,
+    ) + "\n",
+  );
 });
 
 async function withExtensionContext(
@@ -230,6 +298,11 @@ async function withExtensionContext(
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",
     viewport: storeScreenshotSize,
+    deviceScaleFactor: 1,
+    colorScheme: "dark",
+    reducedMotion: "reduce",
+    locale: "en-US",
+    timezoneId: "UTC",
     args: [
       `--disable-extensions-except=${extensionPath}`,
       `--load-extension=${extensionPath}`,
@@ -238,12 +311,15 @@ async function withExtensionContext(
 
   try {
     const serviceWorker =
-      context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker"));
+      context.serviceWorkers()[0] ??
+      (await context.waitForEvent("serviceworker"));
     expect(serviceWorker.url()).toContain("chrome-extension://");
     const extensionId = new URL(serviceWorker.url()).host;
+    chromiumVersion = context.browser()!.version();
     await run(context, extensionId);
   } finally {
     await context.close();
+    await rm(userDataDir, { recursive: true, force: true });
   }
 }
 
@@ -256,12 +332,19 @@ async function withPlainContext(
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",
     viewport: storeScreenshotSize,
+    deviceScaleFactor: 1,
+    colorScheme: "dark",
+    reducedMotion: "reduce",
+    locale: "en-US",
+    timezoneId: "UTC",
   });
 
   try {
+    await context.route("https://**/*", (route) => route.abort());
     await run(context);
   } finally {
     await context.close();
+    await rm(userDataDir, { recursive: true, force: true });
   }
 }
 
@@ -282,7 +365,8 @@ async function routeSyntheticAvatars(
   context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
 ): Promise<void> {
   await context.route(`${avatarBase}/*.svg`, async (route) => {
-    const fileName = new URL(route.request().url()).pathname.split("/").pop() ?? "";
+    const fileName =
+      new URL(route.request().url()).pathname.split("/").pop() ?? "";
     const login = fileName.replace(/\.svg$/, "") || "reviewer";
     await route.fulfill({
       status: 200,
@@ -352,13 +436,22 @@ async function routeReviewerScenes(
   };
 }
 
-async function assertReviewerScenes(page: Page, scenes: PullScene[]): Promise<void> {
+async function assertReviewerScenes(
+  page: Page,
+  scenes: PullScene[],
+  locale: Locale,
+): Promise<void> {
+  const catalog = messages(locale);
   const root = page.locator(".ghpsr-root");
-  await expect(root.filter({ hasText: "Reviewers:" })).toHaveCount(scenes.length);
+  await expect(
+    root.filter({ hasText: catalog.reviewers_section.message }),
+  ).toHaveCount(scenes.length);
 
   for (const scene of scenes) {
     for (const login of scene.expectedLogins) {
-      await expect(root.locator(`a.ghpsr-avatar[title*="@${login}"]`)).toHaveCount(1);
+      await expect(
+        root.locator(`a.ghpsr-avatar[title*="@${login}"]`),
+      ).toHaveCount(1);
     }
     for (const badgeClass of scene.expectedBadgeClasses) {
       expect(
@@ -366,8 +459,15 @@ async function assertReviewerScenes(page: Page, scenes: PullScene[]): Promise<vo
         `${badgeClass} should render in the screenshot fixture`,
       ).toBeGreaterThan(0);
     }
-    if (scene.expectedTeamText != null) {
-      await expect(root.filter({ hasText: scene.expectedTeamText })).toHaveCount(1);
+    if (scene.expectedTeamSlug != null) {
+      await expect(
+        root.filter({
+          hasText: catalog.reviewers_team.message.replace(
+            "$SLUG$",
+            scene.expectedTeamSlug,
+          ),
+        }),
+      ).toHaveCount(1);
     }
   }
 }
@@ -375,7 +475,9 @@ async function assertReviewerScenes(page: Page, scenes: PullScene[]): Promise<vo
 async function assertFixtureCopy(page: Page): Promise<void> {
   await expect(page.locator(".repo")).toContainText(screenshotRepo.owner);
   await expect(page.locator(".repo")).toContainText(screenshotRepo.repo);
-  await expect(page.getByRole("link", { name: fixturePrimaryTitle })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: fixturePrimaryTitle }),
+  ).toBeVisible();
   await expect(page.locator(".floating-help")).toHaveCount(0);
   await expect(page.locator("body")).not.toContainText("CINEV");
   await expect(page.locator("body")).not.toContainText("shotloom");
@@ -384,6 +486,11 @@ async function assertFixtureCopy(page: Page): Promise<void> {
 async function stabilizePullListForScreenshot(page: Page): Promise<void> {
   await page.addStyleTag({
     content: `
+      /* Fixture framing only: keep all eight rows inside the 800px canvas. */
+      .topbar { height: 70px; }
+      .tabs, .tab { height: 44px; }
+      .content { padding-top: 16px; padding-bottom: 20px; }
+      .js-issue-row { padding-top: 8px; padding-bottom: 8px; }
       .d-none.d-md-inline-flex,
       [class*="ListItem-module__ListItemMetadataRow"] {
         display: inline-flex !important;
@@ -407,7 +514,14 @@ async function captureMockedBeforeScreenshot(
     await assertFixtureCopy(page);
     await expect(page.locator(".ghpsr-root")).toHaveCount(0);
     await stabilizePullListForScreenshot(page);
-    await page.screenshot({ path: filePath });
+    for (const row of await page.locator(".js-issue-row").all()) {
+      const box = await row.boundingBox();
+      expect(box!.y + box!.height).toBeLessThanOrEqual(
+        storeScreenshotSize.height,
+      );
+    }
+    await readyForScreenshot(page);
+    await page.screenshot({ path: filePath, animations: "disabled" });
   } finally {
     await page.close();
   }
@@ -417,15 +531,23 @@ async function captureMockedAfterScreenshot(
   context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
   scenes: PullScene[],
   filePath: string,
+  locale: Locale,
 ): Promise<void> {
   const unrouteReviewerScenes = await routeReviewerScenes(context, scenes);
   const page = await context.newPage();
   try {
     await page.goto(screenshotPullsUrl);
     await assertFixtureCopy(page);
-    await assertReviewerScenes(page, scenes);
+    await assertReviewerScenes(page, scenes, locale);
     await stabilizePullListForScreenshot(page);
-    await page.screenshot({ path: filePath });
+    for (const row of await page.locator(".js-issue-row").all()) {
+      const box = await row.boundingBox();
+      expect(box!.y + box!.height).toBeLessThanOrEqual(
+        storeScreenshotSize.height,
+      );
+    }
+    await readyForScreenshot(page);
+    await page.screenshot({ path: filePath, animations: "disabled" });
   } finally {
     await page.close();
     await unrouteReviewerScenes();
@@ -433,17 +555,26 @@ async function captureMockedAfterScreenshot(
 }
 
 async function captureBeforeAfterScreenshot(
-  extensionContext: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+  extensionContext: Awaited<
+    ReturnType<typeof chromium.launchPersistentContext>
+  >,
+  locale: Locale,
+  localeDir: string,
 ): Promise<void> {
-  const beforePath = path.join(outputDir, "01-pr-list-before.tmp.png");
-  const afterPath = path.join(outputDir, "01-pr-list-after.tmp.png");
-  const combinedPath = path.join(outputDir, "01-pr-list-before-after.png");
+  const beforePath = path.join(localeDir, "01-pr-list-before.tmp.png");
+  const afterPath = path.join(localeDir, "01-pr-list-after.tmp.png");
+  const combinedPath = path.join(localeDir, "01-pr-list-before-after.png");
 
   await withPlainContext(async (plainContext) => {
     await captureMockedBeforeScreenshot(plainContext, beforePath);
   });
 
-  await captureMockedAfterScreenshot(extensionContext, avatarStateScenes, afterPath);
+  await captureMockedAfterScreenshot(
+    extensionContext,
+    avatarStateScenes,
+    afterPath,
+    locale,
+  );
 
   const composer = await extensionContext.newPage();
   try {
@@ -452,7 +583,7 @@ async function captureBeforeAfterScreenshot(
     await composer.setViewportSize(storeScreenshotSize);
     await composer.setContent(`
       <!doctype html>
-      <html>
+      <html lang="${toLanguageTag(locale)}">
         <head>
           <style>
             body {
@@ -478,7 +609,7 @@ async function captureBeforeAfterScreenshot(
               box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
             }
             .label {
-              height: 42px;
+              height: 48px;
               display: flex;
               align-items: center;
               padding: 0 16px;
@@ -490,7 +621,6 @@ async function captureBeforeAfterScreenshot(
             img {
               display: block;
               width: 125%;
-              transform: translate(0, -1%);
               transform-origin: top left;
             }
           </style>
@@ -498,18 +628,43 @@ async function captureBeforeAfterScreenshot(
         <body>
           <div class="frame">
             <section class="panel">
-              <div class="label">Before</div>
+              <div class="label" data-caption="before"></div>
               <img alt="" src="data:image/png;base64,${beforeData}">
             </section>
             <section class="panel">
-              <div class="label">After</div>
+              <div class="label" data-caption="after"></div>
               <img alt="" src="data:image/png;base64,${afterData}">
             </section>
           </div>
         </body>
       </html>
     `);
-    await composer.screenshot({ path: combinedPath });
+    const copy = await readFile(
+      path.join(projectRoot, `docs/chrome-web-store-locales/${locale}.md`),
+      "utf8",
+    );
+    for (const caption of ["before", "after"] as const) {
+      const text = copy.match(
+        new RegExp(`<!-- capture-${caption}: (.+) -->`),
+      )?.[1];
+      expect(text, `${locale}: reviewed ${caption} caption`).toBeTruthy();
+      await composer
+        .locator(`[data-caption="${caption}"]`)
+        .evaluate((element, value) => {
+          element.textContent = value;
+        }, text!);
+    }
+    await readyForScreenshot(composer);
+    for (const label of await composer.locator(".label").all()) {
+      expect(
+        await label.evaluate(
+          (element) =>
+            element.scrollWidth <= element.clientWidth &&
+            element.scrollHeight <= element.clientHeight,
+        ),
+      ).toBe(true);
+    }
+    await composer.screenshot({ path: combinedPath, animations: "disabled" });
   } finally {
     await composer.close();
     await rm(beforePath, { force: true });
@@ -517,12 +672,12 @@ async function captureBeforeAfterScreenshot(
   }
 }
 
-async function assertStoreScreenshotFiles(): Promise<void> {
+async function assertStoreScreenshotFiles(localeDir: string): Promise<void> {
   expect(storeScreenshotFiles.length).toBeGreaterThanOrEqual(1);
   expect(storeScreenshotFiles.length).toBeLessThanOrEqual(5);
 
   for (const fileName of storeScreenshotFiles) {
-    const png = await readFile(path.join(outputDir, fileName));
+    const png = await readFile(path.join(localeDir, fileName));
     expect(png.toString("ascii", 1, 4)).toBe("PNG");
     expect(png.readUInt32BE(16)).toBe(storeScreenshotSize.width);
     expect(png.readUInt32BE(20)).toBe(storeScreenshotSize.height);
@@ -533,17 +688,22 @@ async function assertStoreScreenshotFiles(): Promise<void> {
 
 async function captureAvatarStateShowcase(
   context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
+  locale: Locale,
+  localeDir: string,
 ): Promise<void> {
   await captureMockedAfterScreenshot(
     context,
     avatarStateScenes,
-    path.join(outputDir, "02-pr-list-avatar-state-showcase.png"),
+    path.join(localeDir, "02-pr-list-avatar-state-showcase.png"),
+    locale,
   );
 }
 
 async function captureOptionsScreenshot(
   context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
   extensionId: string,
+  locale: Locale,
+  localeDir: string,
 ): Promise<void> {
   await setPreference(context, extensionId, "showReviewerName", true);
 
@@ -566,9 +726,7 @@ async function captureOptionsScreenshot(
         contentType: "application/json",
         body: JSON.stringify({
           user: { login: "mira" },
-          requested_reviewers: [
-            { login: "ava", avatar_url: avatarUrl("ava") },
-          ],
+          requested_reviewers: [{ login: "ava", avatar_url: avatarUrl("ava") }],
           requested_teams: [{ slug: "design-systems" }],
         }),
       });
@@ -597,10 +755,57 @@ async function captureOptionsScreenshot(
   await expect(page.getByTestId("prefs-show-reviewer-name")).toBeChecked();
   await page.getByTestId("diagnostics-repo").fill(screenshotRepoFullName);
   await page.getByTestId("diagnostics-no-token").click();
-  await expect(page.locator("body")).toContainText("without a token");
-  await page.screenshot({
-    path: path.join(outputDir, "03-options-repository-check.png"),
-  });
+  await expect(page.getByTestId("diagnostics-status")).toHaveClass(
+    /inline-status--success/,
+  );
+  await expect(page.locator("html")).toHaveAttribute(
+    "lang",
+    toLanguageTag(locale),
+  );
+  await expect(page.getByTestId("diagnostics-no-token")).toHaveText(
+    messages(locale).diagnostics_check_no_token.message,
+  );
+  await readyForScreenshot(page);
+  // Compose unmodified sections of the real options page so settings and the
+  // completed diagnostic fit together without cropping scroll-boundary text.
+  const crops: Record<string, string> = {};
+  for (const [name, selector] of Object.entries({
+    language: ".language-settings",
+    display: '[aria-labelledby="display-title"]',
+    diagnostics: '[aria-labelledby="diagnostics-title"]',
+  })) {
+    crops[name] = (
+      await page.locator(selector).screenshot({ animations: "disabled" })
+    ).toString("base64");
+  }
+  const composer = await context.newPage();
+  try {
+    await composer.setContent(`<!doctype html><html lang="${toLanguageTag(locale)}"><head><style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #0d1117; color: #f0f6fc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      h1 { margin: 0; padding: 30px 36px; font-size: 24px; line-height: 1.4; }
+      .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; padding: 0 28px; }
+      .panel { padding: 16px; border: 1px solid #30363d; border-radius: 10px; background: #0d1117; }
+      img { width: 100%; height: auto; display: block; }
+      .language { margin-bottom: 24px; }
+    </style></head><body><h1></h1><div class="panels">
+      <section class="panel"><img class="language" alt="" src="data:image/png;base64,${crops.language}"><img alt="" src="data:image/png;base64,${crops.display}"></section>
+      <section class="panel"><img alt="" src="data:image/png;base64,${crops.diagnostics}"></section>
+    </div></body></html>`);
+    await composer.locator("h1").evaluate((element, title) => {
+      element.textContent = title;
+    }, messages(locale).options_title.message);
+    await readyForScreenshot(composer);
+    expect(
+      await composer.evaluate(() => document.documentElement.scrollHeight),
+    ).toBeLessThanOrEqual(storeScreenshotSize.height);
+    await composer.screenshot({
+      path: path.join(localeDir, "03-options-repository-check.png"),
+      animations: "disabled",
+    });
+  } finally {
+    await composer.close();
+  }
   await page.close();
 
   await context.unroute(
@@ -632,4 +837,14 @@ async function setPreference(
     await toggle.click();
   }
   await page.close();
+}
+
+async function readyForScreenshot(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    if (document.activeElement instanceof HTMLElement)
+      document.activeElement.blur();
+    await document.fonts.ready;
+    await Promise.all([...document.images].map((image) => image.decode()));
+  });
+  await page.mouse.move(0, 0);
 }

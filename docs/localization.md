@@ -231,3 +231,25 @@ original in-runner native-language claim.
 
 Thirty reproducible screenshots were retained with the final JSON observation
 report. These are minimal regression fixtures, not store marketing screenshots.
+
+## Store copy and capture maintenance
+
+The five [store listing files](chrome-web-store-submission.md#per-locale-dashboard-checklist)
+link directly to catalog name/summary values. Update their detailed copy and
+reviewed composition captions alongside terminology changes; the existing README
+summary must also match the English catalog. Keep Simplified and Traditional
+Chinese as separately reviewed regional copy.
+
+After integrating catalog and UI corrections, run `pnpm cws:assets`,
+`pnpm verify:locales` and `pnpm verify:cws`. Inspect all three scenes in each
+locale for CJK glyphs, wrapping, cropping, focus and caption overlap. Repeat the
+capture on the same Chromium/platform/system-font environment and compare all
+15 hashes. Commit the images and capture manifest together. English stays in
+the asset root; the other four locales use named subdirectories.
+
+These screenshots select a persisted manual UI language and use synthetic
+fixtures plus TESTING GitHub App configuration. They do not replace the native
+platform evidence above or production checked-package verification. Store
+metadata selection is independent of the UI override. Register detailed copy
+and matching screenshots separately using the existing dashboard/release handoff;
+promotional tiles remain global. See the [capture procedure and limitations](chrome-web-store-submission.md#capture-maintenance).
