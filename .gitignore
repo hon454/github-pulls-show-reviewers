@@ -6,6 +6,8 @@ node_modules/
 .wxt/
 dist/
 coverage/
+.release/
+release-source/
 
 # Test artifacts
 playwright-report/

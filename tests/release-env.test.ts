@@ -8,7 +8,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "..");
-const wrapperPath = path.join(projectRoot, "scripts/run-with-github-app-env.sh");
+const wrapperPath = path.join(
+  projectRoot,
+  "scripts/run-with-github-app-env.sh",
+);
 const tempDirs: string[] = [];
 
 afterEach(async () => {
@@ -145,23 +148,76 @@ describe("package.json release scripts", () => {
     expect(packageJson.scripts["preflight:release"]).toBe(
       "bash ./scripts/require-github-app-build-env.sh",
     );
+    expect(packageJson.scripts["submit:chrome"]).toBe(
+      "node --experimental-strip-types scripts/release/cli.ts execute",
+    );
   });
 });
 
 describe("release workflow", () => {
+  it("runs the actual CLI resolver safely for manual dispatch against a tag", async () => {
+    const tempDir = await createTempDir();
+    const output = path.join(tempDir, "outputs");
+    const result = await runProcess(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        path.join(projectRoot, "scripts/release/cli.ts"),
+        "resolve",
+      ],
+      {
+        cwd: projectRoot,
+        env: {
+          ...process.env,
+          GITHUB_OUTPUT: output,
+          GITHUB_EVENT_NAME: "workflow_dispatch",
+          GITHUB_REF: "refs/tags/v1.16.0",
+          RELEASE_INPUTS_JSON: JSON.stringify({ chrome_web_store: "skip" }),
+        },
+      },
+    );
+    expect(result.code).toBe(0);
+    expect(await readFile(output, "utf8")).toContain("action=skip\n");
+  });
   it("runs the GitHub App env preflight before creating the zip", async () => {
     const workflow = await readFile(
       path.join(projectRoot, ".github/workflows/release.yml"),
       "utf8",
     );
 
-    const preflightIndex = workflow.indexOf("- run: pnpm preflight:release");
-    const zipIndex = workflow.indexOf("- run: pnpm zip:checked");
+    const preflightIndex = workflow.indexOf("run: pnpm preflight:release");
+    const zipIndex = workflow.indexOf("run: pnpm zip:checked");
 
     expect(preflightIndex).toBeGreaterThan(-1);
     expect(zipIndex).toBeGreaterThan(-1);
     expect(preflightIndex).toBeLessThan(zipIndex);
     expect(workflow).not.toContain("- run: pnpm zip\n");
+  });
+
+  it("routes all CWS writes and GitHub Releases through the tested resolver", async () => {
+    const workflow = await readFile(
+      path.join(projectRoot, ".github/workflows/release.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("default: skip");
+    expect(workflow).toContain("cancel-in-progress: false");
+    expect(workflow).toContain("scripts/release/cli.ts resolve");
+    expect(workflow).not.toContain("startsWith(github.ref");
+    expect(workflow).not.toContain("run: pnpm submit:chrome");
+    expect(
+      workflow.match(/steps.package_meta.outputs.create_release == 'true'/g),
+    ).toHaveLength(2);
+    expect(workflow).toContain("if: steps.action.outputs.action == 'dry-run'");
+    expect(workflow).toContain(
+      "run: node --experimental-strip-types scripts/release/cli.ts dry-run",
+    );
+    expect(workflow.indexOf("name: Save durable CWS intent")).toBeLessThan(
+      workflow.indexOf("name: Execute resolved CWS action"),
+    );
+    expect(workflow).toContain(
+      "if: always() && hashFiles('.release/result.json') != ''",
+    );
+    expect(workflow).not.toContain("fromJSON(secrets.");
   });
 });
 
@@ -171,7 +227,10 @@ async function createTempDir(): Promise<string> {
   return tempDir;
 }
 
-async function writeExecutable(filePath: string, contents: string): Promise<void> {
+async function writeExecutable(
+  filePath: string,
+  contents: string,
+): Promise<void> {
   await writeFile(filePath, contents, "utf8");
   await chmod(filePath, 0o755);
 }
