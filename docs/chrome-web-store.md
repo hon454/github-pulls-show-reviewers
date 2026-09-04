@@ -27,6 +27,10 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
+The [v1.16.0 readiness handoff](./releases/v1.16.0-readiness.md) records the
+version-bound recapture, individual visual checks and production-package rerun;
+it is local preparation, not a CWS receipt or saved-listing attestation.
+
 Use the five source-controlled descriptions and ordered screenshot inventories:
 [English](./chrome-web-store-locales/en.md),
 [한국어](./chrome-web-store-locales/ko.md),

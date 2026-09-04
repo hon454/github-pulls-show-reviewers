@@ -264,6 +264,12 @@ If reviewer data is missing only on private repositories:
 
 ## Options language and account continuity
 
+For a reproducible actual v1.15.0-profile upgrade, use the committed standalone
+probe and commands in the [v1.16.0 readiness handoff](releases/v1.16.0-readiness.md#real-old-profile-upgrade).
+It runs the published old ZIP before replacing the same unpacked path/profile,
+and compares raw account/auth/display records across browser-process restarts.
+This is not a signed Web Store automatic-update test.
+
 Use controlled fixture accounts; do not expose live tokens in screenshots.
 
 1. Open two options tabs. Select each of English, 한국어, 日本語, 简体中文 and
