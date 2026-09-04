@@ -329,8 +329,10 @@ OS language unchanged during agent QA.
 
 The probe records initial observations before asserting, so failed checks also
 retain raw evidence. It validates Auto against `getUILanguage`, native message
-text against `@@ui_locale`, and manifest/action/toolbar against Chromium's
-`manifest.current_locale`; do not assume these locale channels coincide. Linux
+text and manifest/action/toolbar against Chromium's `manifest.current_locale`
+(which must be an exact shipped locale). The manifest and renderer messages use
+the same browser-side bundle loader. `@@ui_locale` is retained separately as a
+process-locale observation, not a message-catalog selector. Linux
 CI run `33855860843` observed a Korean manifest with an English-resolved
 `@@ui_locale` and stopped before the remaining assertions. A corrected Linux run
 is required before claiming its message/toolbar or restart results.

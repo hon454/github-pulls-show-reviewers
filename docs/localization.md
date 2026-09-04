@@ -159,13 +159,19 @@ returned Korean text while `@@ui_locale` resolved to English. That failed run
 stopped before checking message text or toolbar, so it does not establish their
 locale. The probe now records raw API values and the selected `LANG`, `LANGUAGE`,
 `LC_ALL`, and `LC_MESSAGES` environment values before assertions, including in CI
-logs. It checks Auto against `getUILanguage`, all 172 native messages against
-`@@ui_locale`, and manifest/action/toolbar against the manifest's `current_locale`.
-These are separate exact catalog comparisons, with all snapshots still required
-to remain identical through manual override, reload and process restart.
-Chromium's [manifest localization implementation](https://chromium.googlesource.com/chromium/src/+/master/extensions/common/extension_l10n_util.cc)
-sets `current_locale` alongside localized description and action title. This
-Chromium-specific field is used only by the test probe, not application code.
+logs. It checks Auto against `getUILanguage`. Manifest/action/toolbar and all 172
+native messages are compared exactly with the catalog named by the manifest's
+`current_locale`, which must be an exact shipped locale (no inferred fallback).
+`@@ui_locale` is retained as a separate process-locale observation. All raw native
+messages are collected before assertions; snapshots must remain identical through
+manual override, reload and process restart.
+Chromium 147's [manifest localization](https://chromium.googlesource.com/chromium/src/+/147.0.7727.15/extensions/common/extension_l10n_util.cc)
+and [renderer message loading](https://chromium.googlesource.com/chromium/src/+/147.0.7727.15/extensions/browser/l10n_file_util.cc)
+use the same browser-side message-bundle loader with preferred-locale precedence.
+Its [predefined message implementation](https://chromium.googlesource.com/chromium/src/+/147.0.7727.15/extensions/common/message_bundle.cc)
+sets `@@ui_locale` from the process locale, which need not select that bundle.
+The Chromium-specific `current_locale` field is used only by the test probe,
+not application code.
 The Linux message/toolbar result remains pending until the corrected CI runs.
 
 Independent review caught that the original in-runner probe omitted an explicit

@@ -10,7 +10,7 @@ import {
   type BrowserContext,
   type Page,
 } from "@playwright/test";
-import { resolveLocale, toLanguageTag } from "../../src/i18n/locale.ts";
+import { resolveLocale, toLanguageTag, SUPPORTED_LOCALES } from "../../src/i18n/locale.ts";
 
 const extension = path.resolve(".output/chrome-mv3");
 const output = process.argv[2];
@@ -49,7 +49,7 @@ async function chromeLanguage(page: Page) {
     ).chrome;
     return {
       uiLanguage: api.i18n.getUILanguage(),
-      catalogLanguage: api.i18n.getMessage("@@ui_locale"),
+      processLocaleMessage: api.i18n.getMessage("@@ui_locale"),
       navigatorLanguage: navigator.language,
       userAgent: navigator.userAgent,
       manifest: api.runtime.getManifest(),
@@ -102,13 +102,27 @@ try {
   const { page, url } = await installedOptions(context);
   const native = await chromeLanguage(page);
   const resolved = resolveLocale(native.uiLanguage);
-  // Chromium records the manifest localization separately from the renderer's
-  // @@ui_locale. Linux CI can report English here with a Korean manifest.
-  const messageLocale = resolveLocale(native.catalogLanguage);
-  expect(native.manifest.current_locale).toBeTruthy();
-  const metadataLocale = resolveLocale(native.manifest.current_locale);
-  const messages = catalog(messageLocale);
-  const metadata = catalog(metadataLocale);
+  // Manifest and renderer messages share Chromium's browser-side bundle loader.
+  // @@ui_locale instead exposes the process locale; it is not a catalog oracle.
+  // This probe requires an exact shipped locale, avoiding assumptions about
+  // Chromium's fallback for unsupported desired locales.
+  const metadataLocale = native.manifest.current_locale;
+  const messageLocale = metadataLocale;
+  const nativeMessages = await page.evaluate((keys) => {
+    const api = (
+      globalThis as unknown as {
+        chrome: {
+          i18n: { getMessage(key: string, values: string[]): string };
+        };
+      }
+    ).chrome;
+    return Object.fromEntries(
+      keys.map((key) => [
+        key,
+        api.i18n.getMessage(key, ["ARG1", "ARG2", "ARG3"]),
+      ]),
+    );
+  }, Object.keys(catalog("en")));
   const observation = {
     execution: "standalone-node-subprocess",
     platform: process.platform,
@@ -123,11 +137,15 @@ try {
     autoLocale: resolved,
     messageLocale,
     metadataLocale,
+    nativeMessages,
   };
   // Preserve raw observations even if a later contract fails. CI has no artifact
   // upload step, so also emit this non-sensitive fixture data to its test log.
   await writeFile(output, JSON.stringify(observation, null, 2));
   process.stdout.write(`Native locale observation: ${JSON.stringify(observation)}\n`);
+  expect(SUPPORTED_LOCALES).toContain(metadataLocale);
+  const messages = catalog(messageLocale);
+  const metadata = catalog(metadataLocale);
   await expect(page.locator("html")).toHaveAttribute(
     "lang",
     toLanguageTag(resolved),
@@ -146,22 +164,6 @@ try {
     metadata.extension_action_title.message,
   );
   expect(native.toolbar).toBe(metadata.extension_action_title.message);
-  // Chrome must accept and interpolate every emitted message in its selected catalog.
-  const nativeMessages = await page.evaluate((keys) => {
-    const api = (
-      globalThis as unknown as {
-        chrome: {
-          i18n: { getMessage(key: string, values: string[]): string };
-        };
-      }
-    ).chrome;
-    return Object.fromEntries(
-      keys.map((key) => [
-        key,
-        api.i18n.getMessage(key, ["ARG1", "ARG2", "ARG3"]),
-      ]),
-    );
-  }, Object.keys(messages));
   for (const [key, entry] of Object.entries(messages)) {
     expect(nativeMessages[key], key).toBe(
       entry.message.replace(/\$([A-Z_]+)\$/g, (_, name: string) => {
