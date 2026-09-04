@@ -526,5 +526,6 @@ destinations. Runtime, permissions, data contracts and review semantics are
 unchanged. Strict source/package validation rejects malformed or untranslated
 shipped entries; packaged QA covers account/diagnostic failures, live device-flow
 switches, native API/metadata observations, reload and process-restart persistence.
-The macOS UI-language/metadata split and remaining manual platform checks are
-recorded explicitly, not inferred from navigator or launch flags.
+The native probe runs in a standalone Node subprocess to avoid Playwright
+Test's default locale injection. Actual Korean Auto/metadata selection and
+remaining manual platform checks are recorded, not inferred from launch flags.

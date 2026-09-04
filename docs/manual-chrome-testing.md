@@ -300,7 +300,10 @@ OS language unchanged during agent QA.
    `chrome.i18n.getMessage('@@ui_locale')` separately. Also record
    `chrome.runtime.getManifest().description`,
    `await chrome.action.getTitle({})`, launch flags, platform and any Playwright
-   locale override. `browser.i18n` in the extension uses the same native API.
+   locale override, including runner defaults. Playwright Test defaults to
+   `en-US` and injects it into persistent contexts even when `locale` is omitted.
+   The native probe runs in a separate Node process to avoid that hook.
+   `browser.i18n` in the extension uses the same native API.
    `navigator.language`, a Playwright locale, or a `--lang` flag alone cannot
    establish Chrome's extension UI language.
 3. With **Auto**, confirm the options `html.lang` and prose match the actual
@@ -324,10 +327,18 @@ OS language unchanged during agent QA.
    the selected language. Actual screen-reader pronunciation still needs manual
    assistive-technology testing; ARIA assertions do not establish pronunciation.
 
-Executed on macOS Chromium on 2026-09-04: with `--lang=ko` and no Playwright
-locale emulation, `getUILanguage()` returned `en-US`, while `@@ui_locale`,
-manifest description and toolbar selected Korean. Auto rendered English; the
-manual override changed only extension UI and survived a browser process restart.
-This verifies actual API-driven Auto, selected metadata and override independence;
-it does not prove non-English OS-level Auto selection. Do not reuse an older
-navigator/emulated-locale screenshot as native-language proof.
+Executed on macOS Chromium 147 on 2026-09-04: the standalone Node subprocess
+with headless Chromium, `--lang=ko` and no runner-injected locale observed
+`getUILanguage()=ko`, `@@ui_locale=ko`, `navigator.language=ko-KR`, and Korean
+manifest/toolbar text. Auto rendered Korean; the manual Traditional Chinese
+selection left metadata unchanged and survived reload and process restart.
+Returning to Auto restored Korean. This covers the observed configuration,
+not every OS/UI language or an installed user Chrome browser.
+
+The original in-runner `en-US` result was caused by Playwright Test's default
+locale injection and must not be reused as native platform evidence. Reproduce
+the corrected probe directly after the fixture build with:
+
+```bash
+node --experimental-strip-types tests/helpers/native-locale-probe.ts /tmp/native-language.json
+```

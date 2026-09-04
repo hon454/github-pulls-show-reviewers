@@ -3,14 +3,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import {
-  chromium,
-  expect,
-  test,
-  type BrowserContext,
-  type Page,
-} from "@playwright/test";
-import { resolveLocale, toLanguageTag } from "../../src/i18n/locale";
+import { chromium, expect, test, type BrowserContext } from "@playwright/test";
 
 const extension = path.resolve(".output/chrome-mv3");
 
@@ -36,32 +29,6 @@ const catalog = (locale: string) =>
     string,
     { message: string; placeholders?: Record<string, { content: string }> }
   >;
-// Read the native API, never infer it from Playwright's navigator locale.
-async function chromeLanguage(page: Page) {
-  return page.evaluate(async () => {
-    const api = (
-      globalThis as unknown as {
-        chrome: {
-          i18n: {
-            getUILanguage(): string;
-            getMessage(key: string, values?: string[]): string;
-          };
-          runtime: { getManifest(): { name: string; description: string } };
-          action: { getTitle(details: object): Promise<string> };
-        };
-      }
-    ).chrome;
-    return {
-      uiLanguage: api.i18n.getUILanguage(),
-      catalogLanguage: api.i18n.getMessage("@@ui_locale"),
-      navigatorLanguage: navigator.language,
-      userAgent: navigator.userAgent,
-      manifest: api.runtime.getManifest(),
-      toolbar: await api.action.getTitle({}),
-      description: api.i18n.getMessage("extension_description"),
-    };
-  });
-}
 async function installedOptions(context: BrowserContext) {
   const worker =
     context.serviceWorkers()[0] ??
@@ -81,112 +48,28 @@ async function installedOptions(context: BrowserContext) {
   return { page, url };
 }
 
-test("observes native Chrome language and metadata independently of override, then retains preferences after process restart", async ({
+test("observes native Chrome language outside runner emulation and retains preferences after process restart", async ({
   browserName,
 }, testInfo) => {
   expect(browserName).toBe("chromium");
-  const profile = await mkdtemp(path.join(os.tmpdir(), "ghpsr-native-locale-"));
-  const launch = () =>
-    chromium.launchPersistentContext(profile, {
-      channel: "chromium",
-      args: [
-        `--disable-extensions-except=${extension}`,
-        `--load-extension=${extension}`,
-        "--lang=ko",
-      ],
-    });
-  let context = await launch();
-  try {
-    await context.route("https://**/*", (route) => route.abort());
-    const { page, url } = await installedOptions(context);
-    const native = await chromeLanguage(page);
-    const resolved = resolveLocale(native.uiLanguage);
-    const metadataLocale = resolveLocale(native.catalogLanguage);
-    const messages = catalog(metadataLocale);
-    await expect(page.locator("html")).toHaveAttribute(
-      "lang",
-      toLanguageTag(resolved),
-    );
-    await expect(page.getByTestId("language-select")).toHaveValue("auto");
-    expect(native.manifest.name).toBe("GitHub Pulls Show Reviewers");
-    expect(native.manifest.description).toBe(
-      messages.extension_description.message,
-    );
-    expect(native.description).toBe(messages.extension_description.message);
-    expect(native.toolbar).toBe(messages.extension_action_title.message);
-    // Chrome must accept and interpolate every emitted message in its selected catalog.
-    const nativeMessages = await page.evaluate((keys) => {
-      const api = (
-        globalThis as unknown as {
-          chrome: {
-            i18n: { getMessage(key: string, values: string[]): string };
-          };
-        }
-      ).chrome;
-      return Object.fromEntries(
-        keys.map((key) => [
-          key,
-          api.i18n.getMessage(key, ["ARG1", "ARG2", "ARG3"]),
-        ]),
-      );
-    }, Object.keys(messages));
-    for (const [key, entry] of Object.entries(messages)) {
-      expect(nativeMessages[key], key).toBe(
-        entry.message.replace(/\$([A-Z_]+)\$/g, (_, name: string) => {
-          const position =
-            entry.placeholders![name.toLowerCase()].content.slice(1);
-          return `ARG${position}`;
-        }),
-      );
-    }
-    await page.getByTestId("language-select").selectOption("zh_TW");
-    await expect(page.locator("html")).toHaveAttribute("lang", "zh-TW");
-    const afterOverride = await chromeLanguage(page);
-    expect(afterOverride).toEqual(native);
-    await page.reload();
-    await expect(page.getByTestId("language-select")).toHaveValue("zh_TW");
-    await context.close();
-    context = await launch();
-    await context.route("https://**/*", (route) => route.abort());
-    // onInstalled does not run again on process restart; navigate explicitly.
-    const restored = await context.newPage();
-    await restored.goto(url);
-    await expect(restored.getByTestId("language-select")).toHaveValue("zh_TW");
-    await expect(restored.locator("html")).toHaveAttribute("lang", "zh-TW");
-    expect(await chromeLanguage(restored)).toEqual(native);
-    await restored.getByTestId("language-select").selectOption("auto");
-    await expect(restored.locator("html")).toHaveAttribute(
-      "lang",
-      toLanguageTag(resolved),
-    );
-    await testInfo.attach("native-language-evidence", {
-      body: JSON.stringify(
-        {
-          platform: process.platform,
-          launchArgs: [
-            `--disable-extensions-except=${extension}`,
-            `--load-extension=${extension}`,
-            "--lang=ko",
-          ],
-          requestedFlag: "ko",
-          playwrightLocale: null,
-          observed: native,
-          resolved,
-          metadataLocale,
-          checkedMessages: Object.keys(messages).length,
-          reload: true,
-          processRestart: true,
-          overrideIndependent: true,
-        },
-        null,
-        2,
-      ),
-      contentType: "application/json",
-    });
-  } finally {
-    await context.close();
-    await rm(profile, { recursive: true, force: true });
-  }
+  const output = testInfo.outputPath("native-language.json");
+  // A new Node process has no test-runner runBeforeCreateBrowserContext hook.
+  execFileSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "tests/helpers/native-locale-probe.ts",
+      output,
+    ],
+    { timeout: 25000 },
+  );
+  const evidence = JSON.parse(readFileSync(output, "utf8"));
+  expect(evidence.execution).toBe("standalone-node-subprocess");
+  expect(evidence.playwrightLocale).toBeNull();
+  await testInfo.attach("native-language-evidence", {
+    path: output,
+    contentType: "application/json",
+  });
 });
 
 test("cross-tab language switches retain device code, diagnostic input and a single pending auth request", async ({

@@ -143,23 +143,33 @@ client ID/slug; this is packaged UI QA, not a production-config ZIP receipt.
   Exactly one initiation and one poll; cancel plus advancing the controlled
   clock adds no requests. The paused clock isolates ordinary polling from
   language-triggered requests; it does not assert that normal auth never polls.
-- Native platform: extension `chrome.i18n.getUILanguage()` observed `en-US` on
-  macOS; `--lang=ko` selected `@@ui_locale=ko`, Korean manifest description and
-  toolbar title. Auto UI correctly stayed English. All 172 selected Chrome
-  messages/interpolations matched the Korean catalog. Manual `zh_TW` changed
-  only extension UI, persisted through tab reload **and browser process restart**,
-  and switching back to Auto restored English. No Playwright locale emulation
-  is used in the authoritative probe.
+- Native platform: the E2E test starts `tests/helpers/native-locale-probe.ts` in
+  a separate Node process, so Playwright Test's automatic `locale=en-US` fixture
+  cannot modify its persistent context. With explicit headless Chromium and
+  `--lang=ko` on macOS, the extension's `chrome.i18n.getUILanguage()` returned
+  `ko`, `@@ui_locale` returned `ko`, and `navigator.language` was `ko-KR`.
+  Auto UI rendered Korean. All 172 Chrome messages/interpolations matched the
+  Korean catalog. Manual `zh_TW` changed only extension UI and persisted through
+  tab reload **and browser process restart**; returning to Auto restored Korean.
+  Evidence records native/manifest/toolbar snapshots before and after override,
+  after reload and after restart, along with launch args and execution mode.
 
-This macOS result does **not** prove Korean/non-English OS-level Auto selection.
-`--lang` alone and `navigator.language` are not proof of `getUILanguage()`.
-A preliminary emulated `fr-FR` probe also left Korean metadata selected, exposing
-why renderer/metadata values must be recorded separately. Other OS/browser UI
-languages and live screen-reader pronunciation remain manual platform checks.
-The packaged tests record actual observed values instead of silently treating a
-launch flag as evidence. Review-state/error permutations remain covered by
-focused unit tests; the full English scheduler/DOM/fixture suite is preserved,
-not multiplied five times. The separate live GitHub DOM canary is unchanged.
+Independent review caught that the original in-runner probe omitted an explicit
+locale but still received Playwright Test 1.59.1's **default `en-US` injection**.
+Its en-US UI / Korean metadata split was an emulated-context observation, not a
+macOS native-language limitation. That evidence is superseded by the standalone
+subprocess result above. Merely omitting `locale` in a test runner does not prove
+that locale emulation is absent. The other manual-language layout/auth fixtures
+continue to use the runner's default locale and do not claim native detection.
+
+The standalone result proves observed Korean Auto selection and metadata/manual
+independence in this Chromium configuration. It does not cover all five OS/UI
+language configurations or a user's installed Chrome browser. Actual screen-reader
+pronunciation remains manual. No OS or shared browser settings were changed.
+Unsupported-language and script/region mapping use unit fixtures; no flag or
+navigator value substitutes for the observed native API. Review-state/error
+permutations remain covered by focused unit tests, and the full English
+scheduler/DOM suite and separate live GitHub canary are unchanged.
 
 Reproduce:
 
@@ -189,6 +199,11 @@ canary were not changed.
 | ja     | Same surfaces checked; Japanese glyphs and revised headings readable, no isolated final headline character; device/diagnostic actions visible. |
 | zh_CN  | Same surfaces checked; Simplified glyphs/terms distinct, shortened balanced headings and endpoint wrapping readable.                           |
 | zh_TW  | Same surfaces checked; Traditional glyphs/region-specific terms distinct, balanced headings and translated device actions readable.            |
+
+After the independent P2 correction, the isolated native subprocess and the
+retained auth checks passed again, along with lint/typecheck, all five packaged
+locale checks and all 22 E2E tests (no retries). The updated report supersedes the
+original in-runner native-language claim.
 
 Thirty reproducible screenshots were retained with the final JSON observation
 report. These are minimal regression fixtures, not store marketing screenshots.
