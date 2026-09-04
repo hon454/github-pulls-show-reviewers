@@ -62,7 +62,9 @@ packaging gate remains unchanged.
 `language: 'auto' | 'en' | 'ko' | 'ja' | 'zh_CN' | 'zh_TW'` (default `auto`).
 Missing or invalid language repairs only that field; old valid display booleans
 survive. `updatePreferences` merges a language or display patch with the other
-current preferences. Account/token keys and storage schemas are untouched.
+current preferences. Calls within one context are serialized so concurrent
+language/display controls read the latest saved record. Account/token keys and
+storage schemas are untouched.
 
 `src/i18n/browser.ts` exposes lazy `getLocaleStore()` for one store per extension
 context. The browser adapter reads/writes only the preferences key and filters

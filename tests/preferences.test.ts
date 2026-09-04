@@ -191,3 +191,29 @@ describe("storage change classification", () => {
     ).toBe(false);
   });
 });
+
+it("preserves both settings when language and display saves overlap in one context", async () => {
+  const { updatePreferences, getPreferences } =
+    await import("../src/storage/preferences");
+  await Promise.all([
+    updatePreferences({ showReviewerName: true }),
+    updatePreferences({ language: "ja" }),
+  ]);
+  await expect(getPreferences()).resolves.toMatchObject({
+    language: "ja",
+    showReviewerName: true,
+  });
+  browserMock.browser.storage.local.set.mockRejectedValueOnce(
+    new Error("failed save"),
+  );
+  await expect(updatePreferences({ language: "ko" })).rejects.toThrow(
+    "failed save",
+  );
+  await expect(
+    updatePreferences({ openPullsOnly: false }),
+  ).resolves.toMatchObject({
+    language: "ja",
+    showReviewerName: true,
+    openPullsOnly: false,
+  });
+});

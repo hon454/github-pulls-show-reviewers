@@ -34,13 +34,23 @@ export async function getPreferences(): Promise<Preferences> {
   return parsePreferences(result[PREFERENCES_KEY]);
 }
 
-export async function updatePreferences(
+let pendingUpdate: Promise<void> = Promise.resolve();
+
+export function updatePreferences(
   patch: Partial<Omit<Preferences, "version">>,
 ): Promise<Preferences> {
-  const current = await getPreferences();
-  const next: Preferences = { ...current, ...patch, version: 1 };
-  await browser.storage.local.set({ [PREFERENCES_KEY]: next });
-  return next;
+  // Concurrent controls in one options context must merge against the latest write.
+  const update = pendingUpdate.then(async () => {
+    const current = await getPreferences();
+    const next: Preferences = { ...current, ...patch, version: 1 };
+    await browser.storage.local.set({ [PREFERENCES_KEY]: next });
+    return next;
+  });
+  pendingUpdate = update.then(
+    () => undefined,
+    () => undefined,
+  );
+  return update;
 }
 
 type StorageChange = { oldValue?: unknown; newValue?: unknown };
