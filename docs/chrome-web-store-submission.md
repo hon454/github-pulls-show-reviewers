@@ -1,6 +1,10 @@
 # Chrome Web Store Submission Packet
 
 This file turns the store notes into concrete submission materials for the current MVP.
+Use the [canonical agent runbook](./chrome-web-store-agent-runbook.md) for
+authorized dashboard execution, saved-content evidence and resumption. Manual
+listing steps are agent-executable within existing session authorization; saving
+copy does not authorize review submission or tagging.
 
 ## Listing fields
 
@@ -20,7 +24,8 @@ headings, comments, screenshot inventory and maintenance notes).
 
 These are listing-preparation instructions. Actual registration and publication
 evidence belongs in the release tracking issue, using the existing
-[staged handoff](./cws-agent-handoff.md) and its authorized operator procedure.
+[canonical agent runbook](./chrome-web-store-agent-runbook.md) and the
+[staged action reference](./cws-agent-handoff.md).
 The unchecked boxes below are a reusable checklist, not claims of completed writes.
 
 | Dashboard locale | Reviewed description and catalog link | Matching screenshots | Saved/reopened evidence |
@@ -38,13 +43,17 @@ For each row:
   output. Confirm the unchanged name and catalog summary match the displayed
   metadata. Adding catalogs does not populate detailed descriptions.
 - [ ] Select the matching language in the Store listing language dropdown.
-- [ ] Paste that file's detailed description and upload its three screenshots
-  in `01`, `02`, `03` order to the localized screenshots area.
+- [ ] Preserve scoped before-state. Paste that file's detailed description;
+  retain matching images, replace identified previous-release images within
+  the assigned listing scope, and add missing screenshots in `01`, `02`, `03`
+  order. No repeated approval is needed for expected replacement; resolve
+  unidentifiable or out-of-scope images before removal.
 - [ ] Check the preview for the right language, readable CJK text and no clipping.
   Confirm reviewer-only features, no-token public use, private GitHub App access,
   multiple accounts and `Pull requests: Read` agree across every language.
-- [ ] Save, reopen that locale, and record the actual evidence permalink and
-  source identity in the release issue following the existing handoff schema.
+- [ ] Save, navigate away and back, compare the full persisted text and all
+  three ordered previews. Record copy/image hashes, UTC and scoped evidence
+  in the release issue per the canonical runbook. A save toast is insufficient.
 
 Chrome chooses packaged metadata independently of the extension's saved manual
 UI language. That selector does not choose or update a dashboard listing locale.
@@ -165,7 +174,7 @@ link and the privacy fields aligned with the shipped behavior.
 ## Release and upload checklist
 
 For a first localized listing release, use the
-[staged agent handoff](./cws-agent-handoff.md): checked `upload-only`, register
+[canonical agent runbook](./chrome-web-store-agent-runbook.md): checked `upload-only`, register
 the five approved locale descriptions/screenshots, then `submit-existing` with
 fresh dashboard evidence tied to the immutable upload receipt. Neither staging
 action creates a GitHub Release. Do not execute the normal tag-first step below
@@ -191,9 +200,13 @@ reviewed source and reuses its verified artifact without another CWS submission.
    for automatic publication after approval.
 8. Confirm the release workflow and dashboard package version both read the
    same bare `<version>`.
-9. Register each locale's three matching screenshots in order using the per-locale checklist above.
-10. Verify catalog-sourced name/summary, paste each reviewed detailed description, and keep the privacy policy URL above.
-11. Fill in the privacy fields using the current values above, then reconcile every answer against the shipped permissions and network behavior.
+9. Listing descriptions/screenshots must already be saved and reopened before
+   submission when this release changes them; use the staged path above. An
+   ordinary tag-first release assumes the existing listing is ready.
+10. Verify catalog-sourced name/summary and the privacy policy URL above.
+11. Inspect privacy answers against shipped permissions and network behavior.
+    Edit only if that scope is authorized; localized listing authority alone
+    does not cover privacy, distribution, visibility or pricing changes.
 12. For a credential-only rehearsal, run the reviewed release workflow with
     `chrome_web_store: dry-run`; it performs no build, package upload, review
     submission, or GitHub Release creation. The default `skip` never mutates CWS,

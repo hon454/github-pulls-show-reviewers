@@ -1,5 +1,10 @@
 # Chrome Web Store Notes
 
+Use the [canonical agent runbook](./chrome-web-store-agent-runbook.md) for
+authorized execution and resumable evidence. Manual dashboard listing work is
+agent-executable through supported UI tools within existing session scope;
+review submission and tags are separate authorized stages.
+
 ## Store assets
 
 - Extension icons are generated from [icon/source.svg](../icon/source.svg).
@@ -86,8 +91,10 @@ control ref with `chrome_web_store=dry-run`; see the [handoff](./cws-agent-hando
 
 ### Staged listing updates
 
-Use the [agent handoff runbook](./cws-agent-handoff.md) for exact commands and
-the listing-ready evidence schema. The reviewed release source must contain the
+Use the [canonical agent runbook](./chrome-web-store-agent-runbook.md) for exact
+commands, the listing-ready evidence schema and per-locale read-after-save
+verification. The [staged handoff reference](./cws-agent-handoff.md) summarizes
+action and recovery semantics. The reviewed release source must contain the
 package version, release notes, locale catalogs, and approved store materials
 before `upload-only`. Both staging actions require `source_sha` (a full commit
 SHA reachable from `origin/main`) and `expected_version`. `submit-existing`
@@ -209,8 +216,9 @@ After migrating from the former complete-JSON secret, remove
   version. Revert the code, increment to a new version, validate it, and release
   that higher version normally.
 - Listing copy, screenshots, privacy answers, distribution visibility, and
-  other dashboard metadata are outside the package publish workflow and must be
-  reconciled manually when they change.
+  other dashboard metadata are outside the package publish workflow. Authorized
+  agents may reconcile listing fields through supported UI tools; privacy,
+  distribution and other unrelated changes need their own applicable scope.
 
 ## Pre-release test workflow
 
@@ -239,8 +247,8 @@ Expected release gate behavior:
 - `release.yml` installs Playwright Chromium, re-runs `pnpm verify:release`, and then runs `pnpm zip:checked`.
 - `release.yml` submits the verified zip through the Chrome Web Store API v2,
   but it does not generate or update store screenshots and listing metadata.
-  `pnpm cws:assets` and dashboard listing edits remain manual when visuals or
-  disclosures change.
+  `pnpm cws:assets` and dashboard listing edits remain deliberate, agent-executable
+  steps under the canonical runbook and assigned scope.
 - `pnpm test:e2e` no longer mutates `docs/chrome-web-store-assets/`; the screenshot capture spec is scoped to a separate `capture` Playwright project that only `pnpm cws:assets` runs.
 
 ## Chrome Web Store release checklist
@@ -316,5 +324,5 @@ Japanese, Simplified Chinese and Traditional Chinese), with English fallback.
 The product name stays `GitHub Pulls Show Reviewers`. Run
 `pnpm build && pnpm verify:locales` to verify emitted metadata. Chrome selects
 this metadata independently of the local UI language preference. Dashboard
-listing translations and screenshots remain manual, separate release work;
+listing translations and screenshots remain separate, authorized dashboard work;
 the reviewed descriptions and screenshots above are preparation artifacts, not evidence of saved or published dashboard listings.

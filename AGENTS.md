@@ -78,7 +78,9 @@ Agents working in this repository should preserve that narrow product scope. Do 
 ## Chrome Web Store Release Safety
 
 - Treat `.github/workflows/release.yml` and
-  `docs/chrome-web-store.md` as the canonical release automation and runbook.
+  `docs/chrome-web-store.md` as the release automation/configuration references.
+  Follow [the canonical agent runbook](docs/chrome-web-store-agent-runbook.md)
+  for execution, authorization, per-locale verification, and resumable handoffs.
 - A pushed new `v<version>` tag submits the checked Chrome package through CWS
   API v2 for normal review and automatic publication after approval. If that
   exact source already has a validated upload receipt and is pending/published,
@@ -114,8 +116,11 @@ Agents working in this repository should preserve that narrow product scope. Do 
   secret because derived values may bypass GitHub's masking. Checking that the
   secret exists is allowed; its contents are not.
 - Do not bypass `pnpm zip:checked` or restore routine manual package uploads.
-  Dashboard listing metadata, screenshots, privacy disclosures, and exceptional
-  recovery actions remain manual.
+  Dashboard listing metadata and screenshots are deliberate manual UI steps
+  that agents may execute through available supported browser/UI tools when
+  session authorization covers that scope. Preserve existing authorization;
+  do not ask again on every step. Privacy/distribution changes, exceptional
+  recovery, review submission, and tags require their own applicable scope.
 - Keep `README.md`, `docs/chrome-web-store.md`, and
   `docs/chrome-web-store-submission.md` synchronized when release behavior or
   store submission requirements change.
