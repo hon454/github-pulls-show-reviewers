@@ -12,7 +12,10 @@ import type {
   LocaleAdapter,
 } from "../src/i18n";
 import { catalogs } from "../src/i18n/catalogs";
-import { validateCatalogs } from "../src/i18n/validation";
+import {
+  validateCatalogs,
+  validateShippedCatalogs,
+} from "../src/i18n/validation";
 import type { Catalog } from "../src/i18n/messages";
 
 function deferred<T>() {
@@ -120,6 +123,7 @@ describe("plain text formatting and catalog contracts", () => {
   it("requires complete nonempty catalogs with equal placeholder contracts", () => {
     expectTypeOf<keyof typeof catalogs.en>().toEqualTypeOf<MessageKey>();
     expect(validateCatalogs(catalogs)).toEqual([]);
+    expect(validateShippedCatalogs(catalogs)).toEqual([]);
     expect(validateCatalogs({ en, ko: en })).toEqual([]);
     expect(validateCatalogs({ en, ko: {} })).toContain(
       "ko: keys differ from English",
@@ -156,6 +160,62 @@ describe("plain text formatting and catalog contracts", () => {
         en: { nope: { message: "text", description: "test" } },
       }),
     ).toContain("en.nope: unreserved namespace");
+  });
+  it.each([
+    null,
+    [],
+    { options_example: null },
+    { options_example: { message: 1, description: "context" } },
+    { "options_bad-key": { message: "text", description: "context" } },
+    {
+      options_example: { message: "text", description: "context", typo: true },
+    },
+    {
+      options_example: {
+        message: "$NAME$",
+        description: "context",
+        placeholders: { NAME: { content: "$1" } },
+      },
+    },
+    {
+      options_example: {
+        message: "$NAME$",
+        description: "context",
+        placeholders: { name: { content: "$1", typo: true } },
+      },
+    },
+  ])(
+    "rejects malformed Chrome catalog shape without crashing: %j",
+    (invalid) => {
+      expect(validateCatalogs({ en, ko: invalid }).join("\n")).toContain(
+        "invalid Chrome catalog format",
+      );
+    },
+  );
+  it.each(["$NAME", "$1", "$bad-name$", "price $"])(
+    "rejects malformed interpolation %s",
+    (message) => {
+      expect(
+        validateCatalogs({
+          en: { options_example: { message, description: "context" } },
+        }).join("\n"),
+      ).toContain("malformed dollar placeholder");
+    },
+  );
+  it("rejects missing locales, absent fallback and copied English outside the invariant allowlist", () => {
+    expect(validateCatalogs({ en: {} })).toContain(
+      "en: complete nonempty fallback catalog required",
+    );
+    expect(validateShippedCatalogs({ en }).join("\n")).toContain(
+      "Expected exactly",
+    );
+    const copied = {
+      ...catalogs,
+      ja: { ...catalogs.ja, auth_cancel: catalogs.en.auth_cancel },
+    };
+    expect(validateShippedCatalogs(copied)).toContain(
+      "ja.auth_cancel: untranslated English message",
+    );
   });
   it("preserves branding and Chrome metadata limits in all five catalogs", () => {
     expect(Object.keys(catalogs).sort()).toEqual([

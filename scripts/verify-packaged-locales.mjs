@@ -3,6 +3,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { URL } from "node:url";
+import { validateShippedCatalogs } from "../src/i18n/validation.ts";
 
 const output = process.argv[2] ?? ".output/chrome-mv3";
 const expected = ["en", "ja", "ko", "zh_CN", "zh_TW"];
@@ -29,6 +30,7 @@ for (const [field, value] of Object.entries({
 const references = [...JSON.stringify(manifest).matchAll(/__MSG_(\w+)__/g)].map(
   (match) => match[1],
 );
+const catalogs = {};
 for (const locale of expected) {
   const messages = JSON.parse(
     readFileSync(path.join(localeRoot, locale, "messages.json"), "utf8"),
@@ -39,6 +41,7 @@ for (const locale of expected) {
       "utf8",
     ),
   );
+  catalogs[locale] = messages;
   if (JSON.stringify(messages) !== JSON.stringify(source))
     throw new Error(`${locale}: emitted catalog differs from source`);
   for (const key of references) {
@@ -52,6 +55,8 @@ for (const locale of expected) {
   if (description.length > 132)
     throw new Error(`${locale}: description exceeds 132 characters`);
 }
+const errors = validateShippedCatalogs(catalogs);
+if (errors.length) throw new Error(errors.join("\n"));
 console.log(
   `Verified five packaged locales and all manifest references in ${output}`,
 );

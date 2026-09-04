@@ -141,6 +141,23 @@ test("keeps options state across tabs and readable actions in five languages at 
     }
     releaseResponses();
     await expect(first.getByTestId("diagnostics-no-token")).toBeEnabled();
+    let accountRequests = 0;
+    await context.route(
+      "https://api.github.com/user/installations*",
+      async (route) => {
+        accountRequests++;
+        await route.fulfill({
+          status: 500,
+          json: { message: "fixture installation failure" },
+        });
+      },
+    );
+    await first
+      .getByRole("button", { name: "Refresh installations", exact: true })
+      .click();
+    await expect(
+      first.getByTestId("account-action-error-long-account"),
+    ).toBeVisible();
     for (const [language, heading] of [
       ["en", "GitHub accounts"],
       ["ko", "GitHub 계정"],
@@ -160,6 +177,14 @@ test("keeps options state across tabs and readable actions in five languages at 
         "long-owner/repository-input-must-survive",
       );
       const messages = diagnosticMessages(language as Locale);
+      await expect(
+        first.getByTestId("account-action-error-long-account"),
+      ).toHaveText(messages.options_refresh_failed.message);
+      await expect(first.getByTestId("language-select")).toHaveAccessibleName(
+        messages.language_label.message,
+      );
+      await expect(first).toHaveTitle(messages.options_title.message);
+      expect(accountRequests).toBe(1);
       await expect(first.getByTestId("diagnostics-status")).toHaveText(
         messages.diagnostics_no_token_rate.message.replace(
           "$REPOSITORY$",
