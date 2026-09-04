@@ -4,7 +4,7 @@
     "description": "Extension product name. Keep this brand identical in every locale."
   },
   "extension_description": {
-    "message": "直接在 GitHub 拉取请求列表中查看请求的审阅者、团队和已完成的审阅状态。",
+    "message": "直接在 GitHub 拉取请求列表中查看受邀的审阅者、团队和已完成的审阅状态。",
     "description": "Chrome manifest description. Maximum 132 characters."
   },
   "extension_action_title": {
@@ -16,7 +16,7 @@
     "description": "Options page title. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_heading": {
-    "message": "在浏览列表时，一眼掌握审阅情况。",
+    "message": "列表中的审阅状态，一目了然。",
     "description": "Options page heading. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_intro": {
@@ -45,7 +45,7 @@
     "description": "Options page settings. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_workspace_heading": {
-    "message": "按工作习惯查看审阅状态。",
+    "message": "按习惯查看审阅状态。",
     "description": "Options page workspace heading. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_workspace_description": {
@@ -194,16 +194,16 @@
     "description": "Options page badges description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_names": {
-    "message": "审阅者姓名",
-    "description": "Options page names. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "审阅者用户名",
+    "description": "Display toggle label. Shows immutable GitHub login/usernames, not personal display names."
   },
   "options_names_description": {
-    "message": "在审阅者头像旁显示姓名。",
-    "description": "Options page names description. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "在审阅者头像旁显示用户名。",
+    "description": "Help for the username display toggle; the value is the GitHub login identifier."
   },
   "options_open_only": {
-    "message": "仅显示未关闭的拉取请求",
-    "description": "Options page open only. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "审阅者链接：仅显示未关闭的 PR",
+    "description": "Toggle for the destination filter of reviewer links; does not hide reviewer information on closed PR list rows."
   },
   "options_open_only_description": {
     "message": "审阅者链接仅列出尚未关闭的工作。",

@@ -279,10 +279,77 @@ Use controlled fixture accounts; do not expose live tokens in screenshots.
 3. Enter a diagnostic repository, start an account refresh, and switch language.
    Input and accounts stay in place and the refresh runs once. Repeat for a
    pending display save and a failed remove/save. Visible statuses change language
-   without restarting actions. Diagnostics prose is handled separately in #149.
+   without restarting actions. Diagnostic prose updates from retained structured evidence without rerunning the check.
 4. Simulate a local language save rejection with test fixtures. Verify an
    accessible failure message, an enabled selector, and the previous saved
    language retained. Then save successfully and verify both tabs recover.
 5. Check 360px and desktop widths with a long GitHub App name and long account/
    repository identifiers. No horizontal page overflow or hidden action buttons;
    labels, keyboard focus and live status announcements remain usable.
+
+## Localization platform verification
+
+See [localization ownership, glossary and executed evidence](localization.md).
+Use isolated test profiles and synthetic accounts; leave the shared browser and
+OS language unchanged during agent QA.
+
+1. Build with `pnpm test:e2e:build`, then run the three localization specs listed
+   in `docs/localization.md`. Their first launch waits for the install-owned
+   options page (#159); do not race it with another options navigation.
+2. In extension-page DevTools, observe `chrome.i18n.getUILanguage()` and
+   `chrome.i18n.getMessage('@@ui_locale')` separately. Also record
+   `chrome.runtime.getManifest().description`,
+   `await chrome.action.getTitle({})`, launch flags, platform and any Playwright
+   locale override, including runner defaults. Playwright Test defaults to
+   `en-US` and injects it into persistent contexts even when `locale` is omitted.
+   The native probe runs in a separate Node process to avoid that hook.
+   `browser.i18n` in the extension uses the same native API.
+   `navigator.language`, a Playwright locale, or a `--lang` flag alone cannot
+   establish Chrome's extension UI language.
+3. With **Auto**, confirm the options `html.lang` and prose match the actual
+   `getUILanguage()` result through ADR 0006's resolver. Unsupported languages
+   use English; script/region alias behavior has unit coverage. To claim actual
+   non-English Auto selection, first observe a non-English API return on a
+   separately authorized supported browser/OS configuration.
+4. Select each supported manual language. Confirm options/accounts/device auth,
+   diagnostic status/evidence, reviewer link ARIA/title and banner actions use it.
+   The GitHub page language and identifiers must remain unchanged. Chrome-owned
+   metadata and toolbar text must remain at their independently observed locale.
+5. Save Traditional Chinese, reload the options tab, close the entire isolated
+   Chromium process, and reopen the **same profile**. Verify the selection and
+   UI language persist; select Auto and verify the actual native language returns.
+6. Switch language in a second tab during a held device-code request, held token
+   poll and diagnostic requests. Preserve code, authorization URL, input, request
+   state and banner dismissal. Count data/auth requests separately from avatars
+   and ordinary time-driven polling. No request may be caused by language alone.
+7. Inspect 360px and desktop screenshots for CJK glyphs, wrapping, long identifiers,
+   clipping and visible keyboard focus. Check accessible names/live statuses in
+   the selected language. Actual screen-reader pronunciation still needs manual
+   assistive-technology testing; ARIA assertions do not establish pronunciation.
+
+The probe records initial observations before asserting, so failed checks also
+retain raw evidence. It validates Auto against `getUILanguage`, native message
+text and manifest/action/toolbar against Chromium's `manifest.current_locale`
+(which must be an exact shipped locale). The manifest and renderer messages use
+the same browser-side bundle loader. `@@ui_locale` is retained separately as a
+process-locale observation, not a message-catalog selector. Linux
+CI run `33855860843` observed a Korean manifest with an English-resolved
+`@@ui_locale` and stopped before the remaining assertions. Use the corrected run's raw evidence for Linux message/toolbar and restart
+results. Restart requests `runtime.openOptionsPage()` and waits for the actual
+options UI to avoid competing direct navigation.
+
+Executed on macOS Chromium 147 on 2026-09-04: the standalone Node subprocess
+with headless Chromium, `--lang=ko` and no runner-injected locale observed
+`getUILanguage()=ko`, `@@ui_locale=ko`, `navigator.language=ko-KR`, and Korean
+manifest/toolbar text. Auto rendered Korean; the manual Traditional Chinese
+selection left metadata unchanged and survived reload and process restart.
+Returning to Auto restored Korean. This covers the observed configuration,
+not every OS/UI language or an installed user Chrome browser.
+
+The original in-runner `en-US` result was caused by Playwright Test's default
+locale injection and must not be reused as native platform evidence. Reproduce
+the corrected probe directly after the fixture build with:
+
+```bash
+node --experimental-strip-types tests/helpers/native-locale-probe.ts /tmp/native-language.json
+```

@@ -516,3 +516,16 @@ Validate catalogs with the i18n unit tests and emitted metadata with
   FIFO concurrency and observer stress. The isolated Chromium fixture switches
   the options preference while eight rows load, then checks seven completed rows
   and one error banner in all five locales at 360px with exact request counts.
+
+## Integrated locale quality (#151)
+
+All 172 messages in each of the five shipped catalogs have a recorded linguistic
+review and glossary in [localization.md](localization.md). Labels clarify that
+reviewer names are GitHub usernames and the open-PR setting filters link
+destinations. Runtime, permissions, data contracts and review semantics are
+unchanged. Strict source/package validation rejects malformed or untranslated
+shipped entries; packaged QA covers account/diagnostic failures, live device-flow
+switches, native API/metadata observations, reload and process-restart persistence.
+The native probe runs in a standalone Node subprocess to avoid Playwright
+Test's default locale injection. Actual Korean Auto/metadata selection and
+remaining manual platform checks are recorded, not inferred from launch flags.

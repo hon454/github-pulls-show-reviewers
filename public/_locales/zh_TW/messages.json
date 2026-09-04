@@ -16,7 +16,7 @@
     "description": "Options page title. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_heading": {
-    "message": "瀏覽清單時，一眼掌握審查情況。",
+    "message": "清單中的審查狀態，一目瞭然。",
     "description": "Options page heading. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_intro": {
@@ -45,7 +45,7 @@
     "description": "Options page settings. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_workspace_heading": {
-    "message": "依工作習慣查看審查狀態。",
+    "message": "依習慣查看審查狀態。",
     "description": "Options page workspace heading. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_workspace_description": {
@@ -194,16 +194,16 @@
     "description": "Options page badges description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_names": {
-    "message": "審查者名稱",
-    "description": "Options page names. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "審查者使用者名稱",
+    "description": "Display toggle label. Shows immutable GitHub login/usernames, not personal display names."
   },
   "options_names_description": {
-    "message": "在審查者頭像旁顯示名稱。",
-    "description": "Options page names description. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "在審查者頭像旁顯示使用者名稱。",
+    "description": "Help for the username display toggle; the value is the GitHub login identifier."
   },
   "options_open_only": {
-    "message": "僅顯示未關閉的提取要求",
-    "description": "Options page open only. Visible text; keep GitHub names, codes and identifiers unchanged."
+    "message": "審查者連結：僅顯示未關閉的 PR",
+    "description": "Toggle for the destination filter of reviewer links; does not hide reviewer information on closed PR list rows."
   },
   "options_open_only_description": {
     "message": "審查者連結僅列出尚未關閉的工作。",
@@ -706,7 +706,7 @@
     }
   },
   "reviewers_requested": {
-    "message": "已請求審查",
+    "message": "已要求審查",
     "description": "Reviewer review state: requested."
   },
   "reviewers_approved": {
@@ -726,19 +726,19 @@
     "description": "Reviewer review state: dismissed."
   },
   "reviewers_approved_requested": {
-    "message": "已核准（仍請求審查）",
+    "message": "已核准（仍要求審查）",
     "description": "Completed approved review while the reviewer is still requested."
   },
   "reviewers_changes_requested_requested": {
-    "message": "已要求變更（仍請求審查）",
+    "message": "已要求變更（仍要求審查）",
     "description": "Completed changes_requested review while the reviewer is still requested."
   },
   "reviewers_commented_requested": {
-    "message": "已留言（仍請求審查）",
+    "message": "已留言（仍要求審查）",
     "description": "Completed commented review while the reviewer is still requested."
   },
   "reviewers_dismissed_requested": {
-    "message": "審查已撤銷（仍請求審查）",
+    "message": "審查已撤銷（仍要求審查）",
     "description": "Completed dismissed review while the reviewer is still requested."
   },
   "banner_auth_expired": {
@@ -798,7 +798,7 @@
     "description": "Fallback quota when no numeric rate-limit evidence is available."
   },
   "banner_auth_rate_unknown": {
-    "message": "已達到 GitHub 每小時請求上限。$USAGE$ 限額重設後將自動恢復載入審查者。",
+    "message": "已達到 GitHub 每小時要求上限。$USAGE$ 限額重設後將自動恢復載入審查者。",
     "description": "auth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -807,7 +807,7 @@
     }
   },
   "banner_unauth_rate_unknown": {
-    "message": "已達到 GitHub 未登入請求上限。$USAGE$ 登入後可提高至每小時 5,000 次。",
+    "message": "已達到 GitHub 未登入要求上限。$USAGE$ 登入後可提高至每小時 5,000 次。",
     "description": "unauth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -816,7 +816,7 @@
     }
   },
   "banner_auth_rate_shortly": {
-    "message": "已達到 GitHub 每小時請求上限。$USAGE$ 即將恢復載入審查者。",
+    "message": "已達到 GitHub 每小時要求上限。$USAGE$ 即將恢復載入審查者。",
     "description": "auth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -825,7 +825,7 @@
     }
   },
   "banner_unauth_rate_shortly": {
-    "message": "已達到 GitHub 未登入請求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額即將重設。",
+    "message": "已達到 GitHub 未登入要求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額即將重設。",
     "description": "unauth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -834,7 +834,7 @@
     }
   },
   "banner_auth_rate_minute": {
-    "message": "已達到 GitHub 每小時請求上限。$USAGE$ 約 1 分鐘後恢復載入審查者。",
+    "message": "已達到 GitHub 每小時要求上限。$USAGE$ 約 1 分鐘後恢復載入審查者。",
     "description": "auth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -843,7 +843,7 @@
     }
   },
   "banner_unauth_rate_minute": {
-    "message": "已達到 GitHub 未登入請求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額約 1 分鐘後重設。",
+    "message": "已達到 GitHub 未登入要求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額約 1 分鐘後重設。",
     "description": "unauth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -852,7 +852,7 @@
     }
   },
   "banner_auth_rate_minutes": {
-    "message": "已達到 GitHub 每小時請求上限。$USAGE$ 約 $COUNT$ 分鐘後恢復載入審查者。",
+    "message": "已達到 GitHub 每小時要求上限。$USAGE$ 約 $COUNT$ 分鐘後恢復載入審查者。",
     "description": "auth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -864,7 +864,7 @@
     }
   },
   "banner_unauth_rate_minutes": {
-    "message": "已達到 GitHub 未登入請求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額約 $COUNT$ 分鐘後重設。",
+    "message": "已達到 GitHub 未登入要求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額約 $COUNT$ 分鐘後重設。",
     "description": "unauth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -876,7 +876,7 @@
     }
   },
   "banner_auth_rate_hour": {
-    "message": "已達到 GitHub 每小時請求上限。$USAGE$ 約 1 小時後恢復載入審查者。",
+    "message": "已達到 GitHub 每小時要求上限。$USAGE$ 約 1 小時後恢復載入審查者。",
     "description": "auth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -885,7 +885,7 @@
     }
   },
   "banner_unauth_rate_hour": {
-    "message": "已達到 GitHub 未登入請求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額約 1 小時後重設。",
+    "message": "已達到 GitHub 未登入要求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額約 1 小時後重設。",
     "description": "unauth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -894,7 +894,7 @@
     }
   },
   "banner_auth_rate_hours": {
-    "message": "已達到 GitHub 每小時請求上限。$USAGE$ 約 $COUNT$ 小時後恢復載入審查者。",
+    "message": "已達到 GitHub 每小時要求上限。$USAGE$ 約 $COUNT$ 小時後恢復載入審查者。",
     "description": "auth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -906,7 +906,7 @@
     }
   },
   "banner_unauth_rate_hours": {
-    "message": "已達到 GitHub 未登入請求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額約 $COUNT$ 小時後重設。",
+    "message": "已達到 GitHub 未登入要求上限。$USAGE$ 登入後可提高至每小時 5,000 次。 限額約 $COUNT$ 小時後重設。",
     "description": "unauth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {

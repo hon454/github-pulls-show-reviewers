@@ -165,4 +165,6 @@ Dismissed banners stay dismissed. GitHub content, reviewer identifiers, search
 links, and the existing review-state colors, badges, and precedence are unchanged.
 Product and GitHub App names remain unchanged. See the
 [localization contract](./docs/adr/0006-bundled-localization-and-render-only-language.md)
-for the manifest/UI boundary and shared APIs.
+for the manifest/UI boundary and shared APIs, and the
+[five-language glossary and QA report](./docs/localization.md) for translation
+coverage, packaged tests and native browser-language limitations.

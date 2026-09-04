@@ -179,6 +179,13 @@ test("switches five reviewer locales during FIFO requests, preserves errors and 
           state: t("reviewers_approved_requested"),
         }),
       );
+      await expect(page.locator("a.ghpsr-avatar").first()).toHaveAttribute(
+        "title",
+        t("reviewers_title", {
+          login: "alice",
+          state: t("reviewers_approved_requested"),
+        }),
+      );
       await expect(page.locator("#issue_49 .ghpsr-root")).toBeEmpty();
       await expect(page.locator(".ghpsr-root").first()).toHaveAttribute(
         "lang",
@@ -204,12 +211,19 @@ test("switches five reviewer locales during FIFO requests, preserves errors and 
       expect(started).toEqual(pulls);
       expect(metadataRequests).toBe(1);
       expect(eventRequests).toBe(7);
-      await page.screenshot({
-        path: testInfo.outputPath(`reviewers-${locale}-360.png`),
-        fullPage: true,
-      });
-      const bannerBounds = await banner.boundingBox();
-      expect(bannerBounds!.x + bannerBounds!.width).toBeLessThanOrEqual(360);
+      for (const width of [360, 1280]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.locator("a.ghpsr-avatar").first().focus();
+        await expect(page.locator("a.ghpsr-avatar").first()).toBeFocused();
+        await page.screenshot({
+          path: testInfo.outputPath(`reviewers-${locale}-${width}.png`),
+          fullPage: true,
+        });
+        const bannerBounds = await banner.boundingBox();
+        expect(bannerBounds!.x + bannerBounds!.width).toBeLessThanOrEqual(
+          width,
+        );
+      }
     }
     await banner.getByRole("button").click();
     await options.getByTestId("language-select").selectOption("ko");
@@ -242,7 +256,7 @@ test("switches five reviewer locales during FIFO requests, preserves errors and 
         eventRequests,
         started,
         peak,
-        screenshots: 5,
+        screenshots: 10,
       }),
       contentType: "application/json",
     });
