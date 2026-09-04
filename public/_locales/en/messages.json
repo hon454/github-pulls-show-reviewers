@@ -341,5 +341,327 @@
   "auth_error_unknown": {
     "message": "Could not complete sign-in. Please close this panel and try again.",
     "description": "Options page error unknown. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "diagnostics_title": {
+    "message": "Repository diagnostics",
+    "description": "Repository diagnostics title. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_description": {
+    "message": "Confirm which access path the extension will use.",
+    "description": "Repository diagnostics description. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_repository": {
+    "message": "Repository",
+    "description": "Repository diagnostics repository. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_check_matched": {
+    "message": "Check matched account",
+    "description": "Repository diagnostics check matched. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_check_no_token": {
+    "message": "Check no-token path",
+    "description": "Repository diagnostics check no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_running": {
+    "message": "Running diagnostics...",
+    "description": "Repository diagnostics running. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_empty": {
+    "message": "Enter a repository to check reviewer access.",
+    "description": "Repository diagnostics empty. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_input_matched": {
+    "message": "Enter a repository as owner/name before running diagnostics.",
+    "description": "Repository diagnostics input matched. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_input_no_token": {
+    "message": "Enter a repository before running the no-token check.",
+    "description": "Repository diagnostics input no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_uncovered": {
+    "message": "No connected account covers $REPOSITORY$. Install the GitHub App on the owner.",
+    "description": "Repository diagnostics uncovered. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_matched_account": {
+    "message": "Matched account",
+    "description": "Repository diagnostics matched account. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_auth_mode": {
+    "message": "Auth mode",
+    "description": "Repository diagnostics auth mode. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_matched_token": {
+    "message": "Matched account token",
+    "description": "Repository diagnostics matched token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_token": {
+    "message": "No token",
+    "description": "Repository diagnostics no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_not_checked": {
+    "message": "Not checked",
+    "description": "Repository diagnostics not checked. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_none": {
+    "message": "None",
+    "description": "Repository diagnostics none. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_coverage": {
+    "message": "Installation coverage",
+    "description": "Repository diagnostics coverage. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_covered": {
+    "message": "Covered",
+    "description": "Repository diagnostics covered. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_truncated": {
+    "message": "Maybe covered - local snapshot truncated",
+    "description": "Repository diagnostics truncated. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_uncovered_label": {
+    "message": "Uncovered",
+    "description": "Repository diagnostics uncovered label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_endpoint_result": {
+    "message": "Endpoint result",
+    "description": "Repository diagnostics endpoint result. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_accessible_label": {
+    "message": "Accessible",
+    "description": "Repository diagnostics accessible label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_invalid_label": {
+    "message": "Invalid repository",
+    "description": "Repository diagnostics invalid label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_pulls_label": {
+    "message": "No pull requests found",
+    "description": "Repository diagnostics no pulls label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_token_rate_label": {
+    "message": "Signed-in rate limit",
+    "description": "Repository diagnostics token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_token_rate_label": {
+    "message": "Unauthenticated rate limit",
+    "description": "Repository diagnostics no token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_private_like_label": {
+    "message": "Sign-in required for reviewer access",
+    "description": "Repository diagnostics private like label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_token_invalid_label": {
+    "message": "Token expired",
+    "description": "Repository diagnostics token invalid label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_permission_label": {
+    "message": "GitHub App access denied",
+    "description": "Repository diagnostics permission label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_not_found_label": {
+    "message": "Repository access not found",
+    "description": "Repository diagnostics not found label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_unknown_label": {
+    "message": "Unknown error",
+    "description": "Repository diagnostics unknown label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_accessible_token": {
+    "message": "Repository diagnostics checked pull #$PULL$ in $REPOSITORY$. $ENDPOINTS$ both passed with the saved token.",
+    "description": "Repository diagnostics accessible token. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "pull": {
+        "content": "$1"
+      },
+      "repository": {
+        "content": "$2"
+      },
+      "endpoints": {
+        "content": "$3"
+      }
+    }
+  },
+  "diagnostics_accessible_no_token": {
+    "message": "Repository diagnostics checked pull #$PULL$ in $REPOSITORY$. $ENDPOINTS$ both passed without a token.",
+    "description": "Repository diagnostics accessible no token. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "pull": {
+        "content": "$1"
+      },
+      "repository": {
+        "content": "$2"
+      },
+      "endpoints": {
+        "content": "$3"
+      }
+    }
+  },
+  "diagnostics_invalid": {
+    "message": "Repository must use the form owner/name.",
+    "description": "Repository diagnostics invalid. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_pulls": {
+    "message": "Repository $REPOSITORY$ has no pull requests yet, so the exact reviewer endpoints could not be checked.",
+    "description": "Repository diagnostics no pulls. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_token_rate": {
+    "message": "Requests for $REPOSITORY$ hit the signed-in rate limit. Wait for the limit to reset and try again.",
+    "description": "Repository diagnostics token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_no_token_rate": {
+    "message": "Requests for $REPOSITORY$ hit the unauthenticated rate limit. Public repositories usually work without signing in; wait for reset or sign in for higher limits.",
+    "description": "Repository diagnostics no token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_private_like": {
+    "message": "$REPOSITORY$ was not accessible without a signed-in account. It may be private, deleted, or access-restricted. Verify the repository name and sign in if needed.",
+    "description": "Repository diagnostics private like. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_token_invalid": {
+    "message": "GitHub rejected the saved token for $REPOSITORY$. Sign in again.",
+    "description": "Repository diagnostics token invalid. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_permission": {
+    "message": "GitHub denied access to $REPOSITORY$. Check the GitHub App installation and its Pull requests: Read permission.",
+    "description": "Repository diagnostics permission. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_not_found": {
+    "message": "GitHub could not find $REPOSITORY$ with this account. Verify its name and GitHub App installation access; the repository may be deleted or restricted.",
+    "description": "Repository diagnostics not found. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_unknown": {
+    "message": "Could not complete diagnostics for $REPOSITORY$. Check the evidence below and try again.",
+    "description": "Repository diagnostics unknown. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_run_failed": {
+    "message": "Could not run diagnostics. Please try again.",
+    "description": "Repository diagnostics run failed. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_pull_number": {
+    "message": "Pull request",
+    "description": "Repository diagnostics pull number. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_endpoint_failure": {
+    "message": "Endpoint failure",
+    "description": "Repository diagnostics endpoint failure. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_api_request": {
+    "message": "GitHub API request",
+    "description": "Repository diagnostics api request. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_http_failure": {
+    "message": "$ENDPOINT$ returned HTTP $STATUS$.",
+    "description": "Repository diagnostics http failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      },
+      "status": {
+        "content": "$2"
+      }
+    }
+  },
+  "diagnostics_schema_failure": {
+    "message": "$ENDPOINT$ returned an unexpected response shape. Try again or report this compatibility issue.",
+    "description": "Repository diagnostics schema failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_network_failure": {
+    "message": "$ENDPOINT$ could not be reached. Check your connection and try again.",
+    "description": "Repository diagnostics network failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_unknown_failure": {
+    "message": "$ENDPOINT$ failed unexpectedly. Please try again.",
+    "description": "Repository diagnostics unknown failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_rate_limit": {
+    "message": "Rate limit",
+    "description": "Repository diagnostics rate limit. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_quota": {
+    "message": "$REMAINING$ of $LIMIT$ remaining",
+    "description": "Repository diagnostics rate quota. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "remaining": {
+        "content": "$1"
+      },
+      "limit": {
+        "content": "$2"
+      }
+    }
+  },
+  "diagnostics_rate_remaining": {
+    "message": "Requests remaining",
+    "description": "Repository diagnostics rate remaining. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_total": {
+    "message": "Request limit",
+    "description": "Repository diagnostics rate total. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_resource": {
+    "message": "Rate-limit resource",
+    "description": "Repository diagnostics rate resource. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_reset": {
+    "message": "Rate-limit reset",
+    "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
   }
 }

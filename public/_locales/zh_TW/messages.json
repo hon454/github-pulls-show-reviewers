@@ -341,5 +341,327 @@
   "auth_error_unknown": {
     "message": "無法完成登入，請關閉面板後重試。",
     "description": "Options page error unknown. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "diagnostics_title": {
+    "message": "儲存庫診斷",
+    "description": "Repository diagnostics title. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_description": {
+    "message": "確認擴充功能將使用的存取方式。",
+    "description": "Repository diagnostics description. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_repository": {
+    "message": "儲存庫",
+    "description": "Repository diagnostics repository. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_check_matched": {
+    "message": "使用相符帳號檢查",
+    "description": "Repository diagnostics check matched. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_check_no_token": {
+    "message": "檢查無權杖存取",
+    "description": "Repository diagnostics check no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_running": {
+    "message": "正在診斷…",
+    "description": "Repository diagnostics running. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_empty": {
+    "message": "輸入儲存庫以檢查審查資訊存取權限。",
+    "description": "Repository diagnostics empty. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_input_matched": {
+    "message": "請先以 owner/name 格式輸入儲存庫，再執行診斷。",
+    "description": "Repository diagnostics input matched. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_input_no_token": {
+    "message": "請先輸入儲存庫，再檢查無權杖存取。",
+    "description": "Repository diagnostics input no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_uncovered": {
+    "message": "沒有已連結帳號涵蓋 $REPOSITORY$。請在儲存庫擁有者帳號上安裝 GitHub App。",
+    "description": "Repository diagnostics uncovered. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_matched_account": {
+    "message": "相符帳號",
+    "description": "Repository diagnostics matched account. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_auth_mode": {
+    "message": "驗證方式",
+    "description": "Repository diagnostics auth mode. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_matched_token": {
+    "message": "相符帳號的權杖",
+    "description": "Repository diagnostics matched token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_token": {
+    "message": "無權杖",
+    "description": "Repository diagnostics no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_not_checked": {
+    "message": "未檢查",
+    "description": "Repository diagnostics not checked. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_none": {
+    "message": "無",
+    "description": "Repository diagnostics none. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_coverage": {
+    "message": "安裝涵蓋範圍",
+    "description": "Repository diagnostics coverage. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_covered": {
+    "message": "已涵蓋",
+    "description": "Repository diagnostics covered. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_truncated": {
+    "message": "可能已涵蓋 - 本機快照不完整",
+    "description": "Repository diagnostics truncated. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_uncovered_label": {
+    "message": "未涵蓋",
+    "description": "Repository diagnostics uncovered label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_endpoint_result": {
+    "message": "端點結果",
+    "description": "Repository diagnostics endpoint result. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_accessible_label": {
+    "message": "可存取",
+    "description": "Repository diagnostics accessible label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_invalid_label": {
+    "message": "無效儲存庫",
+    "description": "Repository diagnostics invalid label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_pulls_label": {
+    "message": "找不到提取要求",
+    "description": "Repository diagnostics no pulls label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_token_rate_label": {
+    "message": "已登入帳號的速率限制",
+    "description": "Repository diagnostics token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_token_rate_label": {
+    "message": "未驗證的速率限制",
+    "description": "Repository diagnostics no token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_private_like_label": {
+    "message": "存取審查資訊需要登入",
+    "description": "Repository diagnostics private like label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_token_invalid_label": {
+    "message": "權杖已到期",
+    "description": "Repository diagnostics token invalid label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_permission_label": {
+    "message": "GitHub App 存取遭到拒絕",
+    "description": "Repository diagnostics permission label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_not_found_label": {
+    "message": "找不到儲存庫存取權限",
+    "description": "Repository diagnostics not found label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_unknown_label": {
+    "message": "未知錯誤",
+    "description": "Repository diagnostics unknown label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_accessible_token": {
+    "message": "已診斷 $REPOSITORY$ 的提取要求 #$PULL$。使用已儲存的權杖，$ENDPOINTS$ 兩個要求皆成功。",
+    "description": "Repository diagnostics accessible token. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "pull": {
+        "content": "$1"
+      },
+      "repository": {
+        "content": "$2"
+      },
+      "endpoints": {
+        "content": "$3"
+      }
+    }
+  },
+  "diagnostics_accessible_no_token": {
+    "message": "已診斷 $REPOSITORY$ 的提取要求 #$PULL$。未使用權杖，$ENDPOINTS$ 兩個要求皆成功。",
+    "description": "Repository diagnostics accessible no token. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "pull": {
+        "content": "$1"
+      },
+      "repository": {
+        "content": "$2"
+      },
+      "endpoints": {
+        "content": "$3"
+      }
+    }
+  },
+  "diagnostics_invalid": {
+    "message": "儲存庫必須使用 owner/name 格式。",
+    "description": "Repository diagnostics invalid. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_pulls": {
+    "message": "儲存庫 $REPOSITORY$ 尚無提取要求，因此無法檢查實際的審查端點。",
+    "description": "Repository diagnostics no pulls. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_token_rate": {
+    "message": "對 $REPOSITORY$ 的要求已達登入帳號的速率限制，請等待限制重設後重試。",
+    "description": "Repository diagnostics token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_no_token_rate": {
+    "message": "對 $REPOSITORY$ 的要求已達未驗證的速率限制。公開儲存庫通常無需登入；請等待重設或登入以提高限額。",
+    "description": "Repository diagnostics no token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_private_like": {
+    "message": "未登入時無法存取 $REPOSITORY$。它可能是私人儲存庫、已刪除或存取受限。請確認儲存庫名稱，並在需要時登入。",
+    "description": "Repository diagnostics private like. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_token_invalid": {
+    "message": "GitHub 拒絕了用於 $REPOSITORY$ 的已儲存權杖，請重新登入。",
+    "description": "Repository diagnostics token invalid. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_permission": {
+    "message": "GitHub 拒絕存取 $REPOSITORY$，請檢查 GitHub App 安裝及其 Pull requests: Read 權限。",
+    "description": "Repository diagnostics permission. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_not_found": {
+    "message": "此帳號無法在 GitHub 找到 $REPOSITORY$。請確認名稱及 GitHub App 安裝存取權限；儲存庫可能已刪除或存取受限。",
+    "description": "Repository diagnostics not found. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_unknown": {
+    "message": "無法完成 $REPOSITORY$ 的診斷，請查看以下錯誤資訊後重試。",
+    "description": "Repository diagnostics unknown. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_run_failed": {
+    "message": "無法執行診斷，請重試。",
+    "description": "Repository diagnostics run failed. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_pull_number": {
+    "message": "提取要求",
+    "description": "Repository diagnostics pull number. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_endpoint_failure": {
+    "message": "端點錯誤",
+    "description": "Repository diagnostics endpoint failure. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_api_request": {
+    "message": "GitHub API 要求",
+    "description": "Repository diagnostics api request. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_http_failure": {
+    "message": "$ENDPOINT$ 傳回 HTTP $STATUS$。",
+    "description": "Repository diagnostics http failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      },
+      "status": {
+        "content": "$2"
+      }
+    }
+  },
+  "diagnostics_schema_failure": {
+    "message": "$ENDPOINT$ 傳回非預期的回應結構。請重試或回報此相容性問題。",
+    "description": "Repository diagnostics schema failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_network_failure": {
+    "message": "無法連線到 $ENDPOINT$，請檢查網路連線後重試。",
+    "description": "Repository diagnostics network failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_unknown_failure": {
+    "message": "$ENDPOINT$ 發生非預期的錯誤，請重試。",
+    "description": "Repository diagnostics unknown failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_rate_limit": {
+    "message": "速率限制",
+    "description": "Repository diagnostics rate limit. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_quota": {
+    "message": "共 $LIMIT$ 次，剩餘 $REMAINING$ 次",
+    "description": "Repository diagnostics rate quota. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "remaining": {
+        "content": "$1"
+      },
+      "limit": {
+        "content": "$2"
+      }
+    }
+  },
+  "diagnostics_rate_remaining": {
+    "message": "剩餘要求數",
+    "description": "Repository diagnostics rate remaining. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_total": {
+    "message": "要求限額",
+    "description": "Repository diagnostics rate total. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_resource": {
+    "message": "速率限制資源",
+    "description": "Repository diagnostics rate resource. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_reset": {
+    "message": "速率限制重設",
+    "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
   }
 }

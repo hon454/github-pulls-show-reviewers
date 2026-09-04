@@ -1919,6 +1919,204 @@ describe("validateGitHubRepositoryAccess", () => {
   });
 });
 
+describe("repository diagnostic structured evidence", () => {
+  it.each([401, 403, 404, 429, 500])(
+    "preserves HTTP %s classification and auth headers",
+    async (status) => {
+      const fetchMock = vi.spyOn(globalThis, "fetch");
+      for (const token of [null, "fixture-token"]) {
+        fetchMock.mockResolvedValueOnce(
+          new Response(JSON.stringify({ message: "external service detail" }), {
+            status,
+          }),
+        );
+        const result = await validateGitHubRepositoryAccess(
+          token ? { token } : null,
+          "Octo/repo",
+        );
+        const expected =
+          status === 429
+            ? token
+              ? "authenticated-rate-limit"
+              : "unauthenticated-rate-limit"
+            : status === 500
+              ? "unknown-error"
+              : token
+                ? {
+                    401: "token-invalid",
+                    403: "token-permission",
+                    404: "token-not-found",
+                  }[status]
+                : "unauthenticated-private-like";
+        expect(result.outcome).toBe(expected);
+        expect(result.failures).toEqual([
+          {
+            kind: "http",
+            httpStatus: status,
+            endpoint: {
+              name: "pulls-list",
+              method: "GET",
+              path: "/repos/Octo/repo/pulls?per_page=1&state=all",
+            },
+          },
+        ]);
+        expect(JSON.stringify(result.failures)).not.toContain("fixture-token");
+        expect(
+          (fetchMock.mock.calls.at(-1)?.[1]?.headers as Headers).get(
+            "Authorization",
+          ),
+        ).toBe(token ? `Bearer ${token}` : null);
+      }
+    },
+  );
+
+  it("retains both reviewer failures while selecting the rate-limited primary evidence", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ number: 42 }])))
+      .mockResolvedValueOnce(new Response("{}", { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response("{}", {
+          status: 429,
+          headers: {
+            "x-ratelimit-limit": "60",
+            "x-ratelimit-remaining": "0",
+            "x-ratelimit-reset": "1710000000",
+            "x-ratelimit-resource": "core",
+          },
+        }),
+      );
+    const result = await validateGitHubRepositoryAccess(null, "Octo/repo");
+    expect(result.outcome).toBe("unauthenticated-rate-limit");
+    expect(result.httpStatus).toBe(429);
+    expect(result.pullNumber).toBe("42");
+    expect(result.failures).toEqual([
+      {
+        kind: "http",
+        httpStatus: 404,
+        endpoint: {
+          name: "pull",
+          method: "GET",
+          path: "/repos/Octo/repo/pulls/42",
+        },
+      },
+      {
+        kind: "http",
+        httpStatus: 429,
+        endpoint: {
+          name: "reviews",
+          method: "GET",
+          path: "/repos/Octo/repo/pulls/42/reviews",
+        },
+        rateLimit: {
+          limit: 60,
+          remaining: 0,
+          resource: "core",
+          resetAt: 1710000000,
+        },
+      },
+    ]);
+  });
+
+  it.each(["schema", "json", "network", "unknown"])(
+    "returns safe %s evidence for list failures",
+    async (kind) => {
+      const fetchMock = vi.spyOn(globalThis, "fetch");
+      if (kind === "schema")
+        fetchMock.mockResolvedValueOnce(new Response("{}"));
+      else if (kind === "json")
+        fetchMock.mockResolvedValueOnce(new Response("not JSON"));
+      else
+        fetchMock.mockRejectedValueOnce(
+          kind === "network"
+            ? new TypeError("opaque browser failure")
+            : new Error("opaque unknown failure"),
+        );
+      const result = await validateGitHubRepositoryAccess(null, "Octo/repo");
+      expect(result.outcome).toBe("unknown-error");
+      expect(result.failures).toEqual([
+        {
+          kind: kind === "json" ? "schema" : kind,
+          endpoint: {
+            name: "pulls-list",
+            method: "GET",
+            path: "/repos/Octo/repo/pulls?per_page=1&state=all",
+          },
+        },
+      ]);
+      expect(result.httpStatus).toBeUndefined();
+      expect(JSON.stringify(result.failures)).not.toContain("opaque");
+    },
+  );
+
+  it("distinguishes a network failure while reading the list body from malformed JSON", async () => {
+    const response = new Response("[]");
+    vi.spyOn(response, "json").mockRejectedValueOnce(
+      new TypeError("response stream interrupted"),
+    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response);
+    const result = await validateGitHubRepositoryAccess(null, "Octo/repo");
+    expect(result.failures).toEqual([
+      {
+        kind: "network",
+        endpoint: {
+          name: "pulls-list",
+          method: "GET",
+          path: "/repos/Octo/repo/pulls?per_page=1&state=all",
+        },
+      },
+    ]);
+    expect(result.httpStatus).toBeUndefined();
+  });
+
+  it("retains reviewer schema evidence without the raw payload", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ number: 42 }])))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ privatePayload: true })),
+      )
+      .mockResolvedValueOnce(new Response("[]"));
+    const result = await validateGitHubRepositoryAccess(null, "Octo/repo");
+    expect(result.failures).toEqual([
+      {
+        kind: "schema",
+        endpoint: {
+          name: "pull",
+          method: "GET",
+          path: "/repos/Octo/repo/pulls/42",
+        },
+      },
+    ]);
+    expect(result.pullNumber).toBe("42");
+    expect(JSON.stringify(result.failures)).not.toContain("privatePayload");
+  });
+
+  it("retains network kind and checked pull when a reviewer request rejects without endpoint metadata", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ number: 42 }])))
+      .mockRejectedValueOnce(new TypeError("browser fetch failed"))
+      .mockResolvedValueOnce(new Response("[]"));
+    const result = await validateGitHubRepositoryAccess(null, "Octo/repo");
+    expect(result.outcome).toBe("unknown-error");
+    expect(result.fullName).toBe("Octo/repo");
+    expect(result.pullNumber).toBe("42");
+    expect(result.failures).toEqual([{ kind: "network" }]);
+  });
+
+  it("does not fetch invalid input or invent reviewer evidence for a repository with no PRs", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    expect(
+      (await validateGitHubRepositoryAccess(null, "invalid")).outcome,
+    ).toBe("invalid-repository");
+    expect(fetchMock).not.toHaveBeenCalled();
+    fetchMock.mockResolvedValueOnce(new Response("[]"));
+    const result = await validateGitHubRepositoryAccess(null, "Octo/repo");
+    expect(result.outcome).toBe("no-pulls");
+    expect(result.failures).toBeUndefined();
+    expect(result.pullNumber).toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("validateAccountToken", () => {
   it("returns ok with limit and remaining for a healthy rate-limit body", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(

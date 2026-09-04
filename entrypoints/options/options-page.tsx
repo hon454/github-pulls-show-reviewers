@@ -172,7 +172,7 @@ export function OptionsPage({
 
         <DisplaySettingsPanel t={t} />
 
-        <DiagnosticsPanel />
+        <DiagnosticsPanel t={t} />
 
         <section
           className="settings-section about-section"

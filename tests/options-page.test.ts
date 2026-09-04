@@ -442,7 +442,7 @@ describe("OptionsPage", () => {
       "Endpoint resultUnauthenticated rate limit",
     );
     expect(fields?.textContent).toContain(
-      "Rate limit0 of 60 remaining, resource core, resets at 2024-03-09 16:00 UTC",
+      "Rate limit0 of 60 remainingRate-limit resourcecoreRate-limit reset2024-03-09 16:00 UTC",
     );
   });
 
@@ -1222,5 +1222,204 @@ describe("options live language selection", () => {
       document.querySelector('[data-testid="prefs-error"]')?.textContent,
     ).toContain("表示設定を保存できませんでした");
     expect(updatePreferencesMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("diagnostic render-only language changes", () => {
+  it.each(["matched", "no-token"] as const)(
+    "keeps the %s request, result and input across five languages",
+    async (mode) => {
+      const h = languageHarness();
+      const existing = account();
+      getAccountByIdMock.mockResolvedValue(existing);
+      resolveAccountCoverageForRepoMock.mockResolvedValue({
+        status: "maybe-covered-truncated",
+        account: existing,
+      });
+      const request = pending<RepositoryValidationResult>();
+      validateGitHubRepositoryAccessMock.mockReturnValueOnce(request.promise);
+      await renderOptionsPage(h.store);
+      const input = document.querySelector<HTMLInputElement>(
+        '[data-testid="diagnostics-repo"]',
+      )!;
+      fireEvent.change(input, { target: { value: "cinev/shotloom" } });
+      await act(async () =>
+        document
+          .querySelector<HTMLButtonElement>(
+            `[data-testid="diagnostics-${mode}"]`,
+          )!
+          .click(),
+      );
+      for (const language of ["ko", "ja", "zh_CN", "zh_TW", "en"] as const) {
+        await chooseLanguage(language);
+        expect(
+          document.querySelector('[data-testid="diagnostics-status"]')
+            ?.textContent,
+        ).toBe(h.store.getSnapshot().t("diagnostics_running"));
+        expect(
+          document.querySelector<HTMLButtonElement>(
+            '[data-testid="diagnostics-no-token"]',
+          )!.disabled,
+        ).toBe(true);
+        expect(
+          document.querySelector<HTMLButtonElement>(
+            '[data-testid="diagnostics-matched"]',
+          )!.disabled,
+        ).toBe(true);
+        expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
+        expect(input.value).toBe("cinev/shotloom");
+      }
+      await act(async () =>
+        request.resolve(
+          validationResult({
+            ok: false,
+            authMode: mode === "matched" ? "token" : "no-token",
+            outcome:
+              mode === "matched"
+                ? "authenticated-rate-limit"
+                : "unauthenticated-rate-limit",
+            message: "private raw API details",
+            failures: [
+              {
+                kind: "http",
+                httpStatus: 403,
+                endpoint: {
+                  name: "pull",
+                  method: "GET",
+                  path: "/repos/cinev/shotloom/pulls/12",
+                },
+              },
+              {
+                kind: "http",
+                httpStatus: 429,
+                endpoint: {
+                  name: "reviews",
+                  method: "GET",
+                  path: "/repos/cinev/shotloom/pulls/12/reviews",
+                },
+                rateLimit: {
+                  limit: 60,
+                  remaining: 0,
+                  resource: "core",
+                  resetAt: 1710000000,
+                },
+              },
+            ],
+          }),
+        ),
+      );
+      const status = document.querySelector(
+        '[data-testid="diagnostics-status"]',
+      );
+      for (const language of ["ko", "ja", "zh_CN", "zh_TW", "en"] as const) {
+        await chooseLanguage(language);
+        const t = h.store.getSnapshot().t;
+        expect(status?.textContent).toBe(
+          t(
+            mode === "matched"
+              ? "diagnostics_token_rate"
+              : "diagnostics_no_token_rate",
+            { repository: "cinev/shotloom" },
+          ),
+        );
+        const fields = document.querySelector(
+          '[data-testid="diagnostics-fields"]',
+        )!;
+        expect(fields.textContent).toContain(
+          "GET /repos/cinev/shotloom/pulls/12",
+        );
+        expect(fields.textContent).toContain(
+          "GET /repos/cinev/shotloom/pulls/12/reviews",
+        );
+        expect(fields.textContent).toContain("HTTP 403");
+        expect(fields.textContent).toContain("HTTP 429");
+        expect(fields.textContent).toContain("2024-03-09 16:00 UTC");
+        expect(fields.textContent).toContain(
+          t("diagnostics_rate_quota", { remaining: 0, limit: 60 }),
+        );
+        expect(document.body.textContent).not.toContain(
+          "private raw API details",
+        );
+        expect(document.querySelector('[data-testid="diagnostics-repo"]')).toBe(
+          input,
+        );
+        expect(input.value).toBe("cinev/shotloom");
+        expect(
+          document.querySelector<HTMLButtonElement>(
+            '[data-testid="diagnostics-no-token"]',
+          )!.disabled,
+        ).toBe(false);
+      }
+      expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
+      expect(resolveAccountCoverageForRepoMock).toHaveBeenCalledTimes(
+        mode === "matched" ? 1 : 0,
+      );
+    },
+  );
+
+  it("translates input validation, uncovered coverage and unknown errors without leaking error prose", async () => {
+    const h = languageHarness();
+    await renderOptionsPage(h.store);
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-matched"]',
+        )!
+        .click(),
+    );
+    await chooseLanguage("ko");
+    const status = () =>
+      document.querySelector('[data-testid="diagnostics-status"]')?.textContent;
+    expect(status()).toBe(h.store.getSnapshot().t("diagnostics_input_matched"));
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-no-token"]',
+        )!
+        .click(),
+    );
+    await chooseLanguage("ja");
+    expect(status()).toBe(
+      h.store.getSnapshot().t("diagnostics_input_no_token"),
+    );
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-testid="diagnostics-repo"]',
+    )!;
+    fireEvent.change(input, { target: { value: "cinev/shotloom" } });
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-matched"]',
+        )!
+        .click(),
+    );
+    await chooseLanguage("zh_CN");
+    expect(status()).toBe(
+      h.store
+        .getSnapshot()
+        .t("diagnostics_uncovered", { repository: "cinev/shotloom" }),
+    );
+    expect(validateGitHubRepositoryAccessMock).not.toHaveBeenCalled();
+    validateGitHubRepositoryAccessMock.mockRejectedValueOnce(
+      new Error("private request credentials"),
+    );
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-no-token"]',
+        )!
+        .click(),
+    );
+    await chooseLanguage("zh_TW");
+    expect(status()).toBe(h.store.getSnapshot().t("diagnostics_run_failed"));
+    expect(document.body.textContent).not.toContain(
+      "private request credentials",
+    );
+    expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '[data-testid="diagnostics-no-token"]',
+      )!.disabled,
+    ).toBe(false);
   });
 });

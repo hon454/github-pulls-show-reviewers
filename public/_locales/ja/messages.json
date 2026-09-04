@@ -341,5 +341,327 @@
   "auth_error_unknown": {
     "message": "ログインを完了できませんでした。パネルを閉じて再試行してください。",
     "description": "Options page error unknown. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "diagnostics_title": {
+    "message": "リポジトリ診断",
+    "description": "Repository diagnostics title. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_description": {
+    "message": "拡張機能が使用するアクセス経路を確認します。",
+    "description": "Repository diagnostics description. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_repository": {
+    "message": "リポジトリ",
+    "description": "Repository diagnostics repository. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_check_matched": {
+    "message": "対応アカウントで確認",
+    "description": "Repository diagnostics check matched. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_check_no_token": {
+    "message": "トークンなしで確認",
+    "description": "Repository diagnostics check no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_running": {
+    "message": "診断中...",
+    "description": "Repository diagnostics running. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_empty": {
+    "message": "レビュアー情報へのアクセスを確認するリポジトリを入力してください。",
+    "description": "Repository diagnostics empty. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_input_matched": {
+    "message": "診断前にリポジトリをowner/name形式で入力してください。",
+    "description": "Repository diagnostics input matched. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_input_no_token": {
+    "message": "トークンなしで確認するリポジトリを入力してください。",
+    "description": "Repository diagnostics input no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_uncovered": {
+    "message": "$REPOSITORY$に対応する接続済みアカウントがありません。所有者にGitHub Appをインストールしてください。",
+    "description": "Repository diagnostics uncovered. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_matched_account": {
+    "message": "対応アカウント",
+    "description": "Repository diagnostics matched account. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_auth_mode": {
+    "message": "認証方式",
+    "description": "Repository diagnostics auth mode. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_matched_token": {
+    "message": "対応アカウントのトークン",
+    "description": "Repository diagnostics matched token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_token": {
+    "message": "トークンなし",
+    "description": "Repository diagnostics no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_not_checked": {
+    "message": "未確認",
+    "description": "Repository diagnostics not checked. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_none": {
+    "message": "なし",
+    "description": "Repository diagnostics none. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_coverage": {
+    "message": "インストール範囲",
+    "description": "Repository diagnostics coverage. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_covered": {
+    "message": "対象",
+    "description": "Repository diagnostics covered. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_truncated": {
+    "message": "対象の可能性あり - ローカル一覧は一部のみ",
+    "description": "Repository diagnostics truncated. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_uncovered_label": {
+    "message": "対象外",
+    "description": "Repository diagnostics uncovered label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_endpoint_result": {
+    "message": "エンドポイントの結果",
+    "description": "Repository diagnostics endpoint result. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_accessible_label": {
+    "message": "アクセス可能",
+    "description": "Repository diagnostics accessible label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_invalid_label": {
+    "message": "無効なリポジトリ",
+    "description": "Repository diagnostics invalid label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_pulls_label": {
+    "message": "プルリクエストなし",
+    "description": "Repository diagnostics no pulls label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_token_rate_label": {
+    "message": "ログイン時のレート制限",
+    "description": "Repository diagnostics token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_token_rate_label": {
+    "message": "未認証のレート制限",
+    "description": "Repository diagnostics no token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_private_like_label": {
+    "message": "レビュアー情報の確認にはログインが必要",
+    "description": "Repository diagnostics private like label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_token_invalid_label": {
+    "message": "トークン期限切れ",
+    "description": "Repository diagnostics token invalid label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_permission_label": {
+    "message": "GitHub Appのアクセスが拒否されました",
+    "description": "Repository diagnostics permission label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_not_found_label": {
+    "message": "リポジトリへのアクセスが見つかりません",
+    "description": "Repository diagnostics not found label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_unknown_label": {
+    "message": "不明なエラー",
+    "description": "Repository diagnostics unknown label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_accessible_token": {
+    "message": "$REPOSITORY$のプルリクエスト #$PULL$を診断しました。保存済みトークンで$ENDPOINTS$の両方に成功しました。",
+    "description": "Repository diagnostics accessible token. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "pull": {
+        "content": "$1"
+      },
+      "repository": {
+        "content": "$2"
+      },
+      "endpoints": {
+        "content": "$3"
+      }
+    }
+  },
+  "diagnostics_accessible_no_token": {
+    "message": "$REPOSITORY$のプルリクエスト #$PULL$を診断しました。トークンなしで$ENDPOINTS$の両方に成功しました。",
+    "description": "Repository diagnostics accessible no token. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "pull": {
+        "content": "$1"
+      },
+      "repository": {
+        "content": "$2"
+      },
+      "endpoints": {
+        "content": "$3"
+      }
+    }
+  },
+  "diagnostics_invalid": {
+    "message": "リポジトリはowner/name形式で入力してください。",
+    "description": "Repository diagnostics invalid. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_pulls": {
+    "message": "$REPOSITORY$にはプルリクエストがないため、レビュアーのエンドポイントを確認できませんでした。",
+    "description": "Repository diagnostics no pulls. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_token_rate": {
+    "message": "$REPOSITORY$へのリクエストがログイン時のレート制限に達しました。リセット後に再試行してください。",
+    "description": "Repository diagnostics token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_no_token_rate": {
+    "message": "$REPOSITORY$へのリクエストが未認証のレート制限に達しました。公開リポジトリは通常ログイン不要です。リセットを待つか、ログインして上限を増やしてください。",
+    "description": "Repository diagnostics no token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_private_like": {
+    "message": "ログインせずに$REPOSITORY$にアクセスできませんでした。非公開、削除済み、またはアクセス制限の可能性があります。名前を確認し、必要に応じてログインしてください。",
+    "description": "Repository diagnostics private like. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_token_invalid": {
+    "message": "GitHubが$REPOSITORY$の保存済みトークンを拒否しました。再ログインしてください。",
+    "description": "Repository diagnostics token invalid. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_permission": {
+    "message": "GitHubが$REPOSITORY$へのアクセスを拒否しました。GitHub AppのインストールとPull requests: Read権限を確認してください。",
+    "description": "Repository diagnostics permission. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_not_found": {
+    "message": "このアカウントでは$REPOSITORY$が見つかりませんでした。名前とGitHub Appのアクセス範囲を確認してください。削除済みやアクセス制限の可能性もあります。",
+    "description": "Repository diagnostics not found. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_unknown": {
+    "message": "$REPOSITORY$の診断を完了できませんでした。以下の情報を確認し、再試行してください。",
+    "description": "Repository diagnostics unknown. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_run_failed": {
+    "message": "診断を実行できませんでした。再試行してください。",
+    "description": "Repository diagnostics run failed. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_pull_number": {
+    "message": "プルリクエスト",
+    "description": "Repository diagnostics pull number. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_endpoint_failure": {
+    "message": "エンドポイントのエラー",
+    "description": "Repository diagnostics endpoint failure. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_api_request": {
+    "message": "GitHub APIリクエスト",
+    "description": "Repository diagnostics api request. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_http_failure": {
+    "message": "$ENDPOINT$がHTTP $STATUS$を返しました。",
+    "description": "Repository diagnostics http failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      },
+      "status": {
+        "content": "$2"
+      }
+    }
+  },
+  "diagnostics_schema_failure": {
+    "message": "$ENDPOINT$の応答形式が予期しないものでした。再試行するか、互換性の問題として報告してください。",
+    "description": "Repository diagnostics schema failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_network_failure": {
+    "message": "$ENDPOINT$に接続できませんでした。接続を確認し、再試行してください。",
+    "description": "Repository diagnostics network failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_unknown_failure": {
+    "message": "$ENDPOINT$で予期しないエラーが発生しました。再試行してください。",
+    "description": "Repository diagnostics unknown failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_rate_limit": {
+    "message": "レート制限",
+    "description": "Repository diagnostics rate limit. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_quota": {
+    "message": "$LIMIT$回中、残り$REMAINING$回",
+    "description": "Repository diagnostics rate quota. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "remaining": {
+        "content": "$1"
+      },
+      "limit": {
+        "content": "$2"
+      }
+    }
+  },
+  "diagnostics_rate_remaining": {
+    "message": "残りのリクエスト数",
+    "description": "Repository diagnostics rate remaining. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_total": {
+    "message": "リクエスト上限",
+    "description": "Repository diagnostics rate total. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_resource": {
+    "message": "レート制限リソース",
+    "description": "Repository diagnostics rate resource. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_reset": {
+    "message": "レート制限のリセット",
+    "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
   }
 }

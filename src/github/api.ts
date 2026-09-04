@@ -1,5 +1,6 @@
 export {
   describeGitHubApiError,
+  extractRepositoryValidationFailures,
   isRateLimitError,
   parseRepositoryReference,
   validateAccountToken,
@@ -27,6 +28,7 @@ export type {
   PullReviewerSummaryStatus,
   RepositoryValidationAuthMode,
   RepositoryValidationOutcome,
+  RepositoryValidationEndpointFailure,
   RepositoryValidationResult,
   ReviewerUser,
   ReviewState,

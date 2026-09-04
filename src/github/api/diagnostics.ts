@@ -14,6 +14,7 @@ import {
   type GitHubRateLimitSnapshot,
   type RepositoryValidationAuthMode,
   type RepositoryValidationFailureEvidence,
+  type RepositoryValidationEndpointFailure,
   type RepositoryValidationOutcome,
   type RepositoryValidationResult,
   type TokenValidationResult,
@@ -112,10 +113,22 @@ export async function validateGitHubRepositoryAccess(
     parsedRepository.owner,
     parsedRepository.repo,
   );
-  const response = await fetchGitHubApiResponse(
-    `https://api.github.com${listEndpoint.path}`,
-    createGitHubHeaders(auth.githubToken),
-  );
+  let response: Response;
+  try {
+    response = await fetchGitHubApiResponse(
+      `https://api.github.com${listEndpoint.path}`,
+      createGitHubHeaders(auth.githubToken),
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      authMode,
+      outcome: "unknown-error",
+      fullName,
+      message: describeRepositoryValidationError(error, fullName, auth),
+      ...getRepositoryValidationFailureEvidence(error, listEndpoint),
+    };
+  }
 
   if (!response.ok) {
     const error = await createGitHubApiError(response, listEndpoint);
@@ -129,7 +142,24 @@ export async function validateGitHubRepositoryAccess(
     };
   }
 
-  const parsedPulls = pullListSchema.safeParse(await response.json());
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch (cause) {
+    const error =
+      cause instanceof SyntaxError
+        ? new GitHubApiSchemaError(listEndpoint)
+        : cause;
+    return {
+      ok: false,
+      authMode,
+      outcome: "unknown-error",
+      fullName,
+      message: describeRepositoryValidationError(error, fullName, auth),
+      ...getRepositoryValidationFailureEvidence(error, listEndpoint),
+    };
+  }
+  const parsedPulls = pullListSchema.safeParse(body);
   if (!parsedPulls.success) {
     const schemaError = new GitHubApiSchemaError(
       listEndpoint,
@@ -141,6 +171,7 @@ export async function validateGitHubRepositoryAccess(
       outcome: classifyRepositoryValidationOutcome(schemaError, auth),
       fullName,
       message: describeRepositoryValidationError(schemaError, fullName, auth),
+      ...getRepositoryValidationFailureEvidence(schemaError),
     };
   }
   const pulls = parsedPulls.data;
@@ -383,13 +414,15 @@ function classifyRepositoryValidationOutcome(
 
 function getRepositoryValidationFailureEvidence(
   error: unknown,
+  endpoint?: GitHubEndpointDescriptor,
 ): RepositoryValidationFailureEvidence {
   const primaryError = getPrimaryGitHubApiError(error);
   if (primaryError == null) {
-    return {};
+    return { failures: extractRepositoryValidationFailures(error, endpoint) };
   }
 
   return {
+    failures: extractRepositoryValidationFailures(error, endpoint),
     ...(primaryError.endpoint == null
       ? {}
       : { endpoint: primaryError.endpoint }),
@@ -426,4 +459,42 @@ function getPrimaryGitHubApiError(error: unknown): GitHubApiError | null {
   }
 
   return null;
+}
+
+/** Narrow display evidence only: no request objects, headers, tokens or raw payloads. */
+export function extractRepositoryValidationFailures(
+  error: unknown,
+  fallbackEndpoint?: GitHubEndpointDescriptor,
+): RepositoryValidationEndpointFailure[] {
+  if (error instanceof GitHubPullRequestEndpointsError) {
+    return error.failures.flatMap((failure) =>
+      extractRepositoryValidationFailures(failure),
+    );
+  }
+  if (error instanceof GitHubApiError) {
+    const endpoint = error.endpoint ?? fallbackEndpoint;
+    return [
+      {
+        kind: "http",
+        httpStatus: error.status,
+        ...(endpoint ? { endpoint } : {}),
+        ...(hasRateLimitEvidence(error.rateLimit)
+          ? { rateLimit: error.rateLimit }
+          : {}),
+      },
+    ];
+  }
+  const endpoint =
+    error instanceof GitHubApiSchemaError ? error.endpoint : fallbackEndpoint;
+  return [
+    {
+      kind:
+        error instanceof GitHubApiSchemaError || error instanceof SyntaxError
+          ? "schema"
+          : error instanceof TypeError
+            ? "network"
+            : "unknown",
+      ...(endpoint ? { endpoint } : {}),
+    },
+  ];
 }

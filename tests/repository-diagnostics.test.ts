@@ -1,253 +1,251 @@
 import { describe, expect, it } from "vitest";
-
 import {
   buildMatchedAccountDiagnostic,
   buildNoTokenDiagnostic,
+  buildRepositoryDiagnostic,
   buildUncoveredAccountDiagnostic,
 } from "../src/features/repository-diagnostics";
 import type {
-  GitHubRateLimitSnapshot,
+  RepositoryValidationOutcome,
   RepositoryValidationResult,
 } from "../src/github/api";
-import type { Account } from "../src/storage/accounts";
+import { createTranslator, type Locale } from "../src/i18n";
 
-function account(partial: Partial<Account> = {}): Account {
-  return {
-    id: "acct_1",
-    login: "octocat",
-    avatarUrl: "https://avatars.githubusercontent.com/u/583231?v=4",
-    token: "ghu_example",
-    createdAt: 1710000000,
-    installations: [],
-    installationsRefreshedAt: 1710000000,
-    invalidated: false,
-    invalidatedReason: null,
-    refreshToken: null,
-    expiresAt: null,
-    refreshTokenExpiresAt: null,
-    ...partial,
-  };
-}
-
-function validationResult(
-  partial: Partial<RepositoryValidationResult> = {},
+const locales: Locale[] = ["en", "ko", "ja", "zh_CN", "zh_TW"];
+const outcomes: RepositoryValidationOutcome[] = [
+  "accessible",
+  "invalid-repository",
+  "no-pulls",
+  "authenticated-rate-limit",
+  "unauthenticated-rate-limit",
+  "unauthenticated-private-like",
+  "token-invalid",
+  "token-permission",
+  "token-not-found",
+  "unknown-error",
+];
+const poison = "PRIVATE raw Error.message should never appear";
+function result(
+  outcome: RepositoryValidationOutcome,
+  authMode: "token" | "no-token",
 ): RepositoryValidationResult {
   return {
-    ok: true,
-    authMode: "token",
-    outcome: "accessible",
-    message: "Repository diagnostics checked pull #42 in octo/repo.",
-    fullName: "octo/repo",
+    ok: outcome === "accessible",
+    outcome,
+    authMode,
+    message: poison,
+    fullName: "Octo/repo-name",
     pullNumber: "42",
-    ...partial,
   } as RepositoryValidationResult;
 }
+const rate = {
+  limit: 5000,
+  remaining: 0,
+  resource: "core",
+  resetAt: 1710000000,
+};
 
-describe("repository diagnostics view model", () => {
-  it("builds success fields for a matched account diagnostic", () => {
-    const diagnostic = buildMatchedAccountDiagnostic({
-      repository: "octo/repo",
-      coverageStatus: "covered",
-      account: account({ login: "octocat" }),
-      result: validationResult({
-        endpoint: {
-          name: "reviews",
-          method: "GET",
-          path: "/repos/octo/repo/pulls/42/reviews",
-        },
-        httpStatus: 200,
-      }),
+// Every outcome/auth discriminator remains data; translations must not read legacy prose.
+describe.each(locales)("repository diagnostics in %s", (locale) => {
+  const t = createTranslator(locale);
+  it.each(outcomes)(
+    "renders %s in both access paths without legacy messages",
+    (outcome) => {
+      for (const authMode of ["token", "no-token"] as const) {
+        const data = result(outcome, authMode);
+        const diagnostic =
+          authMode === "token"
+            ? buildMatchedAccountDiagnostic(
+                {
+                  repository: "input/original",
+                  coverageStatus: "covered",
+                  account: { login: "Octocat" },
+                  result: data,
+                },
+                t,
+              )
+            : buildNoTokenDiagnostic(
+                { repository: "input/original", result: data },
+                t,
+              );
+        expect(diagnostic.tone).toBe(
+          outcome === "accessible" ? "success" : "error",
+        );
+        expect(JSON.stringify(diagnostic)).not.toContain(poison);
+        expect(diagnostic.message.length).toBeGreaterThan(10);
+        expect(diagnostic.fields[0]).toMatchObject({
+          label: t("diagnostics_repository"),
+          value: "Octo/repo-name",
+        });
+        expect(diagnostic.fields[2].value).toBe(
+          t(
+            authMode === "token"
+              ? "diagnostics_matched_token"
+              : "diagnostics_no_token",
+          ),
+        );
+        if (authMode === "token")
+          expect(diagnostic.fields[1].value).toBe("@Octocat");
+        if (outcome === "accessible") {
+          expect(diagnostic.message).toContain(
+            "GET /repos/Octo/repo-name/pulls/42",
+          );
+          expect(diagnostic.message).toContain(
+            "GET /repos/Octo/repo-name/pulls/42/reviews",
+          );
+        }
+        if (locale !== "en") {
+          const english = buildNoTokenDiagnostic({
+            repository: "input/original",
+            result: data,
+          });
+          expect(diagnostic.message).not.toBe(english.message);
+          expect(diagnostic.fields[4].value).not.toBe(english.fields[4].value);
+        }
+        expect(data.message).toBe(poison);
+      }
+    },
+  );
+
+  it("distinguishes local uncovered/truncated coverage from endpoint evidence", () => {
+    const uncovered = buildUncoveredAccountDiagnostic("Octo/repo-name", t);
+    expect(uncovered.message).toBe(
+      t("diagnostics_uncovered", { repository: "Octo/repo-name" }),
+    );
+    expect(uncovered.fields[4].value).toBe(t("diagnostics_not_checked"));
+    const truncated = buildMatchedAccountDiagnostic(
+      {
+        repository: "Octo/repo-name",
+        coverageStatus: "maybe-covered-truncated",
+        account: { login: "Octocat" },
+        result: result("token-permission", "token"),
+      },
+      t,
+    );
+    expect(truncated.fields[3]).toMatchObject({
+      value: t("diagnostics_truncated"),
+      tone: "warning",
     });
+    expect(truncated.fields[4].value).toBe(t("diagnostics_permission_label"));
+  });
 
-    expect(diagnostic).toEqual({
-      tone: "success",
-      message: "Repository diagnostics checked pull #42 in octo/repo.",
-      fields: [
-        { label: "Repository", value: "octo/repo", tone: "neutral" },
-        { label: "Matched account", value: "@octocat", tone: "success" },
-        { label: "Auth mode", value: "Matched account token", tone: "success" },
-        { label: "Installation coverage", value: "Covered", tone: "success" },
+  it("preserves both endpoints, statuses, quota/resource values and UTC reset", () => {
+    const data = {
+      ...result("authenticated-rate-limit", "token"),
+      failures: [
         {
-          label: "Endpoint result",
-          value: "Accessible",
-          tone: "success",
+          kind: "http" as const,
+          httpStatus: 403,
+          endpoint: {
+            name: "pull" as const,
+            method: "GET" as const,
+            path: "/repos/Octo/repo-name/pulls/42",
+          },
+          rateLimit: { ...rate, remaining: 4999 },
+        },
+        {
+          kind: "http" as const,
+          httpStatus: 429,
+          endpoint: {
+            name: "reviews" as const,
+            method: "GET" as const,
+            path: "/repos/Octo/repo-name/pulls/42/reviews",
+          },
+          rateLimit: rate,
         },
       ],
-    });
-  });
-
-  it("builds an uncovered diagnostic without repository validation", () => {
-    expect(
-      buildUncoveredAccountDiagnostic(
-        "octo/private-repo",
-        "No signed-in account covers this repository.",
-      ),
-    ).toEqual({
-      tone: "error",
-      message: "No signed-in account covers this repository.",
-      fields: [
-        { label: "Repository", value: "octo/private-repo", tone: "neutral" },
-        { label: "Matched account", value: "None", tone: "error" },
-        { label: "Auth mode", value: "Not checked", tone: "neutral" },
-        { label: "Installation coverage", value: "Uncovered", tone: "error" },
-        { label: "Endpoint result", value: "Not checked", tone: "neutral" },
-      ],
-    });
-  });
-
-  it("includes truncated coverage and rate-limit evidence with formatted reset time", () => {
-    const rateLimit: GitHubRateLimitSnapshot = {
-      limit: 60,
-      remaining: 0,
-      resource: "core",
-      resetAt: 1710000000,
     };
-
-    const diagnostic = buildMatchedAccountDiagnostic({
-      repository: "octo/repo",
-      coverageStatus: "maybe-covered-truncated",
-      account: account(),
-      result: validationResult({
-        ok: false,
-        outcome: "authenticated-rate-limit",
-        authMode: "token",
-        message: "Repository diagnostics failed for octo/repo.",
-        fullName: "octo/repo",
-        endpoint: {
-          name: "pulls-list",
-          method: "GET",
-          path: "/repos/octo/repo/pulls",
-        },
-        httpStatus: 403,
-        rateLimit,
-      }),
-    });
-
-    expect(diagnostic).toEqual({
-      tone: "error",
-      message: "Repository diagnostics failed for octo/repo.",
-      fields: [
-        { label: "Repository", value: "octo/repo", tone: "neutral" },
-        { label: "Matched account", value: "@octocat", tone: "success" },
-        { label: "Auth mode", value: "Matched account token", tone: "success" },
-        {
-          label: "Installation coverage",
-          value: "Maybe covered - local snapshot truncated",
-          tone: "warning",
-        },
-        {
-          label: "Endpoint result",
-          value: "Signed-in rate limit",
-          tone: "error",
-        },
-        {
-          label: "Rate limit",
-          value: "0 of 60 remaining, resource core, resets at 2024-03-09 16:00 UTC",
-          tone: "error",
-        },
-      ],
-    });
+    const diagnostic = buildNoTokenDiagnostic(
+      { repository: "Octo/repo-name", result: data },
+      t,
+    );
+    const failures = diagnostic.fields.filter(
+      (f) => f.label === t("diagnostics_endpoint_failure"),
+    );
+    expect(failures.map((f) => f.value)).toEqual(
+      data.failures.map((f) =>
+        t("diagnostics_http_failure", {
+          endpoint: `${f.endpoint.method} ${f.endpoint.path}`,
+          status: f.httpStatus,
+        }),
+      ),
+    );
+    expect(
+      diagnostic.fields.filter((f) => f.label === t("diagnostics_rate_limit")),
+    ).toEqual([
+      {
+        label: t("diagnostics_rate_limit"),
+        value: t("diagnostics_rate_quota", { remaining: 4999, limit: 5000 }),
+        tone: "neutral",
+      },
+      {
+        label: t("diagnostics_rate_limit"),
+        value: t("diagnostics_rate_quota", { remaining: 0, limit: 5000 }),
+        tone: "error",
+      },
+    ]);
+    expect(
+      diagnostic.fields
+        .filter((f) => f.label === t("diagnostics_rate_reset"))
+        .map((f) => f.value),
+    ).toEqual(["2024-03-09 16:00 UTC", "2024-03-09 16:00 UTC"]);
+    expect(
+      diagnostic.fields
+        .filter((f) => f.label === t("diagnostics_rate_resource"))
+        .map((f) => f.value),
+    ).toEqual(["core", "core"]);
   });
 
-  it("builds no-token diagnostics with unchecked account and coverage fields", () => {
+  it("localizes empty, running, input and safe schema/network/unknown errors", () => {
+    for (const kind of [
+      "empty",
+      "running",
+      "input-matched",
+      "input-no-token",
+    ] as const) {
+      const view = buildRepositoryDiagnostic({ kind }, t);
+      expect(view.message).not.toMatch(/diagnostics_|undefined/);
+      if (locale !== "en")
+        expect(view.message).not.toBe(
+          buildRepositoryDiagnostic({ kind }, createTranslator("en")).message,
+        );
+    }
+    for (const kind of ["schema", "network", "unknown"] as const) {
+      const view = buildRepositoryDiagnostic(
+        { kind: "failed", failures: [{ kind }] },
+        t,
+      );
+      expect(view.message).toBe(t("diagnostics_run_failed"));
+      expect(view.fields[0].value).toContain(t("diagnostics_api_request"));
+      expect(view.fields[0].value).not.toContain("HTTP");
+    }
+  });
+});
+
+it("keeps partial quota evidence and legacy primary evidence without inventing missing values", () => {
+  for (const remaining of [0, null]) {
+    const data = {
+      ...result("unknown-error", "no-token"),
+      httpStatus: 500,
+      rateLimit: {
+        limit: remaining == null ? 60 : null,
+        remaining,
+        resource: null,
+        resetAt: null,
+      },
+    };
     const diagnostic = buildNoTokenDiagnostic({
-      repository: "octo/repo",
-      result: validationResult({
-        ok: false,
-        authMode: "no-token",
-        outcome: "unauthenticated-rate-limit",
-        message: "Repository diagnostics failed for octo/repo.",
-        rateLimit: {
-          limit: 60,
-          remaining: 0,
-          resource: "core",
-          resetAt: 1710000000,
-        },
-      }),
+      repository: "Octo/repo-name",
+      result: data,
     });
-
-    expect(diagnostic).toEqual({
-      tone: "error",
-      message: "Repository diagnostics failed for octo/repo.",
-      fields: [
-        { label: "Repository", value: "octo/repo", tone: "neutral" },
-        { label: "Matched account", value: "Not checked", tone: "neutral" },
-        { label: "Auth mode", value: "No token", tone: "neutral" },
-        {
-          label: "Installation coverage",
-          value: "Not checked",
-          tone: "neutral",
-        },
-        {
-          label: "Endpoint result",
-          value: "Unauthenticated rate limit",
-          tone: "error",
-        },
-        {
-          label: "Rate limit",
-          value: "0 of 60 remaining, resource core, resets at 2024-03-09 16:00 UTC",
-          tone: "error",
-        },
-      ],
-    });
-  });
-
-  it("maps token-invalid and token-permission outcomes to user-facing endpoint labels", () => {
-    const tokenInvalid = buildMatchedAccountDiagnostic({
-      repository: "octo/repo",
-      coverageStatus: "covered",
-      account: account(),
-      result: validationResult({
-        ok: false,
-        outcome: "token-invalid",
-        message: "Token failed.",
-      }),
-    });
-    const tokenPermission = buildMatchedAccountDiagnostic({
-      repository: "octo/repo",
-      coverageStatus: "covered",
-      account: account(),
-      result: validationResult({
-        ok: false,
-        outcome: "token-permission",
-        message: "Permission failed.",
-      }),
-    });
-
-    expect(tokenInvalid.fields).toContainEqual({
-      label: "Endpoint result",
-      value: "Token expired",
-      tone: "error",
-    });
-    expect(tokenPermission.fields).toContainEqual({
-      label: "Endpoint result",
-      value: "GitHub App installation missing",
-      tone: "error",
-    });
-  });
-
-  it("keeps non-exhausted rate-limit evidence neutral on unrelated failures", () => {
-    const diagnostic = buildMatchedAccountDiagnostic({
-      repository: "octo/repo",
-      coverageStatus: "covered",
-      account: account(),
-      result: validationResult({
-        ok: false,
-        outcome: "token-not-found",
-        message: "Repository was not found.",
-        rateLimit: {
-          limit: 5000,
-          remaining: 4999,
-          resource: "core",
-          resetAt: null,
-        },
-      }),
-    });
-
-    expect(diagnostic.fields).toContainEqual({
-      label: "Rate limit",
-      value: "4999 of 5000 remaining, resource core",
-      tone: "neutral",
-    });
-  });
+    expect(diagnostic.fields.at(-1)?.value).toBe(
+      remaining == null ? "60" : "0",
+    );
+    expect(diagnostic.fields.some((f) => f.value.includes("HTTP 500"))).toBe(
+      true,
+    );
+    expect(diagnostic.fields.some((f) => f.label === "Rate-limit reset")).toBe(
+      false,
+    );
+  }
 });
