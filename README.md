@@ -49,10 +49,9 @@ the manual Chrome verification flow. Firefox support is also out of scope until
 its MV3 behavior, extension packaging, and GitHub sign-in flow are tested
 explicitly.
 
-The extension is English-only today. Future localization would require
-extracting Chrome manifest strings, options-page copy, access-banner guidance,
-and injected pull-request-list labels into Chrome `_locales` resources or an
-equivalent localization layer.
+Chrome metadata, options, sign-in, and repository diagnostics support English,
+Korean, Japanese, Simplified Chinese, and Traditional Chinese. Reviewer-list
+labels and access banners remain English pending their localization integration.
 
 ## Public and Private Repositories
 
@@ -151,8 +150,9 @@ language. The local `language` preference defaults to `auto` and supports a
 manual override for extension-owned UI. The options page, display settings,
 account actions and GitHub device sign-in flow support all five languages.
 Changing language updates other open options tabs without restarting sign-in,
-clearing repository input or repeating an account action. Diagnostics and
-reviewer surfaces are being integrated separately.
+clearing repository input or repeating an account action. Repository diagnostics
+reformat existing results and running status without another API request.
+Reviewer surfaces are being integrated separately.
 Product and GitHub App names remain unchanged. See the
 [localization contract](./docs/adr/0006-bundled-localization-and-render-only-language.md)
 for the manifest/UI boundary and shared APIs.

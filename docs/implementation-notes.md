@@ -32,8 +32,9 @@
   Its implementation is split under `src/github/api/`: `schemas.ts` owns zod
   response parsing, `request.ts` owns authenticated headers and validated REST
   pagination, `reviewer-summary.ts` owns page metadata and reviewer-state
-  aggregation, `diagnostics.ts` owns token/repository validation and user-facing
+  aggregation, `diagnostics.ts` owns token/repository validation and stable
   API error classification, and `types.ts` owns the shared contracts and errors.
+  Repository diagnostic view models own localized explanations.
 - `src/features/reviewers/index.ts` remains the content-script facade.
   `page-controller.ts` coordinates route and row work,
   `page-metadata.ts` owns the short-lived page metadata cache and in-flight
@@ -191,11 +192,9 @@ continue to force route refreshes.
   the Chromium MV3 output, but they are compatibility expectations rather than
   supported targets. Firefox support would need separate MV3 behavior checks,
   packaging validation, store guidance, and private-repository sign-in testing.
-- User-facing copy is intentionally English-only. Adding localization later
-  would require extracting manifest text into Chrome `_locales`, moving
-  options-page React copy, access-banner guidance, and injected reviewer labels
-  behind a translation boundary, then adding fixture coverage to keep localized
-  pull-list rendering deterministic.
+- Chrome metadata, options/auth, and repository diagnostics use the five bundled
+  catalogs. Content reviewer labels and access banners remain English until
+  their separate integration; no runtime translation service is used.
 
 ## Unit coverage gate
 
@@ -407,8 +406,9 @@ Chrome-owned manifest metadata follows Chrome independently. The shared locale
 store owns one local-storage listener while subscribed, safely orders hydration
 against events and writes, and exposes React and DOM adapters with disposal.
 Language is presentation state; no translated strings belong in reviewer caches,
-request keys or technical error evidence. Options integration is implemented in #148; diagnostics and content
-integration follow in #149–#150. The full API, key ownership, migration, error
+request keys or technical error evidence. Options and diagnostics integration is
+implemented in #148–#149; content integration follows in #150. The full API, key
+ownership, migration, error
 and render-only rules are in
 [ADR 0006](./adr/0006-bundled-localization-and-render-only-language.md).
 
@@ -438,10 +438,43 @@ Validate catalogs with the i18n unit tests and emitted metadata with
   translated sentences. Changing language reformats visible status without
   repeating work. Preference writes within one context are serialized so
   overlapping language/display changes merge against the latest saved record.
-- `DiagnosticsPanel` retains its current behavior and state until #149. The
+- `DiagnosticsPanel` renders structured data with the parent translator. The
   parent never keys or remounts the subtree by locale, so repository input and
   active operations survive. Layout wraps long identifiers and actions at 360px.
 - Regression coverage includes a real isolated Chrome two-tab language switch,
   persisted selection after reload, five-language 360px/desktop layout checks,
   pending authentication/refresh request counts, error rerendering, timezone
   formatting, native label associations and existing English behavior.
+
+## Diagnostic language and evidence
+
+- Repository validation keeps locale-independent `outcome`, `authMode`, repository,
+  pull number and primary HTTP/rate-limit evidence. The additive `failures` array
+  retains both failed reviewer endpoints and distinguishes HTTP, schema, network
+  and unknown failures. Its entries contain only kind, endpoint, status and
+  rate-limit scalars; no tokens, request objects, raw payloads or schema issues.
+- Existing English `message` strings remain a compatibility field for internal
+  callers. The options presentation never parses or displays them. Pure view
+  models format every outcome and all coverage/working/input/error states from
+  `diagnostics_` messages in the five bundled catalogs.
+- Local uncovered/truncated installation snapshots remain separate from endpoint
+  results. HTTP 403/404 guidance describes denied or unavailable access and asks
+  users to verify the repository and App permissions; it does not claim that the
+  repository is definitely private or that an installation is definitely missing.
+- Repository names, logins, pull numbers, methods, API paths, HTTP statuses and
+  rate-limit resource names remain literal. Quotas preserve their numeric values;
+  reset epochs still display ISO date/time rounded down to the minute with a
+  visible UTC suffix. Field labels and complete guidance sentences are translated.
+- The panel stores diagnostic data and only the matched account login, not an
+  account token or translated view model. Language changes rerender existing data,
+  including running operations, without validation, token refresh or account
+  resolution calls. Busy guards and matched/no-token input parsing are unchanged.
+- Network exceptions without endpoint metadata show a localized generic API
+  request label alongside the known repository and checked pull number; the UI
+  never invents a failing path or HTTP status. List network/schema failures retain
+  the known list endpoint. Unknown errors use actionable localized fallback copy
+  rather than raw exception messages.
+- Regression coverage includes all ten outcomes in five locales, both auth modes,
+  dual endpoint failures, partial and exhausted quota evidence, UTC reset values,
+  safe schema/network/unknown errors, and language changes during/after both
+  matched-account and no-token requests with unchanged API call counts.

@@ -2,18 +2,22 @@ import { useRef, useState } from "react";
 
 import { validateRepositoryAccessWithAccount } from "../../../src/auth/account-token-refresh";
 import {
-  buildMatchedAccountDiagnostic,
-  buildNoTokenDiagnostic,
-  buildUncoveredAccountDiagnostic,
-  type RepositoryDiagnosticViewModel,
+  buildRepositoryDiagnostic,
+  type RepositoryDiagnosticState,
 } from "../../../src/features/repository-diagnostics";
-import { validateGitHubRepositoryAccess } from "../../../src/github/api";
+import {
+  extractRepositoryValidationFailures,
+  validateGitHubRepositoryAccess,
+} from "../../../src/github/api";
+import type { Translator } from "../../../src/i18n";
 import { resolveAccountCoverageForRepo } from "../../../src/storage/accounts";
 
-export function DiagnosticsPanel() {
+export function DiagnosticsPanel({ t }: { t: Translator }) {
   const [repository, setRepository] = useState("");
-  const [diagnostic, setDiagnostic] =
-    useState<RepositoryDiagnosticViewModel | null>(null);
+  const [state, setDiagnostic] = useState<RepositoryDiagnosticState>({
+    kind: "empty",
+  });
+  const diagnostic = buildRepositoryDiagnostic(state, t);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
 
@@ -24,18 +28,13 @@ export function DiagnosticsPanel() {
 
     busyRef.current = true;
     setBusy(true);
-    setDiagnostic({
-      tone: "neutral",
-      message: "Running diagnostics...",
-      fields: [],
-    });
+    setDiagnostic({ kind: "running" });
     try {
       await execute();
     } catch (error) {
       setDiagnostic({
-        tone: "error",
-        message: `Could not run diagnostics. ${errorMessage(error)}`,
-        fields: [],
+        kind: "failed",
+        failures: extractRepositoryValidationFailures(error),
       });
     } finally {
       busyRef.current = false;
@@ -47,11 +46,7 @@ export function DiagnosticsPanel() {
     const trimmed = repository.trim();
     const match = trimmed.match(/^([^/\s]+)\/([^/\s]+)$/);
     if (!match) {
-      setDiagnostic({
-        tone: "error",
-        message: "Enter a repository as owner/name before running diagnostics.",
-        fields: [],
-      });
+      setDiagnostic({ kind: "input-matched" });
       return;
     }
     await runDiagnostic(async () => {
@@ -60,42 +55,32 @@ export function DiagnosticsPanel() {
         match[2],
       );
       if (resolution.status === "uncovered") {
-        setDiagnostic(
-          buildUncoveredAccountDiagnostic(
-            trimmed,
-            `No connected account covers ${trimmed}. Install the GitHub App on the owner.`,
-          ),
-        );
+        setDiagnostic({ kind: "uncovered", repository: trimmed });
         return;
       }
       const result = await validateRepositoryAccessWithAccount({
         account: resolution.account,
         repository: trimmed,
       });
-      setDiagnostic(
-        buildMatchedAccountDiagnostic({
-          repository: trimmed,
-          coverageStatus: resolution.status,
-          account: resolution.account,
-          result,
-        }),
-      );
+      setDiagnostic({
+        kind: "matched",
+        repository: trimmed,
+        coverageStatus: resolution.status,
+        account: { login: resolution.account.login },
+        result,
+      });
     });
   }
 
   async function runNoToken() {
     const trimmed = repository.trim();
     if (!trimmed) {
-      setDiagnostic({
-        tone: "error",
-        message: "Enter a repository before running the no-token check.",
-        fields: [],
-      });
+      setDiagnostic({ kind: "input-no-token" });
       return;
     }
     await runDiagnostic(async () => {
       const result = await validateGitHubRepositoryAccess(null, trimmed);
-      setDiagnostic(buildNoTokenDiagnostic({ repository: trimmed, result }));
+      setDiagnostic({ kind: "no-token", repository: trimmed, result });
     });
   }
 
@@ -104,12 +89,12 @@ export function DiagnosticsPanel() {
       <div className="section-heading">
         <span className="section-index">03</span>
         <div>
-          <h2 id="diagnostics-title">Repository diagnostics</h2>
-          <p>Confirm which access path the extension will use.</p>
+          <h2 id="diagnostics-title">{t("diagnostics_title")}</h2>
+          <p>{t("diagnostics_description")}</p>
         </div>
       </div>
       <label htmlFor="diagnostics-repository" className="field-label">
-        Repository <span>owner/name</span>
+        {t("diagnostics_repository")} <span>owner/name</span>
       </label>
       <input
         id="diagnostics-repository"
@@ -128,7 +113,7 @@ export function DiagnosticsPanel() {
           className="button button--primary"
           data-testid="diagnostics-matched"
         >
-          Check matched account
+          {t("diagnostics_check_matched")}
         </button>
         <button
           type="button"
@@ -137,7 +122,7 @@ export function DiagnosticsPanel() {
           className="button button--secondary"
           data-testid="diagnostics-no-token"
         >
-          Check no-token path
+          {t("diagnostics_check_no_token")}
         </button>
       </div>
       {diagnostic ? (
@@ -152,8 +137,8 @@ export function DiagnosticsPanel() {
           </p>
           {diagnostic.fields.length > 0 ? (
             <dl className="diagnostic-fields" data-testid="diagnostics-fields">
-              {diagnostic.fields.map((field) => (
-                <div key={field.label} className="diagnostic-field">
+              {diagnostic.fields.map((field, index) => (
+                <div key={index} className="diagnostic-field">
                   <dt>{field.label}</dt>
                   <dd
                     className={`diagnostic-value diagnostic-value--${field.tone}`}
@@ -168,10 +153,4 @@ export function DiagnosticsPanel() {
       ) : null}
     </section>
   );
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Please try again.";
 }

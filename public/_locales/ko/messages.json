@@ -341,5 +341,327 @@
   "auth_error_unknown": {
     "message": "로그인을 완료하지 못했습니다. 패널을 닫고 다시 시도하세요.",
     "description": "Options page error unknown. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "diagnostics_title": {
+    "message": "저장소 진단",
+    "description": "Repository diagnostics title. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_description": {
+    "message": "확장 프로그램이 사용할 접근 경로를 확인합니다.",
+    "description": "Repository diagnostics description. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_repository": {
+    "message": "저장소",
+    "description": "Repository diagnostics repository. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_check_matched": {
+    "message": "연결된 계정으로 확인",
+    "description": "Repository diagnostics check matched. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_check_no_token": {
+    "message": "토큰 없이 확인",
+    "description": "Repository diagnostics check no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_running": {
+    "message": "진단 중...",
+    "description": "Repository diagnostics running. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_empty": {
+    "message": "리뷰어 정보 접근을 확인할 저장소를 입력하세요.",
+    "description": "Repository diagnostics empty. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_input_matched": {
+    "message": "진단할 저장소를 owner/name 형식으로 입력하세요.",
+    "description": "Repository diagnostics input matched. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_input_no_token": {
+    "message": "토큰 없이 확인할 저장소를 입력하세요.",
+    "description": "Repository diagnostics input no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_uncovered": {
+    "message": "$REPOSITORY$에 접근 가능한 연결 계정이 없습니다. 저장소 소유자 계정에 GitHub App을 설치하세요.",
+    "description": "Repository diagnostics uncovered. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_matched_account": {
+    "message": "연결된 계정",
+    "description": "Repository diagnostics matched account. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_auth_mode": {
+    "message": "인증 방식",
+    "description": "Repository diagnostics auth mode. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_matched_token": {
+    "message": "연결된 계정 토큰",
+    "description": "Repository diagnostics matched token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_token": {
+    "message": "토큰 없음",
+    "description": "Repository diagnostics no token. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_not_checked": {
+    "message": "확인하지 않음",
+    "description": "Repository diagnostics not checked. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_none": {
+    "message": "없음",
+    "description": "Repository diagnostics none. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_coverage": {
+    "message": "설치 범위",
+    "description": "Repository diagnostics coverage. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_covered": {
+    "message": "포함됨",
+    "description": "Repository diagnostics covered. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_truncated": {
+    "message": "포함 가능성 있음 - 로컬 목록 일부만 저장됨",
+    "description": "Repository diagnostics truncated. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_uncovered_label": {
+    "message": "포함되지 않음",
+    "description": "Repository diagnostics uncovered label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_endpoint_result": {
+    "message": "엔드포인트 결과",
+    "description": "Repository diagnostics endpoint result. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_accessible_label": {
+    "message": "접근 가능",
+    "description": "Repository diagnostics accessible label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_invalid_label": {
+    "message": "저장소 형식 오류",
+    "description": "Repository diagnostics invalid label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_pulls_label": {
+    "message": "PR 없음",
+    "description": "Repository diagnostics no pulls label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_token_rate_label": {
+    "message": "로그인 계정 요청 한도",
+    "description": "Repository diagnostics token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_token_rate_label": {
+    "message": "미인증 요청 한도",
+    "description": "Repository diagnostics no token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_private_like_label": {
+    "message": "리뷰어 정보 접근에 로그인 필요",
+    "description": "Repository diagnostics private like label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_token_invalid_label": {
+    "message": "토큰 만료",
+    "description": "Repository diagnostics token invalid label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_permission_label": {
+    "message": "GitHub App 접근 거부",
+    "description": "Repository diagnostics permission label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_not_found_label": {
+    "message": "저장소 접근을 확인할 수 없음",
+    "description": "Repository diagnostics not found label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_unknown_label": {
+    "message": "알 수 없는 오류",
+    "description": "Repository diagnostics unknown label. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_accessible_token": {
+    "message": "$REPOSITORY$의 PR #$PULL$을 진단했습니다. 저장된 토큰으로 $ENDPOINTS$ 두 요청 모두 성공했습니다.",
+    "description": "Repository diagnostics accessible token. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "pull": {
+        "content": "$1"
+      },
+      "repository": {
+        "content": "$2"
+      },
+      "endpoints": {
+        "content": "$3"
+      }
+    }
+  },
+  "diagnostics_accessible_no_token": {
+    "message": "$REPOSITORY$의 PR #$PULL$을 진단했습니다. 토큰 없이 $ENDPOINTS$ 두 요청 모두 성공했습니다.",
+    "description": "Repository diagnostics accessible no token. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "pull": {
+        "content": "$1"
+      },
+      "repository": {
+        "content": "$2"
+      },
+      "endpoints": {
+        "content": "$3"
+      }
+    }
+  },
+  "diagnostics_invalid": {
+    "message": "저장소는 owner/name 형식이어야 합니다.",
+    "description": "Repository diagnostics invalid. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_no_pulls": {
+    "message": "$REPOSITORY$에 PR이 없어 리뷰어 엔드포인트를 확인하지 못했습니다.",
+    "description": "Repository diagnostics no pulls. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_token_rate": {
+    "message": "$REPOSITORY$ 요청이 로그인 계정의 한도에 도달했습니다. 한도가 재설정된 뒤 다시 시도하세요.",
+    "description": "Repository diagnostics token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_no_token_rate": {
+    "message": "$REPOSITORY$ 요청이 미인증 한도에 도달했습니다. 공개 저장소는 보통 로그인 없이 사용할 수 있습니다. 한도 재설정을 기다리거나 로그인해 더 높은 한도를 사용하세요.",
+    "description": "Repository diagnostics no token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_private_like": {
+    "message": "로그인 없이 $REPOSITORY$에 접근하지 못했습니다. 비공개이거나 삭제되었거나 접근이 제한된 저장소일 수 있습니다. 저장소 이름을 확인하고 필요하면 로그인하세요.",
+    "description": "Repository diagnostics private like. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_token_invalid": {
+    "message": "GitHub에서 $REPOSITORY$용 저장된 토큰을 거부했습니다. 다시 로그인하세요.",
+    "description": "Repository diagnostics token invalid. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_permission": {
+    "message": "GitHub에서 $REPOSITORY$ 접근을 거부했습니다. GitHub App 설치와 Pull requests: Read 권한을 확인하세요.",
+    "description": "Repository diagnostics permission. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_not_found": {
+    "message": "이 계정으로 GitHub에서 $REPOSITORY$를 찾지 못했습니다. 이름과 GitHub App 설치 범위를 확인하세요. 저장소가 삭제되었거나 접근이 제한되었을 수 있습니다.",
+    "description": "Repository diagnostics not found. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_unknown": {
+    "message": "$REPOSITORY$ 진단을 완료하지 못했습니다. 아래 오류 정보를 확인하고 다시 시도하세요.",
+    "description": "Repository diagnostics unknown. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_run_failed": {
+    "message": "진단을 실행하지 못했습니다. 다시 시도하세요.",
+    "description": "Repository diagnostics run failed. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_pull_number": {
+    "message": "풀 리퀘스트",
+    "description": "Repository diagnostics pull number. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_endpoint_failure": {
+    "message": "엔드포인트 오류",
+    "description": "Repository diagnostics endpoint failure. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_api_request": {
+    "message": "GitHub API 요청",
+    "description": "Repository diagnostics api request. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_http_failure": {
+    "message": "$ENDPOINT$에서 HTTP $STATUS$를 반환했습니다.",
+    "description": "Repository diagnostics http failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      },
+      "status": {
+        "content": "$2"
+      }
+    }
+  },
+  "diagnostics_schema_failure": {
+    "message": "$ENDPOINT$의 응답 형식이 예상과 다릅니다. 다시 시도하거나 호환성 문제를 보고하세요.",
+    "description": "Repository diagnostics schema failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_network_failure": {
+    "message": "$ENDPOINT$에 연결하지 못했습니다. 연결 상태를 확인하고 다시 시도하세요.",
+    "description": "Repository diagnostics network failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_unknown_failure": {
+    "message": "$ENDPOINT$에서 예상하지 못한 오류가 발생했습니다. 다시 시도하세요.",
+    "description": "Repository diagnostics unknown failure. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "endpoint": {
+        "content": "$1"
+      }
+    }
+  },
+  "diagnostics_rate_limit": {
+    "message": "요청 한도",
+    "description": "Repository diagnostics rate limit. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_quota": {
+    "message": "$LIMIT$회 중 $REMAINING$회 남음",
+    "description": "Repository diagnostics rate quota. Preserve interpolated API paths, identifiers and numeric evidence.",
+    "placeholders": {
+      "remaining": {
+        "content": "$1"
+      },
+      "limit": {
+        "content": "$2"
+      }
+    }
+  },
+  "diagnostics_rate_remaining": {
+    "message": "남은 요청 수",
+    "description": "Repository diagnostics rate remaining. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_total": {
+    "message": "요청 한도 수",
+    "description": "Repository diagnostics rate total. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_resource": {
+    "message": "요청 한도 리소스",
+    "description": "Repository diagnostics rate resource. Preserve interpolated API paths, identifiers and numeric evidence."
+  },
+  "diagnostics_rate_reset": {
+    "message": "요청 한도 재설정",
+    "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
   }
 }
