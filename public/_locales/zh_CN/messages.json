@@ -1,0 +1,14 @@
+{
+  "extension_name": {
+    "message": "GitHub Pulls Show Reviewers",
+    "description": "Extension product name. Keep this brand identical in every locale."
+  },
+  "extension_description": {
+    "message": "直接在 GitHub 拉取请求列表中查看请求的审阅者、团队和已完成的审阅状态。",
+    "description": "Chrome manifest description. Maximum 132 characters."
+  },
+  "extension_action_title": {
+    "message": "GitHub Pulls Show Reviewers — 打开设置",
+    "description": "Chrome toolbar action tooltip that opens extension options. Preserve the product name."
+  }
+}

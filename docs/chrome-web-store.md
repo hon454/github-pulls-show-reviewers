@@ -215,3 +215,13 @@ For a credential-only check, run `release.yml` manually with
 `chrome_web_store: dry-run`. Use `chrome_web_store: publish` only when a manual
 run should intentionally upload and submit its checked package. The normal
 manual default is `skip` to avoid resubmitting a release accidentally.
+
+## Packaged localization
+
+Chrome metadata is localized from five bundled catalogs (English, Korean,
+Japanese, Simplified Chinese and Traditional Chinese), with English fallback.
+The product name stays `GitHub Pulls Show Reviewers`. Run
+`pnpm build && pnpm verify:locales` to verify emitted metadata. Chrome selects
+this metadata independently of the local UI language preference. Dashboard
+listing translations and screenshots remain manual, separate release work;
+this foundation does not publish or change dashboard assets.

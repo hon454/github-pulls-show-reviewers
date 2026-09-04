@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-05-18
+Last updated: 2026-09-04
 
 This is the canonical published privacy policy for the Chrome Web Store listing.
 The public policy URL is
@@ -40,7 +40,10 @@ To provide its reviewer visibility feature, the extension may access:
 - Display preferences are stored locally in `browser.storage.local` under a
   separate `preferences` key. That record currently stores whether review-state
   badges stay visible, whether reviewer names expand into text pills, and
-  whether reviewer chip links are scoped to open pull requests only. The
+  whether reviewer chip links are scoped to open pull requests only. It also
+  stores the UI language preference (`auto`, English, Korean, Japanese,
+  Simplified Chinese, or Traditional Chinese). Language selection stays local;
+  translations are bundled and no translation service receives data. The
   preference record remains until the user changes it or removes the extension.
 - Reviewer responses are cached only for the current page session to avoid duplicate fetches while browsing the same pull request list.
 - The extension does not operate its own backend, database, analytics pipeline, or advertising system.

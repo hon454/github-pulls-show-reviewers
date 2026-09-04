@@ -41,6 +41,9 @@ Agents working in this repository should preserve that narrow product scope. Do 
   stable facade; the page controller delegates page metadata caching, fallback
   account integration, runtime requests, and row mutation handling to focused
   modules.
+- `src/i18n/`
+  Typed bundled localization, locale resolution and lifecycle-owned subscriptions.
+  See `docs/adr/0006-bundled-localization-and-render-only-language.md` for the shared contract.
 - `src/storage/`
   Extension settings and persistence.
 - `src/cache/`

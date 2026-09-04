@@ -41,6 +41,7 @@ describe("preferences storage", () => {
     const { getPreferences } = await import("../src/storage/preferences");
     await expect(getPreferences()).resolves.toEqual({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: false,
       openPullsOnly: true,
@@ -54,6 +55,7 @@ describe("preferences storage", () => {
     const { getPreferences } = await import("../src/storage/preferences");
     await expect(getPreferences()).resolves.toEqual({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: false,
       openPullsOnly: true,
@@ -71,9 +73,56 @@ describe("preferences storage", () => {
     const { getPreferences } = await import("../src/storage/preferences");
     await expect(getPreferences()).resolves.toEqual({
       version: 1,
+      language: "auto",
       showStateBadge: false,
       showReviewerName: true,
       openPullsOnly: true,
+    });
+  });
+
+  it.each([undefined, "invalid", null, 42])(
+    "repairs only malformed language %s in existing v1 preferences",
+    async (language) => {
+      browserMock.browser.storage.local.get.mockResolvedValueOnce({
+        preferences: {
+          version: 1,
+          showStateBadge: false,
+          showReviewerName: true,
+          openPullsOnly: false,
+          language,
+        },
+      });
+      const { getPreferences } = await import("../src/storage/preferences");
+      await expect(getPreferences()).resolves.toEqual({
+        version: 1,
+        showStateBadge: false,
+        showReviewerName: true,
+        openPullsOnly: false,
+        language: "auto",
+      });
+    },
+  );
+
+  it("preserves display settings when selecting language and language when toggling display", async () => {
+    const { updatePreferences } = await import("../src/storage/preferences");
+    await updatePreferences({
+      showStateBadge: false,
+      showReviewerName: true,
+      openPullsOnly: false,
+    });
+    await expect(updatePreferences({ language: "zh_TW" })).resolves.toEqual({
+      version: 1,
+      showStateBadge: false,
+      showReviewerName: true,
+      openPullsOnly: false,
+      language: "zh_TW",
+    });
+    await expect(
+      updatePreferences({ showStateBadge: true }),
+    ).resolves.toMatchObject({
+      language: "zh_TW",
+      showReviewerName: true,
+      openPullsOnly: false,
     });
   });
 
@@ -83,6 +132,7 @@ describe("preferences storage", () => {
     const next = await updatePreferences({ showStateBadge: false });
     expect(next).toEqual({
       version: 1,
+      language: "auto",
       showStateBadge: false,
       showReviewerName: false,
       openPullsOnly: true,
@@ -96,6 +146,7 @@ describe("preferences storage", () => {
     const afterNameToggle = await updatePreferences({ showReviewerName: true });
     expect(afterNameToggle).toEqual({
       version: 1,
+      language: "auto",
       showStateBadge: false,
       showReviewerName: true,
       openPullsOnly: true,
@@ -107,6 +158,7 @@ describe("preferences storage", () => {
     const next = await updatePreferences({ openPullsOnly: false });
     expect(next).toEqual({
       version: 1,
+      language: "auto",
       showStateBadge: true,
       showReviewerName: false,
       openPullsOnly: false,
