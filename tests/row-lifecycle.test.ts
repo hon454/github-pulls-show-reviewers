@@ -132,6 +132,54 @@ describe("reviewer row lifecycle", () => {
     expect(markPageMetadataStale).not.toHaveBeenCalled();
   });
 
+  it("records repeated native mount repairs without treating extension rendering as more work", async () => {
+    const { ensureReviewerMount } =
+      await import("../src/features/reviewers/dom");
+    const processRow = vi.fn((row: Element) => {
+      ensureReviewerMount(row);
+    });
+    const onFingerprint = vi.fn();
+    const markPageMetadataStale = vi.fn();
+    const lifecycle = createReviewerRowLifecycle({
+      getRoute: () => route,
+      processRow,
+      markPageMetadataStale,
+      diagnostics: { onFingerprint },
+    });
+    const row = document.querySelector(".js-issue-row")!;
+    ensureReviewerMount(row);
+    lifecycle.recordFingerprint(row, "42", route);
+    onFingerprint.mockClear();
+    const observer = lifecycle.observe();
+
+    for (let index = 0; index < 3; index += 1) {
+      const metadata = document.querySelector<HTMLElement>(
+        ".d-flex.mt-1.text-small.color-fg-muted",
+      )!;
+      const replacement = metadata.cloneNode(true) as HTMLElement;
+      replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+      metadata.replaceWith(replacement);
+      await flushMutations();
+
+      expect(
+        document.querySelectorAll("[data-ghpsr-reviewer-meta]"),
+      ).toHaveLength(1);
+      expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    }
+
+    const nativeFingerprintWork = onFingerprint.mock.calls.length;
+    const mount = document.querySelector<HTMLElement>("[data-ghpsr-root]")!;
+    mount.lang = "ko";
+    mount.replaceChildren(document.createElement("span"));
+    await flushMutations();
+    observer.disconnect();
+
+    expect(processRow).toHaveBeenCalledTimes(3);
+    expect(nativeFingerprintWork).toBeGreaterThanOrEqual(3);
+    expect(onFingerprint).toHaveBeenCalledTimes(nativeFingerprintWork);
+    expect(markPageMetadataStale).not.toHaveBeenCalled();
+  });
+
   it("ignores extension-owned DOM mutations", async () => {
     const processRow = vi.fn();
     const markPageMetadataStale = vi.fn();
