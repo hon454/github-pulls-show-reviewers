@@ -356,6 +356,48 @@ describe("production repository account service", () => {
     },
   );
 
+  it.each(["A", null])(
+    "terminal replay retains actual account %s, including explicit anonymous null",
+    async (accountId) => {
+      if (accountId) await add(accountId);
+      const entered = deferred<void>();
+      const held = deferred<Response>();
+      const http = mockHttp(() => {
+        entered.resolve();
+        return held.promise;
+      });
+      const discovery = await begin();
+      const controller = new AbortController();
+      const work = service
+        .metadata(owner, discovery, controller.signal)
+        .catch((error: unknown) => error);
+      await entered.promise;
+      controller.abort();
+      expect(await work).toMatchObject({ name: "AbortError" });
+      // Settle the shared operation, then exercise the same-worker terminal
+      // replay independently of its last caller's cancellation response.
+      await failure(service.metadata(owner, discovery, signal()));
+      const sameWorker = await failure(
+        service.metadata(owner, discovery, signal()),
+      );
+      service.dispose();
+      service = createService();
+      const restored = await failure(
+        service.metadata(owner, discovery, signal()),
+      );
+      if (accountId) {
+        expect(restored.account?.id).toBe(accountId);
+        expect(sameWorker.account?.id).toBe(accountId);
+      } else {
+        expect(restored.account).toBeNull();
+        expect(sameWorker.account).toBeNull();
+      }
+      expect(sameWorker.envelope).toEqual(restored.envelope);
+      expect(http.calls).toHaveLength(1);
+      held.resolve(json({}, 404));
+    },
+  );
+
   it("does not refresh the budget when the ledger body is missing or explicitly retired", async () => {
     await add("A");
     const http = mockHttp(() => json({}, 404));

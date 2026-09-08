@@ -16,6 +16,7 @@ import {
   toLanguageTag,
 } from "../src/i18n";
 import * as clients from "../src/runtime/ui-client";
+import { fetchPullReviewerMetadataBatchMessageSchema } from "../src/runtime/reviewer-fetch";
 import { accountMutations } from "../src/storage/accounts";
 import { DiagnosticsPanel } from "../entrypoints/options/components/DiagnosticsPanel";
 import { connectInput, json, rotated, deferred } from "./helpers/auth-harness";
@@ -258,6 +259,63 @@ it.each(["metadata", "reviews"])(
     expect(h.calls.some((call) => call.account === "B")).toBe(false);
     expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(0);
     expect(banner()?.textContent).toContain("Sign in again");
+  },
+);
+
+it.each(["metadata", "reviews"])(
+  "terminal account survives %s invalidation delivered before the refresh commit acknowledgement",
+  async (stage) => {
+    const h = await setup((account, path) =>
+      path === "/login/oauth/access_token"
+        ? json({ error: "bad_refresh_token" }, 400)
+        : account === "A" && (stage === "metadata" || path.endsWith("/reviews"))
+          ? json({}, 401)
+          : json(path.endsWith("/pulls") ? pulls : reviews),
+    );
+    const commitAuth = accountMutations.commitAuth;
+    vi.spyOn(accountMutations, "commitAuth").mockImplementation(
+      async (...args) => {
+        const result = await commitAuth(...args);
+        // The committed invalidation and safe notification can reach content
+        // before the same-account refresh caller receives its acknowledgement.
+        if ("invalidatedReason" in args[2])
+          await h.harness.send({ type: "getUISnapshot" });
+        return result;
+      },
+    );
+    await h.boot();
+    await waitFor(() =>
+      expect(banner()?.textContent).toContain("Sign in again"),
+    );
+    const request = fetchPullReviewerMetadataBatchMessageSchema.parse(
+      h.harness.browserMock.runtime.sendMessage.mock.calls.find(
+        ([message]) =>
+          (message as { type?: string }).type ===
+          "fetchPullReviewerMetadataBatch",
+      )?.[0],
+    );
+    const replay = (requestId: string) =>
+      h.harness.send(
+        { ...request, requestId, accountId: "B" },
+        contentSender("content-1", "acme/private-b"),
+      );
+    const sameWorker = await replay("after-invalidation-notification");
+    await h.harness.restart();
+    const restored = await replay("after-worker-restoration");
+    const expected = {
+      ok: false,
+      account: { id: "A" },
+      error: {
+        failures: expect.arrayContaining([
+          expect.objectContaining({ status: 401 }),
+        ]),
+      },
+    };
+    expect(restored).toMatchObject(expected);
+    expect(sameWorker).toMatchObject(expected);
+    expect(containsSecret([sameWorker, restored])).toBe(false);
+    expect(h.calls.some((call) => call.account === "B")).toBe(false);
+    expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(0);
   },
 );
 

@@ -168,8 +168,8 @@ export function createRepositoryAccountService(input: {
       record.generation !== discovery.generation
     )
       throw new DiscoveryUnavailableError("retired");
-    if (terminal.has(operationKey))
-      throw new ReviewerFetchRuntimeError(terminal.get(operationKey)!);
+    const terminalError = terminal.get(operationKey);
+    if (terminalError) return fail({ ...record, error: terminalError });
     check(operation);
     if (
       ["stopped", "exhausted", "interrupted", "retired"].includes(record.status)
