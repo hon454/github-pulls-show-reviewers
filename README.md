@@ -4,6 +4,8 @@
 [![Chrome Web Store Users](https://img.shields.io/chrome-web-store/users/hoocgjopdboeghdkfjlkngkkpbiljggk?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/github-pulls-show-reviewe/hoocgjopdboeghdkfjlkngkkpbiljggk?utm_source=github&utm_medium=readme_badge&utm_campaign=evergreen)
 [![CI](https://github.com/hon454/github-pulls-show-reviewers/actions/workflows/ci.yml/badge.svg)](https://github.com/hon454/github-pulls-show-reviewers/actions/workflows/ci.yml)
 
+**English** · [한국어](./README.ko.md) · [简体中文](./README.zh-CN.md) · [繁體中文](./README.zh-TW.md) · [日本語](./README.ja.md)
+
 > See requested reviewers, teams, and completed review state directly in GitHub pull request lists.
 
 `GitHub Pulls Show Reviewers` is a Chrome extension for one focused workflow: make reviewer status visible from the pull request list, so you do not need to open every PR just to see who is requested or see completed review state.
@@ -140,24 +142,22 @@ pnpm zip:release
 
 Pushing a new `v<version>` tag attaches the verified package to a GitHub Release
 and submits it through CWS API v2 for automatic publication after normal review.
-Authorized agents can perform manual listing UI steps, save and reopen each
-locale, and preserve evidence without asking again at every step. Review
-submission and tagging require separate scope. For new listing languages,
-the `upload-only` and `submit-existing` stages
-allow a pause to register descriptions/screenshots; neither creates a GitHub
-Release. The later tag reuses the original checked package and skips CWS writes
-when its exact source receipt is already pending or published. With the updated
-workflow, manual `skip` remains safe against a tag, and credential-only `dry-run`
-never creates a release or changes store state. Legacy tags retain their old
-workflow: select updated `main` or a reviewed branch as the control ref and pass
-an old package tag through the separate `tag` input. See [Chrome Web Store notes](./docs/chrome-web-store.md)
-and the [canonical agent runbook](./docs/chrome-web-store-agent-runbook.md) for inputs, provenance,
-fresh dashboard evidence, and uncertain-outcome recovery.
+If the exact source already has a validated upload receipt and is pending or
+published, the tag reuses that checked package without another CWS write.
+Manual workflow runs default to `skip`; credential-only `dry-run` does not
+change store state or create a release. Review submission and tagging require
+explicit authorization. Follow the [Chrome Web Store notes](./docs/chrome-web-store.md)
+and [canonical agent runbook](./docs/chrome-web-store-agent-runbook.md) for staging,
+legacy tags, listing updates, verification evidence, and recovery procedures.
 
 For repository workflow, branch naming, commit style, and pull request requirements, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Documentation
 
+The README is available in all five supported languages. The detailed technical,
+contribution, and operational documents linked below are maintained in English.
+
+- [Documentation and README translation guidelines](./docs/guidelines/documentation-guideline.md)
 - [Implementation notes](./docs/implementation-notes.md)
 - [Manual Chrome testing](./docs/manual-chrome-testing.md)
 - [Chrome Web Store notes](./docs/chrome-web-store.md)

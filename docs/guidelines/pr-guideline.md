@@ -126,8 +126,11 @@ on merge-track PRs. No action is required from the contributor.
 Before opening the PR, walk through these questions. When an item
 applies, the same PR should carry the matching update.
 
+Use the [Documentation Guideline](./documentation-guideline.md#change-to-document-map)
+for the full change-to-document map and README translation rules.
+
 1. Did reviewer UX behavior, copy, or the set of supported review
-   states change? — update `README.md` "What The Extension Shows"
+   states change? — update all five READMEs (English: "What It Does")
    and `docs/implementation-notes.md`.
 2. Was `src/github/selectors.ts` touched? — add or update
    fixture-based regression coverage under `tests/`.
@@ -150,6 +153,10 @@ applies, the same PR should carry the matching update.
     update `docs/chrome-web-store.md`,
     `docs/chrome-web-store-submission.md`, and
     `docs/chrome-web-store-assets/`.
+11. Did README meaning, structure, commands, links, or shared assets change? —
+    update `README.md`, `README.ko.md`, `README.zh-CN.md`, `README.zh-TW.md`,
+    and `README.ja.md` together. Locale-only wording corrections may update
+    just that translation when meaning and structure remain unchanged.
 
 The PR template includes an optional co-location note; use it to
 confirm which items applied or record "none".

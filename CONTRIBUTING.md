@@ -13,7 +13,7 @@ product rules and architecture expectations before proposing changes.
 
 ## Getting started
 
-Follow the `Quick Start` section in [`README.md`](./README.md) to
+Follow the [For Contributors section](./README.md#for-contributors) to
 install dependencies and run the extension in development.
 
 ## Reporting bugs
@@ -96,9 +96,13 @@ Details and multi-issue forms are in the
 
 When a change affects behavior, selectors, permissions, storage,
 auth, release artifacts, or Chrome Web Store copy, update the
-companion doc in the same PR. The full 10-item checklist lives in
+companion doc in the same PR. The checklist lives in
 the
 [PR Guideline](./docs/guidelines/pr-guideline.md#co-location-checklist).
+
+For the five README languages, same-PR translation updates, and the complete
+change-to-document map, follow the
+[Documentation Guideline](./docs/guidelines/documentation-guideline.md).
 
 ## Testing
 
