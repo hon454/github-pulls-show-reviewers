@@ -311,10 +311,10 @@ uses the existing bounded revalidation path.
   control. Packaged-extension E2E coverage independently delays all 25 reviews
   endpoints and asserts a peak of four active requests.
 
-- The limit changes request shape, not request count or authentication
-  semantics. Each no-token public request remains the first attempt when no
-  covering account exists. An eligible authenticated fallback retry enters the
-  same queue as a second, sequential attempt for that row.
+- Each no-token public request remains the first attempt when no covering
+  account exists. An eligible anonymous-to-account retry remains inside its
+  existing summary slot. Repository discovery is shared outside the row queue,
+  so waiting rows cannot deadlock by reserving all four slots for a new probe.
 - Issue-event requests are targeted to ambiguous requested+completed reviewer
   overlaps only, and follow at most two GitHub API issue-event pages
   (`REVIEW_REQUEST_EVENT_PAGE_BUDGET`). Rows whose requested users do not
@@ -332,7 +332,7 @@ uses the existing bounded revalidation path.
 | Account state | Failure pattern                                      | Banner kind             | CTA                             |
 | ------------- | ---------------------------------------------------- | ----------------------- | ------------------------------- |
 | Signed in     | 401 on any reviewer endpoint                         | `auth-expired`          | Sign in                         |
-| Signed in     | 404 / 403 with no rate-limit signal                  | `app-uncovered`         | Configure access                |
+| Signed in     | Final 404 / 403 without a rate-limit signal          | `app-uncovered`         | Configure access                |
 | Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`          | `auth-rate-limit`       | (no button; reload after reset) |
 | No account    | 429, or 403 with rate-limit signal                   | `unauth-rate-limit`     | Sign in                         |
 | No account    | 401, 403, or 404 without rate-limit signal           | `signin-required`       | Sign in                         |
@@ -470,9 +470,73 @@ without changing generations, outcomes, caches, dismissal or request order.
   connected fallback account is available, uncovered private repositories are
   reported through the signed-in `app-uncovered` path rather than the no-account
   sign-in path.
-- Options diagnostics uses the same coverage resolution and includes an
-  incomplete selected-installation snapshot warning alongside the matched
-  account access result.
+- Options diagnostics uses the same repository discovery policy below and
+  includes an incomplete selected-installation snapshot warning alongside the
+  account actually used.
+
+## Bounded repository account discovery
+
+- [ADR 0009](./adr/0009-bounded-repository-account-discovery.md) records policy
+  1A. `repository-accounts.ts` owns discovery in background; content receives an
+  opaque document-bound ticket plus sanitized actual-account results. The
+  existing initial account resolver and bounded installation self-heal remain
+  intact. An `all` installation describes App coverage, not each user's access.
+- Only an authenticated, non-rate-limited repository 403/404 opens the serial
+  candidate chain. Candidates must still exist, be active and have same-owner
+  installation evidence (case-insensitive). `all` and explicitly selected
+  repository coverage precede truncated selected snapshots; each tier preserves
+  `listAccounts()` order, deduplicated by account ID. Complete selected misses
+  become eligible only when existing bounded self-heal supplies new evidence.
+  No unrelated-account probe or upfront full repository enumeration is added.
+- The entire unresolved endpoint envelope is retained and classified. Any 429,
+  primary exhausted quota, secondary-rate-limit signal or unresolved 401 stops
+  discovery; so do network, schema, 5xx, cancellation and unknown failures.
+  Mixed 404+429/401 cannot advance. The existing generation-aware refresh owner
+  may retry a 401 with that same account only. Internal rotation consumes no new
+  candidate identity and does not reopen a page discovery generation.
+- A successful pull-list metadata probe proves repository access, even when it
+  returns an empty list. An individual PR/reviews 404 remains a row failure;
+  another PR can render through the same successful account. Diagnostics reports
+  that distinction and identifies the account actually used, including fallback
+  B rather than initially selected A. Its no-token action stays anonymous, and
+  an explicit diagnostic run has a separate cancellable generation.
+- The background trusted-session ledger records each distinct account admission
+  **before HTTP**, including the initial account. A generation cannot admit an
+  account twice. The bound is the number of distinct eligible accounts, not the
+  number of rows. Metadata/summary results and page caches carry the actual
+  resolved account ID and opaque revision. Success and negatives are scoped to
+  the document, repository and explicit generation, never an owner-wide or
+  permanent account association.
+- Joined callers own separate cancellation subscriptions. Either caller may
+  cancel first without aborting the other; the last consumer or explicit
+  generation invalidation aborts shared work. Reservations remain consumed.
+  Worker restoration can resume a confirmed denial with an unattempted eligible
+  account; stop/exhaustion remain terminal, and admitted unresolved work becomes
+  interrupted until an explicit new generation. A missing/retired record cannot
+  reset the budget. Superseded bodies are deleted while the live document keeps
+  a small high-water mark; detected document loss removes both. Chrome's
+  `getContexts` omits content documents, so content liveness uses the recorded
+  tab and a document-targeted content probe. Frozen/unresponsive documents keep
+  their budgets. Ordinary port disconnection is not owner loss.
+- Reload/navigation, force refresh, removal/reconnection or changed installation
+  coverage may create a new discovery generation. Credential invalidation alone
+  cancels obsolete row work but retains terminal 401 evidence. Duplicate row
+  mutations, cache TTL, mount repair, language and display changes cannot retry
+  failed candidates. A successful account may receive an ordinary metadata
+  refresh without resetting admissions; a later proven repository denial can
+  continue only to unattempted candidates. There are no automatic retry timers.
+- Public anonymous success and the previous single unambiguous account fallback
+  after anonymous access/rate-limit failure remain separate from this policy.
+  An authenticated quota failure always stops the new chain. The four-slot FIFO,
+  settled cleanup, stale chips and generation-scoped aggregate banner consume
+  final row outcomes; an intermediate recovered A denial is never published.
+
+The deterministic production-service, ledger/bridge and actual DOM regressions
+live in `tests/repository-accounts.test.ts`,
+`tests/repository-discovery-bridge.test.ts` and
+`tests/repository-fallback-dom.test.ts`. The packaged fixture
+`multi-account repository fallback` uses synthetic accounts and mocked HTTP;
+it is not a live private-repository permission check.
 
 ## Next implementation targets
 

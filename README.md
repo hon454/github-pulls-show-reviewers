@@ -69,11 +69,10 @@ Traditional Chinese.
 - **Public repositories:** work without signing in whenever GitHub exposes enough public PR data.
 - **Private repositories:** require signing in with GitHub through the extension's GitHub App.
 - **Permissions:** the GitHub App requests `Pull requests: Read` only.
-- **Repository access:** if a signed-in private repository is not covered by the
-  GitHub App installation, the extension prompts you to configure App access
-  for that owner/repository.
+- **Repository access:** if GitHub denies access, check the account's repository permissions as well as the GitHub App installation for that owner/repository.
 - **Organizations:** an organization owner may need to install or approve the GitHub App before private organization repositories can be read.
-- **Multiple accounts:** personal and work accounts can be added side by side. The extension picks the matching account for each repository.
+- **Multiple accounts:** personal and work accounts can be added side by side. An `all` installation describes App coverage; connected users may still have different repository permissions. After an authenticated repository 403/404 without a rate-limit signal, the extension tries other active accounts for that owner in a bounded sequence: locally covered accounts first, then incomplete selected snapshots, preserving account order within each group. Each account is admitted once per page/repository generation. Successful access is remembered only for that generation; an individual PR's 404 does not reject the whole repository.
+- **Retry and diagnostics:** rate limits, unresolved 401, network/schema/server errors and cancellation stop account discovery. A 401 can recover only within the same account. Reload/navigation, reconnecting/removing an account, changed installation coverage or a new explicit diagnostic run can start a new generation. Row updates, cache expiry, token rotation and language/display changes do not reopen failed candidates. Matched diagnostics uses the same policy and shows the account actually used; no-token diagnostics remains anonymous. Public anonymous access and its single unambiguous account fallback are preserved.
 - **Session persistence:** sign-in is kept across browser sessions; access tokens are refreshed automatically in the background until you remove the account or revoke the GitHub App.
 - **Sign-in recovery:** an in-progress sign-in survives ordinary background worker suspension. If the browser restarts or an exchange is interrupted, request a new code; already connected accounts remain saved.
 
