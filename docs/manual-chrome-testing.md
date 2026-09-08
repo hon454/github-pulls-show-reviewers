@@ -146,12 +146,11 @@ permission, or clipboard setting.
    once with focus inside the panel and once after moving focus to another
    control: only the former returns focus. In both cases the accounts section
    has one concise localized connected status after the panel closes.
-5. Turn on VoiceOver and repeat the successful-copy, failed-copy, and
-   post-connect cases with the built options page. Record the spoken result,
-   Chrome and macOS versions, package SHA, locale, time, and screenshot or AX
-   evidence. DOM assertions do not establish spoken behavior. If VoiceOver is
-   unavailable, record the exact blocked step and retain the automated evidence
-   rather than claiming this observation passed.
+5. VoiceOver-specific spoken-output testing is out of scope. Do not add a
+   VoiceOver pass/fail gate for these states. Keep the ordinary web
+   accessibility checks above: keyboard operation, focus recovery, localized
+   visible status feedback, and the existing HTML/ARIA semantics remain part
+   of this manual check.
 
 ### Background credential boundary and worker recovery
 
