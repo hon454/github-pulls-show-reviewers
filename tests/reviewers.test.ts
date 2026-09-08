@@ -2212,13 +2212,274 @@ function installPullListFixture(pullNumbers: readonly string[]): void {
 function createDeferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason: unknown) => void;
 } {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((nextResolve) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve;
+    reject = nextReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
+
+describe("settled reviewer request ownership", () => {
+  const summary: PullReviewerSummary = {
+    status: "ok",
+    requestedUsers: [{ login: "alice", avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [],
+  };
+  const failure = (status: number) => ({
+    ok: false,
+    error: {
+      kind: "github-api",
+      status,
+      failures: [
+        {
+          status,
+          endpoint: "/repos/cinev/shotloom/pulls",
+          rateLimited: status === 429,
+        },
+      ],
+    },
+  });
+  function mutateRows(label: string): void {
+    document.querySelectorAll(".issue-meta-section").forEach((meta, index) => {
+      meta.append(document.createTextNode(` ${label} ${index}`));
+    });
+  }
+
+  it.each([
+    { status: 429, count: 1 },
+    ...[401, 403, 404, 429].map((status) => ({ status, count: 2 })),
+  ])(
+    "recovers $count rows after shared metadata $status without navigation or account changes",
+    async ({ status, count }) => {
+      if (count === 2) installPullListFixture(["42", "43"]);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      const first = createDeferred<unknown>();
+      let recovered = false;
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return recovered
+            ? Promise.resolve({ ok: true, metadata: [] })
+            : first.promise;
+        return Promise.resolve({ ok: true, summary });
+      });
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      mutateRows("pending mutation");
+      await flushMicrotasks();
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(count);
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        1,
+      );
+      first.resolve(failure(status));
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      document
+        .querySelectorAll(".ghpsr-root")
+        .forEach((root) => expect(root.textContent).toBe(""));
+
+      // A display reprocess must reuse the final metadata failure cache.
+      capturedStorageListener!(
+        {
+          preferences: {
+            oldValue: { showReviewerName: false },
+            newValue: { showReviewerName: true },
+          },
+        },
+        "local",
+      );
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        1,
+      );
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+
+      recovered = true;
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
+      try {
+        await flushMicrotasks();
+        expect(
+          getRuntimeMessages("fetchPullReviewerMetadataBatch"),
+        ).toHaveLength(1);
+        mutateRows("eligible recovery");
+        await flushMicrotasks();
+        await flushMicrotasks();
+        expect(
+          getRuntimeMessages("fetchPullReviewerMetadataBatch"),
+        ).toHaveLength(2);
+        expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+          count,
+        );
+        expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(count);
+        expect(document.querySelector(".ghpsr-status")).toBeNull();
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
+  it("preserves stale chips through metadata suppression and clears them after an empty recovery", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    let metadataFails = false;
+    let empty = false;
+    runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+      Promise.resolve(
+        message.type === "fetchPullReviewerMetadataBatch"
+          ? metadataFails
+            ? failure(429)
+            : { ok: true, metadata: [] }
+          : {
+              ok: true,
+              summary: empty ? { ...summary, requestedUsers: [] } : summary,
+            },
+      ),
+    );
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+    await flushMicrotasks();
+    expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
+    metadataFails = true;
+    mutateRows("failed revalidation");
+    await flushMicrotasks();
+    expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+    expect(onRowFailure).toHaveBeenCalledTimes(1);
+    metadataFails = false;
+    empty = true;
+    mutateRows("empty recovery");
+    await flushMicrotasks();
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      3,
+    );
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
+    expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
+    expect(onRowFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["account", "metadata fallback", "summary fallback"])(
+    "clears loading and releases ownership after %s resolution rejects",
+    async (stage) => {
+      const error = new Error("Storage unavailable");
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      if (stage === "account")
+        resolveAccountForRepoMock.mockRejectedValueOnce(error);
+      else
+        listAccountsMock.mockResolvedValueOnce([]).mockRejectedValueOnce(error);
+      let recovered = false;
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve(
+            !recovered && stage === "metadata fallback"
+              ? failure(403)
+              : { ok: true, metadata: [] },
+          );
+        return Promise.resolve(
+          !recovered && stage === "summary fallback"
+            ? failure(403)
+            : { ok: true, summary },
+        );
+      });
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(onRowFailure).toHaveBeenCalledExactlyOnceWith({
+        owner: "cinev",
+        repo: "shotloom",
+        account: null,
+        error,
+      });
+      expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+        stage === "summary fallback" ? 1 : 0,
+      );
+      recovered = true;
+      mutateRows("retry after rejection");
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
+      expect(document.querySelector(".ghpsr-status")).toBeNull();
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    ["route", "success"],
+    ["route", "failure"],
+    ["account", "success"],
+    ["account", "failure"],
+  ])(
+    "keeps a replacement request when an old %s attempt settles with %s",
+    async (trigger, outcome) => {
+      const old = createDeferred<Account | null>();
+      const replacement = createDeferred<Account | null>();
+      resolveAccountForRepoMock
+        .mockImplementationOnce(() => old.promise)
+        .mockImplementation(() => replacement.promise);
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+        Promise.resolve(
+          message.type === "fetchPullReviewerMetadataBatch"
+            ? { ok: true, metadata: [] }
+            : { ok: true, summary },
+        ),
+      );
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const cache = await import("../src/cache/reviewer-cache");
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx, { onRowFailure });
+      await flushMicrotasks();
+      mutateRows("dedupe old request");
+      await flushMicrotasks();
+      if (trigger === "route")
+        getRegisteredListener(ctx, "wxt:locationchange")!();
+      else
+        capturedStorageListener!(
+          {
+            settings: {
+              oldValue: { version: 4, accountIds: [] },
+              newValue: { version: 4, accountIds: ["replacement"] },
+            },
+          },
+          "local",
+        );
+      await flushMicrotasks();
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(2);
+      if (outcome === "success") old.resolve(null);
+      else old.reject(new Error("Late storage failure"));
+      await flushMicrotasks();
+      mutateRows("dedupe replacement after old finalizer");
+      await flushMicrotasks();
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(2);
+      expect(runtimeSendMessageMock).not.toHaveBeenCalled();
+      expect(
+        cache.getReviewerCacheEntry(
+          cache.buildReviewerCacheKey("cinev", "shotloom", "42"),
+        ),
+      ).toBeUndefined();
+      expect(onRowFailure).not.toHaveBeenCalled();
+      replacement.resolve(null);
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+      expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
+      expect(onRowFailure).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe("render-only reviewer locale events", () => {
   const summary: PullReviewerSummary = {
@@ -2324,6 +2585,135 @@ describe("render-only reviewer locale events", () => {
       pendingTeardowns.forEach((fn) => fn());
       expect(storageListeners.size).toBe(0);
       fingerprint.mockRestore();
+    },
+  );
+
+  it.each([false, true])(
+    "preserves FIFO recovery and render-only locales with failed, active, and queued rows (abort: %s)",
+    async (abortQueued) => {
+      const numbers = ["42", "43", "44", "45", "46", "47", "48", "49"];
+      installPullListFixture(numbers);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      let metadataFails = true;
+      let immediate = false;
+      let active = 0;
+      let peak = 0;
+      const completions = new Map<string, () => void>();
+      const byRequest = new Map<string, string>();
+      runtimeSendMessageMock.mockImplementation(
+        (message: { type: string; pullNumber: string; requestId: string }) => {
+          if (message.type === "fetchPullReviewerMetadataBatch")
+            return Promise.resolve(
+              metadataFails
+                ? {
+                    ok: false,
+                    error: {
+                      kind: "github-api",
+                      status: 429,
+                      failures: [
+                        { status: 429, endpoint: null, rateLimited: true },
+                      ],
+                    },
+                  }
+                : { ok: true, metadata: [] },
+            );
+          if (message.type === "cancelPullReviewerSummary") {
+            const number = byRequest.get(message.requestId)!;
+            completions.get(number)?.();
+            return Promise.resolve();
+          }
+          if (immediate) return Promise.resolve({ ok: true, summary });
+          active++;
+          peak = Math.max(peak, active);
+          byRequest.set(message.requestId, message.pullNumber);
+          return new Promise((resolve) =>
+            completions.set(message.pullNumber, () => {
+              completions.delete(message.pullNumber);
+              active--;
+              resolve({ ok: true, summary });
+            }),
+          );
+        },
+      );
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const { createTranslator, toLanguageTag } = await import("../src/i18n");
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx, { onRowFailure });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        1,
+      );
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      metadataFails = false;
+      // Leave row 42 failed while seven rows explicitly reprocess and recover.
+      document
+        .querySelectorAll(".issue-meta-section")
+        .forEach((meta, index) => {
+          if (index > 0) meta.append(document.createTextNode(" recovery"));
+        });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      const started = () =>
+        getRuntimeMessages("fetchPullReviewerSummary").map(
+          (message) => message.pullNumber,
+        );
+      expect(started()).toEqual(numbers.slice(1, 5));
+      const calls = runtimeSendMessageMock.mock.calls.length;
+      const accountCalls = resolveAccountForRepoMock.mock.calls.length;
+      for (const locale of ["ko", "ja", "zh_CN", "zh_TW", "en"] as Locale[]) {
+        await switchLanguage(locale);
+        expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+        expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accountCalls);
+        expect(onRowFailure).toHaveBeenCalledTimes(1);
+        const roots = [
+          ...document.querySelectorAll<HTMLElement>(".ghpsr-root"),
+        ];
+        expect(roots).toHaveLength(8);
+        roots.forEach((root, index) => {
+          expect(root.lang).toBe(toLanguageTag(locale));
+          expect(root.textContent).toBe(
+            index === 0 ? "" : createTranslator(locale)("reviewers_loading"),
+          );
+        });
+      }
+      completions.get("43")!();
+      await flushMicrotasks();
+      expect(started()).toEqual(numbers.slice(1, 6));
+      expect(active).toBe(4);
+      if (abortQueued) {
+        window.history.replaceState({}, "", "/cinev/shotloom/issues");
+        getRegisteredListener(ctx, "wxt:locationchange")!();
+        await flushMicrotasks();
+        expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(4);
+        expect(started()).toEqual(numbers.slice(1, 6));
+        expect(active).toBe(0);
+        // Aborted queued rows have no runtime message and can participate again.
+        immediate = true;
+        window.history.replaceState({}, "", "/cinev/shotloom/pulls");
+        getRegisteredListener(ctx, "wxt:locationchange")!();
+        await flushMicrotasks();
+        await flushMicrotasks();
+        expect(started().slice(5)).toEqual(numbers);
+        expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(8);
+      } else {
+        for (const number of numbers.slice(2)) {
+          completions.get(number)!();
+          await flushMicrotasks();
+        }
+        expect(started()).toEqual(numbers.slice(1));
+        expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(7);
+        expect(
+          document.querySelector("#issue_42 .ghpsr-root")?.textContent,
+        ).toBe("");
+      }
+      expect(peak).toBe(4);
+      expect(active).toBe(0);
+      expect(document.querySelector(".ghpsr-status")).toBeNull();
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
     },
   );
 

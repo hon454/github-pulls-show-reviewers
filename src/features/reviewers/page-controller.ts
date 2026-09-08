@@ -215,6 +215,9 @@ export function bootReviewerListPage(
       } catch {
         // The tracked request reports its own failure.
       }
+      if (existingRequest.controller.signal.aborted) {
+        return;
+      }
       await renderSummaryForMount(
         mount,
         route,
@@ -230,101 +233,112 @@ export function bootReviewerListPage(
     const controller = new AbortController();
     let request: InflightRequest | null = null;
     const promise = (async () => {
-      const account = await accountResolver.resolveAccount(
-        route.owner,
-        route.repo,
-      );
-      if (controller.signal.aborted) {
-        return;
-      }
-      const metadataResult = await pageMetadata.get({
-        route,
-        account,
-        targetPullNumbers: collectVisiblePullNumbers(),
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) {
-        return;
-      }
-      if (metadataResult.failure?.suppressRowFallback) {
-        reportPageMetadataFailure(route, metadataResult.failure);
-        clearReviewerMountWithoutCache(mount, cacheKey);
-        return;
-      }
-      const pullMetadata = metadataResult.metadata.get(pullNumber);
-      const cachedFallbackAccount =
-        account == null ? fallbackAccounts.read(route.owner) : undefined;
-      const summaryAccount = cachedFallbackAccount ?? account;
-      if (controller.signal.aborted) {
-        return;
-      }
-
+      let account: Account | null = null;
       try {
-        const summary = await reviewerSummaryScheduler.run(
-          () =>
-            fetchReviewerSummary({
-              account: summaryAccount,
-              owner: route.owner,
-              repo: route.repo,
-              pullNumber,
-              signal: controller.signal,
-              ...(pullMetadata == null ? {} : { pullMetadata }),
-            }),
-          controller.signal,
-        );
+        account = await accountResolver.resolveAccount(route.owner, route.repo);
         if (controller.signal.aborted) {
           return;
         }
-        setCachedReviewerSummary(cacheKey, summary);
-      } catch (error) {
-        if (isAbortError(error) || controller.signal.aborted) {
+        const metadataResult = await pageMetadata.get({
+          route,
+          account,
+          targetPullNumbers: collectVisiblePullNumbers(),
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) {
           return;
         }
-        let failureAccount = summaryAccount;
-        let failureError = error;
-        if (
-          account == null &&
-          summaryAccount == null &&
-          shouldRetryWithFallbackAccount(error)
-        ) {
-          const fallbackAccount = await fallbackAccounts.get(route.owner);
+        if (metadataResult.failure?.suppressRowFallback) {
+          reportPageMetadataFailure(route, metadataResult.failure);
+          clearReviewerMountWithoutCache(mount, cacheKey);
+          return;
+        }
+        const pullMetadata = metadataResult.metadata.get(pullNumber);
+        const cachedFallbackAccount =
+          account == null ? fallbackAccounts.read(route.owner) : undefined;
+        const summaryAccount = cachedFallbackAccount ?? account;
+        if (controller.signal.aborted) {
+          return;
+        }
+
+        try {
+          const summary = await reviewerSummaryScheduler.run(
+            () =>
+              fetchReviewerSummary({
+                account: summaryAccount,
+                owner: route.owner,
+                repo: route.repo,
+                pullNumber,
+                signal: controller.signal,
+                ...(pullMetadata == null ? {} : { pullMetadata }),
+              }),
+            controller.signal,
+          );
           if (controller.signal.aborted) {
             return;
           }
-          if (fallbackAccount != null) {
-            try {
-              const summary = await reviewerSummaryScheduler.run(
-                () =>
-                  fetchReviewerSummary({
-                    account: fallbackAccount,
-                    owner: route.owner,
-                    repo: route.repo,
-                    pullNumber,
-                    signal: controller.signal,
-                    ...(pullMetadata == null ? {} : { pullMetadata }),
-                  }),
-                controller.signal,
-              );
-              if (controller.signal.aborted) {
-                return;
-              }
-              setCachedReviewerSummary(cacheKey, summary);
+          setCachedReviewerSummary(cacheKey, summary);
+        } catch (error) {
+          if (isAbortError(error) || controller.signal.aborted) {
+            return;
+          }
+          let failureAccount = summaryAccount;
+          let failureError = error;
+          if (
+            account == null &&
+            summaryAccount == null &&
+            shouldRetryWithFallbackAccount(error)
+          ) {
+            const fallbackAccount = await fallbackAccounts.get(route.owner);
+            if (controller.signal.aborted) {
               return;
-            } catch (fallbackError) {
-              if (isAbortError(fallbackError) || controller.signal.aborted) {
+            }
+            if (fallbackAccount != null) {
+              try {
+                const summary = await reviewerSummaryScheduler.run(
+                  () =>
+                    fetchReviewerSummary({
+                      account: fallbackAccount,
+                      owner: route.owner,
+                      repo: route.repo,
+                      pullNumber,
+                      signal: controller.signal,
+                      ...(pullMetadata == null ? {} : { pullMetadata }),
+                    }),
+                  controller.signal,
+                );
+                if (controller.signal.aborted) {
+                  return;
+                }
+                setCachedReviewerSummary(cacheKey, summary);
                 return;
+              } catch (fallbackError) {
+                if (isAbortError(fallbackError) || controller.signal.aborted) {
+                  return;
+                }
+                failureAccount = fallbackAccount;
+                failureError = fallbackError;
               }
-              failureAccount = fallbackAccount;
-              failureError = fallbackError;
             }
           }
+          clearReviewerMountWithoutCache(mount, cacheKey);
+          options?.onRowFailure?.({
+            owner: route.owner,
+            repo: route.repo,
+            account: failureAccount,
+            error: failureError,
+          });
+        }
+      } catch (error) {
+        if (isAbortError(error) || controller.signal.aborted) {
+          return;
         }
         clearReviewerMountWithoutCache(mount, cacheKey);
         options?.onRowFailure?.({
           owner: route.owner,
           repo: route.repo,
-          account: failureAccount,
-          error: failureError,
+          account,
+          error,
         });
       } finally {
         if (request != null && inflightRequests.get(cacheKey) === request) {

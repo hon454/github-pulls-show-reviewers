@@ -82,7 +82,11 @@
    original per-row `pull + reviews` REST path. If the page-level metadata batch
    finally fails with an authentication, access, not-found, or rate-limit
    failure after eligible fallback-account retry, same-page row fallback is
-   suppressed and the existing page banner receives that failure once.
+   suppressed and the existing page banner receives that failure once. The
+   suppressed attempt completes and releases its row request ownership. Later
+   GitHub-owned row metadata changes, navigation, or account invalidation can
+   reprocess it and retry; reaching a rate-limit reset time alone does not
+   trigger a retry.
    If no covering account is found, the first attempt still uses the no-token
    path so public repositories keep working without authentication. When that
    no-token metadata or summary fetch fails with an authentication, access,
@@ -250,6 +254,12 @@ continue to force route refreshes.
   caches the page-level metadata result per `owner/repo/account` and visible
   pull-number set with a shorter freshness window. When page metadata already
   covers a row, row-level duplicate pull endpoint fetches are avoided.
+- Every row attempt releases in-flight ownership on settlement, including
+  account/fallback resolution rejection, suppressed metadata failure, and
+  cancellation. Cleanup checks request identity so an older completion cannot
+  remove a replacement request after invalidation. The shared metadata failure
+  cache still suppresses per-row fallback until eligible reprocessing; locale
+  changes only rerender and do not invalidate failures or retry requests.
 - Reviewer-summary runtime messages use
   `REVIEWER_SUMMARY_CONCURRENCY_LIMIT = 4`. The queue is FIFO in the order rows
   reach the network boundary, so the initial DOM-order scan remains ordered when
