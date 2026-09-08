@@ -10,8 +10,6 @@
 
 `GitHub Pulls Show Reviewers` is a Chrome extension for one focused workflow: make reviewer status visible from the pull request list, so you do not need to open every PR just to see who is requested or see completed review state.
 
-[See the 30-second product tour](https://hon454.github.io/github-pulls-show-reviewers/).
-
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
 ## What It Does

@@ -10,8 +10,6 @@
 
 `GitHub Pulls Show Reviewers` 是一款 Chrome 扩展，专注于在拉取请求列表中显示审阅者状态。无需逐个打开 PR，即可了解向谁发出了审阅请求，以及已完成的审阅结果。
 
-[查看 30 秒产品介绍](https://hon454.github.io/github-pulls-show-reviewers/)。
-
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
 ## 主要功能
