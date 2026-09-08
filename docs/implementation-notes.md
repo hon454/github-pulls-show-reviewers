@@ -508,9 +508,14 @@ Validate catalogs with the i18n unit tests and emitted metadata with
   revalidating the cache. Locale callbacks reformat presentations synchronously.
   In-flight and queued results use the latest display preferences and locale
   when they render; late preference reads cannot overwrite a newer display
-  event. The four-slot FIFO
-  scheduler, mutation batching/attribute filtering, and row fingerprints remain
-  unchanged; extension-owned localized nodes are excluded from row mutations.
+  event.
+  Async presentation checks the current page/account generation, mount operation
+  and latest request identity after preference reads and before continuing data
+  work. Removed or superseded rows cannot render late results or start queued
+  requests; a live replacement row can still receive its shared request.
+  The four-slot FIFO scheduler, mutation batching/attribute filtering, and row
+  fingerprints remain unchanged; extension-owned localized nodes are excluded
+  from row mutations.
 - All reviewer state labels and completed-plus-still-requested combinations are
   full catalog messages. APPROVED, CHANGES_REQUESTED, COMMENTED, and DISMISSED
   retain the existing mapping: requested reviewers keep the blue ring; approved,

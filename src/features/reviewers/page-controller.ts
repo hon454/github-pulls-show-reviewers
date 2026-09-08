@@ -69,9 +69,15 @@ export function bootReviewerListPage(
 
   let currentRoute = parsePullListRoute(window.location.pathname);
   let currentHref = window.location.href;
+  let generation = 0;
+  let disposed = false;
+  const mountOperations = new WeakMap<HTMLElement, object>();
+  // Keep the last request identity after settlement to reject delayed renders.
+  const requestOwners = new Map<string, object>();
   type InflightRequest = {
     promise: Promise<void>;
     controller: AbortController;
+    consumers: Map<HTMLElement, () => boolean>;
   };
   const localeStore = getLocaleStore();
   type Presentation =
@@ -151,10 +157,12 @@ export function bootReviewerListPage(
   });
 
   function abortInflightRequests(): void {
+    generation += 1;
     for (const request of inflightRequests.values()) {
       request.controller.abort();
     }
     inflightRequests.clear();
+    requestOwners.clear();
     pageMetadata.abortAndClear();
   }
 
@@ -169,9 +177,11 @@ export function bootReviewerListPage(
     mount: HTMLElement,
     route: NonNullable<typeof currentRoute>,
     summary: PullReviewerSummary | undefined,
+    isCurrent: () => boolean,
   ): Promise<void> {
-    if (!summary) return;
+    if (!summary || !isCurrent()) return;
     const loadedPreferences = await readPreferences();
+    if (!isCurrent()) return;
     presentations.set(mount, {
       kind: "resolved",
       source: { route, summary },
@@ -197,7 +207,7 @@ export function bootReviewerListPage(
   }
 
   async function processRow(row: Element): Promise<void> {
-    if (currentRoute == null) return;
+    if (disposed || currentRoute == null || !row.isConnected) return;
 
     const pullNumber = extractPullNumber(row);
     if (pullNumber == null) return;
@@ -207,10 +217,31 @@ export function bootReviewerListPage(
 
     const route = currentRoute;
     const cacheKey = buildReviewerCacheKey(route.owner, route.repo, pullNumber);
+    let requestOwner = requestOwners.get(cacheKey);
+    const rowGeneration = generation;
+    const operation = {};
+    mountOperations.set(mount, operation);
+    const isRowCurrent = () =>
+      !disposed &&
+      generation === rowGeneration &&
+      currentRoute === route &&
+      row.isConnected &&
+      row.contains(mount) &&
+      extractPullNumber(row) === pullNumber;
+    const isOperationCurrent = () =>
+      isRowCurrent() &&
+      mountOperations.get(mount) === operation &&
+      requestOwners.get(cacheKey) === requestOwner;
     rowLifecycle.recordFingerprint(row, pullNumber, route);
     const cachedEntry = getReviewerCacheEntry(cacheKey);
     if (cachedEntry != null) {
-      await renderSummaryForMount(mount, route, cachedEntry.summary);
+      await renderSummaryForMount(
+        mount,
+        route,
+        cachedEntry.summary,
+        isOperationCurrent,
+      );
+      if (!isOperationCurrent()) return;
       if (isReviewerCacheEntryFresh(cachedEntry)) {
         return;
       }
@@ -218,9 +249,16 @@ export function bootReviewerListPage(
 
     const existingRequest = inflightRequests.get(cacheKey);
     if (existingRequest) {
+      existingRequest.consumers.set(mount, isRowCurrent);
       const existingEntry = getReviewerCacheEntry(cacheKey);
       if (existingEntry != null) {
-        await renderSummaryForMount(mount, route, existingEntry.summary);
+        await renderSummaryForMount(
+          mount,
+          route,
+          existingEntry.summary,
+          isOperationCurrent,
+        );
+        if (!isOperationCurrent()) return;
       } else if (!mountHasRenderedChips(mount)) {
         showLoading(mount);
       }
@@ -229,14 +267,19 @@ export function bootReviewerListPage(
       } catch {
         // The tracked request reports its own failure.
       }
-      if (existingRequest.controller.signal.aborted) {
+      if (!isOperationCurrent() || existingRequest.controller.signal.aborted) {
         return;
       }
       const settledSummary = getReviewerCacheEntry(cacheKey)?.summary;
       if (settledSummary == null) {
         clearReviewerMountWithoutCache(mount, cacheKey);
       } else {
-        await renderSummaryForMount(mount, route, settledSummary);
+        await renderSummaryForMount(
+          mount,
+          route,
+          settledSummary,
+          isOperationCurrent,
+        );
       }
       return;
     }
@@ -246,12 +289,21 @@ export function bootReviewerListPage(
     }
 
     const controller = new AbortController();
+    requestOwner = {};
+    requestOwners.set(cacheKey, requestOwner);
     let request: InflightRequest | null = null;
+    const consumers = new Map([[mount, isRowCurrent]]);
+    // A replacement row may still need the shared request after its owner left.
+    const isRequestCurrent = () =>
+      !controller.signal.aborted &&
+      request != null &&
+      inflightRequests.get(cacheKey) === request &&
+      [...consumers.values()].some((isCurrent) => isCurrent());
     const promise = (async () => {
       let account: Account | null = null;
       try {
         account = await accountResolver.resolveAccount(route.owner, route.repo);
-        if (controller.signal.aborted) {
+        if (!isRequestCurrent()) {
           return;
         }
         const metadataResult = await pageMetadata.get({
@@ -260,41 +312,41 @@ export function bootReviewerListPage(
           targetPullNumbers: collectVisiblePullNumbers(),
           signal: controller.signal,
         });
-        if (controller.signal.aborted) {
+        if (!isRequestCurrent()) {
           return;
         }
         if (metadataResult.failure?.suppressRowFallback) {
           reportPageMetadataFailure(route, metadataResult.failure);
-          clearReviewerMountWithoutCache(mount, cacheKey);
+          if (isOperationCurrent())
+            clearReviewerMountWithoutCache(mount, cacheKey);
           return;
         }
         const pullMetadata = metadataResult.metadata.get(pullNumber);
         const cachedFallbackAccount =
           account == null ? fallbackAccounts.read(route.owner) : undefined;
         const summaryAccount = cachedFallbackAccount ?? account;
-        if (controller.signal.aborted) {
+        if (!isRequestCurrent()) {
           return;
         }
 
         try {
-          const summary = await reviewerSummaryScheduler.run(
-            () =>
-              fetchReviewerSummary({
-                account: summaryAccount,
-                owner: route.owner,
-                repo: route.repo,
-                pullNumber,
-                signal: controller.signal,
-                ...(pullMetadata == null ? {} : { pullMetadata }),
-              }),
-            controller.signal,
-          );
-          if (controller.signal.aborted) {
+          const summary = await reviewerSummaryScheduler.run(() => {
+            if (!isRequestCurrent()) controller.abort();
+            return fetchReviewerSummary({
+              account: summaryAccount,
+              owner: route.owner,
+              repo: route.repo,
+              pullNumber,
+              signal: controller.signal,
+              ...(pullMetadata == null ? {} : { pullMetadata }),
+            });
+          }, controller.signal);
+          if (!isRequestCurrent()) {
             return;
           }
           setCachedReviewerSummary(cacheKey, summary);
         } catch (error) {
-          if (isAbortError(error) || controller.signal.aborted) {
+          if (isAbortError(error) || !isRequestCurrent()) {
             return;
           }
           let failureAccount = summaryAccount;
@@ -305,30 +357,29 @@ export function bootReviewerListPage(
             shouldRetryWithFallbackAccount(error)
           ) {
             const fallbackAccount = await fallbackAccounts.get(route.owner);
-            if (controller.signal.aborted) {
+            if (!isRequestCurrent()) {
               return;
             }
             if (fallbackAccount != null) {
               try {
-                const summary = await reviewerSummaryScheduler.run(
-                  () =>
-                    fetchReviewerSummary({
-                      account: fallbackAccount,
-                      owner: route.owner,
-                      repo: route.repo,
-                      pullNumber,
-                      signal: controller.signal,
-                      ...(pullMetadata == null ? {} : { pullMetadata }),
-                    }),
-                  controller.signal,
-                );
-                if (controller.signal.aborted) {
+                const summary = await reviewerSummaryScheduler.run(() => {
+                  if (!isRequestCurrent()) controller.abort();
+                  return fetchReviewerSummary({
+                    account: fallbackAccount,
+                    owner: route.owner,
+                    repo: route.repo,
+                    pullNumber,
+                    signal: controller.signal,
+                    ...(pullMetadata == null ? {} : { pullMetadata }),
+                  });
+                }, controller.signal);
+                if (!isRequestCurrent()) {
                   return;
                 }
                 setCachedReviewerSummary(cacheKey, summary);
                 return;
               } catch (fallbackError) {
-                if (isAbortError(fallbackError) || controller.signal.aborted) {
+                if (isAbortError(fallbackError) || !isRequestCurrent()) {
                   return;
                 }
                 failureAccount = fallbackAccount;
@@ -336,7 +387,8 @@ export function bootReviewerListPage(
               }
             }
           }
-          clearReviewerMountWithoutCache(mount, cacheKey);
+          if (isOperationCurrent())
+            clearReviewerMountWithoutCache(mount, cacheKey);
           options?.onRowFailure?.({
             owner: route.owner,
             repo: route.repo,
@@ -345,10 +397,11 @@ export function bootReviewerListPage(
           });
         }
       } catch (error) {
-        if (isAbortError(error) || controller.signal.aborted) {
+        if (isAbortError(error) || !isRequestCurrent()) {
           return;
         }
-        clearReviewerMountWithoutCache(mount, cacheKey);
+        if (isOperationCurrent())
+          clearReviewerMountWithoutCache(mount, cacheKey);
         options?.onRowFailure?.({
           owner: route.owner,
           repo: route.repo,
@@ -361,7 +414,7 @@ export function bootReviewerListPage(
         }
       }
     })();
-    request = { controller, promise };
+    request = { controller, promise, consumers };
 
     inflightRequests.set(cacheKey, request);
     try {
@@ -370,7 +423,7 @@ export function bootReviewerListPage(
       // Errors are handled inside the async block.
     }
 
-    if (controller.signal.aborted) {
+    if (!isOperationCurrent() || controller.signal.aborted) {
       return;
     }
 
@@ -378,6 +431,7 @@ export function bootReviewerListPage(
       mount,
       route,
       getReviewerCacheEntry(cacheKey)?.summary,
+      isOperationCurrent,
     );
   }
 
@@ -447,6 +501,7 @@ export function bootReviewerListPage(
   browser.storage.onChanged.addListener(storageListener);
   ctx.setInterval(() => refreshRoute(), 1000);
   ctx.onInvalidated(() => {
+    disposed = true;
     observer.disconnect();
     unsubscribeLocale?.();
     unsubscribeLocale = undefined;
