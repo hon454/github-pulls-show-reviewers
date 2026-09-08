@@ -2250,6 +2250,85 @@ describe("settled reviewer request ownership", () => {
     });
   }
 
+  it.each(
+    [
+      "metadata suppression",
+      "summary failure",
+      "summary rejection",
+      "account rejection",
+    ].flatMap((stage) => [false, true].map((stale) => ({ stage, stale }))),
+  )(
+    "settles a replacement mount after $stage (stale chips: $stale)",
+    async ({ stage, stale }) => {
+      const pending = createDeferred<unknown>();
+      const account = createDeferred<Account | null>();
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      if (stage === "account rejection")
+        resolveAccountForRepoMock.mockImplementationOnce(() => account.promise);
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return stage === "metadata suppression"
+            ? pending.promise
+            : Promise.resolve({ ok: true, metadata: [] });
+        return pending.promise;
+      });
+      const cache = await import("../src/cache/reviewer-cache");
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      if (stale) {
+        cache.setCachedReviewerSummary(key, summary);
+        cache.markReviewerCacheStale(key);
+      }
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      const oldRow = document.querySelector("#issue_42")!;
+      const replacement = oldRow.cloneNode(true) as Element;
+      replacement.querySelector("[data-ghpsr-root]")?.remove();
+      oldRow.replaceWith(replacement);
+      await flushMicrotasks();
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(1);
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        stage === "account rejection" ? 0 : 1,
+      );
+      const summaryCalls = stage.startsWith("summary") ? 1 : 0;
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+        summaryCalls,
+      );
+      if (stale)
+        expect(replacement.querySelector("a.ghpsr-avatar")).not.toBeNull();
+      else
+        expect(replacement.querySelector(".ghpsr-status")?.textContent).toBe(
+          "Loading reviewers...",
+        );
+
+      if (stage === "account rejection")
+        account.reject(new Error("Storage unavailable"));
+      else if (stage === "summary rejection")
+        pending.reject(new Error("Runtime unavailable"));
+      else pending.resolve(failure(429));
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(replacement.querySelector(".ghpsr-status")).toBeNull();
+      if (stale) {
+        expect(replacement.querySelector("a.ghpsr-avatar")).not.toBeNull();
+        expect(cache.getReviewerCacheEntry(key)?.summary).toEqual(summary);
+      } else {
+        expect(replacement.querySelector(".ghpsr-root")?.textContent).toBe("");
+        expect(cache.getReviewerCacheEntry(key)).toBeUndefined();
+      }
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(1);
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        stage === "account rejection" ? 0 : 1,
+      );
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+        summaryCalls,
+      );
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it.each([
     { status: 429, count: 1 },
     ...[401, 403, 404, 429].map((status) => ({ status, count: 2 })),

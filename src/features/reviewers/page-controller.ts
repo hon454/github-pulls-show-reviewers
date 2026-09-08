@@ -218,11 +218,12 @@ export function bootReviewerListPage(
       if (existingRequest.controller.signal.aborted) {
         return;
       }
-      await renderSummaryForMount(
-        mount,
-        route,
-        getReviewerCacheEntry(cacheKey)?.summary,
-      );
+      const settledSummary = getReviewerCacheEntry(cacheKey)?.summary;
+      if (settledSummary == null) {
+        clearReviewerMountWithoutCache(mount, cacheKey);
+      } else {
+        await renderSummaryForMount(mount, route, settledSummary);
+      }
       return;
     }
 
