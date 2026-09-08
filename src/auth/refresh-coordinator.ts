@@ -33,6 +33,27 @@ function outcomeFor(account: Account | null): RefreshOutcome {
 export function createRefreshCoordinator(input: {
   getClientId: () => string;
 }): RefreshCoordinator {
+  type RecoveryAdmission = {
+    kind: "recovery";
+    generation: Promise<string | null>;
+    result: Promise<RefreshOutcome>;
+  };
+  type InvalidationAdmission = {
+    kind: "invalidation";
+    generation: string;
+    result: Promise<void>;
+  };
+  type Admission = RecoveryAdmission | InvalidationAdmission;
+  const admissions = new Map<string, Set<Admission>>();
+  function pendingFor(accountId: string): Set<Admission> {
+    let pending = admissions.get(accountId);
+    if (!pending) {
+      pending = new Set();
+      admissions.set(accountId, pending);
+    }
+    return pending;
+  }
+
   const inFlight = new Map<
     string,
     {
@@ -72,12 +93,27 @@ export function createRefreshCoordinator(input: {
     }
   }
 
-  async function recover(
+  async function runRecovery(
     accountId: string,
     request: { failedGeneration: string } | { now: number },
+    earlierInvalidations: Map<string, Promise<void>>,
+    identify: (generation: string | null) => void,
   ): Promise<RefreshOutcome> {
     // The owner completes initialization/repair before admitting this read.
-    const account = await accountMutations.getAccountById(accountId);
+    let account = await accountMutations.getAccountById(accountId);
+    // Later recovery cannot overtake an already admitted invalidation of its
+    // current generation. Reauthentication's different generation is free to
+    // progress. This loop only drains the finite earlier snapshot; no retries
+    // or HTTP run here, and every wait is outside the registry queue.
+    while (account && !account.invalidated) {
+      const generation = credentialGeneration(account);
+      const earlier = earlierInvalidations.get(generation);
+      if (!earlier) break;
+      earlierInvalidations.delete(generation);
+      await earlier;
+      account = await accountMutations.getAccountById(accountId);
+    }
+    identify(account ? credentialGeneration(account) : null);
     if (account == null || account.invalidated)
       return { ok: false, terminal: true };
     const generation = credentialGeneration(account);
@@ -127,20 +163,83 @@ export function createRefreshCoordinator(input: {
     return promise;
   }
 
+  function recover(
+    accountId: string,
+    request: { failedGeneration: string } | { now: number },
+  ): Promise<RefreshOutcome> {
+    const pending = pendingFor(accountId);
+    const earlierInvalidations = new Map(
+      [...pending]
+        .filter(
+          (item): item is InvalidationAdmission => item.kind === "invalidation",
+        )
+        .map((item) => [item.generation, item.result]),
+    );
+    let identify!: (generation: string | null) => void;
+    const generation = new Promise<string | null>((resolve) => {
+      identify = resolve;
+    });
+    const admission: RecoveryAdmission = {
+      kind: "recovery",
+      generation,
+      // Register synchronously, before even the first owner storage await.
+      result: Promise.resolve()
+        .then(() =>
+          runRecovery(accountId, request, earlierInvalidations, identify),
+        )
+        .finally(() => {
+          identify(null); // Also release identity waiters when a storage read fails.
+          pending.delete(admission);
+          if (pending.size === 0) admissions.delete(accountId);
+        }),
+    };
+    pending.add(admission);
+    return admission.result;
+  }
+
+  function invalidateAccountToken(
+    accountId: string,
+    failedGeneration: string,
+  ): Promise<void> {
+    const pending = pendingFor(accountId);
+    for (const item of pending) {
+      if (item.kind === "invalidation" && item.generation === failedGeneration)
+        return item.result;
+    }
+    const earlierRecoveries = [...pending].filter(
+      (item): item is RecoveryAdmission => item.kind === "recovery",
+    );
+    const admission: InvalidationAdmission = {
+      kind: "invalidation",
+      generation: failedGeneration,
+      result: Promise.resolve()
+        .then(async () => {
+          // Only earlier admissions are dependencies, so a later recovery waiting
+          // on this invalidation cannot create a cycle. Identity is resolved by
+          // the current storage read, including for proactive recovery.
+          await Promise.all(
+            earlierRecoveries.map(async (item) => {
+              if ((await item.generation) === failedGeneration)
+                await item.result;
+            }),
+          );
+          await accountMutations.commitAuth(accountId, failedGeneration, {
+            invalidatedReason: "revoked",
+          });
+        })
+        .finally(() => {
+          pending.delete(admission);
+          if (pending.size === 0) admissions.delete(accountId);
+        }),
+    };
+    pending.add(admission);
+    return admission.result;
+  }
+
   return {
     refreshAccountToken: (accountId, failedGeneration) =>
       recover(accountId, { failedGeneration }),
     refreshAccountIfDue: (accountId, now) => recover(accountId, { now }),
-    async invalidateAccountToken(accountId, failedGeneration): Promise<void> {
-      // GitHub may have rotated this generation while its successful response
-      // is still in transit. Let that recovery commit before deciding whether
-      // the rejected retry still identifies the current credential. This wait
-      // is outside the registry queue and never waits on another generation.
-      const pending = inFlight.get(accountId);
-      if (pending?.generation === failedGeneration) await pending.promise;
-      await accountMutations.commitAuth(accountId, failedGeneration, {
-        invalidatedReason: "revoked",
-      });
-    },
+    invalidateAccountToken,
   };
 }

@@ -25,6 +25,143 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("generation-aware refresh coordinator with real storage and HTTP parsing", () => {
+  it.each([
+    ["reactive", "success"],
+    ["reactive", "terminal"],
+    ["reactive", "transient"],
+    ["proactive", "success"],
+    ["proactive", "terminal"],
+    ["proactive", "transient"],
+  ])(
+    "orders concurrent admissions, invalidation and later %s recovery after %s",
+    async (kind, outcome) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const generation = credentialGeneration(old);
+      const read = storage.pauseGet();
+      const first = coordinator.refreshAccountToken(old.id, generation);
+      await read.entered.promise;
+      const concurrent = coordinator.refreshAccountToken(old.id, generation);
+      const invalidation = coordinator.invalidateAccountToken(
+        old.id,
+        generation,
+      );
+      const later =
+        kind === "reactive"
+          ? coordinator.refreshAccountToken(old.id, generation)
+          : coordinator.refreshAccountIfDue(old.id, Date.now());
+      const duplicate = coordinator.invalidateAccountToken(old.id, generation);
+      expect(duplicate === invalidation).toBe(true);
+      read.release.resolve();
+      const request = await http.next();
+      expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+        false,
+      );
+      request.response.resolve(
+        outcome === "success"
+          ? rotated()
+          : outcome === "terminal"
+            ? json({ error: "bad_refresh_token" }, 400)
+            : json({}, 503),
+      );
+      const [a, b, c] = await Promise.all([
+        first,
+        concurrent,
+        later,
+        invalidation,
+        duplicate,
+      ]);
+      expect([a.ok, b.ok, c.ok]).toEqual(Array(3).fill(outcome === "success"));
+      expect(http.requests.length).toBe(1);
+      const current = (await accountMutations.getAccountById(old.id))!;
+      expect(current.invalidatedReason).toBe(
+        outcome === "success"
+          ? null
+          : outcome === "terminal"
+            ? "refresh_failed"
+            : "revoked",
+      );
+    },
+  );
+
+  it("an invalidation admitted first prevents later recovery from starting HTTP", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const gate = storage.pauseSet();
+    const invalidation = coordinator.invalidateAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    await gate.entered.promise;
+    const recovery = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    gate.release.resolve();
+    await invalidation;
+    expect(await recovery).toEqual({ ok: false, terminal: true });
+    expect(http.requests.length).toBe(0);
+  });
+
+  it("releases admission identity waiters after a failed storage read", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    storage.local.get.mockRejectedValueOnce(new Error("storage-read-failure"));
+    const failed = coordinator
+      .refreshAccountToken(old.id, credentialGeneration(old))
+      .catch(() => null);
+    const invalidation = coordinator.invalidateAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    expect(await failed).toBeNull();
+    await invalidation;
+    const signedIn =
+      await accountMutations.upsertAccountByLogin(connectInput());
+    const recovery = coordinator.refreshAccountToken(
+      signedIn.id,
+      credentialGeneration(signedIn),
+    );
+    (await http.next()).response.resolve(rotated());
+    expect((await recovery).ok).toBe(true);
+  });
+
+  it.each(["reactive", "proactive"])(
+    "admits %s recovery before its first storage await so invalidation cannot overtake it",
+    async (kind) => {
+      const account =
+        await accountMutations.upsertAccountByLogin(connectInput());
+      const gate = storage.pauseGet();
+      const recovery =
+        kind === "reactive"
+          ? coordinator.refreshAccountToken(
+              account.id,
+              credentialGeneration(account),
+            )
+          : coordinator.refreshAccountIfDue(account.id, Date.now());
+      await gate.entered.promise;
+      const invalidation = coordinator.invalidateAccountToken(
+        account.id,
+        credentialGeneration(account),
+      );
+      gate.release.resolve();
+      const request = await http.next();
+      const before = await accountMutations.getAccountById(account.id);
+      request.response.resolve(rotated());
+      const [outcome] = await Promise.all([recovery, invalidation]);
+      const current = await accountMutations.getAccountById(account.id);
+      expect({
+        activeBefore: before?.invalidated === false,
+        recovered: outcome.ok,
+        activeAfter: current?.invalidated === false,
+        latestStored: current?.token === "fixture-access-1",
+      }).toEqual({
+        activeBefore: true,
+        recovered: true,
+        activeAfter: true,
+        latestStored: true,
+      });
+      expect(http.requests.length).toBe(1);
+    },
+  );
+
   it("rotates credentials once for concurrent failures and reuses them for a delayed 401", async () => {
     const old = await accountMutations.upsertAccountByLogin(connectInput());
     const a = coordinator.refreshAccountToken(

@@ -343,8 +343,12 @@ snapshot is in-memory only — it is never persisted.
   joins its active refresh; it rotates only a still-current failed generation.
   One API retry is allowed. A rejected retry invalidates only its own generation
   while it is still current. Refresh completion and terminal refresh failure
-  cannot be overtaken by retry invalidation for the same in-flight generation:
-  invalidation waits outside the registry queue, then rechecks current storage.
+  cannot be overtaken by retry invalidation for the same generation. The
+  coordinator records admission before its first storage await: invalidation
+  waits for earlier same-generation recovery, while later recovery waits for
+  that invalidation before rereading state. Only earlier admissions are wait
+  dependencies, preventing cycles. All waits remain outside the registry queue;
+  a different generation's HTTP remains independent.
   A successful rotation survives; a terminal failure retains `refresh_failed`.
   If refresh is transient, a genuinely rejected still-current retry may retain
   the existing `revoked` outcome. Refresh completion and terminal failure
