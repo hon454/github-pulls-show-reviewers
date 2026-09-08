@@ -1,3 +1,4 @@
+import type * as AccountsStorageModule from "../src/storage/accounts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as GithubApiModule from "../src/github/api";
 import { CANCELED_REQUEST_TTL_MS } from "../src/background/reviewer-fetch";
@@ -32,6 +33,8 @@ const {
 }));
 createRefreshCoordinatorMock.mockImplementation(() => ({
   refreshAccountToken: refreshAccountTokenMock,
+  invalidateAccountToken: markAccountInvalidatedMock,
+  refreshAccountIfDue: refreshAccountTokenMock,
 }));
 createInstallationRefreshServiceMock.mockImplementation(() => ({
   refreshAccountInstallations: refreshAccountInstallationsMock,
@@ -49,10 +52,13 @@ vi.mock("../src/config/github-app", () => ({
   getGitHubAppConfig: getGitHubAppConfigMock,
 }));
 
-vi.mock("../src/storage/accounts", () => ({
-  getAccountById: getAccountByIdMock,
-  listAccounts: listAccountsMock,
-  markAccountInvalidated: markAccountInvalidatedMock,
+vi.mock("../src/storage/accounts", async (importActual) => ({
+  ...(await importActual<typeof AccountsStorageModule>()),
+  accountMutations: {
+    initialize: vi.fn(async () => {}),
+    getAccountById: getAccountByIdMock,
+    listAccounts: listAccountsMock,
+  },
 }));
 
 vi.mock("../src/github/api", async () => {
@@ -109,7 +115,10 @@ beforeEach(() => {
   getAccountByIdMock.mockReset();
   listAccountsMock.mockReset().mockResolvedValue([]);
   markAccountInvalidatedMock.mockReset();
-  refreshAccountTokenMock.mockResolvedValue({ ok: true, token: "new-token" });
+  refreshAccountTokenMock.mockResolvedValue({
+    ok: true,
+    generation: "new-generation",
+  });
   refreshAccountInstallationsMock.mockReset().mockResolvedValue({ ok: true });
   createRefreshCoordinatorMock.mockClear();
   createInstallationRefreshServiceMock.mockClear();
@@ -165,20 +174,20 @@ describe("background runtime.onMessage handler", () => {
 
     const response = await callListener(
       listener,
-      { type: "refreshAccessToken", accountId: "acc-1" },
+      { type: "refreshAccessToken", accountId: "acc-1", generation: "legacy" },
       { id: SELF_RUNTIME_ID },
     );
 
     expect(refreshAccountTokenMock).toHaveBeenCalledTimes(1);
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
-    expect(response).toEqual({ ok: true, token: "new-token" });
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
+    expect(response).toEqual({ ok: true, generation: "new-generation" });
   });
 
   it("keeps the message channel open for async dispatch", async () => {
     const listener = await bootBackground();
 
     const sync = listener(
-      { type: "refreshAccessToken", accountId: "acc-1" },
+      { type: "refreshAccessToken", accountId: "acc-1", generation: "legacy" },
       { id: SELF_RUNTIME_ID },
       () => {},
     );
@@ -231,7 +240,7 @@ describe("background runtime.onMessage handler", () => {
 
     const response = await callListener(
       listener,
-      { type: "refreshAccessToken", accountId: "acc-1" },
+      { type: "refreshAccessToken", accountId: "acc-1", generation: "legacy" },
       { id: "some-other-extension-id" },
     );
 
@@ -350,7 +359,7 @@ describe("background runtime.onMessage handler", () => {
     );
 
     expect(response).toEqual({ ok: true, summary });
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(2);
     expect(fetchPullReviewerSummaryMock.mock.calls[1][0]).toMatchObject({
       githubToken: "ghu_new",
@@ -397,7 +406,7 @@ describe("background runtime.onMessage handler", () => {
     );
 
     expect(response).toEqual({ ok: true, metadata });
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(fetchPullReviewerMetadataBatchMock).toHaveBeenCalledTimes(2);
     expect(fetchPullReviewerMetadataBatchMock.mock.calls[1][0]).toMatchObject({
       githubToken: "ghu_new",
@@ -436,11 +445,11 @@ describe("background runtime.onMessage handler", () => {
       ok: false,
       error: { kind: "unknown", status: 401 },
     });
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 
-  it("marks the account revoked when reviewer fetch 401s without a refresh token", async () => {
+  it("delegates a 401 without a refresh token to the coordinator", async () => {
     const listener = await bootBackground();
     getAccountByIdMock.mockResolvedValue({
       id: "acc-1",
@@ -448,6 +457,10 @@ describe("background runtime.onMessage handler", () => {
       refreshToken: null,
     });
     fetchPullReviewerSummaryMock.mockRejectedValueOnce({ status: 401 });
+    refreshAccountTokenMock.mockResolvedValueOnce({
+      ok: false,
+      terminal: true,
+    });
 
     const response = await callListener(
       listener,
@@ -466,8 +479,8 @@ describe("background runtime.onMessage handler", () => {
       ok: false,
       error: { kind: "unknown", status: 401 },
     });
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
-    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 
   it("marks the account revoked when the retry after refresh also returns 401", async () => {
@@ -504,8 +517,8 @@ describe("background runtime.onMessage handler", () => {
       ok: false,
       error: { kind: "unknown", status: 401 },
     });
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "legacy");
   });
 
   it("aborts an in-flight reviewer fetch when a cancel message arrives", async () => {
@@ -801,7 +814,7 @@ describe("background proactive refresh wiring", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-due");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-due", now);
     vi.useRealTimers();
   });
 
@@ -847,11 +860,11 @@ describe("background proactive refresh wiring", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith(
       "acc-refresh-expired",
-      "expired",
+      now,
     );
-    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 });

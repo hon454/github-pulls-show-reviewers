@@ -6,8 +6,8 @@
 ## Context
 
 [ADR 0003](./0003-github-app-device-flow.md) shipped a GitHub App plus OAuth
-Device Flow and explicitly accepted that *user-to-server tokens have no refresh
-in a pure-client setting (the refresh endpoint requires a client secret)*. In
+Device Flow and explicitly accepted that _user-to-server tokens have no refresh
+in a pure-client setting (the refresh endpoint requires a client secret)_. In
 practice GitHub's OAuth device-flow refresh grant works without a client secret
 when the app is configured for device flow, which leaves access-token expiry as
 an avoidable re-authentication tax: before this change, the options page surfaced
@@ -21,19 +21,32 @@ service worker before invalidating an account.
 
 - `src/github/auth.ts::refreshAccessToken` posts `grant_type=refresh_token` and
   classifies the response.
-- `src/auth/refresh-coordinator.ts` de-duplicates in-flight refreshes per account
-  and routes terminal outcomes to `markAccountInvalidated(id, "refresh_failed")`.
-- Content scripts request refresh via `browser.runtime.sendMessage({ type:
-  "refreshAccessToken", accountId })` when a reviewer fetch returns 401 and the
-  account still has a refresh token.
-- The storage schema carries `refreshToken`, `expiresAt`, and
-  `refreshTokenExpiresAt` (`v4`, migrated from `v3`/`v2`).
+- `src/auth/refresh-coordinator.ts` compares the credential generation actually
+  used with current storage before recovery. Delayed failures reuse newer valid
+  credentials, including after an earlier refresh promise has settled. Current
+  concurrent failures share one in-flight refresh per account/generation.
+- Reviewer summary and metadata services run requests/retries in background.
+  Options recovery sends `{ type: "refreshAccessToken", accountId, generation }`;
+  responses contain a non-secret revision and callers reread storage before a
+  single retry. Missing accounts have no stale-token fallback. Retry invalidation
+  sends the revision it actually used and commits only if it remains current.
+- The storage schema carries `refreshToken`, `expiresAt`,
+  `refreshTokenExpiresAt`, and an opaque `credentialGeneration` (`v4`, migrated
+  from `v3`/`v2`). Sign-in and rotation issue a new UUID; initialization persists
+  the non-secret `legacy` identity for missing generations so pre-migration
+  snapshots, later reads and worker restarts agree until a real rotation.
+- The background-only `accountMutations` queue owns initialization, registry
+  repair, login identity resolution, duplicate consolidation, removal and auth
+  commits. Options sign-in/removal route through validated runtime messages.
+  Conditional auth commits recheck revision and registry membership inside this
+  queue. GitHub HTTP runs outside it, so another account can progress while one
+  refresh is stalled. This boundary is reused by later account-boundary work.
 
 Refresh outcomes are classified into two kinds:
 
 - `terminal` — `bad_refresh_token`, `unauthorized_client`, `invalid_grant`,
   `unsupported_grant_type`, or HTTP 400/401 from the refresh endpoint. The
-  account is marked invalidated with reason `refresh_failed` and the banner
+  still-current generation is marked invalidated with reason `refresh_failed` and the banner
   prompts re-authentication.
 - `transient` — 5xx, 429, network errors, or malformed bodies. The account is
   left valid and the row-level failure surfaces; rows self-heal on the next
@@ -80,8 +93,11 @@ the runtime recovers silently.
 
 ### Neutral
 
-- The storage schema migration (`v3` → `v4`) adds refresh-token fields in place;
-  older schemas continue to migrate lazily on read.
+- Background initialization and subsequent owner operations serialize legacy
+  migration/repair. Queries can read old schemas but never write a stale index.
+- Existing local-storage visibility is unchanged. No service-worker keepalive
+  guarantee is added: process termination between server rotation and durable
+  local persistence remains an unrecoverable rotation window.
 
 ## Links
 

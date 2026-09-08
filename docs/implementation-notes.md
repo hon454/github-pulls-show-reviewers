@@ -319,6 +319,49 @@ time. Callers fall back segment-by-segment: missing limit/remaining omits the
 usage clause, and a missing reset timestamp keeps the static reset copy. The
 snapshot is in-memory only — it is never persisted.
 
+## Credential generation and background account commits
+
+- Each auth record stores an opaque `credentialGeneration`. A sign-in or token
+  rotation creates a new UUID. The background owner migrates legacy v2/v3
+  accounts and missing v4 revisions before admitting account work. Missing
+  revisions in old read snapshots use a stable non-secret `legacy` identity,
+  which migration persists unchanged because it does not rotate credentials;
+  ordinary queries do not write migrations or repair the account registry.
+  Missing v4 revisions update only auth metadata. That exact migration event
+  does not cancel/refetch reviewer work; credential changes and registry repair
+  still invalidate the page's account-dependent data.
+- `accountMutations` in `src/storage/accounts.ts` is the background-only owner.
+  Its short commit queue rereads the registry before normalized-login upsert,
+  duplicate consolidation, removal, initialization/repair and conditional auth
+  writes. All registry and fragment writes share that queue. Options sign-in
+  and removal call `src/runtime/account-mutations.ts`; the background validates
+  the request and permits those mutations only from its own options page.
+  Future account-boundary work must reuse this owner, not create another queue.
+- Reviewer summaries and metadata batches, installation refresh, options
+  diagnostics and the generic options retry helper identify the credential
+  actually used. On 401, the coordinator reuses a newer valid generation or
+  joins its active refresh; it rotates only a still-current failed generation.
+  One API retry is allowed. A rejected retry invalidates only its own generation
+  while it is still current. Refresh completion and terminal refresh failure
+  use the same conditional commit, so old work cannot overwrite a newer sign-in
+  or revive a removed account. Runtime refresh responses contain the revision,
+  not a token; retry callers reread the account and stop if it is gone/invalid.
+- HTTP never holds the registry commit queue, preserving network concurrency
+  across accounts. Installation snapshots commit conditionally against their
+  request generation. The manual options refresh uses the background
+  installation service. The 15-minute alarm rechecks current expiry and the
+  30-minute threshold inside the coordinator, including expiry invalidation.
+- This does not change which extension contexts can read local storage or make
+  the options UI token-free. It cannot guarantee service-worker lifetime or
+  persistence if the process stops after GitHub rotates a token but before the
+  new credentials are durably stored.
+- Deferred regression coverage uses real service/coordinator/storage/HTTP
+  parsing boundaries: A and B start with g0; A rotates to g1 and starts its retry;
+  only then does B's g0 response fail. Both succeed on g1 with one refresh.
+  Additional barriers cover obsolete retries, sign-in/removal, alarm expiry,
+  registry add/add, same-login creation, add/remove, repair/add, migration/add,
+  and independent HTTP while another account is stalled.
+
 ## Proactive token refresh
 
 - A recurring `chrome.alarms` job (15-minute period, 30-minute refresh threshold) pre-warms access tokens before the reactive 401 path is needed, and invalidates accounts whose refresh token has already expired.
@@ -343,7 +386,7 @@ snapshot is in-memory only — it is never persisted.
   still exists, the refresh fails without replacing the previous installation
   snapshot because omitted installations cannot be tied to an owner.
 - `createSelfHealingAccountResolver` (`src/features/reviewers/account-resolution.ts`) wraps the resolution: when a complete cached selected-installation lookup misses, it scans for accounts that own a `selected` installation on the same owner but do not list the repo, then sends a `refreshAccountInstallations` message to the background and re-runs the resolution.
-- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. Tokens never enter the content-script context.
+- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. The service response does not include tokens; existing local-storage read access is unchanged.
 - Each candidate is refreshed at most once per page session. A successful refresh writes to `account:installations:*`, which the existing `accountsChange` storage listener uses to clear the row cache and re-render covered rows transparently.
 - Genuinely uncovered repos still flow into the `app-uncovered` /
   `signin-required` banner copy after the refresh attempt completes. When a

@@ -1,3 +1,4 @@
+import type * as AccountsStorageModule from "../src/storage/accounts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as authModule from "../src/github/auth";
@@ -13,10 +14,12 @@ const refreshAccountTokenMock = vi.hoisted(() => vi.fn());
 const fetchUserInstallationsMock = vi.hoisted(() => vi.fn());
 const fetchInstallationRepositoriesMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../src/storage/accounts", () => ({
-  getAccountById: getAccountByIdMock,
-  replaceInstallations: replaceInstallationsMock,
-  markAccountInvalidated: markAccountInvalidatedMock,
+vi.mock("../src/storage/accounts", async (importActual) => ({
+  ...(await importActual<typeof AccountsStorageModule>()),
+  accountMutations: {
+    getAccountById: getAccountByIdMock,
+    replaceInstallations: replaceInstallationsMock,
+  },
 }));
 
 vi.mock("../src/github/auth", async () => {
@@ -52,7 +55,11 @@ function makeApiInstallation(overrides: {
   repositorySelection: "all" | "selected";
 }): {
   id: number;
-  account: { login: string; type: "User" | "Organization"; avatarUrl: string | null };
+  account: {
+    login: string;
+    type: "User" | "Organization";
+    avatarUrl: string | null;
+  };
   repositorySelection: "all" | "selected";
 } {
   return {
@@ -68,13 +75,17 @@ function makeApiInstallation(overrides: {
 
 const refreshCoordinatorMock = {
   refreshAccountToken: refreshAccountTokenMock,
+  invalidateAccountToken: markAccountInvalidatedMock,
+  refreshAccountIfDue: vi.fn(),
 };
 
 beforeEach(() => {
   getAccountByIdMock.mockReset();
   replaceInstallationsMock.mockReset().mockResolvedValue(undefined);
   markAccountInvalidatedMock.mockReset().mockResolvedValue(undefined);
-  refreshAccountTokenMock.mockReset();
+  refreshAccountTokenMock
+    .mockReset()
+    .mockResolvedValue({ ok: false, terminal: true });
   fetchUserInstallationsMock.mockReset();
   fetchInstallationRepositoriesMock.mockReset();
 });
@@ -88,8 +99,16 @@ describe("createInstallationRefreshService", () => {
     getAccountByIdMock.mockResolvedValue(makeAccount({ token: "ghu_live" }));
     fetchUserInstallationsMock.mockResolvedValue({
       items: [
-        makeApiInstallation({ id: 1, login: "acme", repositorySelection: "selected" }),
-        makeApiInstallation({ id: 2, login: "octocat", repositorySelection: "all" }),
+        makeApiInstallation({
+          id: 1,
+          login: "acme",
+          repositorySelection: "selected",
+        }),
+        makeApiInstallation({
+          id: 2,
+          login: "octocat",
+          repositorySelection: "all",
+        }),
       ],
       truncated: false,
     });
@@ -104,7 +123,9 @@ describe("createInstallationRefreshService", () => {
     const outcome = await service.refreshAccountInstallations("acc-1");
 
     expect(outcome).toEqual({ ok: true });
-    expect(fetchUserInstallationsMock).toHaveBeenCalledWith({ token: "ghu_live" });
+    expect(fetchUserInstallationsMock).toHaveBeenCalledWith({
+      token: "ghu_live",
+    });
     expect(fetchInstallationRepositoriesMock).toHaveBeenCalledTimes(1);
     expect(fetchInstallationRepositoriesMock).toHaveBeenCalledWith({
       token: "ghu_live",
@@ -112,10 +133,8 @@ describe("createInstallationRefreshService", () => {
     });
 
     expect(replaceInstallationsMock).toHaveBeenCalledTimes(1);
-    const [accountId, installations] = replaceInstallationsMock.mock.calls[0] as [
-      string,
-      Installation[],
-    ];
+    const [accountId, installations] = replaceInstallationsMock.mock
+      .calls[0] as [string, Installation[]];
     expect(accountId).toBe("acc-1");
     expect(installations).toEqual([
       {
@@ -140,7 +159,11 @@ describe("createInstallationRefreshService", () => {
     getAccountByIdMock.mockResolvedValue(makeAccount({ token: "ghu_live" }));
     fetchUserInstallationsMock.mockResolvedValue({
       items: [
-        makeApiInstallation({ id: 1, login: "acme", repositorySelection: "selected" }),
+        makeApiInstallation({
+          id: 1,
+          login: "acme",
+          repositorySelection: "selected",
+        }),
       ],
       truncated: false,
     });
@@ -176,7 +199,11 @@ describe("createInstallationRefreshService", () => {
     getAccountByIdMock.mockResolvedValue(makeAccount({ token: "ghu_live" }));
     fetchUserInstallationsMock.mockResolvedValue({
       items: [
-        makeApiInstallation({ id: 1, login: "acme", repositorySelection: "all" }),
+        makeApiInstallation({
+          id: 1,
+          login: "acme",
+          repositorySelection: "all",
+        }),
       ],
       truncated: true,
     });
@@ -227,7 +254,11 @@ describe("createInstallationRefreshService", () => {
       .mockRejectedValueOnce(Object.assign(new Error("401"), { status: 401 }))
       .mockResolvedValueOnce({
         items: [
-          makeApiInstallation({ id: 7, login: "acme", repositorySelection: "all" }),
+          makeApiInstallation({
+            id: 7,
+            login: "acme",
+            repositorySelection: "all",
+          }),
         ],
         truncated: false,
       });
@@ -240,9 +271,13 @@ describe("createInstallationRefreshService", () => {
 
     expect(outcome).toEqual({ ok: true });
     expect(fetchUserInstallationsMock).toHaveBeenCalledTimes(2);
-    expect(fetchUserInstallationsMock.mock.calls[0][0]).toEqual({ token: "ghu_old" });
-    expect(fetchUserInstallationsMock.mock.calls[1][0]).toEqual({ token: "ghu_new" });
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1");
+    expect(fetchUserInstallationsMock.mock.calls[0][0]).toEqual({
+      token: "ghu_old",
+    });
+    expect(fetchUserInstallationsMock.mock.calls[1][0]).toEqual({
+      token: "ghu_new",
+    });
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
     expect(replaceInstallationsMock).toHaveBeenCalledTimes(1);
   });
@@ -260,7 +295,7 @@ describe("createInstallationRefreshService", () => {
     const outcome = await service.refreshAccountInstallations("acc-1");
 
     expect(outcome).toEqual({ ok: false, reason: "failed" });
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(replaceInstallationsMock).not.toHaveBeenCalled();
   });
 
@@ -295,8 +330,8 @@ describe("createInstallationRefreshService", () => {
     const outcome = await service.refreshAccountInstallations("acc-1");
 
     expect(outcome).toEqual({ ok: false, reason: "failed" });
-    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "revoked");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
+    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 
   it("returns ok:false reason=failed and does not persist when the API throws a non-401 error", async () => {
@@ -341,7 +376,11 @@ describe("createInstallationRefreshService", () => {
 
     resolveFetch({
       items: [
-        makeApiInstallation({ id: 9, login: "acme", repositorySelection: "all" }),
+        makeApiInstallation({
+          id: 9,
+          login: "acme",
+          repositorySelection: "all",
+        }),
       ],
       truncated: false,
     });
@@ -357,7 +396,10 @@ describe("createInstallationRefreshService", () => {
 
   it("starts a fresh refresh for the same account after the previous one settles", async () => {
     getAccountByIdMock.mockResolvedValue(makeAccount());
-    fetchUserInstallationsMock.mockResolvedValue({ items: [], truncated: false });
+    fetchUserInstallationsMock.mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
 
     const service = createInstallationRefreshService({
       refreshCoordinator: refreshCoordinatorMock,

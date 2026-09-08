@@ -188,9 +188,10 @@ describe("selectAccountsWithExpiredRefreshToken", () => {
 
 describe("createProactiveRefreshService", () => {
   const alarmsCreateMock = vi.fn(async () => undefined);
-  const alarmsGetMock = vi.fn<
-    (name: string) => Promise<{ periodInMinutes?: number } | undefined>
-  >();
+  const alarmsGetMock =
+    vi.fn<
+      (name: string) => Promise<{ periodInMinutes?: number } | undefined>
+    >();
   const listAccountsMock = vi.fn<() => Promise<Account[]>>();
   const refreshAccountTokenMock =
     vi.fn<(accountId: string) => Promise<RefreshOutcome>>();
@@ -203,9 +204,10 @@ describe("createProactiveRefreshService", () => {
     alarmsGetMock.mockResolvedValue(undefined);
     listAccountsMock.mockReset();
     refreshAccountTokenMock.mockReset();
-    refreshAccountTokenMock.mockResolvedValue(
-      { ok: true, token: "t" } satisfies RefreshOutcome,
-    );
+    refreshAccountTokenMock.mockResolvedValue({
+      ok: true,
+      generation: "g1",
+    } satisfies RefreshOutcome);
     markAccountInvalidatedMock.mockReset();
     markAccountInvalidatedMock.mockResolvedValue(undefined);
     vi.stubGlobal("browser", {
@@ -215,9 +217,12 @@ describe("createProactiveRefreshService", () => {
 
   function buildService(nowValue: number) {
     return createProactiveRefreshService({
-      refreshCoordinator: { refreshAccountToken: refreshAccountTokenMock },
+      refreshCoordinator: {
+        refreshAccountToken: vi.fn(),
+        refreshAccountIfDue: refreshAccountTokenMock,
+        invalidateAccountToken: vi.fn(),
+      },
       listAccounts: listAccountsMock,
-      markAccountInvalidated: markAccountInvalidatedMock,
       now: () => nowValue,
     });
   }
@@ -229,9 +234,12 @@ describe("createProactiveRefreshService", () => {
     await service.scheduleAlarm();
 
     expect(alarmsGetMock).toHaveBeenCalledWith(PROACTIVE_REFRESH_ALARM_NAME);
-    expect(alarmsCreateMock).toHaveBeenCalledWith(PROACTIVE_REFRESH_ALARM_NAME, {
-      periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES,
-    });
+    expect(alarmsCreateMock).toHaveBeenCalledWith(
+      PROACTIVE_REFRESH_ALARM_NAME,
+      {
+        periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES,
+      },
+    );
   });
 
   it("scheduleAlarm does not re-create an existing alarm that matches the configured period", async () => {
@@ -253,9 +261,12 @@ describe("createProactiveRefreshService", () => {
 
     await service.scheduleAlarm();
 
-    expect(alarmsCreateMock).toHaveBeenCalledWith(PROACTIVE_REFRESH_ALARM_NAME, {
-      periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES,
-    });
+    expect(alarmsCreateMock).toHaveBeenCalledWith(
+      PROACTIVE_REFRESH_ALARM_NAME,
+      {
+        periodInMinutes: PROACTIVE_REFRESH_PERIOD_MINUTES,
+      },
+    );
   });
 
   it("handleAlarmFire ignores alarms with a different name", async () => {
@@ -293,8 +304,8 @@ describe("createProactiveRefreshService", () => {
     await service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME);
 
     expect(refreshAccountTokenMock).toHaveBeenCalledTimes(2);
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-a");
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-b");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-a", now);
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-b", now);
   });
 
   it("handleAlarmFire continues when one account refresh rejects", async () => {
@@ -318,7 +329,10 @@ describe("createProactiveRefreshService", () => {
       }),
     ]);
     refreshAccountTokenMock.mockRejectedValueOnce(new Error("transient"));
-    refreshAccountTokenMock.mockResolvedValueOnce({ ok: true, token: "t" });
+    refreshAccountTokenMock.mockResolvedValueOnce({
+      ok: true,
+      generation: "g1",
+    });
 
     const service = buildService(now);
 
@@ -343,15 +357,21 @@ describe("createProactiveRefreshService", () => {
         refreshTokenExpiresAt: futureRefresh,
       }),
     ]);
-    refreshAccountTokenMock.mockResolvedValueOnce({ ok: false, terminal: true });
-    refreshAccountTokenMock.mockResolvedValueOnce({ ok: true, token: "t" });
+    refreshAccountTokenMock.mockResolvedValueOnce({
+      ok: false,
+      terminal: true,
+    });
+    refreshAccountTokenMock.mockResolvedValueOnce({
+      ok: true,
+      generation: "g1",
+    });
 
     const service = buildService(now);
     await service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME);
 
     expect(refreshAccountTokenMock).toHaveBeenCalledTimes(2);
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-a");
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-b");
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-a", now);
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-b", now);
   });
 
   it("handleAlarmFire invalidates accounts whose refresh token has expired", async () => {
@@ -367,11 +387,10 @@ describe("createProactiveRefreshService", () => {
     const service = buildService(now);
     await service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME);
 
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith(
       "refresh-expired",
-      "expired",
+      now,
     );
-    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
   });
 
   it("handleAlarmFire processes refresh and invalidation concurrently", async () => {
@@ -392,10 +411,10 @@ describe("createProactiveRefreshService", () => {
     const service = buildService(now);
     await service.handleAlarmFire(PROACTIVE_REFRESH_ALARM_NAME);
 
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("due");
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith("due", now);
+    expect(refreshAccountTokenMock).toHaveBeenCalledWith(
       "refresh-expired",
-      "expired",
+      now,
     );
   });
 });
