@@ -12,6 +12,8 @@
 
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
+[v1.17.0 发布说明](./docs/releases/v1.17.0.md)（英文）：按限定顺序尝试已连接账号的仓库访问，以及由后台管理的身份验证。
+
 ## 主要功能
 
 - 在 GitHub 拉取请求列表的每一行显示已请求审阅的用户。

@@ -12,6 +12,8 @@
 
 ![レビュアーチップとレビュー状態バッジを表示した GitHub PR 一覧](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
+[v1.17.0 リリースノート](./docs/releases/v1.17.0.md)（英語）：接続済みアカウントを限られた順序で試すリポジトリアクセスと、バックグラウンドで管理する認証。
+
 ## 主な機能
 
 - GitHub のプルリクエスト一覧の各行に、レビューを依頼したユーザーを表示します。

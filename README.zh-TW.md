@@ -12,6 +12,8 @@
 
 ![GitHub PR 清單內的審查者標籤與審查狀態徽章](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
+[v1.17.0 版本說明](./docs/releases/v1.17.0.md)（英文）：依限定順序嘗試已連結帳號的儲存庫存取，以及由背景管理的驗證。
+
 ## 主要功能
 
 - 在 GitHub Pull Request 清單的各列顯示已要求審查的使用者。
