@@ -435,6 +435,25 @@ Use controlled fixture accounts; do not expose live tokens in screenshots.
    repository identifiers. No horizontal page overflow or hidden action buttons;
    labels, keyboard focus and live status announcements remain usable.
 
+## Enabled button contrast and keyboard focus
+
+Use the built options page with synthetic account fixtures. Inspect an enabled
+primary button such as **Add another account**, **Check matched account**, or
+**Sign in again** in its default, hovered, keyboard-focused, and active states.
+Chrome DevTools should report a final rendered background of `#1f7a30` in the
+default state and `#238636` on hover, with white text at or above a 4.5:1
+contrast ratio. Confirm the focus outline remains visibly distinct and that
+disabled controls remain visibly disabled; do not count disabled controls as
+enabled contrast failures.
+
+Repeat the check for **Sign in again** inside an invalidated account card. The
+card should retain its warning treatment through its border without applying
+ancestor opacity, so the enabled button and its focus indicator retain the same
+contrast after compositing. Repeat at desktop and 360px/narrow widths in
+English, 한국어, 日本語, 简体中文, and 繁體中文. Record the computed foreground,
+background, every ancestor opacity, viewport, locale, and any screenshot or
+console evidence in the task handoff.
+
 ## Localization platform verification
 
 See [localization ownership, glossary and executed evidence](localization.md).
