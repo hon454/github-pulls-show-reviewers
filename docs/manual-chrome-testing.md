@@ -104,13 +104,14 @@ This extension is intentionally narrow. Manual verification should stay focused 
 3. If A's delayed response arrives, confirm B stays visible with its own polling
    interval. A must not close B's panel, show an old error/expiry/denial, or start
    another account write. Complete B and confirm one normal account connection.
-4. Repeat cancellation while initiation or account/installation discovery is
-   pending, and close the options tab during a pending request. Abandoned work
-   must not restart polling or publish completion. Switching display language
-   during B must preserve its code and in-flight work.
+4. Close the options tab while initiation or account/installation discovery is
+   pending. These phases do not show a Cancel button; closing the tab tests
+   unmount cleanup. Abandoned work must not restart polling or publish completion.
+   Switching display language during B must preserve its code and in-flight work.
 
 Network timing is nondeterministic in live Chrome. The deterministic offline
 counterpart in `tests/device-flow-controller.test.ts` defers every HTTP stage,
+invokes programmatic cancellation even in phases without a Cancel button,
 ignores abort deliberately, and covers late success/rejection, pending,
 slow-down, denial, expiry, restart, and unmount. It also checks the commit
 boundary: an account write already admitted before cancellation may finish,
