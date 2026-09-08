@@ -916,5 +916,13 @@
         "content": "$2"
       }
     }
+  },
+  "auth_cancelling": {
+    "message": "正在取消登录…",
+    "description": "Status while background confirms sign-in cancellation."
+  },
+  "auth_error_restart": {
+    "message": "无法恢复此次登录。请获取新代码后登录。",
+    "description": "Device flow session was lost or its interrupted result cannot be recovered; user can request a fresh code."
   }
 }

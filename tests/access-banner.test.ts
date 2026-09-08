@@ -1,3 +1,4 @@
+import type * as UIClientModule from "../src/runtime/ui-client";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -1012,7 +1013,17 @@ describe("localized banner states", () => {
     vi.stubGlobal("__GITHUB_APP_SLUG__", "test-reviewer-app");
     vi.stubGlobal("__GITHUB_APP_NAME__", "Test Reviewer App");
     vi.stubGlobal("__PROD__", true);
-    const listeners = new Set<(changes: object, area: string) => void>();
+    const { createUIPresentationFixtures } =
+      await import("./helpers/ui-presentation-fixtures");
+    const { DEFAULT_PREFERENCES } = await import("../src/shared/preferences");
+    const uiFixtures = createUIPresentationFixtures(
+      async () => DEFAULT_PREFERENCES,
+    );
+    const listeners = uiFixtures.listeners;
+    vi.doMock("../src/runtime/ui-client", async (importActual) => ({
+      ...(await importActual<typeof UIClientModule>()),
+      getUIClient: () => uiFixtures.client,
+    }));
     const sendMessage = vi.fn();
     vi.stubGlobal("browser", {
       i18n: { getUILanguage: () => "en" },
@@ -1021,12 +1032,10 @@ describe("localized banner states", () => {
         sendMessage,
       },
       storage: {
-        local: { get: async () => ({}) },
         onChanged: {
-          addListener: (fn: (changes: object, area: string) => void) =>
-            listeners.add(fn),
-          removeListener: (fn: (changes: object, area: string) => void) =>
-            listeners.delete(fn),
+          addListener: vi.fn(() => {
+            throw new Error("UI storage subscription");
+          }),
         },
       },
     });
@@ -1043,8 +1052,9 @@ describe("localized banner states", () => {
       openPullsOnly: true,
     };
     for (const language of ["ko", "ja", "zh_CN", "zh_TW"]) {
-      listeners.forEach((fn) =>
-        fn({ preferences: { newValue: { ...prefs, language } } }, "local"),
+      uiFixtures.publishFixtureChange(
+        { preferences: { newValue: { ...prefs, language } } },
+        "local",
       );
       expect(handle.getState()).toEqual(state);
       expect(
@@ -1052,8 +1062,9 @@ describe("localized banner states", () => {
       ).toBe(language.replace("_", "-"));
     }
     handle.dismiss();
-    listeners.forEach((fn) =>
-      fn({ preferences: { newValue: { ...prefs, language: "en" } } }, "local"),
+    uiFixtures.publishFixtureChange(
+      { preferences: { newValue: { ...prefs, language: "en" } } },
+      "local",
     );
     expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
     expect(handle.getState().dismissed).toBe(true);
@@ -1062,5 +1073,6 @@ describe("localized banner states", () => {
     handle.teardown();
     handle.teardown();
     expect(listeners.size).toBe(0);
+    vi.doUnmock("../src/runtime/ui-client");
   });
 });

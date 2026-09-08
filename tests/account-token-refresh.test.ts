@@ -1,3 +1,4 @@
+import type { RefreshCoordinator } from "../src/auth/refresh-coordinator";
 // @vitest-environment jsdom
 import type * as AccountsStorageModule from "../src/storage/accounts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -5,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const validateGitHubRepositoryAccessMock = vi.fn();
 const getAccountByIdMock = vi.fn();
 const markAccountInvalidatedMock = vi.fn();
-const runtimeSendMessageMock = vi.fn();
+const refreshMock = vi.fn();
+const invalidateMock = vi.fn();
+const coordinator = {
+  refreshAccountToken: refreshMock,
+  invalidateAccountToken: invalidateMock,
+} as unknown as RefreshCoordinator;
 
 vi.mock("../src/github/api", () => ({
   validateGitHubRepositoryAccess: validateGitHubRepositoryAccessMock,
@@ -28,7 +34,7 @@ vi.mock("../src/github/api", () => ({
 
 vi.mock("../src/storage/accounts", async (importActual) => ({
   ...(await importActual<typeof AccountsStorageModule>()),
-  getAccountById: getAccountByIdMock,
+  accountMutations: { getAccountById: getAccountByIdMock },
   markAccountInvalidated: markAccountInvalidatedMock,
 }));
 
@@ -53,10 +59,8 @@ beforeEach(() => {
   validateGitHubRepositoryAccessMock.mockReset();
   getAccountByIdMock.mockReset();
   markAccountInvalidatedMock.mockReset();
-  runtimeSendMessageMock.mockReset();
-  vi.stubGlobal("browser", {
-    runtime: { sendMessage: runtimeSendMessageMock },
-  });
+  refreshMock.mockReset();
+  invalidateMock.mockReset();
 });
 
 afterEach(() => {
@@ -76,12 +80,13 @@ describe("validateRepositoryAccessWithAccount", () => {
     validateGitHubRepositoryAccessMock.mockResolvedValueOnce(success);
 
     const result = await validateRepositoryAccessWithAccount({
+      coordinator,
       account: baseAccount as never,
       repository: "octo/repo",
     });
 
     expect(result).toBe(success);
-    expect(runtimeSendMessageMock).not.toHaveBeenCalled();
+    expect(refreshMock).not.toHaveBeenCalled();
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 
@@ -96,12 +101,13 @@ describe("validateRepositoryAccessWithAccount", () => {
     validateGitHubRepositoryAccessMock.mockResolvedValueOnce(failure);
 
     const result = await validateRepositoryAccessWithAccount({
+      coordinator,
       account: baseAccount as never,
       repository: "octo/repo",
     });
 
     expect(result).toBe(failure);
-    expect(runtimeSendMessageMock).not.toHaveBeenCalled();
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 
   it("refreshes and retries on token-invalid, returning the retry success", async () => {
@@ -121,7 +127,7 @@ describe("validateRepositoryAccessWithAccount", () => {
         pullNumber: "1",
         message: "ok",
       });
-    runtimeSendMessageMock.mockResolvedValueOnce({
+    refreshMock.mockResolvedValueOnce({
       ok: true,
       generation: "fresh",
     });
@@ -131,16 +137,13 @@ describe("validateRepositoryAccessWithAccount", () => {
     });
 
     const result = await validateRepositoryAccessWithAccount({
+      coordinator,
       account: baseAccount as never,
       repository: "octo/repo",
     });
 
     expect(result.ok).toBe(true);
-    expect(runtimeSendMessageMock).toHaveBeenCalledWith({
-      type: "refreshAccessToken",
-      accountId: "acc-1",
-      generation: "legacy",
-    });
+    expect(refreshMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
     const retryCall = validateGitHubRepositoryAccessMock.mock.calls[1];
     expect((retryCall[0] as { token: string }).token === "ghu_fresh").toBe(
@@ -165,7 +168,7 @@ describe("validateRepositoryAccessWithAccount", () => {
         message: "token invalid",
       })
       .mockResolvedValueOnce(retryFailure);
-    runtimeSendMessageMock.mockResolvedValueOnce({
+    refreshMock.mockResolvedValueOnce({
       ok: true,
       generation: "fresh",
     });
@@ -175,16 +178,13 @@ describe("validateRepositoryAccessWithAccount", () => {
     });
 
     const result = await validateRepositoryAccessWithAccount({
+      coordinator,
       account: baseAccount as never,
       repository: "octo/repo",
     });
 
     expect(result).toBe(retryFailure);
-    expect(runtimeSendMessageMock).toHaveBeenCalledWith({
-      type: "invalidateAccessToken",
-      accountId: "acc-1",
-      generation: "legacy",
-    });
+    expect(invalidateMock).toHaveBeenCalledWith("acc-1", "legacy");
   });
 
   it("returns the first failure when refresh responds with ok:false", async () => {
@@ -196,12 +196,13 @@ describe("validateRepositoryAccessWithAccount", () => {
       message: "token invalid",
     };
     validateGitHubRepositoryAccessMock.mockResolvedValueOnce(firstFailure);
-    runtimeSendMessageMock.mockResolvedValueOnce({
+    refreshMock.mockResolvedValueOnce({
       ok: false,
       terminal: true,
     });
 
     const result = await validateRepositoryAccessWithAccount({
+      coordinator,
       account: baseAccount as never,
       repository: "octo/repo",
     });
@@ -222,16 +223,13 @@ describe("validateRepositoryAccessWithAccount", () => {
     validateGitHubRepositoryAccessMock.mockResolvedValueOnce(failure);
 
     const result = await validateRepositoryAccessWithAccount({
+      coordinator,
       account: { ...baseAccount, refreshToken: null } as never,
       repository: "octo/repo",
     });
 
     expect(result).toBe(failure);
-    expect(runtimeSendMessageMock).toHaveBeenCalledWith({
-      type: "refreshAccessToken",
-      accountId: "acc-1",
-      generation: "legacy",
-    });
+    expect(refreshMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
   });
 });

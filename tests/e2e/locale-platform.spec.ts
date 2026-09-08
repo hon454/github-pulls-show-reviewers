@@ -113,8 +113,6 @@ test("cross-tab language switches retain device code, diagnostic input and a sin
       } else await route.abort();
     });
     const { page, url } = await installedOptions(context);
-    await page.clock.install();
-    await page.clock.pauseAt(new Date());
     const second = await context.newPage();
     await second.goto(url);
     await page
@@ -131,7 +129,6 @@ test("cross-tab language switches retain device code, diagnostic input and a sin
     }
     releaseCode();
     await expect(page.getByTestId("device-user-code")).toHaveText("ABCD-EFGH");
-    await page.clock.runFor(1000);
     await expect.poll(() => requests.length).toBe(2);
     for (const locale of ["en", "ko", "ja", "zh_CN", "zh_TW"]) {
       const messages = catalog(locale);
@@ -191,7 +188,8 @@ test("cross-tab language switches retain device code, diagnostic input and a sin
       .click();
     releasePoll();
     await expect(page.locator(".connection-panel")).toHaveCount(0);
-    await page.clock.runFor(10000);
+    // Background owns the real poll deadline; elapsed options emulation no longer drives it.
+    await page.waitForTimeout(1100);
     expect(requests).toEqual([
       "/login/device/code",
       "/login/oauth/access_token",

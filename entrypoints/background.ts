@@ -3,21 +3,13 @@ import { createInstallationRefreshService } from "../src/background/installation
 import { createProactiveRefreshService } from "../src/background/proactive-refresh";
 import { createReviewerFetchService } from "../src/background/reviewer-fetch";
 import { getGitHubAppConfig } from "../src/config/github-app";
-import {
-  isCancelPullReviewerSummaryMessage,
-  isFetchPullReviewerMetadataBatchMessage,
-  isFetchPullReviewerSummaryMessage,
-} from "../src/runtime/reviewer-fetch";
-import { isRefreshAccountInstallationsMessage } from "../src/runtime/installation-refresh";
-import { isOpenOptionsPageMessage } from "../src/runtime/options-page";
+import { createStoragePolicy } from "../src/background/storage-policy";
+import { createUIBridge } from "../src/background/ui-bridge";
 import { accountMutations } from "../src/storage/accounts";
-import { accountAuthMessageSchema } from "../src/runtime/account-auth";
-import { accountMutationMessageSchema } from "../src/runtime/account-mutations";
+import type { UISender } from "../src/background/ui-sender";
 
 export default defineBackground(() => {
-  // All later owner operations also await this same commit queue. Failure is
-  // retryable on the next operation, without exposing stored auth in logs.
-  void accountMutations.initialize().catch(() => undefined);
+  const ensureReady = createStoragePolicy();
   const coordinator = createRefreshCoordinator({
     getClientId: () => getGitHubAppConfig().clientId,
   });
@@ -33,20 +25,21 @@ export default defineBackground(() => {
     now: () => Date.now(),
   });
 
-  proactiveRefreshService.scheduleAlarm().catch((error) => {
-    console.error(
-      "[GitHub Pulls Show Reviewers] Failed to schedule proactive refresh alarm.",
-      error,
-    );
+  const bridge = createUIBridge({
+    ensureReady,
+    coordinator,
+    reviewers: reviewerFetchService,
+    installations: installationRefreshService,
   });
-
+  void ensureReady()
+    .then(() => bridge.initialize())
+    .catch(() => undefined);
+  void proactiveRefreshService.scheduleAlarm().catch(() => undefined);
+  browser.runtime.onConnect.addListener(bridge.connect);
   browser.alarms.onAlarm.addListener((alarm) => {
-    proactiveRefreshService.handleAlarmFire(alarm.name).catch((error) => {
-      console.error(
-        "[GitHub Pulls Show Reviewers] Proactive refresh alarm failed.",
-        error,
-      );
-    });
+    void ensureReady()
+      .then(() => proactiveRefreshService.handleAlarmFire(alarm.name))
+      .catch(() => undefined);
   });
 
   browser.runtime.onInstalled.addListener((details) => {
@@ -72,101 +65,17 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener(
     (
       message: unknown,
-      sender: { id?: string; url?: string } | undefined,
+      sender: UISender | undefined,
       sendResponse: (response?: unknown) => void,
     ) => {
       if (sender?.id !== browser.runtime.id) return undefined;
-      // Chrome MV3 needs true + sendResponse to keep an async channel open.
-      const authMessage = accountAuthMessageSchema.safeParse(message);
-      if (authMessage.success) {
-        const { type, accountId, generation } = authMessage.data;
-        const operation =
-          type === "refreshAccessToken"
-            ? coordinator.refreshAccountToken(accountId, generation)
-            : coordinator
-                .invalidateAccountToken(accountId, generation)
-                .then(() => ({ ok: true }));
-        operation.then(sendResponse, () => sendResponse(undefined));
-        return true;
-      }
-      const mutationMessage = accountMutationMessageSchema.safeParse(message);
-      if (mutationMessage.success) {
-        // Auth replacements/removals originate in the options page. Do not
-        // introduce a content-script endpoint that returns account credentials.
-        if (sender.url !== browser.runtime.getURL("/options.html"))
-          return undefined;
-        const mutation = mutationMessage.data;
-        const operation =
-          mutation.type === "upsertAccountByLogin"
-            ? accountMutations
-                .upsertAccountByLogin(mutation.input)
-                .then((account) => ({ ok: true, account }))
-            : accountMutations
-                .removeAccount(mutation.accountId)
-                .then(() => ({ ok: true }));
-        // Never log an input/schema error: account payloads contain secrets.
-        operation.then(sendResponse, () => sendResponse({ ok: false }));
-        return true;
-      }
-      if (isOpenOptionsPageMessage(message)) {
-        browser.runtime.openOptionsPage().then(
-          () => sendResponse({ ok: true }),
-          (error) => {
-            console.error(
-              "[GitHub Pulls Show Reviewers] Failed to open options page.",
-              error,
-            );
-            sendResponse({ ok: false });
-          },
+      // Chrome MV3 needs true + sendResponse for asynchronous capability replies.
+      void bridge
+        .handle(message, sender)
+        .then(sendResponse, () =>
+          sendResponse({ ok: false, error: "unavailable" }),
         );
-        return true;
-      }
-      if (isFetchPullReviewerSummaryMessage(message)) {
-        reviewerFetchService.handleFetchMessage(message).then(
-          (response) => sendResponse(response),
-          (error) => {
-            console.error(
-              "[GitHub Pulls Show Reviewers] Reviewer fetch handler crashed.",
-              error,
-            );
-            sendResponse(undefined);
-          },
-        );
-        return true;
-      }
-      if (isCancelPullReviewerSummaryMessage(message)) {
-        reviewerFetchService.cancelRequest(message.requestId);
-        return undefined;
-      }
-      if (isFetchPullReviewerMetadataBatchMessage(message)) {
-        reviewerFetchService.handleMetadataBatchMessage(message).then(
-          (response) => sendResponse(response),
-          (error) => {
-            console.error(
-              "[GitHub Pulls Show Reviewers] Reviewer metadata batch handler crashed.",
-              error,
-            );
-            sendResponse(undefined);
-          },
-        );
-        return true;
-      }
-      if (isRefreshAccountInstallationsMessage(message)) {
-        installationRefreshService
-          .refreshAccountInstallations(message.accountId)
-          .then(
-            (outcome) => sendResponse(outcome),
-            (error) => {
-              console.error(
-                "[GitHub Pulls Show Reviewers] refreshAccountInstallations failed.",
-                error,
-              );
-              sendResponse(undefined);
-            },
-          );
-        return true;
-      }
-      return undefined;
+      return true;
     },
   );
 });

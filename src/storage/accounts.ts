@@ -82,6 +82,9 @@ const accountProfileSchema = z.object({
 const accountAuthSchema = z.object({
   token: z.string(),
   credentialGeneration: z.string().min(1).optional(),
+  // Non-secret login receipt, written atomically with credentials. A restored
+  // device flow can identify an already committed account without re-committing.
+  connectionAttemptId: z.string().min(1).optional(),
   invalidated: z.boolean().default(false),
   invalidatedReason: z
     .enum(["revoked", "expired", "refresh_failed", "unknown"])
@@ -174,6 +177,7 @@ function decomposeAccount(account: Account) {
     auth: {
       token: account.token,
       credentialGeneration: account.credentialGeneration,
+      connectionAttemptId: account.connectionAttemptId,
       invalidated: account.invalidated,
       invalidatedReason: account.invalidatedReason,
       refreshToken: account.refreshToken,
@@ -432,6 +436,7 @@ async function upsertAccountByLoginUnlocked(input: {
   installations: Installation[];
   newAccountId: string;
   now: number;
+  connectionAttemptId?: string;
 }): Promise<Account> {
   const { settings, matches } = await findAccountsByLogin(input.login);
   const existing = matches[0] ?? null;
@@ -445,6 +450,7 @@ async function upsertAccountByLoginUnlocked(input: {
       avatarUrl: input.avatarUrl,
       token: input.token,
       credentialGeneration: crypto.randomUUID(),
+      connectionAttemptId: input.connectionAttemptId,
       refreshToken: input.refreshToken,
       expiresAt: input.expiresAt,
       refreshTokenExpiresAt: input.refreshTokenExpiresAt,
@@ -484,6 +490,7 @@ async function upsertAccountByLoginUnlocked(input: {
     createdAt: input.now,
     token: input.token,
     credentialGeneration: crypto.randomUUID(),
+    connectionAttemptId: input.connectionAttemptId,
     refreshToken: input.refreshToken,
     expiresAt: input.expiresAt,
     refreshTokenExpiresAt: input.refreshTokenExpiresAt,

@@ -5,24 +5,17 @@ import {
   getSettings,
   listAccounts,
 } from "../src/storage/accounts";
-import {
-  upsertAccountByLogin,
-  removeAccount,
-} from "../src/runtime/account-mutations";
-import {
-  bootAuthBackground,
-  connectInput,
-  createStorageHarness,
-} from "./helpers/auth-harness";
+const { upsertAccountByLogin, removeAccount } = accountMutations;
+import { connectInput, createStorageHarness } from "./helpers/auth-harness";
 
 let storage: ReturnType<typeof createStorageHarness>;
 beforeEach(() => {
   storage = createStorageHarness();
+  vi.stubGlobal("browser", { storage: { local: storage.local } });
 });
 afterEach(() => vi.unstubAllGlobals());
 
 async function boot() {
-  await bootAuthBackground(storage);
   await accountMutations.initialize();
 }
 async function assertReachable(expected: string[]) {
@@ -46,7 +39,7 @@ async function assertReachable(expected: string[]) {
   }
 }
 
-describe("one background registry owner across options callers", () => {
+describe("one background registry owner across connected flows", () => {
   it("retains concurrent different-login additions across a paused registry read", async () => {
     await boot();
     const unrelated = await upsertAccountByLogin(
@@ -149,7 +142,7 @@ describe("one background registry owner across options callers", () => {
   });
 
   it.each([2, 3])(
-    "finishes v%s migration before admitting concurrent options additions",
+    "finishes v%s migration before admitting concurrent flow commits",
     async (version) => {
       const input = connectInput();
       await storage.local.set({
@@ -178,9 +171,9 @@ describe("one background registry owner across options callers", () => {
         },
       });
       const barrier = storage.pauseSet();
-      await bootAuthBackground(storage);
+      void accountMutations.initialize();
       await barrier.entered.promise;
-      // A context query reads legacy state but does not trigger its own migration.
+      // A background query reads legacy state but does not trigger its own migration.
       const writesBeforeQuery = storage.local.set.mock.calls.length;
       expect((await listAccounts()).map((a) => a.id)).toEqual(["legacy"]);
       expect(storage.local.set.mock.calls.length).toBe(writesBeforeQuery);

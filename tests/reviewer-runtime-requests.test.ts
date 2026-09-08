@@ -4,9 +4,9 @@ import {
   fetchReviewerMetadataBatch,
   fetchReviewerSummary,
   isAbortError,
-  requestInstallationsRefresh,
   shouldRetryWithFallbackAccount,
 } from "../src/features/reviewers/runtime-requests";
+import { refreshAccountInstallations } from "../src/runtime/installation-refresh";
 import { ReviewerFetchRuntimeError } from "../src/runtime/reviewer-fetch";
 
 const sendMessage = vi.fn();
@@ -50,7 +50,7 @@ describe("reviewer runtime requests", () => {
         pullNumber: "42",
         signal: new AbortController().signal,
       }),
-    ).resolves.toBe(summary);
+    ).resolves.toEqual(summary);
     await expect(
       fetchReviewerMetadataBatch({
         account: null,
@@ -59,7 +59,7 @@ describe("reviewer runtime requests", () => {
         targetPullNumbers: ["42"],
         signal: new AbortController().signal,
       }),
-    ).resolves.toBe(metadata);
+    ).resolves.toEqual(metadata);
   });
 
   it("reconstructs a typed runtime error from a failed response", async () => {
@@ -117,12 +117,16 @@ describe("reviewer runtime requests", () => {
     expect(shouldRetryWithFallbackAccount({ status: 500 })).toBe(false);
   });
 
-  it("treats installation refresh transport failures as unsuccessful", async () => {
+  it("validates installation outcomes and reports transport failure", async () => {
     sendMessage
-      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: true, data: { ok: true } })
       .mockRejectedValueOnce(new Error("extension context closed"));
 
-    await expect(requestInstallationsRefresh("acc-1")).resolves.toBe(true);
-    await expect(requestInstallationsRefresh("acc-1")).resolves.toBe(false);
+    await expect(refreshAccountInstallations("acc-1")).resolves.toEqual({
+      ok: true,
+    });
+    await expect(refreshAccountInstallations("acc-1")).rejects.toThrow(
+      "extension context closed",
+    );
   });
 });

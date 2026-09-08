@@ -2,14 +2,15 @@ import type {
   PullReviewerMetadata,
   PullReviewerSummary,
 } from "../../github/api";
-import type { RefreshAccountInstallationsResponse } from "../../runtime/installation-refresh";
 import {
   ReviewerFetchRuntimeError,
   extractReviewerFetchFailures,
+  fetchPullReviewerMetadataBatchResponseSchema,
+  fetchPullReviewerSummaryResponseSchema,
   type FetchPullReviewerMetadataBatchResponse,
   type FetchPullReviewerSummaryResponse,
 } from "../../runtime/reviewer-fetch";
-import type { Account } from "../../storage/accounts";
+import type { AccountSummary as Account } from "../../runtime/ui-contract";
 
 export async function fetchReviewerSummary(args: {
   account: Account | null;
@@ -61,7 +62,9 @@ export async function fetchReviewerSummary(args: {
 
   try {
     const response = await Promise.race([responsePromise, abortPromise]);
-    return unwrapReviewerFetchResponse(response);
+    return unwrapReviewerFetchResponse(
+      fetchPullReviewerSummaryResponseSchema.parse(response),
+    );
   } finally {
     abortListenerController.abort();
   }
@@ -115,7 +118,9 @@ export async function fetchReviewerMetadataBatch(args: {
 
   try {
     const response = await Promise.race([responsePromise, abortPromise]);
-    return unwrapReviewerMetadataBatchResponse(response);
+    return unwrapReviewerMetadataBatchResponse(
+      fetchPullReviewerMetadataBatchResponseSchema.parse(response),
+    );
   } finally {
     abortListenerController.abort();
   }
@@ -197,18 +202,4 @@ function unwrapReviewerMetadataBatchResponse(
   }
 
   throw new Error("Background reviewer metadata fetch failed.");
-}
-
-export async function requestInstallationsRefresh(
-  accountId: string,
-): Promise<boolean> {
-  try {
-    const response = (await browser.runtime.sendMessage({
-      type: "refreshAccountInstallations",
-      accountId,
-    })) as RefreshAccountInstallationsResponse;
-    return response?.ok === true;
-  } catch {
-    return false;
-  }
 }

@@ -1,3 +1,4 @@
+import { disposeUIClient } from "../../src/runtime/ui-client";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -18,6 +19,7 @@ void localeStore.ready().then(() => {
     if (!event.persisted) {
       root.unmount();
       localeStore.dispose();
+      disposeUIClient();
     }
   });
 });

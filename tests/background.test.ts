@@ -1,3 +1,4 @@
+import type { UISender } from "../src/background/ui-sender";
 import type * as AccountsStorageModule from "../src/storage/accounts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as GithubApiModule from "../src/github/api";
@@ -71,7 +72,7 @@ vi.mock("../src/github/api", async () => {
   };
 });
 
-type MessageSender = { id?: string };
+type MessageSender = UISender;
 type MessageListener = (
   message: unknown,
   sender: MessageSender | undefined,
@@ -79,6 +80,18 @@ type MessageListener = (
 ) => unknown;
 
 const SELF_RUNTIME_ID = "self-extension-id";
+const CONTENT_SENDER = {
+  id: SELF_RUNTIME_ID,
+  url: "https://github.com/cinev/shotloom/pulls",
+  documentId: "content-doc",
+  tab: { id: 1 },
+  frameId: 0,
+};
+const OPTIONS_SENDER = {
+  id: SELF_RUNTIME_ID,
+  url: `chrome-extension://${SELF_RUNTIME_ID}/options.html`,
+  documentId: "options-doc",
+};
 
 let capturedMessageListener: MessageListener | null;
 
@@ -130,8 +143,22 @@ beforeEach(() => {
 
   vi.stubGlobal("defineBackground", (main: () => void) => ({ main }));
   vi.stubGlobal("browser", {
+    storage: {
+      local: {
+        setAccessLevel: vi.fn(async () => {}),
+        get: vi.fn(async () => ({})),
+      },
+      session: {
+        setAccessLevel: vi.fn(async () => {}),
+        get: vi.fn(async () => ({})),
+        set: vi.fn(async () => {}),
+      },
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
     runtime: {
       id: SELF_RUNTIME_ID,
+      getURL: (path: string) => `chrome-extension://${SELF_RUNTIME_ID}${path}`,
+      onConnect: { addListener: vi.fn() },
       onInstalled: { addListener: vi.fn() },
       onMessage: {
         addListener: vi.fn((listener: MessageListener) => {
@@ -169,18 +196,17 @@ async function bootBackground(): Promise<MessageListener> {
 }
 
 describe("background runtime.onMessage handler", () => {
-  it("dispatches valid refresh messages that originate from this extension", async () => {
+  it("rejects the retired raw refresh capability even within this extension", async () => {
     const listener = await bootBackground();
 
     const response = await callListener(
       listener,
       { type: "refreshAccessToken", accountId: "acc-1", generation: "legacy" },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
-    expect(refreshAccountTokenMock).toHaveBeenCalledTimes(1);
-    expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
-    expect(response).toEqual({ ok: true, generation: "new-generation" });
+    expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+    expect(response).toEqual({ ok: false, error: "invalid-request" });
   });
 
   it("keeps the message channel open for async dispatch", async () => {
@@ -188,7 +214,7 @@ describe("background runtime.onMessage handler", () => {
 
     const sync = listener(
       { type: "refreshAccessToken", accountId: "acc-1", generation: "legacy" },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
       () => {},
     );
 
@@ -201,7 +227,7 @@ describe("background runtime.onMessage handler", () => {
     const response = await callListener(
       listener,
       { type: "openOptionsPage" },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(openOptionsPageMock).toHaveBeenCalledTimes(1);
@@ -215,11 +241,11 @@ describe("background runtime.onMessage handler", () => {
     const response = await callListener(
       listener,
       { type: "openOptionsPage" },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(openOptionsPageMock).toHaveBeenCalledTimes(1);
-    expect(response).toEqual({ ok: false });
+    expect(response).toEqual({ ok: false, error: "unavailable" });
   });
 
   it("rejects options page messages from a different extension id", async () => {
@@ -254,16 +280,18 @@ describe("background runtime.onMessage handler", () => {
     const missingAccountId = await callListener(
       listener,
       { type: "refreshAccessToken" },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
     const wrongType = await callListener(
       listener,
       { type: "somethingElse", accountId: "acc-1" },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
-    const notAnObject = await callListener(listener, "refreshAccessToken", {
-      id: SELF_RUNTIME_ID,
-    });
+    const notAnObject = await callListener(
+      listener,
+      "refreshAccessToken",
+      CONTENT_SENDER,
+    );
     const emptyReviewerFetch = await callListener(
       listener,
       {
@@ -274,13 +302,13 @@ describe("background runtime.onMessage handler", () => {
         pullNumber: "42",
         accountId: null,
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
-    expect(missingAccountId).toBeUndefined();
-    expect(wrongType).toBeUndefined();
-    expect(notAnObject).toBeUndefined();
-    expect(emptyReviewerFetch).toBeUndefined();
+    expect(missingAccountId).toEqual({ ok: false, error: "invalid-request" });
+    expect(wrongType).toEqual({ ok: false, error: "invalid-request" });
+    expect(notAnObject).toEqual({ ok: false, error: "invalid-request" });
+    expect(emptyReviewerFetch).toEqual({ ok: false, error: "invalid-request" });
     expect(refreshAccountTokenMock).not.toHaveBeenCalled();
   });
 
@@ -309,7 +337,7 @@ describe("background runtime.onMessage handler", () => {
         pullNumber: "42",
         accountId: "acc-1",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(response).toEqual({ ok: true, summary });
@@ -355,7 +383,7 @@ describe("background runtime.onMessage handler", () => {
         pullNumber: "42",
         accountId: "acc-1",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(response).toEqual({ ok: true, summary });
@@ -402,7 +430,7 @@ describe("background runtime.onMessage handler", () => {
         accountId: "acc-1",
         targetPullNumbers: ["42"],
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(response).toEqual({ ok: true, metadata });
@@ -438,7 +466,7 @@ describe("background runtime.onMessage handler", () => {
         pullNumber: "42",
         accountId: "acc-1",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(response).toMatchObject({
@@ -472,7 +500,7 @@ describe("background runtime.onMessage handler", () => {
         pullNumber: "42",
         accountId: "acc-1",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(response).toMatchObject({
@@ -510,7 +538,7 @@ describe("background runtime.onMessage handler", () => {
         pullNumber: "42",
         accountId: "acc-1",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(response).toMatchObject({
@@ -546,7 +574,7 @@ describe("background runtime.onMessage handler", () => {
         pullNumber: "42",
         accountId: "acc-1",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
       () => {},
     );
 
@@ -564,7 +592,7 @@ describe("background runtime.onMessage handler", () => {
         type: "cancelPullReviewerSummary",
         requestId: "req-cancel",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
 
     expect(cancelResult).toBeUndefined();
@@ -595,10 +623,10 @@ describe("background runtime.onMessage handler", () => {
         },
       );
 
-      listener(
+      await callListener(
+        listener,
         { type: "cancelPullReviewerSummary", requestId: "req-stale" },
-        { id: SELF_RUNTIME_ID },
-        () => {},
+        CONTENT_SENDER,
       );
 
       return {
@@ -622,7 +650,7 @@ describe("background runtime.onMessage handler", () => {
           pullNumber: "42",
           accountId: "acc-1",
         },
-        { id: SELF_RUNTIME_ID },
+        CONTENT_SENDER,
         () => {},
       );
     }
@@ -641,7 +669,7 @@ describe("background runtime.onMessage handler", () => {
       vi.setSystemTime(new Date(pastTtl));
       listener(
         { type: "cancelPullReviewerSummary", requestId: "req-other" },
-        { id: SELF_RUNTIME_ID },
+        CONTENT_SENDER,
         () => {},
       );
 
@@ -684,7 +712,7 @@ describe("background runtime.onMessage handler", () => {
         type: "cancelPullReviewerSummary",
         requestId: "req-pre-cancel",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
     );
     expect(cancelResult).toBeUndefined();
 
@@ -697,7 +725,7 @@ describe("background runtime.onMessage handler", () => {
         pullNumber: "42",
         accountId: "acc-1",
       },
-      { id: SELF_RUNTIME_ID },
+      CONTENT_SENDER,
       () => {},
     );
 
@@ -718,12 +746,12 @@ describe("background refreshAccountInstallations dispatch", () => {
     const response = await callListener(
       listener,
       { type: "refreshAccountInstallations", accountId: "acc-1" },
-      { id: SELF_RUNTIME_ID },
+      OPTIONS_SENDER,
     );
 
     expect(refreshAccountInstallationsMock).toHaveBeenCalledTimes(1);
     expect(refreshAccountInstallationsMock).toHaveBeenCalledWith("acc-1");
-    expect(response).toEqual({ ok: true });
+    expect(response).toEqual({ ok: true, data: { ok: true } });
   });
 
   it("returns the failure outcome from the installation-refresh service", async () => {
@@ -736,10 +764,13 @@ describe("background refreshAccountInstallations dispatch", () => {
     const response = await callListener(
       listener,
       { type: "refreshAccountInstallations", accountId: "acc-1" },
-      { id: SELF_RUNTIME_ID },
+      OPTIONS_SENDER,
     );
 
-    expect(response).toEqual({ ok: false, reason: "failed" });
+    expect(response).toEqual({
+      ok: true,
+      data: { ok: false, reason: "failed" },
+    });
   });
 
   it("rejects refresh-installations messages from a foreign extension id", async () => {
@@ -761,16 +792,16 @@ describe("background refreshAccountInstallations dispatch", () => {
     const missingAccountId = await callListener(
       listener,
       { type: "refreshAccountInstallations" },
-      { id: SELF_RUNTIME_ID },
+      OPTIONS_SENDER,
     );
     const emptyAccountId = await callListener(
       listener,
       { type: "refreshAccountInstallations", accountId: "" },
-      { id: SELF_RUNTIME_ID },
+      OPTIONS_SENDER,
     );
 
-    expect(missingAccountId).toBeUndefined();
-    expect(emptyAccountId).toBeUndefined();
+    expect(missingAccountId).toEqual({ ok: false, error: "invalid-request" });
+    expect(emptyAccountId).toEqual({ ok: false, error: "invalid-request" });
     expect(refreshAccountInstallationsMock).not.toHaveBeenCalled();
   });
 });

@@ -44,7 +44,11 @@ it.each([
 ] satisfies [DeviceFlowState, string, string][])(
   "reformats %j with an existing controller",
   (state, english, korean) => {
-    const controller = { state, start: vi.fn(), cancel: vi.fn() };
+    const controller = {
+      state,
+      start: vi.fn(),
+      cancel: vi.fn(async () => true),
+    };
     const props = { controller, onCancel: vi.fn(), locale: locale("en") };
     const view = render(createElement(AddAccountPanel, props));
     expect(view.container.textContent).toContain(english);
@@ -64,7 +68,7 @@ it.each([
     }
   },
 );
-it("formats expiry in the selected locale with the existing timezone and preserves literal code/URL", () => {
+it("formats expiry in the selected locale with the existing timezone and preserves literal code/URL", async () => {
   const expiresAt = Date.UTC(2026, 8, 4, 12, 34, 56);
   const state: DeviceFlowState = {
     phase: "waiting",
@@ -75,7 +79,7 @@ it("formats expiry in the selected locale with the existing timezone and preserv
     interval: 5,
     expiresAt,
   };
-  const controller = { state, start: vi.fn(), cancel: vi.fn() };
+  const controller = { state, start: vi.fn(), cancel: vi.fn(async () => true) };
   const onCancel = vi.fn();
   const view = render(
     createElement(AddAccountPanel, {
@@ -102,6 +106,7 @@ it("formats expiry in the selected locale with the existing timezone and preserv
   }
   fireEvent.click(view.getByText("取消"));
   expect(controller.cancel).toHaveBeenCalledOnce();
+  await Promise.resolve();
   expect(onCancel).toHaveBeenCalledOnce();
 });
 it.each([

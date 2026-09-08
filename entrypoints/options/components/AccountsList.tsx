@@ -2,8 +2,8 @@ import type { Translator } from "../../../src/i18n";
 import { useRef, useState } from "react";
 
 import { removeAccount } from "../../../src/runtime/account-mutations";
-import type { RefreshAccountInstallationsResponse } from "../../../src/runtime/installation-refresh";
-import type { Account } from "../../../src/storage/accounts";
+import { refreshAccountInstallations } from "../../../src/runtime/installation-refresh";
+import type { AccountSummary as Account } from "../../../src/runtime/ui-contract";
 
 type Props = {
   t: Translator;
@@ -57,10 +57,7 @@ export function AccountsList({
 
   async function handleRefresh(account: Account) {
     await runAccountAction(account, "refresh", async () => {
-      const outcome = (await browser.runtime.sendMessage({
-        type: "refreshAccountInstallations",
-        accountId: account.id,
-      })) as RefreshAccountInstallationsResponse;
+      const outcome = await refreshAccountInstallations(account.id);
       if (!outcome?.ok) throw new Error("installation_refresh_failed");
       await onChange();
     });

@@ -13,18 +13,25 @@ export function AddAccountPanel({ controller, onCancel, locale }: Props) {
   const { state } = controller;
 
   const handleCancel = () => {
-    controller.cancel();
-    onCancel();
+    void controller.cancel().then((cancelled) => {
+      if (cancelled) onCancel();
+    });
   };
 
-  if (state.phase === "idle" || state.phase === "initiating") {
+  if (
+    state.phase === "idle" ||
+    state.phase === "initiating" ||
+    state.phase === "cancelling"
+  ) {
     return (
       <div
         className="connection-panel connection-panel--loading"
         role="status"
         aria-live="polite"
       >
-        {t("auth_requesting")}
+        {t(
+          state.phase === "cancelling" ? "auth_cancelling" : "auth_requesting",
+        )}
       </div>
     );
   }
@@ -78,7 +85,10 @@ export function AddAccountPanel({ controller, onCancel, locale }: Props) {
     );
   }
 
-  if (state.phase === "fetching_installations") {
+  if (
+    state.phase === "fetching_installations" ||
+    state.phase === "committing"
+  ) {
     return (
       <div
         className="connection-panel connection-panel--loading"
@@ -132,11 +142,21 @@ export function AddAccountPanel({ controller, onCancel, locale }: Props) {
     );
   }
 
+  if (state.phase !== "fatal") return null;
   return (
     <div className="connection-panel">
       <p role="status" aria-live="polite">
         {t(authErrorKey(state.code))} <code>{state.code}</code>
       </p>
+      {state.code === "restart_required" ? (
+        <button
+          type="button"
+          onClick={controller.start}
+          className="button button--primary"
+        >
+          {t("auth_new_code")}
+        </button>
+      ) : null}
       <button
         type="button"
         onClick={handleCancel}

@@ -1,6 +1,6 @@
 import type { PullReviewerMetadata } from "../../github/api";
 import type { PullListRoute } from "../../github/routes";
-import type { Account } from "../../storage/accounts";
+import type { AccountSummary as Account } from "../../runtime/ui-contract";
 
 import type { FallbackAccountIntegration } from "./fallback-account";
 import {

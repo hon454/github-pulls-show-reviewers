@@ -916,5 +916,13 @@
         "content": "$2"
       }
     }
+  },
+  "auth_cancelling": {
+    "message": "Cancelling sign-in…",
+    "description": "Status while background confirms sign-in cancellation."
+  },
+  "auth_error_restart": {
+    "message": "This sign-in could not be restored. Request a new code to sign in.",
+    "description": "Device flow session was lost or its interrupted result cannot be recovered; user can request a fresh code."
   }
 }

@@ -17,7 +17,6 @@ import {
   getAccountById,
 } from "../src/storage/accounts";
 import {
-  bootAuthBackground,
   connectInput,
   createHttpHarness,
   createStorageHarness,
@@ -50,7 +49,10 @@ beforeEach(() => {
   vi.stubGlobal("fetch", http.fetch);
   coordinator = createRefreshCoordinator({ getClientId: () => "test-client" });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("deferred authenticated service schedules", () => {
   it.each(["success", "terminal", "transient"])(
@@ -110,16 +112,16 @@ describe("deferred authenticated service schedules", () => {
     },
   );
 
-  it("recovers an options snapshot read before missing-generation migration", async () => {
+  it("recovers an background snapshot read before missing-generation migration", async () => {
     await accountMutations.upsertAccountByLogin(connectInput());
     const key = "account:auth:acc-1";
     const auth = storage.snapshot()[key] as Record<string, unknown>;
     delete auth.credentialGeneration;
     await storage.local.set({ [key]: auth });
     const legacy = (await getAccountById("acc-1"))!;
-    await bootAuthBackground(storage);
     await accountMutations.initialize();
     const work = validateRepositoryAccessWithAccount({
+      coordinator,
       account: legacy,
       repository: "octo/repo",
     });
@@ -250,21 +252,24 @@ describe("deferred authenticated service schedules", () => {
   it.each(["diagnostics", "generic"])(
     "%s stops if removal commits after successful recovery but before the retry read",
     async (kind) => {
-      const background = await bootAuthBackground(storage);
       const old = await accountMutations.upsertAccountByLogin(connectInput());
-      const send = background.sendMessage.getMockImplementation()!;
-      background.sendMessage.mockImplementationOnce(async (message) => {
-        const outcome = await send(message);
-        await accountMutations.removeAccount(old.id);
-        return outcome;
-      });
+      const refresh = coordinator.refreshAccountToken;
+      vi.spyOn(coordinator, "refreshAccountToken").mockImplementationOnce(
+        async (id, generation) => {
+          const outcome = await refresh(id, generation);
+          await accountMutations.removeAccount(old.id);
+          return outcome;
+        },
+      );
       const work =
         kind === "diagnostics"
           ? validateRepositoryAccessWithAccount({
+              coordinator,
               account: old,
               repository: "octo/repo",
             }).then((r) => r.ok)
           : retryWithAccountRefresh({
+              coordinator,
               account: old,
               execute: async (token) => {
                 const response = await fetch(
@@ -341,10 +346,12 @@ describe("deferred authenticated service schedules", () => {
     ).toEqual([99]);
   });
 
-  it("options diagnostics use the runtime owner for stale failure and retry invalidation", async () => {
-    const background = await bootAuthBackground(storage);
+  it("background diagnostics use the shared owner for stale failure and retry invalidation", async () => {
+    const refresh = vi.spyOn(coordinator, "refreshAccountToken");
+    const invalidate = vi.spyOn(coordinator, "invalidateAccountToken");
     const old = await accountMutations.upsertAccountByLogin(connectInput());
     const work = validateRepositoryAccessWithAccount({
+      coordinator,
       account: old,
       repository: "octo/repo",
     });
@@ -363,19 +370,16 @@ describe("deferred authenticated service schedules", () => {
     expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
       false,
     );
-    expect(
-      background.sendMessage.mock.calls.map(
-        ([m]) => (m as { type: string }).type,
-      ),
-    ).toEqual(["refreshAccessToken", "invalidateAccessToken"]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
-  it("the generic options retry helper reuses current credentials through the runtime owner", async () => {
-    await bootAuthBackground(storage);
+  it("the generic background retry helper reuses current credentials through the shared owner", async () => {
     const old = await accountMutations.upsertAccountByLogin(
       connectInput({ refreshToken: null }),
     );
     const work = retryWithAccountRefresh({
+      coordinator,
       account: old,
       execute: async (token) => {
         const response = await fetch(

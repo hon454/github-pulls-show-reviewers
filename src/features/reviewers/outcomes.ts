@@ -1,4 +1,4 @@
-import type { Account } from "../../storage/accounts";
+import type { AccountSummary as Account } from "../../runtime/ui-contract";
 
 export type ReviewerFailure = {
   readonly account: Pick<Account, "id"> | null;
