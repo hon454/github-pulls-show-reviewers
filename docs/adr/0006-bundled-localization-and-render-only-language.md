@@ -62,21 +62,25 @@ packaging gate remains unchanged.
 `language: 'auto' | 'en' | 'ko' | 'ja' | 'zh_CN' | 'zh_TW'` (default `auto`).
 Missing or invalid language repairs only that field; old valid display booleans
 survive. `updatePreferences` merges a language or display patch with the other
-current preferences. Calls within one context are serialized so concurrent
-language/display controls read the latest saved record. Account/token keys and
-storage schemas are untouched.
+current preferences. Following
+[ADR 0008](./0008-background-credentials-and-ui-capabilities.md), a single
+background preference queue validates and serializes patches from all options
+documents against the latest stored value. Different-field updates preserve
+both changes; same-field writes follow admission order. Failed writes do not
+poison the queue. The preference schema remains version 1.
 
 `src/i18n/browser.ts` exposes lazy `getLocaleStore()` for one store per extension
-context. The browser adapter reads/writes only the preferences key and filters
-storage events to the local area. The store exposes:
+context. The browser adapter reads sanitized UI snapshots, subscribes to their
+preference projection and writes through the narrow preference capability.
+It never reads raw storage or receives raw storage events. The store exposes:
 
 - `getSnapshot()` returns a stable immutable `{ language, locale, lang, t }`.
   Before hydration it uses Chrome auto detection. Unchanged language events do
   not replace the snapshot or notify.
 - `subscribe(callback)` returns an idempotent unsubscribe. The first subscriber
-  attaches one storage listener **before** the initial async read. More
+  attaches its safe subscription **before** the initial async read. More
   subscribers share it. The last unsubscribe removes it and invalidates pending
-  reads. Re-subscribing re-reads storage to recover changes during inactivity.
+  reads. Re-subscribing requests a fresh snapshot after inactivity.
 - `ready()` waits for the active hydration. With no subscribers it borrows a
   temporary subscription, hydrates, then releases it. Thus DOM initialization
   may `await store.ready()` then synchronously read a snapshot; ongoing UI should
@@ -84,9 +88,9 @@ storage events to the local area. The store exposes:
   snapshot alone does not start storage I/O.
 - `setLanguage(preference)` persists through the preference patch API and returns
   a promise. Rapid selections are serialized; failures reject without poisoning
-  later writes. Storage events invalidate older reads and take precedence over
+  later writes. Safe snapshot events invalidate older reads and take precedence over
   delayed write completions. Failed writes do not invalidate a valid initial
-  read. A storage read failure uses Chrome auto while preserving later events.
+  read. A snapshot read failure uses Chrome auto while preserving later events.
 - `dispose()` is terminal for that store, removes its listener and suppresses
   pending read/write notifications. Normally the root owner disposes at context
   teardown; individual components only unsubscribe. The browser accessor creates

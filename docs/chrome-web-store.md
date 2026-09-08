@@ -275,7 +275,11 @@ Expected release gate behavior:
     no sale of data, no advertising, no remote code, GitHub page access only,
     and locally stored GitHub App accounts plus a `preferences` record in
     `browser.storage.local` for private-repository access and reviewer display
-    settings.
+    settings. Credential handling belongs to background; content storage is
+    browser-restricted and options uses an application-enforced token-free
+    capability boundary. Pending sign-in secrets use trusted session storage,
+    while connected accounts remain persistent. See the privacy policy for
+    retention and trusted-context limitations.
 11. Confirm the reviewer-only scope in the listing copy still matches the extension and screenshots before submission.
 12. Open the packaged extension's options page once before submission and confirm it either renders the sign-in UI normally or shows the explicit GitHub App configuration warning, never a blank page.
 

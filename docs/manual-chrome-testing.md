@@ -90,7 +90,7 @@ This extension is intentionally narrow. Manual verification should stay focused 
    confirm the page shows the explicit configuration warning instead of the
    sign-in controls.
 4. Otherwise, click **+ Add another account**; the panel opens and
-   requests a device code automatically. Complete the device flow
+   requests a user verification code automatically. Complete the device flow
    with an account where the GitHub App is installed on
    **All repositories**.
 5. Visit a private PR list in that account's namespace.
@@ -98,9 +98,11 @@ This extension is intentionally narrow. Manual verification should stay focused 
 
 ### Cancel and reopen GitHub sign-in
 
-1. Open the options page, click **+ Add another account**, and note device code A.
-2. While its token poll is pending, click **Cancel**, immediately reopen the
-   panel, and note the new device code B.
+1. Open the options page, click **+ Add another account**, and note user verification code A.
+2. While its token poll is pending, click **Cancel**. Wait for the cancellation
+   acknowledgement and panel closure before reopening; note the new user
+   verification code B. If commit was already admitted, wait for its actual
+   completion instead of expecting a successful cancellation.
 3. If A's delayed response arrives, confirm B stays visible with its own polling
    interval. A must not close B's panel, show an old error/expiry/denial, or start
    another account write. Complete B and confirm one normal account connection.
@@ -114,9 +116,62 @@ counterpart in `tests/device-flow-controller.test.ts` defers every HTTP stage,
 invokes programmatic cancellation even in phases without a Cancel button,
 ignores abort deliberately, and covers late success/rejection, pending,
 slow-down, denial, expiry, restart, and unmount. It also checks the commit
-boundary: an account write already admitted before cancellation may finish,
-but its stale UI callback is suppressed. Cancellation does not undo that write
-or delete an account, including one a newer attempt may have updated.
+boundary: a successful cancel ACK forbids later commit; an already admitted
+write returns committing/completed instead. A stale callback cannot close a
+newer panel. Cancellation never rolls back or deletes a saved account.
+
+### Background credential boundary and worker recovery
+
+Use an isolated profile and synthetic credentials. Do not print auth records,
+request headers, OAuth bodies or device-code secrets from a real profile.
+Options should display only the user verification code/link and account identity.
+
+1. Build with `pnpm test:e2e:build` and run:
+   `pnpm exec playwright test tests/e2e/token-free-boundary.spec.ts --project=default`.
+   This loads the production MV3 bundle in isolated Chromium profiles, mocks
+   OAuth/API responses, inspects actual runtime replies/port events and records
+   only request paths plus service-worker provenance. Both options documents
+   must have zero raw storage reads/listeners and no secret fields/sentinels.
+2. In the GitHub fixture's **extension content isolated world**, confirm
+   `chrome.storage.local.get(null)` and a harmless test write both reject after
+   initialization. Page-world access is a different question and is not this
+   check. Content snapshot and repository operations must still work; content
+   login/removal/preferences/diagnostics requests must be rejected.
+3. Start sign-in, receive a waiting code and a synthetic `slow_down`, then stop
+   the actual worker using CDP `ServiceWorker.stopWorker`. Observe its stopped
+   state before the next options tick. Keep worker DevTools closed so it does
+   not keep the worker alive. Confirm the next tick wakes a worker, retains the
+   same flow ID/deadline/slowdown interval and connects one account. The packaged
+   test records these observations; service-object recreation alone is not
+   worker lifecycle evidence.
+4. In the same profile, close/reopen the browser during an unfinished flow.
+   The old session must request a new code explicitly. Already connected
+   accounts and display/language preferences remain saved. An interrupted OAuth
+   HTTP operation similarly offers a new code instead of replaying an uncertain
+   exchange. Unit tests separately cover pending commit recovery receipts.
+5. The packaged upgrade cases seed a tiny synthetic v3/v4 predecessor extension,
+   close Chrome, replace its unpacked files and register the new bundle through
+   Chrome's `Extensions.loadUnpacked` operation without uninstalling or clearing
+   the same profile. Assert unchanged extension ID, credentials, existing v4
+   generation and non-default Korean/display preferences, plus renewed content
+   storage denial. This is synthetic old-profile coverage, not a signed CWS
+   automatic-update test or a run of the historical production ZIP.
+6. In a headed isolated Chrome/Chrome for Testing window, operate the real UI:
+   remove an invalidated account, invoke reauthentication, use keyboard focus and
+   Enter/Space on Remove, and remove the final account to check the empty state.
+   Switch languages/display settings in two options tabs and inspect reviewer
+   names/badges/link qualifiers on the same fixture page. Count OAuth/reviewer
+   requests separately from images and ordinary polling. Use supported native UI
+   controls for this smoke check; a headed Playwright script alone is automated
+   coverage, not manual UI evidence.
+
+Record performer, date/time, OS/browser/tool versions, source SHA and bundle
+hash, procedures, expected/observed results and screenshot/log paths. Distinguish
+packaged automation, native UI manipulation and any optional live GitHub checks.
+If a required environment is unavailable, name the exact missing check and
+error instead of marking it passed. See
+[ADR 0008](./adr/0008-background-credentials-and-ui-capabilities.md) for the
+application-enforced options boundary and browser-enforced content restriction.
 
 ### Signed-in, selected-repos installation
 

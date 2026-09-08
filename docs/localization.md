@@ -16,7 +16,7 @@ are maintained separately from extension catalogs and store listings.
 
 ## Ownership and reviewed coverage
 
-Issue #151 reviewed all 172 keys × five locales (860 entries), their descriptions,
+Issue #151 reviewed the original 172 keys × five locales (860 entries), their descriptions,
 placeholder declarations and their consumers. This is an implementation-owner
 linguistic review, not a claim of external native-speaker certification. Independent
 PR review is coordinated separately. Future additions must change the typed
@@ -27,7 +27,7 @@ PR review is coordinated separately. Future additions must change the typed
 | `extension_`   |               3 | Manifest name, description, toolbar title; Chrome owns selection                                                      |
 | `options_`     |              45 | Options shell, account empty/error/installations/actions, display controls, permission/configuration guidance         |
 | `language_`    |              11 | Selector autonyms, auto/help, save/live status and failure                                                            |
-| `auth_`        |              21 | Device initiation/code/copy/URL/expiry/cancel, waiting/connected/denied/expired and structured failures               |
+| `auth_`        |              23 | Device initiation/code/copy/URL/expiry/cancel, waiting/connected/denied/expired and structured failures               |
 | `diagnostics_` |              56 | Input validation, matched account/coverage, all ten outcomes, endpoints and rate-limit evidence                       |
 | `reviewers_`   |              14 | Loading/section/team, title/ARIA patterns, requested plus four completed states and four still-requested combinations |
 | `banner_`      |              22 | Six access/failure kinds, configure/sign-in/reload/dismiss, usage and reset-time variants                             |
@@ -47,6 +47,14 @@ English bootstrap fallback; the mounted app replaces title and `html.lang`.
 Decorative images/badges have empty alt or `aria-hidden`; reviewer link names and
 titles carry the selected-language review state. Host GitHub HTML language,
 user content, API enums and links remain untouched.
+
+#175 adds `auth_cancelling` and `auth_error_restart` in all five
+catalogs. These distinguish pending cancellation acknowledgement and a flow that
+needs a fresh sign-in after interruption. They keep technical attempt identity
+in state and translate guidance only at render time. The implementation owner
+reviewed both keys and the README boundary/recovery additions against English,
+including Traditional Chinese terminology independently; no external
+native-speaker certification is claimed.
 
 ## Five-language glossary
 

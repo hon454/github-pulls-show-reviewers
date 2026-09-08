@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: 2026-09-04
+Last updated: 2026-09-08
 
 This is the canonical published privacy policy for the Chrome Web Store listing.
 The public policy URL is
@@ -24,7 +24,7 @@ To provide its reviewer visibility feature, the extension may access:
 ## How data is used
 
 - GitHub page context is used locally to determine which repository and pull requests are visible on the current page.
-- Reviewer metadata is requested from GitHub's API and rendered inline on the GitHub pull request list page. The API request itself runs in the extension's background service worker so that the access token never enters the content-script execution context.
+- Reviewer metadata is requested from GitHub's API and rendered inline on the GitHub pull request list page. OAuth exchanges, authenticated API calls, diagnostics and credential writes run in the background service worker. Content and options receive only allowlisted account summaries, structured results and sign-in progress; they do not read or receive access tokens, refresh tokens or the OAuth device-code secret. Options displays GitHub's user-facing verification code and link.
 - The GitHub App credentials are used only to authenticate requests to GitHub for private repository access and to refresh expired access tokens. Refreshes run both reactively on a `401` response and proactively on a recurring 15-minute background schedule via the `alarms` permission, so tokens stay valid even while no GitHub tab is open.
 
 ## Storage and retention
@@ -37,7 +37,9 @@ To provide its reviewer visibility feature, the extension may access:
   token expiry timestamps, cached GitHub App installations, selected-repository
   snapshot names plus whether those snapshots were fully paginated,
   invalidation state, and an opaque credential revision used to reject stale
-  authentication updates. The revision is not derived from token contents.
+  authentication updates, plus the latest opaque sign-in attempt receipt used to
+  recognize an already committed connection after worker interruption. Neither
+  identifier is derived from token contents.
   Entries live there until the user removes the account locally, including when
   its credentials have been invalidated. Local removal does not revoke the
   GitHub App authorization.
@@ -49,6 +51,14 @@ To provide its reviewer visibility feature, the extension may access:
   Simplified Chinese, or Traditional Chinese). Language selection stays local;
   translations are bundled and no translation service receives data. The
   preference record remains until the user changes it or removes the extension.
+- Pending sign-in state is stored in trusted `browser.storage.session`, including
+  the OAuth device-code secret, user verification code, owning options document,
+  opaque attempt/flow IDs, polling interval and original deadline. Cancellation,
+  expiry, completion and detected document loss clear the secret fields. Expired
+  or abandoned entries are cleaned on subsequent background flow activity or
+  worker activation, without a polling alarm. Non-secret terminal records reject
+  delayed retries while the document remains present. Session storage clears on
+  browser restart; saved accounts remain in local storage.
 - Reviewer responses are cached only for the current page session to avoid duplicate fetches while browsing the same pull request list.
 - The extension does not operate its own backend, database, analytics pipeline, or advertising system.
 
@@ -60,6 +70,17 @@ To provide its reviewer visibility feature, the extension may access:
 
 ## Security and remote code
 
+- On every worker activation, the extension restricts local and session storage
+  to Chrome's `TRUSTED_CONTEXTS` before account initialization or sensitive
+  operations. This prevents content-script storage access. Chrome also considers
+  options a trusted context, so the options guarantee comes from application
+  boundaries, schema-validated capabilities and tests, not a separate
+  background-only browser permission. UI subscriptions contain sanitized
+  snapshots, never raw storage change records.
+- These boundaries do not protect against a compromised OS/profile or arbitrary
+  code already executing inside a trusted extension page. No host-page token
+  theft was demonstrated; this change aligns the implementation with the
+  intended credential-ownership policy.
 - The extension does not execute remote code.
 - The extension requests only the permissions needed for storage and GitHub page/API access.
 

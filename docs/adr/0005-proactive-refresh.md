@@ -40,7 +40,10 @@ and drops terminal accounts early.
 - `entrypoints/background.ts` wires the service, schedules the alarm on every
   SW boot (`scheduleAlarm` guards against SW-restart resets by calling
   `browser.alarms.get` and skipping re-creation when the existing period
-  matches), and routes `browser.alarms.onAlarm` into the handler.
+  matches), and routes `browser.alarms.onAlarm` into the handler after the
+  trusted storage policy and account initialization gate from
+  [ADR 0008](./0008-background-credentials-and-ui-capabilities.md). No sign-in
+  polling alarm is added.
 - The `alarms` manifest permission is added via `wxt.config.ts`.
 
 Refresh dispatch uses `Promise.allSettled` so one account's failure does not

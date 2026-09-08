@@ -75,6 +75,7 @@ Traditional Chinese.
 - **Organizations:** an organization owner may need to install or approve the GitHub App before private organization repositories can be read.
 - **Multiple accounts:** personal and work accounts can be added side by side. The extension picks the matching account for each repository.
 - **Session persistence:** sign-in is kept across browser sessions; access tokens are refreshed automatically in the background until you remove the account or revoke the GitHub App.
+- **Sign-in recovery:** an in-progress sign-in survives ordinary background worker suspension. If the browser restarts or an exchange is interrupted, request a new code; already connected accounts remain saved.
 
 ## Settings
 
@@ -94,6 +95,12 @@ The extension is built around the minimum access needed to show reviewer informa
 - Public repository support does not require signing in.
 - Private repository support uses GitHub sign-in through the extension's GitHub App.
 - The GitHub App requests `Pull requests: Read` only.
+- OAuth, authenticated requests and credential storage belong to the background.
+  Content and options receive account summaries and user-facing sign-in progress,
+  without access tokens, refresh tokens or OAuth device-code secrets.
+- Chrome blocks content-script access to local storage. The options boundary is
+  enforced by the extension's application code; Chrome still treats options as a
+  trusted extension page.
 - Removing an active or invalidated account from the options page deletes that
   account's locally stored credentials only.
 - To revoke the GitHub App itself, remove it from GitHub's Applications settings.
