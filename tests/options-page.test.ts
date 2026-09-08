@@ -479,6 +479,128 @@ describe("OptionsPage", () => {
     ).not.toBeNull();
   });
 
+  it.each([
+    ["revoked", "Sign in again", "Remove"],
+    ["expired", "Sign in again", "Remove"],
+    ["refresh_failed", "Sign in again", "Remove"],
+  ] as const)(
+    "renders keyboard-accessible removal beside reauthentication for a %s account",
+    async (reason, signInLabel, removeLabel) => {
+      const invalidated = account({
+        id: `${reason}-account`,
+        login: `${reason}-login`,
+        invalidated: true,
+        invalidatedReason: reason,
+      });
+      listAccountsMock.mockResolvedValue([invalidated]);
+
+      await renderOptionsPage();
+
+      const card = document.querySelector(
+        `[data-testid="account-card-${invalidated.login}"]`,
+      );
+      const buttons = Array.from(
+        card!.querySelectorAll<HTMLButtonElement>("button"),
+      );
+      expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+        signInLabel,
+        removeLabel,
+      ]);
+      expect(buttons[1]?.disabled).toBe(false);
+    },
+  );
+
+  it("keeps an invalidated removal local and isolated to its card", async () => {
+    const invalidated = account({
+      id: "invalidated",
+      login: "old-work-account",
+      invalidated: true,
+      invalidatedReason: "revoked",
+    });
+    const retained = account({ id: "retained", login: "personal-account" });
+    const removal = pending<void>();
+    listAccountsMock
+      .mockResolvedValueOnce([invalidated, retained])
+      .mockResolvedValue([retained]);
+    removeAccountMock.mockReturnValueOnce(removal.promise);
+
+    await renderOptionsPage();
+
+    const invalidatedCard = document.querySelector(
+      '[data-testid="account-card-old-work-account"]',
+    )!;
+    const [signInButton, removeButton] = Array.from(
+      invalidatedCard.querySelectorAll<HTMLButtonElement>("button"),
+    );
+    const retainedRefresh = Array.from(
+      document
+        .querySelector('[data-testid="account-card-personal-account"]')!
+        .querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.trim() === "Refresh installations")!;
+
+    await act(async () => {
+      removeButton!.click();
+      removeButton!.click();
+      await Promise.resolve();
+    });
+
+    expect(removeAccountMock).toHaveBeenCalledTimes(1);
+    expect(removeAccountMock).toHaveBeenCalledWith("invalidated");
+    expect(signInButton!.disabled).toBe(true);
+    expect(removeButton!.disabled).toBe(true);
+    expect(retainedRefresh.disabled).toBe(false);
+    const auth = await import("../src/github/auth");
+    expect(auth.initiateDeviceFlow).not.toHaveBeenCalled();
+
+    await act(async () => {
+      removal.resolve();
+    });
+
+    expect(
+      document.querySelector('[data-testid="account-card-old-work-account"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-testid="account-card-personal-account"]'),
+    ).not.toBeNull();
+  });
+
+  it("retains an invalidated card after a failed removal and allows a retry", async () => {
+    const invalidated = account({
+      id: "invalidated",
+      invalidated: true,
+      invalidatedReason: "expired",
+    });
+    const removal = pending<void>();
+    listAccountsMock.mockResolvedValueOnce([invalidated]).mockResolvedValue([]);
+    removeAccountMock.mockReturnValueOnce(removal.promise);
+    await renderOptionsPage();
+
+    const removeButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.trim() === "Remove")!;
+    await act(async () => {
+      removeButton.click();
+      removal.reject(new Error("Storage write failed."));
+    });
+
+    expect(
+      document.querySelector('[data-testid="account-card-hon454"]'),
+    ).not.toBeNull();
+    expect(removeButton.disabled).toBe(false);
+    expect(
+      document.querySelector('[data-testid="account-action-error-invalidated"]')
+        ?.textContent,
+    ).toContain("Could not remove account");
+
+    await act(async () => {
+      removeButton.click();
+    });
+    expect(removeAccountMock).toHaveBeenCalledTimes(2);
+    expect(
+      document.querySelector('[data-testid="accounts-empty"]'),
+    ).not.toBeNull();
+  });
+
   it("routes manual installation refresh through the background service", async () => {
     listAccountsMock.mockResolvedValue([account()]);
     await renderOptionsPage();
@@ -992,13 +1114,97 @@ async function chooseLanguage(language: LanguagePreference) {
 }
 function pending<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe("options live language selection", () => {
+  it.each([
+    ["en", "Remove"],
+    ["ko", "삭제"],
+    ["ja", "削除"],
+    ["zh_CN", "移除"],
+    ["zh_TW", "移除"],
+  ] as const)(
+    "renders invalidated-account removal in %s",
+    async (language, removeLabel) => {
+      const invalidated = account({
+        invalidated: true,
+        invalidatedReason: "refresh_failed",
+      });
+      listAccountsMock.mockResolvedValue([invalidated]);
+      await renderOptionsPage(languageHarness(language).store);
+
+      expect(
+        Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+          (button) => button.textContent?.trim() === removeLabel,
+        ),
+      ).toBeDefined();
+    },
+  );
+
+  it("keeps an invalidated removal pending through a language change", async () => {
+    const h = languageHarness();
+    const invalidated = account({
+      invalidated: true,
+      invalidatedReason: "refresh_failed",
+    });
+    const removal = pending<void>();
+    listAccountsMock.mockResolvedValueOnce([invalidated]).mockResolvedValue([]);
+    removeAccountMock.mockReturnValueOnce(removal.promise);
+    await renderOptionsPage(h.store);
+
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.trim() === "Remove")!
+        .click();
+      await Promise.resolve();
+    });
+    await chooseLanguage("ko");
+    expect(document.body.textContent).toContain("삭제 중");
+    expect(removeAccountMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      removal.resolve();
+    });
+    expect(removeAccountMock).toHaveBeenCalledTimes(1);
+    expect(
+      document.querySelector('[data-testid="accounts-empty"]'),
+    ).not.toBeNull();
+  });
+
+  it("keeps invalidated removal feedback localized and retryable after a language change", async () => {
+    const h = languageHarness();
+    const invalidated = account({
+      invalidated: true,
+      invalidatedReason: "revoked",
+    });
+    listAccountsMock.mockResolvedValue([invalidated]);
+    removeAccountMock.mockRejectedValueOnce(new Error("Storage write failed."));
+    await renderOptionsPage(h.store);
+
+    const card = document.querySelector('[data-testid="account-card-hon454"]')!;
+    const [signInButton, removeButton] = Array.from(
+      card.querySelectorAll<HTMLButtonElement>("button"),
+    );
+    await act(async () => {
+      removeButton!.click();
+    });
+
+    expect(removeButton!.disabled).toBe(false);
+    expect(signInButton!.disabled).toBe(false);
+    await chooseLanguage("ko");
+    expect(
+      document.querySelector('[data-testid="account-action-error-acc"]')
+        ?.textContent,
+    ).toContain("계정을 삭제하지 못했습니다");
+    expect(removeAccountMock).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     ["en", "GitHub accounts", "Display", "Settings —"],
     ["ko", "GitHub 계정", "표시", "설정 —"],

@@ -119,16 +119,17 @@ export function AccountsList({
                 </p>
               </div>
             </div>
-            {account.invalidated ? (
-              <button
-                type="button"
-                onClick={() => onReauthenticate(account)}
-                className="button button--primary"
-              >
-                {t("options_signin_again")}
-              </button>
-            ) : (
-              <div className="button-row">
+            <div className="button-row">
+              {account.invalidated ? (
+                <button
+                  type="button"
+                  onClick={() => onReauthenticate(account)}
+                  disabled={isBusy}
+                  className="button button--primary"
+                >
+                  {t("options_signin_again")}
+                </button>
+              ) : (
                 <button
                   type="button"
                   onClick={() => void handleRefresh(account)}
@@ -139,18 +140,18 @@ export function AccountsList({
                     ? t("options_refreshing")
                     : t("options_refresh")}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void handleRemove(account)}
-                  disabled={isBusy}
-                  className="button button--danger"
-                >
-                  {busyAction === "remove"
-                    ? t("options_removing")
-                    : t("options_remove")}
-                </button>
-              </div>
-            )}
+              )}
+              <button
+                type="button"
+                onClick={() => void handleRemove(account)}
+                disabled={isBusy}
+                className="button button--danger"
+              >
+                {busyAction === "remove"
+                  ? t("options_removing")
+                  : t("options_remove")}
+              </button>
+            </div>
             {actionError ? (
               <p
                 className="inline-status inline-status--error"
