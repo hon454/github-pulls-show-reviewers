@@ -32,6 +32,7 @@ const account: Account = {
   id: "fixture-account",
   login: "fixture-user",
   token: "fixture-token",
+  credentialGeneration: "fixture-generation",
   avatarUrl: null,
   createdAt: 1,
   invalidated: false,
@@ -125,6 +126,16 @@ function mutate(number: string): void {
     .querySelector(`#issue_${number} .issue-meta-section`)!
     .append(" edited");
 }
+function replaceMetadata(number: string): void {
+  const native = document.querySelector(
+    `#issue_${number} .d-flex.mt-1.text-small.color-fg-muted`,
+  )!;
+  const replacement = native.cloneNode(true) as Element;
+  replacement
+    .querySelectorAll("[data-ghpsr-root], [data-ghpsr-reviewer-meta]")
+    .forEach((node) => node.remove());
+  native.replaceWith(replacement);
+}
 function refresh(path = pathname): void {
   window.history.replaceState({}, "", path);
   window.dispatchEvent(new Event("wxt:locationchange"));
@@ -214,6 +225,86 @@ afterEach(async () => {
 });
 
 describe("real content access banner recovery", () => {
+  it.each(["reviewers", "empty"])(
+    "preserves a fresh %s outcome and another row's failure through mount-only repair",
+    async (value) => {
+      summary = async ({ pullNumber }) =>
+        pullNumber === "42"
+          ? success(value === "empty" ? empty : alice)
+          : failure(500);
+      await boot();
+      const published = latest();
+      const count = sendMessage.mock.calls.length;
+      const cache = await import("../src/cache/reviewer-cache");
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      const entry = cache.getReviewerCacheEntry(key);
+      for (let replacement = 0; replacement < 3; replacement += 1) {
+        replaceMetadata("42");
+        await drain();
+        expect(
+          document.querySelectorAll("#issue_42 [data-ghpsr-root]"),
+        ).toHaveLength(1);
+        expect(document.querySelector("#issue_42 .ghpsr-status")).toBeNull();
+        expect(
+          document.querySelectorAll("#issue_42 a.ghpsr-avatar"),
+        ).toHaveLength(value === "empty" ? 0 : 1);
+        expect(latest()).toBe(published);
+        expect(sendMessage).toHaveBeenCalledTimes(count);
+        expect(cache.getReviewerCacheEntry(key)).toBe(entry);
+        expect(banner()?.textContent).toContain(
+          "Reviewer data is temporarily unavailable",
+        );
+      }
+    },
+  );
+
+  it.each(["success", "failure"])(
+    "keeps stale chips separate from a mount repair's real revalidation %s",
+    async (result) => {
+      summary = async ({ pullNumber }) =>
+        pullNumber === "42" ? success() : failure(500);
+      await boot();
+      const pending = deferred();
+      summary = () => pending.promise;
+      const cache = await import("../src/cache/reviewer-cache");
+      cache.markReviewerCacheStale(
+        cache.buildReviewerCacheKey("cinev", "shotloom", "42"),
+      );
+      const retained = latest().rows.find(
+        ({ pullNumber }) => pullNumber === "43",
+      );
+      replaceMetadata("42");
+      await drain();
+      expect(latest().generation).toBe(0);
+      expect(
+        latest().rows.find(({ pullNumber }) => pullNumber === "42")?.outcome
+          .status,
+      ).toBe("pending");
+      expect(document.querySelector("#issue_42 a.ghpsr-avatar")).not.toBeNull();
+      expect(banner()).not.toBeNull();
+      pending.resolve(result === "success" ? success() : failure(429));
+      await drain();
+      expect(latest().rows.find(({ pullNumber }) => pullNumber === "43")).toBe(
+        retained,
+      );
+      expect(
+        latest().rows.find(({ pullNumber }) => pullNumber === "42")?.outcome
+          .status,
+      ).toBe(result);
+      expect(banner()?.textContent).toContain(
+        result === "success"
+          ? "Reviewer data is temporarily unavailable"
+          : "unauthenticated request limit",
+      );
+      expect(document.querySelector("#issue_42 a.ghpsr-avatar")).not.toBeNull();
+      expect(
+        messages("fetchPullReviewerSummary").map(
+          ({ pullNumber }) => pullNumber,
+        ),
+      ).toEqual(["42", "43", "42"]);
+    },
+  );
+
   it.each(["auth", "installations"])(
     "recovers after an existing account's %s storage event",
     async (kind) => {
@@ -450,6 +541,14 @@ describe("real content access banner recovery", () => {
     const publicationCount = snapshots.length;
     const messageCount = sendMessage.mock.calls.length;
     const requestIds = latest().rows.map(({ request }) => request);
+    // #173 repairs an active consumer and a still-queued consumer by joining
+    // their existing requests. Neither repair invents an outcome or a slot.
+    replaceMetadata("1");
+    replaceMetadata("5");
+    await drain();
+    expect(snapshots).toHaveLength(publicationCount);
+    expect(sendMessage).toHaveBeenCalledTimes(messageCount);
+    expect(latest().rows.map(({ request }) => request)).toEqual(requestIds);
     for (const language of locales) {
       changePreferences({
         language,
