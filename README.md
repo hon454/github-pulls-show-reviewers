@@ -102,6 +102,12 @@ See the
 [public privacy policy](https://github.com/hon454/github-pulls-show-reviewers/blob/main/docs/privacy-policy.md)
 for the full policy text.
 
+## Support
+
+If you find this extension useful, consider buying me a coffee!
+
+<a href="https://www.buymeacoffee.com/hon454s" target="_blank" rel="noopener noreferrer"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="217" height="60"></a>
+
 ## For Contributors
 
 This repository uses WXT, TypeScript, React, zod, Vitest, Playwright, and pnpm.
