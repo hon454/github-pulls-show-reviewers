@@ -798,8 +798,8 @@
     "description": "Fallback quota when no numeric rate-limit evidence is available."
   },
   "banner_auth_rate_unknown": {
-    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 한도가 초기화되면 리뷰어를 자동으로 다시 불러옵니다.",
-    "description": "auth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 초기화 시각을 알 수 없습니다. 한도가 초기화된 뒤 이 페이지를 새로고침해 다시 시도하세요.",
+    "description": "Authenticated rate-limit guidance with unknown reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -816,8 +816,8 @@
     }
   },
   "banner_auth_rate_shortly": {
-    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 곧 리뷰어를 다시 불러옵니다.",
-    "description": "auth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 곧 한도가 초기화됩니다. 한도가 초기화된 뒤 이 페이지를 새로고침해 다시 시도하세요.",
+    "description": "Authenticated rate-limit guidance with shortly reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -834,8 +834,8 @@
     }
   },
   "banner_auth_rate_minute": {
-    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 약 1분 후 리뷰어를 다시 불러옵니다.",
-    "description": "auth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 약 1분 후 한도가 초기화됩니다. 한도가 초기화된 뒤 이 페이지를 새로고침해 다시 시도하세요.",
+    "description": "Authenticated rate-limit guidance with minute reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -852,8 +852,8 @@
     }
   },
   "banner_auth_rate_minutes": {
-    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 약 $COUNT$분 후 리뷰어를 다시 불러옵니다.",
-    "description": "auth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 약 $COUNT$분 후 한도가 초기화됩니다. 한도가 초기화된 뒤 이 페이지를 새로고침해 다시 시도하세요.",
+    "description": "Authenticated rate-limit guidance with minutes reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -876,8 +876,8 @@
     }
   },
   "banner_auth_rate_hour": {
-    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 약 1시간 후 리뷰어를 다시 불러옵니다.",
-    "description": "auth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 약 1시간 후 한도가 초기화됩니다. 한도가 초기화된 뒤 이 페이지를 새로고침해 다시 시도하세요.",
+    "description": "Authenticated rate-limit guidance with hour reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -894,8 +894,8 @@
     }
   },
   "banner_auth_rate_hours": {
-    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 약 $COUNT$시간 후 리뷰어를 다시 불러옵니다.",
-    "description": "auth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "message": "GitHub의 시간당 요청 한도에 도달했습니다. $USAGE$ 약 $COUNT$시간 후 한도가 초기화됩니다. 한도가 초기화된 뒤 이 페이지를 새로고침해 다시 시도하세요.",
+    "description": "Authenticated rate-limit guidance with hours reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"

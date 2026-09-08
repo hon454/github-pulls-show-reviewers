@@ -798,8 +798,8 @@
     "description": "Fallback quota when no numeric rate-limit evidence is available."
   },
   "banner_auth_rate_unknown": {
-    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 限额重置后将自动恢复加载审阅者。",
-    "description": "auth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 重置时间未知。请在限额重置后重新加载此页面以重试。",
+    "description": "Authenticated rate-limit guidance with unknown reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -816,8 +816,8 @@
     }
   },
   "banner_auth_rate_shortly": {
-    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 即将恢复加载审阅者。",
-    "description": "auth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 限额即将重置。请在限额重置后重新加载此页面以重试。",
+    "description": "Authenticated rate-limit guidance with shortly reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -834,8 +834,8 @@
     }
   },
   "banner_auth_rate_minute": {
-    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 约 1 分钟后恢复加载审阅者。",
-    "description": "auth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 限额将在约 1 分钟后重置。请在限额重置后重新加载此页面以重试。",
+    "description": "Authenticated rate-limit guidance with minute reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -852,8 +852,8 @@
     }
   },
   "banner_auth_rate_minutes": {
-    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 约 $COUNT$ 分钟后恢复加载审阅者。",
-    "description": "auth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 限额将在约 $COUNT$ 分钟后重置。请在限额重置后重新加载此页面以重试。",
+    "description": "Authenticated rate-limit guidance with minutes reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -876,8 +876,8 @@
     }
   },
   "banner_auth_rate_hour": {
-    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 约 1 小时后恢复加载审阅者。",
-    "description": "auth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 限额将在约 1 小时后重置。请在限额重置后重新加载此页面以重试。",
+    "description": "Authenticated rate-limit guidance with hour reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -894,8 +894,8 @@
     }
   },
   "banner_auth_rate_hours": {
-    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 约 $COUNT$ 小时后恢复加载审阅者。",
-    "description": "auth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "message": "已达到 GitHub 每小时请求上限。$USAGE$ 限额将在约 $COUNT$ 小时后重置。请在限额重置后重新加载此页面以重试。",
+    "description": "Authenticated rate-limit guidance with hours reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"

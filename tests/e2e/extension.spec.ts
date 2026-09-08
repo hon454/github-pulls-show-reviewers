@@ -829,6 +829,95 @@ test("keeps stale reviewer chips when packaged-extension revalidation fails", as
   });
 });
 
+test("access banner recovery after connecting an account waits for all visible reviewers on the same page", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = createPullListFixtureHtml(["42", "43"]).replace(
+      "<body>",
+      '<body><div class="pr-toolbar"></div>',
+    );
+    let connected = false;
+    let metadataRequests = 0;
+    let reviewRequests = 0;
+    let releaseSecond!: () => void;
+    const secondRow = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    await routeFixturePage(context, fixtureHtml);
+    await context.route(
+      /^https:\/\/api\.github\.com\/repos\/hon454\/github-pulls-show-reviewers\/pulls\?/,
+      async (route) => {
+        metadataRequests += 1;
+        await route.fulfill({
+          status: connected ? 200 : 404,
+          contentType: "application/json",
+          body: JSON.stringify(
+            connected
+              ? [42, 43].map((number) => ({
+                  number,
+                  user: { login: "hon454" },
+                  requested_reviewers: [{ login: "alice" }],
+                  requested_teams: [],
+                }))
+              : { message: "Not Found" },
+          ),
+        });
+      },
+    );
+    await context.route(
+      /^https:\/\/api\.github\.com\/repos\/hon454\/github-pulls-show-reviewers\/pulls\/\d+\/reviews/,
+      async (route) => {
+        reviewRequests += 1;
+        if (route.request().url().includes("/43/reviews")) await secondRow;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      },
+    );
+    await context.route(
+      "https://api.github.com/user/installations**",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ total_count: 0, installations: [] }),
+        });
+      },
+    );
+    const page = await context.newPage();
+    const url = "https://github.com/hon454/github-pulls-show-reviewers/pulls";
+    try {
+      await page.goto(url);
+      const banner = page.locator("[data-ghpsr-banner]");
+      await expect(banner).toContainText("Sign in with GitHub");
+      expect(metadataRequests).toBe(1);
+      expect(reviewRequests).toBe(0);
+      connected = true;
+      await seedSignedInAccount(context, {
+        accountId: "acc-banner-recovery",
+        login: "hon454",
+        installationOwner: "hon454",
+      });
+      await expect(
+        page.locator('#issue_42 a.ghpsr-avatar[title*="@alice"]'),
+      ).toHaveCount(1);
+      await expect.poll(() => reviewRequests).toBe(2);
+      await expect(banner).toContainText("Sign in with GitHub");
+      releaseSecond();
+      await expect(
+        page.locator('#issue_43 a.ghpsr-avatar[title*="@alice"]'),
+      ).toHaveCount(1);
+      await expect(banner).toHaveCount(0);
+      expect(page.url()).toBe(url);
+      expect(metadataRequests).toBe(2);
+      expect(reviewRequests).toBe(2);
+    } finally {
+      releaseSecond();
+    }
+  });
+});
+
 async function withExtensionContext(
   run: (
     context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,

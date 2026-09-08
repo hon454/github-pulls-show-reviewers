@@ -33,6 +33,11 @@
   when GitHub updates their metadata or the page is refreshed; waiting for an
   API limit to reset does not itself retry reviewer requests. Display and
   language changes only update presentation, including on failed rows.
+- Clears obsolete access guidance after connecting an account or updating its
+  installation coverage when every visible reviewer load succeeds. A successful
+  row never hides another row's failure or pending request; guidance can downgrade
+  as individual rows recover. After a GitHub API limit resets, reload the page
+  to retry. Waiting for the reset does not resume reviewer loading automatically.
 
 ## Why Use It
 

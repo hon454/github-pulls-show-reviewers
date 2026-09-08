@@ -34,6 +34,10 @@ import {
 } from "./dom";
 import { createFallbackAccountIntegration } from "./fallback-account";
 import {
+  createReviewerOutcomeCoordinator,
+  type ReviewerOutcomeSnapshot,
+} from "./outcomes";
+import {
   createPageMetadataCoordinator,
   type PageMetadataFailure,
 } from "./page-metadata";
@@ -53,6 +57,7 @@ import { buildReviewers } from "./view-model";
 export const REVIEWER_SUMMARY_CONCURRENCY_LIMIT = 4;
 
 export type ReviewerBootOptions = {
+  onOutcomes?: (snapshot: ReviewerOutcomeSnapshot) => void;
   onRowFailure?: (signal: {
     owner: string;
     repo: string;
@@ -75,6 +80,7 @@ export function bootReviewerListPage(
   // Keep the last request identity after settlement to reject delayed renders.
   const requestOwners = new Map<string, object>();
   type InflightRequest = {
+    owner: object;
     promise: Promise<void>;
     controller: AbortController;
     consumers: Map<HTMLElement, () => boolean>;
@@ -150,10 +156,22 @@ export function bootReviewerListPage(
   const reviewerSummaryScheduler = createAbortAwareRequestScheduler(
     REVIEWER_SUMMARY_CONCURRENCY_LIMIT,
   );
+  const outcomes = createReviewerOutcomeCoordinator((snapshot) => {
+    if (!disposed) options?.onOutcomes?.(snapshot);
+  });
+  function resetOutcomes(): void {
+    outcomes.reset({
+      generation,
+      pathname: window.location.pathname,
+      pullNumbers: currentRoute == null ? [] : collectVisiblePullNumbers(),
+    });
+  }
+  resetOutcomes();
   const rowLifecycle = createReviewerRowLifecycle({
     getRoute: () => currentRoute,
     processRow,
     markPageMetadataStale: pageMetadata.markStale,
+    onRowsChanged: () => outcomes.reconcile(collectVisiblePullNumbers()),
   });
 
   function abortInflightRequests(): void {
@@ -164,6 +182,7 @@ export function bootReviewerListPage(
     inflightRequests.clear();
     requestOwners.clear();
     pageMetadata.abortAndClear();
+    resetOutcomes();
   }
 
   function readPreferences(): Promise<Preferences> {
@@ -234,6 +253,8 @@ export function bootReviewerListPage(
       requestOwners.get(cacheKey) === requestOwner;
     rowLifecycle.recordFingerprint(row, pullNumber, route);
     const cachedEntry = getReviewerCacheEntry(cacheKey);
+    if (cachedEntry == null || !isReviewerCacheEntryFresh(cachedEntry))
+      outcomes.pending(rowGeneration, pullNumber);
     if (cachedEntry != null) {
       await renderSummaryForMount(
         mount,
@@ -243,12 +264,15 @@ export function bootReviewerListPage(
       );
       if (!isOperationCurrent()) return;
       if (isReviewerCacheEntryFresh(cachedEntry)) {
+        outcomes.cached(rowGeneration, pullNumber);
         return;
       }
     }
 
     const existingRequest = inflightRequests.get(cacheKey);
     if (existingRequest) {
+      requestOwner = existingRequest.owner;
+      outcomes.begin(rowGeneration, pullNumber, existingRequest.owner);
       existingRequest.consumers.set(mount, isRowCurrent);
       const existingEntry = getReviewerCacheEntry(cacheKey);
       if (existingEntry != null) {
@@ -291,6 +315,8 @@ export function bootReviewerListPage(
     const controller = new AbortController();
     requestOwner = {};
     requestOwners.set(cacheKey, requestOwner);
+    const outcomeOwner = requestOwner;
+    outcomes.begin(rowGeneration, pullNumber, outcomeOwner);
     let request: InflightRequest | null = null;
     const consumers = new Map([[mount, isRowCurrent]]);
     // Data belongs to live rows, even if their presentation mounts were removed.
@@ -317,6 +343,10 @@ export function bootReviewerListPage(
           return;
         }
         if (metadataResult.failure?.suppressRowFallback) {
+          outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
+            status: "failure",
+            failure: metadataResult.failure,
+          });
           reportPageMetadataFailure(route, metadataResult.failure);
           if (isOperationCurrent())
             clearReviewerMountWithoutCache(mount, cacheKey);
@@ -346,6 +376,9 @@ export function bootReviewerListPage(
             return;
           }
           setCachedReviewerSummary(cacheKey, summary);
+          outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
+            status: "success",
+          });
         } catch (error) {
           if (isAbortError(error) || !isRequestCurrent()) {
             return;
@@ -378,6 +411,9 @@ export function bootReviewerListPage(
                   return;
                 }
                 setCachedReviewerSummary(cacheKey, summary);
+                outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
+                  status: "success",
+                });
                 return;
               } catch (fallbackError) {
                 if (isAbortError(fallbackError) || !isRequestCurrent()) {
@@ -390,6 +426,10 @@ export function bootReviewerListPage(
           }
           if (isOperationCurrent())
             clearReviewerMountWithoutCache(mount, cacheKey);
+          outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
+            status: "failure",
+            failure: { account: failureAccount, error: failureError },
+          });
           options?.onRowFailure?.({
             owner: route.owner,
             repo: route.repo,
@@ -403,6 +443,10 @@ export function bootReviewerListPage(
         }
         if (isOperationCurrent())
           clearReviewerMountWithoutCache(mount, cacheKey);
+        outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
+          status: "failure",
+          failure: { account, error },
+        });
         options?.onRowFailure?.({
           owner: route.owner,
           repo: route.repo,
@@ -415,7 +459,7 @@ export function bootReviewerListPage(
         }
       }
     })();
-    request = { controller, promise, consumers };
+    request = { owner: outcomeOwner, controller, promise, consumers };
 
     inflightRequests.set(cacheKey, request);
     try {

@@ -8,6 +8,7 @@ import type {
 } from "../src/features/access-banner/aggregator";
 import { isHigherPriority } from "../src/features/access-banner/aggregator";
 import { bootReviewerListPage } from "../src/features/reviewers";
+import type { ReviewerFailure } from "../src/features/reviewers/outcomes";
 import { parsePullListRoute } from "../src/github/routes";
 import {
   type ReviewerFetchFailure,
@@ -20,33 +21,61 @@ export default defineContentScript({
   main(ctx) {
     let aggregator: AccessBannerHandle | null = null;
     let reviewerListBooted = false;
+    let bannerPathname: string | null = null;
+    let latestGeneration = -1;
+    const classifiedFailures = new WeakMap<
+      ReviewerFailure,
+      ClassifiedRowFailure
+    >();
+
+    const syncBannerRoute = () => {
+      const pathname = window.location.pathname;
+      if (bannerPathname !== pathname) {
+        aggregator?.teardown();
+        aggregator = null;
+        bannerPathname = pathname;
+      }
+      if (aggregator == null && parsePullListRoute(pathname) != null)
+        aggregator = bootAccessBanner(ctx);
+      aggregator?.refreshMount();
+    };
 
     const syncRouteFeatures = () => {
-      aggregator?.teardown();
-      aggregator = null;
-
-      if (parsePullListRoute(window.location.pathname) == null) {
-        return;
-      }
-
-      aggregator = bootAccessBanner(ctx);
+      syncBannerRoute();
+      if (parsePullListRoute(window.location.pathname) == null) return;
       if (!reviewerListBooted) {
         reviewerListBooted = true;
         bootReviewerListPage(ctx, {
-          onRowFailure({ account, error }) {
-            if (aggregator == null) {
-              aggregator = bootAccessBanner(ctx);
-            }
-            if (aggregator == null) {
+          onOutcomes(snapshot) {
+            if (
+              snapshot.generation < latestGeneration ||
+              snapshot.pathname !== window.location.pathname
+            )
               return;
+            latestGeneration = snapshot.generation;
+            // The controller may receive a route event before this entrypoint.
+            // Synchronize the banner before applying that route's result set.
+            syncBannerRoute();
+            const failures = new Set<ClassifiedRowFailure>();
+            for (const { outcome } of snapshot.rows) {
+              if (outcome.status !== "failure") continue;
+              let classified = classifiedFailures.get(outcome.failure);
+              if (classified == null) {
+                classified = classifyRowFailure(
+                  outcome.failure.error,
+                  outcome.failure.account,
+                );
+                classifiedFailures.set(outcome.failure, classified);
+              }
+              failures.add(classified);
             }
-
-            const classified = classifyRowFailure(error, account);
-            if (classified.info == null) {
-              aggregator.reportFailure(classified.kind);
-            } else {
-              aggregator.reportFailure(classified.kind, classified.info);
-            }
+            aggregator?.reconcile({
+              generation: snapshot.generation,
+              pending: snapshot.rows.some(
+                ({ outcome }) => outcome.status === "pending",
+              ),
+              failures: [...failures],
+            });
           },
         });
       }

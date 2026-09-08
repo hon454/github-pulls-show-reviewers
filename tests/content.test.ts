@@ -12,6 +12,8 @@ vi.mock("../src/features/reviewers", () => ({
   bootReviewerListPage: bootReviewerListPageMock,
 }));
 
+import type { ReviewerOutcomeSnapshot } from "../src/features/reviewers/outcomes";
+
 type Listener = () => void;
 
 beforeEach(() => {
@@ -27,7 +29,8 @@ afterEach(() => {
 });
 
 type Aggregator = {
-  reportFailure: ReturnType<typeof vi.fn>;
+  refreshMount?: ReturnType<typeof vi.fn>;
+  reconcile: ReturnType<typeof vi.fn>;
   teardown?: ReturnType<typeof vi.fn>;
 };
 
@@ -39,12 +42,13 @@ type RowFailure = {
 };
 
 type BootReviewerOptions = {
-  onRowFailure?: (signal: RowFailure) => void;
+  onOutcomes?: (snapshot: ReviewerOutcomeSnapshot) => void;
 };
 
 async function bootContent(aggregator: Aggregator): Promise<{
   onRowFailure: (signal: RowFailure) => void;
 }> {
+  aggregator.refreshMount = vi.fn();
   bootAccessBannerMock.mockReturnValue(aggregator);
   window.history.replaceState(
     {},
@@ -63,10 +67,36 @@ async function bootContent(aggregator: Aggregator): Promise<{
   const { default: content } = await import("../entrypoints/content");
   content.main(ctx as never);
 
-  if (captured?.onRowFailure == null) {
-    throw new Error("bootReviewerListPage was not called with onRowFailure");
+  if (captured?.onOutcomes == null) {
+    throw new Error("bootReviewerListPage was not called with onOutcomes");
   }
-  return { onRowFailure: captured.onRowFailure };
+  const onOutcomes = captured.onOutcomes;
+  return {
+    onRowFailure: (failure) =>
+      onOutcomes({
+        generation: 0,
+        pathname: window.location.pathname,
+        rows: [
+          {
+            pullNumber: "42",
+            request: {},
+            outcome: { status: "failure", failure },
+          },
+        ],
+      }),
+  };
+}
+
+function expectFailure(
+  aggregator: Aggregator,
+  kind: string,
+  info?: unknown,
+): void {
+  expect(aggregator.reconcile).toHaveBeenCalledWith({
+    generation: 0,
+    pending: false,
+    failures: [info == null ? { kind } : { kind, info }],
+  });
 }
 
 describe("content entrypoint", () => {
@@ -77,7 +107,8 @@ describe("content entrypoint", () => {
 
   it("waits to boot PR-list features until navigation enters a PR list", async () => {
     const aggregator = {
-      reportFailure: vi.fn(),
+      refreshMount: vi.fn(),
+      reconcile: vi.fn(),
       teardown: vi.fn(),
     };
     bootAccessBannerMock.mockReturnValue(aggregator);
@@ -111,7 +142,7 @@ describe("content entrypoint", () => {
   describe("onRowFailure banner classification", () => {
     function makeAggregator(): Aggregator {
       return {
-        reportFailure: vi.fn(),
+        reconcile: vi.fn(),
         teardown: vi.fn(),
       };
     }
@@ -129,7 +160,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(401)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-expired");
+      expectFailure(aggregator, "auth-expired");
     });
 
     it("emits app-uncovered for account + 404 (no rate-limit signal)", async () => {
@@ -145,7 +176,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(404)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("app-uncovered");
+      expectFailure(aggregator, "app-uncovered");
     });
 
     it("emits app-uncovered for account + 403 without rate-limit signal", async () => {
@@ -163,7 +194,7 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("app-uncovered");
+      expectFailure(aggregator, "app-uncovered");
     });
 
     it("emits auth-rate-limit with the response snapshot for account + 403 + rate-limit headers", async () => {
@@ -186,7 +217,7 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
+      expectFailure(aggregator, "auth-rate-limit", {
         rateLimit: {
           limit: 5000,
           remaining: 0,
@@ -209,7 +240,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(429)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit");
+      expectFailure(aggregator, "auth-rate-limit");
     });
 
     it("backfills rate-limit details from a later same-kind failure", async () => {
@@ -233,7 +264,7 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
+      expectFailure(aggregator, "auth-rate-limit", {
         rateLimit: {
           limit: 5000,
           remaining: 0,
@@ -263,17 +294,14 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "unauth-rate-limit",
-        {
-          rateLimit: {
-            limit: 60,
-            remaining: 0,
-            resource: "core",
-            resetAt: 1,
-          },
+      expectFailure(aggregator, "unauth-rate-limit", {
+        rateLimit: {
+          limit: 60,
+          remaining: 0,
+          resource: "core",
+          resetAt: 1,
         },
-      );
+      });
     });
 
     it("emits signin-required for no account + 403 without rate-limit signal", async () => {
@@ -289,7 +317,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(403)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
+      expectFailure(aggregator, "signin-required");
     });
 
     it("emits signin-required for no account + 401", async () => {
@@ -305,7 +333,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(401)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
+      expectFailure(aggregator, "signin-required");
     });
 
     it("emits unauth-rate-limit without a snapshot for no account + 429 with no headers", async () => {
@@ -321,9 +349,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(429)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "unauth-rate-limit",
-      );
+      expectFailure(aggregator, "unauth-rate-limit");
     });
 
     it("emits signin-required for no account + 404", async () => {
@@ -339,7 +365,7 @@ describe("content entrypoint", () => {
         error: new GitHubPullRequestEndpointsError([new GitHubApiError(404)]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("signin-required");
+      expectFailure(aggregator, "signin-required");
     });
 
     it("picks the highest-priority kind across mixed failures (auth-expired wins over app-uncovered)", async () => {
@@ -358,8 +384,9 @@ describe("content entrypoint", () => {
         ]),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledTimes(1);
-      const [winningKind] = aggregator.reportFailure.mock.calls[0];
+      expect(aggregator.reconcile).toHaveBeenCalledTimes(1);
+      const winningKind =
+        aggregator.reconcile.mock.calls[0][0].failures[0].kind;
       expect(winningKind).toBe("auth-expired");
     });
 
@@ -380,9 +407,7 @@ describe("content entrypoint", () => {
           account: { id: "acc-1" },
           error,
         });
-        expect(aggregator.reportFailure).toHaveBeenCalledWith(
-          "reviewers-unavailable",
-        );
+        expectFailure(aggregator, "reviewers-unavailable");
       }
     });
 
@@ -398,9 +423,7 @@ describe("content entrypoint", () => {
         error: new GitHubApiError(500),
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith(
-        "reviewers-unavailable",
-      );
+      expectFailure(aggregator, "reviewers-unavailable");
     });
 
     it("classifies serialized envelope failures with rateLimited identical to live errors", async () => {
@@ -430,7 +453,7 @@ describe("content entrypoint", () => {
         },
       });
 
-      expect(aggregator.reportFailure).toHaveBeenCalledWith("auth-rate-limit", {
+      expectFailure(aggregator, "auth-rate-limit", {
         rateLimit: {
           limit: 5000,
           remaining: 0,
