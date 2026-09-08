@@ -66,9 +66,29 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - Keep the content script light. Move reusable logic into `src/`.
 - Use `browser.storage.local` for extension settings unless there is a clear reason not to.
 - Keep reviewer rendering deterministic and testable through pure view-model helpers where possible.
-- Update `README.md` and `docs/implementation-notes.md` when MVP behavior or scope changes.
+- Update all five READMEs and `docs/implementation-notes.md` when MVP behavior or scope changes; follow the Documentation Policy below.
 - Keep review-state semantics explicit. If review states are shown, document which GitHub states are included and how they are mapped in the UI.
 - Prefer fixture-backed regression coverage for GitHub DOM behavior and reserve placeholder end-to-end tests for bootstrapping only.
+
+## Documentation Policy
+
+- `README.md` is the canonical English README. Maintain `README.ko.md`,
+  `README.zh-CN.md`, `README.zh-TW.md`, and `README.ja.md` alongside it.
+- Any change to README meaning, structure, commands, links, or shared assets
+  must be reflected in all five READMEs in the same PR. A locale-only wording
+  correction may touch only that translation when meaning and structure stay
+  unchanged. Keep section order and language navigation aligned.
+- Follow [Documentation Guideline](docs/guidelines/documentation-guideline.md)
+  for the language/file map, translation rules, and verification checklist.
+  Its [change-to-document map](docs/guidelines/documentation-guideline.md#change-to-document-map)
+  defines which companion documents to update for behavior, permissions,
+  storage, auth, localization, and release changes.
+- Reuse the [five-language glossary](docs/localization.md#five-language-glossary).
+  Review Traditional Chinese directly against English; do not rely on character
+  conversion from Simplified Chinese.
+- Keep detailed technical and operational procedures in their canonical
+  documents and link to them from the READMEs. This policy covers documentation
+  maintenance; the release authorization rules below still apply.
 
 ## Workflow
 
@@ -124,7 +144,7 @@ Agents working in this repository should preserve that narrow product scope. Do 
   session authorization covers that scope. Preserve existing authorization;
   do not ask again on every step. Privacy/distribution changes, exceptional
   recovery, review submission, and tags require their own applicable scope.
-- Keep `README.md`, `docs/chrome-web-store.md`, and
+- Keep all five READMEs, `docs/chrome-web-store.md`, and
   `docs/chrome-web-store-submission.md` synchronized when release behavior or
   store submission requirements change.
 

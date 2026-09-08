@@ -1,12 +1,18 @@
 # Localization ownership and QA
 
-The canonical copy is `public/_locales/{en,ko,ja,zh_CN,zh_TW}/messages.json`.
+The canonical extension UI copy is `public/_locales/{en,ko,ja,zh_CN,zh_TW}/messages.json`.
 English defines meaning and the complete fallback contract. Each other locale is
 reviewed against English separately, including Traditional Chinese; it is not
 produced by converting Simplified Chinese characters. See
 [ADR 0006](adr/0006-bundled-localization-and-render-only-language.md) for the
 render-only lifecycle and [manual Chrome testing](manual-chrome-testing.md#localization-platform-verification)
 for browser-language verification.
+
+README translations use the same five-language glossary below. English
+`README.md` is their source of truth; the
+[Documentation Guideline](guidelines/documentation-guideline.md) defines their
+file mapping, synchronization rules, and review checklist. README translations
+are maintained separately from extension catalogs and store listings.
 
 ## Ownership and reviewed coverage
 
