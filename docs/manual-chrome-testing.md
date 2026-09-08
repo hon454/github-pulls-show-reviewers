@@ -161,6 +161,22 @@ selected-repository results truncated.
    the same refresh path as the runtime, so a stale access token must not
    produce a false negative here.
 
+### Overlapping recovery and account changes
+
+Use fixture credentials and deferred HTTP in the automated auth regression suite
+for exact race ordering; a live credential race is not required. For a manual
+packaged-extension smoke check, verify that reviewer refresh, diagnostics, and
+manual installation refresh retain the same sign-in/error behavior. Reconnect
+and remove an account through options and confirm there is one retained card
+per GitHub login and removed cards stay absent. Switching any of the five
+supported languages during a refresh must only reformat the existing UI.
+
+The deterministic `auth-generation` and `accounts.registry-concurrency` tests
+cover delayed 401s after rotation, obsolete retry invalidation, reauthentication
+or removal during refresh, and concurrent sign-in/registry repair. Inspect only
+account IDs, revision identities, result codes and request counts; never copy
+credentials into logs or test reports.
+
 ### Expired access token with invalid refresh token
 
 1. Starting from the previous scenario, also corrupt

@@ -1,13 +1,9 @@
 import type { Translator } from "../../../src/i18n";
 import { useRef, useState } from "react";
 
-import { retryWithAccountRefresh } from "../../../src/auth/account-token-refresh";
-import { loadAccountInstallations } from "../../../src/github/installations";
-import {
-  removeAccount,
-  replaceInstallations,
-  type Account,
-} from "../../../src/storage/accounts";
+import { removeAccount } from "../../../src/runtime/account-mutations";
+import type { RefreshAccountInstallationsResponse } from "../../../src/runtime/installation-refresh";
+import type { Account } from "../../../src/storage/accounts";
 
 type Props = {
   t: Translator;
@@ -29,7 +25,7 @@ export function AccountsList({
     Record<string, AccountAction | undefined>
   >({});
   const [actionErrors, setActionErrors] = useState<
-    Record<string, AccountAction | "token_required" | undefined>
+    Record<string, AccountAction | undefined>
   >({});
 
   async function runAccountAction(
@@ -47,12 +43,8 @@ export function AccountsList({
 
     try {
       await execute();
-    } catch (error) {
-      setActionErrors((current) => ({
-        ...current,
-        [account.id]:
-          error instanceof MissingAccountTokenError ? "token_required" : action,
-      }));
+    } catch {
+      setActionErrors((current) => ({ ...current, [account.id]: action }));
     } finally {
       inFlightAccountIds.current.delete(account.id);
       setBusyActions((current) => {
@@ -65,17 +57,11 @@ export function AccountsList({
 
   async function handleRefresh(account: Account) {
     await runAccountAction(account, "refresh", async () => {
-      const installations = await retryWithAccountRefresh({
-        account,
-        execute: async (token) => {
-          if (token == null) {
-            throw new MissingAccountTokenError();
-          }
-
-          return loadAccountInstallations({ token });
-        },
-      });
-      await replaceInstallations(account.id, installations);
+      const outcome = (await browser.runtime.sendMessage({
+        type: "refreshAccountInstallations",
+        accountId: account.id,
+      })) as RefreshAccountInstallationsResponse;
+      if (!outcome?.ok) throw new Error("installation_refresh_failed");
       await onChange();
     });
   }
@@ -173,11 +159,9 @@ export function AccountsList({
                 data-testid={`account-action-error-${account.id}`}
               >
                 {t(
-                  actionError === "token_required"
-                    ? "options_token_required"
-                    : actionError === "refresh"
-                      ? "options_refresh_failed"
-                      : "options_remove_failed",
+                  actionError === "refresh"
+                    ? "options_refresh_failed"
+                    : "options_remove_failed",
                 )}
               </p>
             ) : null}
@@ -187,5 +171,3 @@ export function AccountsList({
     </div>
   );
 }
-
-class MissingAccountTokenError extends Error {}

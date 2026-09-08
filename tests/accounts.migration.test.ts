@@ -63,7 +63,8 @@ describe("settings migration", () => {
       ],
     });
 
-    const { getSettings } = await import("../src/storage/accounts");
+    const { getSettings, accountMutations } = await import("../src/storage/accounts");
+    await accountMutations.initialize();
     const settings = await getSettings();
 
     expect(settings).toEqual({ version: 4, accountIds: ["acc-1"] });

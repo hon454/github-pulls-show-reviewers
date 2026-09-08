@@ -4,7 +4,7 @@ import {
   fetchPullReviewerSummary,
   extractGitHubApiStatus,
 } from "../github/api";
-import { getAccountById, markAccountInvalidated } from "../storage/accounts";
+import { accountMutations, credentialGeneration } from "../storage/accounts";
 import {
   serializeReviewerFetchError,
   type FetchPullReviewerMetadataBatchMessage,
@@ -66,7 +66,10 @@ export function createReviewerFetchService(input: {
     return controller;
   }
 
-  async function runWithRefreshRetry<Result, SuccessResponse extends { ok: true }>(
+  async function runWithRefreshRetry<
+    Result,
+    SuccessResponse extends { ok: true },
+  >(
     message: ReviewerFetchMessage,
     execute: (token: string | null, signal: AbortSignal) => Promise<Result>,
     toSuccessResponse: (result: Result) => SuccessResponse,
@@ -75,7 +78,9 @@ export function createReviewerFetchService(input: {
 
     try {
       const account =
-        message.accountId == null ? null : await getAccountById(message.accountId);
+        message.accountId == null
+          ? null
+          : await accountMutations.getAccountById(message.accountId);
 
       try {
         const result = await execute(account?.token ?? null, controller.signal);
@@ -88,15 +93,10 @@ export function createReviewerFetchService(input: {
           };
         }
 
-        if (account.refreshToken == null) {
-          await markAccountInvalidated(account.id, "revoked");
-          return {
-            ok: false,
-            error: serializeReviewerFetchError(error),
-          };
-        }
-
-        const outcome = await refreshCoordinator.refreshAccountToken(account.id);
+        const outcome = await refreshCoordinator.refreshAccountToken(
+          account.id,
+          credentialGeneration(account),
+        );
         if (outcome.ok !== true) {
           return {
             ok: false,
@@ -104,16 +104,23 @@ export function createReviewerFetchService(input: {
           };
         }
 
-        const refreshed = await getAccountById(account.id);
+        const refreshed = await accountMutations.getAccountById(account.id);
+        if (
+          refreshed == null ||
+          refreshed.invalidated ||
+          controller.signal.aborted
+        ) {
+          return { ok: false, error: serializeReviewerFetchError(error) };
+        }
         try {
-          const result = await execute(
-            refreshed?.token ?? outcome.token,
-            controller.signal,
-          );
+          const result = await execute(refreshed.token, controller.signal);
           return toSuccessResponse(result);
         } catch (retryError) {
           if (extractGitHubApiStatus(retryError) === 401) {
-            await markAccountInvalidated(account.id, "revoked");
+            await refreshCoordinator.invalidateAccountToken(
+              account.id,
+              credentialGeneration(refreshed),
+            );
           }
           return {
             ok: false,

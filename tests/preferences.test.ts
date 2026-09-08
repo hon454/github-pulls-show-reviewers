@@ -167,6 +167,34 @@ describe("preferences storage", () => {
 });
 
 describe("storage change classification", () => {
+  it("ignores only generation metadata migration while retaining auth and registry changes", async () => {
+    const { isAccountsChange } = await import("../src/storage/preferences");
+    const oldValue = { token: "fixture-access", invalidated: false };
+    const newValue = { ...oldValue, credentialGeneration: "legacy" };
+    const migration = { oldValue, newValue };
+    expect(isAccountsChange({ "account:auth:one": migration })).toBe(false);
+    for (const change of [
+      { oldValue, newValue: { ...newValue, token: "fixture-replaced" } },
+      { oldValue, newValue: { ...newValue, invalidated: true } },
+      { oldValue, newValue: { ...newValue, credentialGeneration: "rotated" } },
+      { oldValue, newValue: { ...newValue, added: true } },
+      { oldValue, newValue: { credentialGeneration: "legacy" } },
+      { oldValue: null, newValue },
+      { oldValue, newValue: undefined },
+      { oldValue: [], newValue },
+      { oldValue: "malformed", newValue },
+    ]) {
+      expect(isAccountsChange({ "account:auth:one": change })).toBe(true);
+    }
+    expect(isAccountsChange({ "account:profile:one": migration })).toBe(true);
+    expect(
+      isAccountsChange({
+        "account:auth:one": migration,
+        settings: { newValue: { version: 4, accountIds: [] } },
+      }),
+    ).toBe(true);
+  });
+
   it("isPreferencesChange returns true when the preferences key is in the change map", async () => {
     const { isPreferencesChange, isAccountsChange } =
       await import("../src/storage/preferences");

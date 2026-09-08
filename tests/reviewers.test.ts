@@ -140,6 +140,52 @@ afterEach(() => {
 });
 
 describe("bootReviewerListPage", () => {
+  it("keeps pending reviewer work when only a legacy credential generation is persisted", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    let finish!: (value: unknown) => void;
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    });
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const oldValue = { token: "fixture-access", invalidated: false };
+    capturedStorageListener!(
+      {
+        "account:auth:acc-1": {
+          oldValue,
+          newValue: { ...oldValue, credentialGeneration: "legacy" },
+        },
+      },
+      "local",
+    );
+    await flushMicrotasks();
+    expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(0);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+    finish({
+      ok: true,
+      summary: {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+    });
+    await flushMicrotasks();
+    expect(
+      document.querySelector('a.ghpsr-avatar[title*="@alice"]'),
+    ).not.toBeNull();
+  });
+
   it("keeps a successful empty reviewer result visually empty", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
     runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {

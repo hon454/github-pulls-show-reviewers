@@ -1,238 +1,531 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import type * as authModule from "../src/github/auth";
-import {
-  RefreshTokenError,
-  type RefreshTokenResult,
-} from "../src/github/auth";
 import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
-import type { Account } from "../src/storage/accounts";
+import {
+  accountMutations,
+  credentialGeneration,
+} from "../src/storage/accounts";
+import {
+  connectInput,
+  createHttpHarness,
+  createStorageHarness,
+  json,
+  rotated,
+} from "./helpers/auth-harness";
 
-type AuthModule = typeof authModule;
-
-const getAccountByIdMock = vi.hoisted(() => vi.fn());
-const updateAccountTokensMock = vi.hoisted(() => vi.fn());
-const markAccountInvalidatedMock = vi.hoisted(() => vi.fn());
-const refreshAccessTokenMock = vi.hoisted(() => vi.fn());
-
-vi.mock("../src/storage/accounts", () => ({
-  getAccountById: getAccountByIdMock,
-  updateAccountTokens: updateAccountTokensMock,
-  markAccountInvalidated: markAccountInvalidatedMock,
-}));
-
-vi.mock("../src/github/auth", async () => {
-  const actual = await vi.importActual<AuthModule>("../src/github/auth");
-  return {
-    ...actual,
-    refreshAccessToken: refreshAccessTokenMock,
-  };
-});
-
-function makeAccount(overrides: Partial<Account> = {}): Account {
-  return {
-    id: "acc-1",
-    login: "hon454",
-    avatarUrl: null,
-    token: "ghu_old",
-    createdAt: 1,
-    installations: [],
-    installationsRefreshedAt: 1,
-    invalidated: false,
-    invalidatedReason: null,
-    refreshToken: "ghr_old",
-    expiresAt: null,
-    refreshTokenExpiresAt: null,
-    ...overrides,
-  };
-}
-
+let storage: ReturnType<typeof createStorageHarness>;
+let http: ReturnType<typeof createHttpHarness>;
+let coordinator: ReturnType<typeof createRefreshCoordinator>;
 beforeEach(() => {
-  getAccountByIdMock.mockReset();
-  updateAccountTokensMock.mockReset().mockResolvedValue(undefined);
-  markAccountInvalidatedMock.mockReset().mockResolvedValue(undefined);
-  refreshAccessTokenMock.mockReset();
+  storage = createStorageHarness();
+  http = createHttpHarness();
+  vi.stubGlobal("browser", { storage: { local: storage.local } });
+  vi.stubGlobal("fetch", http.fetch);
+  coordinator = createRefreshCoordinator({ getClientId: () => "test-client" });
 });
+afterEach(() => vi.unstubAllGlobals());
 
-afterEach(() => {
-  vi.useRealTimers();
-});
+describe("generation-aware refresh coordinator with real storage and HTTP parsing", () => {
+  it.each([
+    ["reactive", "success"],
+    ["reactive", "terminal"],
+    ["reactive", "transient"],
+    ["proactive", "success"],
+    ["proactive", "terminal"],
+    ["proactive", "transient"],
+  ])(
+    "orders concurrent admissions, invalidation and later %s recovery after %s",
+    async (kind, outcome) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const generation = credentialGeneration(old);
+      const read = storage.pauseGet();
+      const first = coordinator.refreshAccountToken(old.id, generation);
+      await read.entered.promise;
+      const concurrent = coordinator.refreshAccountToken(old.id, generation);
+      const invalidation = coordinator.invalidateAccountToken(
+        old.id,
+        generation,
+      );
+      const later =
+        kind === "reactive"
+          ? coordinator.refreshAccountToken(old.id, generation)
+          : coordinator.refreshAccountIfDue(old.id, Date.now());
+      const duplicate = coordinator.invalidateAccountToken(old.id, generation);
+      expect(duplicate === invalidation).toBe(true);
+      read.release.resolve();
+      const request = await http.next();
+      expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+        false,
+      );
+      request.response.resolve(
+        outcome === "success"
+          ? rotated()
+          : outcome === "terminal"
+            ? json({ error: "bad_refresh_token" }, 400)
+            : json({}, 503),
+      );
+      const [a, b, c] = await Promise.all([
+        first,
+        concurrent,
+        later,
+        invalidation,
+        duplicate,
+      ]);
+      expect([a.ok, b.ok, c.ok]).toEqual(Array(3).fill(outcome === "success"));
+      expect(http.requests.length).toBe(1);
+      const current = (await accountMutations.getAccountById(old.id))!;
+      expect(current.invalidatedReason).toBe(
+        outcome === "success"
+          ? null
+          : outcome === "terminal"
+            ? "refresh_failed"
+            : "revoked",
+      );
+    },
+  );
 
-describe("createRefreshCoordinator", () => {
-  it("refreshes, updates storage, and returns the new token on success", async () => {
-    getAccountByIdMock.mockResolvedValue(makeAccount());
-    const fresh: RefreshTokenResult = {
-      accessToken: "ghu_new",
-      refreshToken: "ghr_new",
-      expiresAt: 1234,
-      refreshTokenExpiresAt: 5678,
-    };
-    refreshAccessTokenMock.mockResolvedValue(fresh);
-
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    const outcome = await coordinator.refreshAccountToken("acc-1");
-
-    expect(outcome).toEqual({ ok: true, token: "ghu_new" });
-    expect(updateAccountTokensMock).toHaveBeenCalledWith("acc-1", {
-      token: "ghu_new",
-      refreshToken: "ghr_new",
-      expiresAt: 1234,
-      refreshTokenExpiresAt: 5678,
-    });
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
-  });
-
-  it("preserves the existing refresh token when the refresh response omits refresh_token", async () => {
-    getAccountByIdMock.mockResolvedValue(
-      makeAccount({
-        refreshToken: "ghr_old",
-        refreshTokenExpiresAt: 9_999_999,
-      }),
+  it("an invalidation admitted first prevents later recovery from starting HTTP", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const gate = storage.pauseSet();
+    const invalidation = coordinator.invalidateAccountToken(
+      old.id,
+      credentialGeneration(old),
     );
-    const fresh: RefreshTokenResult = {
-      accessToken: "ghu_new",
-      refreshToken: null,
-      expiresAt: 1234,
-      refreshTokenExpiresAt: null,
-    };
-    refreshAccessTokenMock.mockResolvedValue(fresh);
-
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    const outcome = await coordinator.refreshAccountToken("acc-1");
-
-    expect(outcome).toEqual({ ok: true, token: "ghu_new" });
-    expect(updateAccountTokensMock).toHaveBeenCalledWith("acc-1", {
-      token: "ghu_new",
-      refreshToken: "ghr_old",
-      expiresAt: 1234,
-      refreshTokenExpiresAt: 9_999_999,
-    });
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
-  });
-
-  it("rotates the refresh token when the response includes a new one", async () => {
-    getAccountByIdMock.mockResolvedValue(
-      makeAccount({
-        refreshToken: "ghr_old",
-        refreshTokenExpiresAt: 1_000,
-      }),
+    await gate.entered.promise;
+    const recovery = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(old),
     );
-    refreshAccessTokenMock.mockResolvedValue({
-      accessToken: "ghu_new",
-      refreshToken: "ghr_rotated",
-      expiresAt: 2222,
-      refreshTokenExpiresAt: 5_000,
-    });
-
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    await coordinator.refreshAccountToken("acc-1");
-
-    expect(updateAccountTokensMock).toHaveBeenCalledWith("acc-1", {
-      token: "ghu_new",
-      refreshToken: "ghr_rotated",
-      expiresAt: 2222,
-      refreshTokenExpiresAt: 5_000,
-    });
+    gate.release.resolve();
+    await invalidation;
+    expect(await recovery).toEqual({ ok: false, terminal: true });
+    expect(http.requests.length).toBe(0);
   });
 
-  it("dedupes concurrent calls for the same account into a single refresh", async () => {
-    getAccountByIdMock.mockResolvedValue(makeAccount());
-    let resolveRefresh: (value: RefreshTokenResult) => void = () => {};
-    refreshAccessTokenMock.mockImplementation(
-      () =>
-        new Promise<RefreshTokenResult>((resolve) => {
-          resolveRefresh = resolve;
+  it("releases admission identity waiters after a failed storage read", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    storage.local.get.mockRejectedValueOnce(new Error("storage-read-failure"));
+    const failed = coordinator
+      .refreshAccountToken(old.id, credentialGeneration(old))
+      .catch(() => null);
+    const invalidation = coordinator.invalidateAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    expect(await failed).toBeNull();
+    await invalidation;
+    const signedIn =
+      await accountMutations.upsertAccountByLogin(connectInput());
+    const recovery = coordinator.refreshAccountToken(
+      signedIn.id,
+      credentialGeneration(signedIn),
+    );
+    (await http.next()).response.resolve(rotated());
+    expect((await recovery).ok).toBe(true);
+  });
+
+  it.each(["reactive", "proactive"])(
+    "admits %s recovery before its first storage await so invalidation cannot overtake it",
+    async (kind) => {
+      const account =
+        await accountMutations.upsertAccountByLogin(connectInput());
+      const gate = storage.pauseGet();
+      const recovery =
+        kind === "reactive"
+          ? coordinator.refreshAccountToken(
+              account.id,
+              credentialGeneration(account),
+            )
+          : coordinator.refreshAccountIfDue(account.id, Date.now());
+      await gate.entered.promise;
+      const invalidation = coordinator.invalidateAccountToken(
+        account.id,
+        credentialGeneration(account),
+      );
+      gate.release.resolve();
+      const request = await http.next();
+      const before = await accountMutations.getAccountById(account.id);
+      request.response.resolve(rotated());
+      const [outcome] = await Promise.all([recovery, invalidation]);
+      const current = await accountMutations.getAccountById(account.id);
+      expect({
+        activeBefore: before?.invalidated === false,
+        recovered: outcome.ok,
+        activeAfter: current?.invalidated === false,
+        latestStored: current?.token === "fixture-access-1",
+      }).toEqual({
+        activeBefore: true,
+        recovered: true,
+        activeAfter: true,
+        latestStored: true,
+      });
+      expect(http.requests.length).toBe(1);
+    },
+  );
+
+  it("rotates credentials once for concurrent failures and reuses them for a delayed 401", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const a = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    const b = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    const request = await http.next();
+    expect(request.kind).toBe("refresh");
+    request.response.resolve(rotated());
+    const [first, second] = await Promise.all([a, b]);
+    expect(first.ok && second.ok).toBe(true);
+    expect(first).toEqual(second);
+    const late = await coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    expect(late).toEqual(first);
+    expect(http.requests.length).toBe(1);
+    const current = await accountMutations.getAccountById(old.id);
+    expect(current?.invalidated).toBe(false);
+    expect(current?.credentialGeneration !== old.credentialGeneration).toBe(
+      true,
+    );
+    expect(current?.token === "fixture-access-1").toBe(true);
+  });
+
+  it("preserves omitted refresh rotation fields", async () => {
+    const old = await accountMutations.upsertAccountByLogin(
+      connectInput({ refreshTokenExpiresAt: 999 }),
+    );
+    const work = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    (await http.next()).response.resolve(rotated("1", true));
+    expect((await work).ok).toBe(true);
+    const current = await accountMutations.getAccountById(old.id);
+    expect(current?.refreshToken === old.refreshToken).toBe(true);
+    expect(current?.refreshTokenExpiresAt).toBe(999);
+  });
+
+  it.each(["success", "terminal"])(
+    "does not overwrite reauthentication on old refresh %s",
+    async (result) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const work = coordinator.refreshAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      const pending = await http.next();
+      const signedIn = await accountMutations.upsertAccountByLogin(
+        connectInput({ token: "fixture-access-login" }),
+      );
+      pending.response.resolve(
+        result === "success"
+          ? rotated()
+          : json({ error: "bad_refresh_token" }, 400),
+      );
+      expect(await work).toEqual({
+        ok: true,
+        generation: credentialGeneration(signedIn),
+      });
+      const current = await accountMutations.getAccountById(old.id);
+      expect(current?.credentialGeneration).toBe(signedIn.credentialGeneration);
+      expect(current?.invalidated).toBe(false);
+      expect(current?.token === signedIn.token).toBe(true);
+    },
+  );
+
+  it.each(["success", "terminal"])(
+    "does not resurrect removal on old refresh %s",
+    async (result) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const work = coordinator.refreshAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      const pending = await http.next();
+      await accountMutations.removeAccount(old.id);
+      pending.response.resolve(
+        result === "success"
+          ? rotated()
+          : json({ error: "bad_refresh_token" }, 400),
+      );
+      expect(await work).toEqual({ ok: false, terminal: true });
+      expect((await accountMutations.getAccountById(old.id)) == null).toBe(
+        true,
+      );
+      expect(
+        Object.keys(storage.snapshot()).filter((key) =>
+          key.startsWith("account:"),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([
+    [json({ error: "bad_refresh_token" }, 400), true],
+    [json({}, 401), true],
+    [json({}, 503), false],
+    [json({}, 429), false],
+    [json({ malformed: true }), false],
+  ])(
+    "preserves terminal/transient classification %#",
+    async (response, terminal) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const work = coordinator.refreshAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      (await http.next()).response.resolve(response);
+      expect(await work).toEqual({ ok: false, terminal });
+      const current = await accountMutations.getAccountById(old.id);
+      expect(current?.invalidated).toBe(terminal);
+      expect(current?.invalidatedReason).toBe(
+        terminal ? "refresh_failed" : null,
+      );
+    },
+  );
+
+  it("leaves current credentials active after network failure", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const work = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    (await http.next()).response.reject(new Error("network"));
+    expect(await work).toEqual({ ok: false, terminal: false });
+    expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+      false,
+    );
+  });
+
+  it("checks generation before the missing-refresh-token branch and invalidates only a current failure", async () => {
+    const old = await accountMutations.upsertAccountByLogin(
+      connectInput({ refreshToken: null }),
+    );
+    const signedIn = await accountMutations.upsertAccountByLogin(
+      connectInput({ refreshToken: null, token: "fixture-access-login" }),
+    );
+    expect(
+      await coordinator.refreshAccountToken(old.id, credentialGeneration(old)),
+    ).toEqual({ ok: true, generation: credentialGeneration(signedIn) });
+    expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+      false,
+    );
+    expect(
+      await coordinator.refreshAccountToken(
+        old.id,
+        credentialGeneration(signedIn),
+      ),
+    ).toEqual({ ok: false, terminal: true });
+    expect(
+      (await accountMutations.getAccountById(old.id))?.invalidatedReason,
+    ).toBe("revoked");
+    expect(http.requests.length).toBe(0);
+  });
+
+  it("conditionally invalidates the used retry generation", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const signedIn = await accountMutations.upsertAccountByLogin(
+      connectInput({ token: "fixture-access-login" }),
+    );
+    await coordinator.invalidateAccountToken(old.id, credentialGeneration(old));
+    expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+      false,
+    );
+    await coordinator.invalidateAccountToken(
+      old.id,
+      credentialGeneration(signedIn),
+    );
+    expect(
+      (await accountMutations.getAccountById(old.id))?.invalidatedReason,
+    ).toBe("revoked");
+  });
+
+  it.each(["no-refresh-token", "expired"])(
+    "rechecks a %s decision when a sign-in is queued before invalidation commit",
+    async (kind) => {
+      const now = Date.now();
+      const old = await accountMutations.upsertAccountByLogin(
+        connectInput({
+          refreshToken:
+            kind === "no-refresh-token" ? null : "fixture-refresh-0",
+          refreshTokenExpiresAt: now - 1,
         }),
+      );
+      let fragmentReads = 0;
+      // Initialization reads fragments first; hold the subsequent decision
+      // snapshot after storage captured it, then queue a real options commit.
+      const barrier = storage.pauseGet(
+        (keys) => Array.isArray(keys) && ++fragmentReads === 2,
+      );
+      const recovery =
+        kind === "expired"
+          ? coordinator.refreshAccountIfDue(old.id, now)
+          : coordinator.refreshAccountToken(old.id, credentialGeneration(old));
+      await barrier.entered.promise;
+      const signIn = accountMutations.upsertAccountByLogin(
+        connectInput({
+          token: "fixture-access-login",
+          expiresAt: now + 10_000_000,
+        }),
+      );
+      barrier.release.resolve();
+      const signedIn = await signIn;
+      expect(await recovery).toEqual({
+        ok: true,
+        generation: credentialGeneration(signedIn),
+      });
+      expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+        false,
+      );
+      expect(http.requests.length).toBe(0);
+    },
+  );
+
+  it("allows unrelated HTTP and registry commits while one account refresh is stalled", async () => {
+    const a = await accountMutations.upsertAccountByLogin(connectInput());
+    const workA = coordinator.refreshAccountToken(
+      a.id,
+      credentialGeneration(a),
     );
+    const pendingA = await http.next();
+    const b = await accountMutations.upsertAccountByLogin(
+      connectInput({
+        login: "other",
+        newAccountId: "acc-2",
+        refreshToken: "fixture-refresh-other",
+      }),
+    );
+    const workB = coordinator.refreshAccountToken(
+      b.id,
+      credentialGeneration(b),
+    );
+    const pendingB = await http.next();
+    expect(pendingB.credential).toBe("other");
+    pendingB.response.resolve(rotated("other-next"));
+    expect((await workB).ok).toBe(true);
+    expect((await accountMutations.listAccounts()).map((a) => a.id)).toEqual([
+      a.id,
+      b.id,
+    ]);
+    pendingA.response.resolve(rotated());
+    expect((await workA).ok).toBe(true);
+  });
 
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    const a = coordinator.refreshAccountToken("acc-1");
-    const b = coordinator.refreshAccountToken("acc-1");
-
-    // Flush microtasks so getAccountById resolves and refreshAccessToken is called,
-    // which populates resolveRefresh before we invoke it.
-    await Promise.resolve();
-    await Promise.resolve();
-
-    resolveRefresh({
-      accessToken: "ghu_new",
-      refreshToken: "ghr_new",
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
+  it("returns terminal for missing or invalidated accounts without HTTP", async () => {
+    expect(await coordinator.refreshAccountToken("absent", "g0")).toEqual({
+      ok: false,
+      terminal: true,
     });
-
-    const [outcomeA, outcomeB] = await Promise.all([a, b]);
-    expect(outcomeA).toEqual({ ok: true, token: "ghu_new" });
-    expect(outcomeB).toEqual({ ok: true, token: "ghu_new" });
-    expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
-    expect(updateAccountTokensMock).toHaveBeenCalledTimes(1);
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    await coordinator.invalidateAccountToken(old.id, credentialGeneration(old));
+    expect(
+      await coordinator.refreshAccountToken(old.id, credentialGeneration(old)),
+    ).toEqual({ ok: false, terminal: true });
+    expect(http.requests.length).toBe(0);
   });
 
-  it("starts a fresh refresh after the previous one settles", async () => {
-    getAccountByIdMock.mockResolvedValue(makeAccount());
-    refreshAccessTokenMock.mockResolvedValue({
-      accessToken: "ghu_new",
-      refreshToken: "ghr_new",
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
-    });
+  it.each(["success", "terminal", "transient"])(
+    "waiting invalidation preserves reauthentication and newer independent recovery after old %s",
+    async (result) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const oldRecovery = coordinator.refreshAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      const oldHttp = await http.next();
+      const invalidation = coordinator.invalidateAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      await accountMutations.listAccounts();
+      const signedIn = await accountMutations.upsertAccountByLogin(
+        connectInput({ token: "fixture-access-login" }),
+      );
+      const newRecovery = coordinator.refreshAccountToken(
+        signedIn.id,
+        credentialGeneration(signedIn),
+      );
+      const newHttp = await http.next();
+      // Neither the old HTTP nor its invalidation wait blocks a new generation.
+      newHttp.response.resolve(rotated("newest"));
+      expect((await newRecovery).ok).toBe(true);
+      const unrelated = await accountMutations.upsertAccountByLogin(
+        connectInput({
+          login: "other",
+          newAccountId: "other",
+          refreshToken: "fixture-refresh-other",
+        }),
+      );
+      const otherRecovery = coordinator.refreshAccountToken(
+        unrelated.id,
+        credentialGeneration(unrelated),
+      );
+      (await http.next()).response.resolve(rotated("other-next"));
+      expect((await otherRecovery).ok).toBe(true);
+      oldHttp.response.resolve(
+        result === "success"
+          ? rotated("obsolete")
+          : result === "terminal"
+            ? json({ error: "bad_refresh_token" }, 400)
+            : json({}, 503),
+      );
+      await Promise.all([oldRecovery, invalidation]);
+      const current = (await accountMutations.getAccountById(old.id))!;
+      expect(current.invalidated).toBe(false);
+      expect(current.token === "fixture-access-newest").toBe(true);
+    },
+  );
 
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    await coordinator.refreshAccountToken("acc-1");
-    await coordinator.refreshAccountToken("acc-1");
+  it.each(["success", "terminal", "transient"])(
+    "waiting invalidation does not resurrect removal after refresh %s",
+    async (result) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const recovery = coordinator.refreshAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      const request = await http.next();
+      const invalidation = coordinator.invalidateAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      await accountMutations.removeAccount(old.id);
+      request.response.resolve(
+        result === "success"
+          ? rotated()
+          : result === "terminal"
+            ? json({ error: "bad_refresh_token" }, 400)
+            : json({}, 503),
+      );
+      await Promise.all([recovery, invalidation]);
+      expect((await accountMutations.getAccountById(old.id)) == null).toBe(
+        true,
+      );
+      expect(
+        Object.keys(storage.snapshot()).filter((key) =>
+          key.startsWith("account:"),
+        ),
+      ).toEqual([]);
+    },
+  );
 
-    expect(refreshAccessTokenMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("marks the account invalidated with refresh_failed on a terminal error", async () => {
-    getAccountByIdMock.mockResolvedValue(makeAccount());
-    refreshAccessTokenMock.mockRejectedValue(
-      new RefreshTokenError("terminal", "bad_refresh_token"),
+  it("does not make a stale invalidation wait for a different generation's HTTP", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const signedIn = await accountMutations.upsertAccountByLogin(
+      connectInput({ token: "fixture-access-login" }),
     );
-
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    const outcome = await coordinator.refreshAccountToken("acc-1");
-
-    expect(outcome).toEqual({ ok: false, terminal: true });
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
-      "acc-1",
-      "refresh_failed",
+    const recovery = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(signedIn),
     );
-    expect(updateAccountTokensMock).not.toHaveBeenCalled();
-  });
-
-  it("does NOT invalidate on a transient error", async () => {
-    getAccountByIdMock.mockResolvedValue(makeAccount());
-    refreshAccessTokenMock.mockRejectedValue(
-      new RefreshTokenError("transient", "network_error"),
+    const request = await http.next();
+    await coordinator.invalidateAccountToken(old.id, credentialGeneration(old));
+    expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+      false,
     );
-
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    const outcome = await coordinator.refreshAccountToken("acc-1");
-
-    expect(outcome).toEqual({ ok: false, terminal: false });
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
-    expect(updateAccountTokensMock).not.toHaveBeenCalled();
-  });
-
-  it("returns terminal=true without calling refresh when the account has no refresh token", async () => {
-    getAccountByIdMock.mockResolvedValue(makeAccount({ refreshToken: null }));
-
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    const outcome = await coordinator.refreshAccountToken("acc-1");
-
-    expect(outcome).toEqual({ ok: false, terminal: true });
-    expect(refreshAccessTokenMock).not.toHaveBeenCalled();
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
-  });
-
-  it("returns terminal=true when the account does not exist", async () => {
-    getAccountByIdMock.mockResolvedValue(null);
-
-    const coordinator = createRefreshCoordinator({ getClientId: () => "Iv1.test" });
-    const outcome = await coordinator.refreshAccountToken("missing");
-
-    expect(outcome).toEqual({ ok: false, terminal: true });
-    expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+    request.response.resolve(rotated());
+    expect((await recovery).ok).toBe(true);
   });
 });

@@ -26,6 +26,7 @@ const listAccountsMock = vi.fn<() => Promise<Account[]>>(async () => []);
 const getAccountByIdMock = vi.fn<() => Promise<Account | null>>(
   async () => null,
 );
+const runtimeSendMessageMock = vi.fn<(message: unknown) => Promise<unknown>>();
 const removeAccountMock = vi.fn(async () => {});
 const replaceInstallationsMock = vi.fn(async () => {});
 const resolveAccountForRepoMock = vi.fn(async () => null);
@@ -76,6 +77,14 @@ vi.mock("../src/storage/accounts", async (importActual) => {
     getAccountById: getAccountByIdMock,
     resolveAccountForRepo: resolveAccountForRepoMock,
     resolveAccountCoverageForRepo: resolveAccountCoverageForRepoMock,
+  };
+});
+
+vi.mock("../src/runtime/account-mutations", async () => {
+  const accounts = await import("../src/storage/accounts");
+  return {
+    upsertAccountByLogin: accounts.upsertAccountByLogin,
+    removeAccount: removeAccountMock,
   };
 });
 
@@ -185,6 +194,7 @@ beforeEach(() => {
   listAccountsMock.mockReset();
   getAccountByIdMock.mockReset();
   removeAccountMock.mockReset();
+  runtimeSendMessageMock.mockReset();
   replaceInstallationsMock.mockReset();
   resolveAccountForRepoMock.mockReset();
   resolveAccountCoverageForRepoMock.mockReset();
@@ -216,7 +226,7 @@ beforeEach(() => {
     i18n: { getUILanguage: () => "en-US" },
     storage: { onChanged: { addListener: vi.fn(), removeListener: vi.fn() } },
     runtime: {
-      sendMessage: vi.fn(),
+      sendMessage: runtimeSendMessageMock,
     },
   });
 });
@@ -469,100 +479,22 @@ describe("OptionsPage", () => {
     ).not.toBeNull();
   });
 
-  it("refreshes installations after a 401 by requesting a new access token", async () => {
-    const account: Account = {
-      id: "acc",
-      login: "hon454",
-      avatarUrl: null,
-      token: "ghu_old",
-      createdAt: 1,
-      installations: [],
-      installationsRefreshedAt: 1,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: "ghr_old",
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
-    };
-    listAccountsMock.mockResolvedValue([account]);
-    getAccountByIdMock.mockResolvedValue({
-      ...account,
-      token: "ghu_new",
-      refreshToken: "ghr_new",
-    });
-
+  it("routes manual installation refresh through the background service", async () => {
+    listAccountsMock.mockResolvedValue([account()]);
     await renderOptionsPage();
-
-    const auth = await import("../src/github/auth");
-    const fetchUserInstallations =
-      auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>;
-    const fetchInstallationRepositories =
-      auth.fetchInstallationRepositories as unknown as ReturnType<typeof vi.fn>;
-
-    fetchUserInstallations
-      .mockRejectedValueOnce(
-        new Error("GET /user/installations failed with status 401."),
-      )
-      .mockResolvedValueOnce({
-        items: [
-          {
-            id: 42,
-            account: { login: "cinev", type: "Organization", avatarUrl: null },
-            repositorySelection: "selected",
-          },
-        ],
-        truncated: false,
-      });
-    fetchInstallationRepositories.mockResolvedValueOnce({
-      items: ["cinev/shotloom"],
-      truncated: false,
-    });
-
-    const sendMessageMock = vi
-      .fn()
-      .mockResolvedValue({ ok: true, token: "ghu_new" });
-    vi.stubGlobal("browser", {
-      i18n: { getUILanguage: () => "en-US" },
-      storage: { onChanged: { addListener: vi.fn(), removeListener: vi.fn() } },
-      runtime: {
-        sendMessage: sendMessageMock,
-      },
-    });
-
+    runtimeSendMessageMock.mockResolvedValueOnce({ ok: true });
     const refreshButton = Array.from(
       document.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => button.textContent?.trim() === "Refresh installations");
-    expect(refreshButton).toBeDefined();
-
+    ).find((button) => button.textContent?.trim() === "Refresh installations")!;
     await act(async () => {
-      refreshButton!.click();
-      await Promise.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      refreshButton.click();
     });
-
-    expect(sendMessageMock).toHaveBeenCalledWith({
-      type: "refreshAccessToken",
+    expect(browser.runtime.sendMessage).toHaveBeenCalledWith({
+      type: "refreshAccountInstallations",
       accountId: "acc",
     });
-    expect(fetchUserInstallations).toHaveBeenCalledTimes(2);
-    expect(fetchUserInstallations.mock.calls[1][0]).toMatchObject({
-      token: "ghu_new",
-    });
-    expect(fetchInstallationRepositories).toHaveBeenCalledWith({
-      token: "ghu_new",
-      installationId: 42,
-    });
-    expect(replaceInstallationsMock).toHaveBeenCalledWith("acc", [
-      {
-        id: 42,
-        account: { login: "cinev", type: "Organization", avatarUrl: null },
-        repositorySelection: "selected",
-        repoSnapshot: {
-          fullNames: ["cinev/shotloom"],
-          completeness: "complete",
-        },
-      },
-    ]);
+    expect(listAccountsMock).toHaveBeenCalledTimes(2);
+    expect(replaceInstallationsMock).not.toHaveBeenCalled();
   });
 
   it("shows an inline error and re-enables account actions when refresh fails", async () => {
@@ -584,12 +516,10 @@ describe("OptionsPage", () => {
     ]);
     await renderOptionsPage();
 
-    const auth = await import("../src/github/auth");
-    const fetchUserInstallations =
-      auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>;
-    fetchUserInstallations.mockRejectedValueOnce(
-      new Error("GitHub API temporarily unavailable."),
-    );
+    runtimeSendMessageMock.mockResolvedValueOnce({
+      ok: false,
+      reason: "failed",
+    });
 
     const refreshButton = Array.from(
       document.querySelectorAll<HTMLButtonElement>("button"),
@@ -603,7 +533,7 @@ describe("OptionsPage", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
-    expect(fetchUserInstallations).toHaveBeenCalledTimes(1);
+    expect(browser.runtime.sendMessage).toHaveBeenCalledTimes(1);
     expect(refreshButton!.disabled).toBe(false);
     expect(
       document.querySelector('[data-testid="account-action-error-acc"]')
@@ -1130,10 +1060,8 @@ describe("options live language selection", () => {
     listAccountsMock.mockResolvedValue([existing]);
     getAccountByIdMock.mockResolvedValue(existing);
     await renderOptionsPage(h.store);
-    const auth = await import("../src/github/auth");
-    const result =
-      pending<Awaited<ReturnType<typeof auth.fetchUserInstallations>>>();
-    vi.mocked(auth.fetchUserInstallations).mockReturnValueOnce(result.promise);
+    const result = pending<{ ok: true }>();
+    runtimeSendMessageMock.mockReturnValueOnce(result.promise);
     await act(async () => {
       Array.from(document.querySelectorAll("button"))
         .find((button) => button.textContent === "Refresh installations")!
@@ -1144,12 +1072,12 @@ describe("options live language selection", () => {
     expect(
       document.querySelector('[data-testid="account-card-hon454"]'),
     ).not.toBeNull();
-    expect(auth.fetchUserInstallations).toHaveBeenCalledTimes(1);
+    expect(browser.runtime.sendMessage).toHaveBeenCalledTimes(1);
     await act(async () => {
-      result.resolve({ items: [], truncated: false });
+      result.resolve({ ok: true });
     });
-    expect(replaceInstallationsMock).toHaveBeenCalledTimes(1);
-    expect(auth.fetchUserInstallations).toHaveBeenCalledTimes(1);
+    expect(replaceInstallationsMock).not.toHaveBeenCalled();
+    expect(browser.runtime.sendMessage).toHaveBeenCalledTimes(1);
     removeAccountMock.mockRejectedValueOnce(
       new Error("unknown technical failure"),
     );

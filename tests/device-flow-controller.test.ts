@@ -49,9 +49,8 @@ const upsertAccountByLoginMock = vi.hoisted(() =>
   ),
 );
 
-vi.mock("../src/storage/accounts", () => ({
+vi.mock("../src/runtime/account-mutations", () => ({
   upsertAccountByLogin: upsertAccountByLoginMock,
-  replaceInstallations: vi.fn().mockResolvedValue(undefined),
 }));
 
 const auth = await import("../src/github/auth");

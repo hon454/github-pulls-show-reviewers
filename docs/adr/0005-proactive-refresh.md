@@ -31,9 +31,12 @@ and drops terminal accounts early.
   `selectAccountsDueForRefresh` and `selectAccountsWithExpiredRefreshToken` —
   plus `createProactiveRefreshService` that schedules the alarm and routes
   eligible accounts through the shared refresh coordinator.
-- Accounts whose `refreshTokenExpiresAt` is already in the past are not sent
-  to the coordinator; the proactive path calls `markAccountInvalidated(id,
-  "expired")` directly because the refresh network call is guaranteed to fail.
+- All candidate accounts, including those whose `refreshTokenExpiresAt` appears
+  expired, go to `refreshAccountIfDue`. The coordinator rereads current expiry
+  and generation before deciding. Still-expired refresh tokens are conditionally
+  invalidated with reason `expired` without HTTP. An old alarm snapshot cannot
+  invalidate a later sign-in or rotate credentials already refreshed past the
+  threshold.
 - `entrypoints/background.ts` wires the service, schedules the alarm on every
   SW boot (`scheduleAlarm` guards against SW-restart resets by calling
   `browser.alarms.get` and skipping re-creation when the existing period
@@ -41,9 +44,10 @@ and drops terminal accounts early.
 - The `alarms` manifest permission is added via `wxt.config.ts`.
 
 Refresh dispatch uses `Promise.allSettled` so one account's failure does not
-abort others. The shared in-flight dedupe in
-`src/auth/refresh-coordinator.ts` prevents thundering-herd refreshes when
-proactive and reactive paths race.
+abort others. The shared generation-aware coordinator joins current in-flight
+refreshes and reuses newer credentials for delayed reactive failures after a
+proactive rotation completes. Conditional commits share the short background
+registry queue; HTTP remains concurrent across accounts.
 
 ## Rationale
 
@@ -65,7 +69,7 @@ proactive and reactive paths race.
   class of timing risk by construction. Rejected **for now** because the
   extra complexity (alarm/account lifecycle sync, naming scheme) is not
   justified at current product scale (small number of connected accounts per
-  user). See *Revisit trigger* below.
+  user). See _Revisit trigger_ below.
 
 - **Service-worker keepalive workarounds** — repeated port reconnects,
   periodic `chrome.runtime.getPlatformInfo()` calls, or ping loops to stretch
@@ -92,8 +96,9 @@ proactive and reactive paths race.
   multiple refreshes via `Promise.allSettled`; at current product scale (few
   accounts, fast refresh endpoint) the work fits comfortably inside the ~30s
   SW-alive window after the event, but this is not a structural guarantee.
-  A truncated run is bounded-harm: the reactive refresh path still serves as
-  the safety net, and the next 15-minute alarm retries.
+  Reactive recovery and the next alarm remain safety nets, but termination
+  after GitHub rotates credentials and before local persistence can lose that
+  rotation. Generation-aware commits do not solve that existing limitation.
 
 ### Neutral
 

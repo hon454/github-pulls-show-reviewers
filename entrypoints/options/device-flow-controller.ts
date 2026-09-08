@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { upsertAccountByLogin, type Account } from "../../src/storage/accounts";
+import type { Account } from "../../src/storage/accounts";
+import { upsertAccountByLogin } from "../../src/runtime/account-mutations";
 import {
   DeviceFlowError,
   fetchAuthenticatedUser,
