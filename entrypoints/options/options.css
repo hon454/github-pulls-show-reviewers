@@ -289,7 +289,7 @@ code {
 }
 
 .account-row--invalid {
-  opacity: 0.62;
+  border-color: var(--warning);
 }
 
 .account-identity {
@@ -355,13 +355,13 @@ code {
 }
 
 .button--primary {
-  background: var(--accent);
+  background: #1f7a30;
   border-color: rgba(240, 246, 252, 0.1);
   color: #ffffff;
 }
 
 .button--primary:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: #238636;
 }
 
 .button--secondary {
