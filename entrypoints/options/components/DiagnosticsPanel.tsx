@@ -1,16 +1,11 @@
 import { useRef, useState } from "react";
 
-import { validateRepositoryAccessWithAccount } from "../../../src/auth/account-token-refresh";
+import { diagnoseRepository } from "../../../src/runtime/diagnostics";
 import {
   buildRepositoryDiagnostic,
   type RepositoryDiagnosticState,
 } from "../../../src/features/repository-diagnostics";
-import {
-  extractRepositoryValidationFailures,
-  validateGitHubRepositoryAccess,
-} from "../../../src/github/api";
 import type { Translator } from "../../../src/i18n";
-import { resolveAccountCoverageForRepo } from "../../../src/storage/accounts";
 
 export function DiagnosticsPanel({ t }: { t: Translator }) {
   const [repository, setRepository] = useState("");
@@ -31,10 +26,10 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
     setDiagnostic({ kind: "running" });
     try {
       await execute();
-    } catch (error) {
+    } catch {
       setDiagnostic({
         kind: "failed",
-        failures: extractRepositoryValidationFailures(error),
+        failures: [{ kind: "unknown" }],
       });
     } finally {
       busyRef.current = false;
@@ -50,25 +45,7 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
       return;
     }
     await runDiagnostic(async () => {
-      const resolution = await resolveAccountCoverageForRepo(
-        match[1],
-        match[2],
-      );
-      if (resolution.status === "uncovered") {
-        setDiagnostic({ kind: "uncovered", repository: trimmed });
-        return;
-      }
-      const result = await validateRepositoryAccessWithAccount({
-        account: resolution.account,
-        repository: trimmed,
-      });
-      setDiagnostic({
-        kind: "matched",
-        repository: trimmed,
-        coverageStatus: resolution.status,
-        account: { login: resolution.account.login },
-        result,
-      });
+      setDiagnostic(await diagnoseRepository(match[1], match[2], "matched"));
     });
   }
 
@@ -79,8 +56,23 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
       return;
     }
     await runDiagnostic(async () => {
-      const result = await validateGitHubRepositoryAccess(null, trimmed);
-      setDiagnostic({ kind: "no-token", repository: trimmed, result });
+      const normalized = trimmed
+        .replace(/^https:\/\/github\.com\//, "")
+        .replace(/\/+$/, "");
+      const match = normalized.match(/^([^/\s]+)\/([^/\s]+)$/);
+      if (!match) {
+        setDiagnostic({
+          kind: "no-token",
+          repository: trimmed,
+          result: {
+            ok: false,
+            authMode: "no-token",
+            outcome: "invalid-repository",
+          },
+        });
+        return;
+      }
+      setDiagnostic(await diagnoseRepository(match[1], match[2], "no-token"));
     });
   }
 

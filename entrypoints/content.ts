@@ -1,3 +1,4 @@
+import { disposeUIClient } from "../src/runtime/ui-client";
 import {
   bootAccessBanner,
   type AccessBannerHandle,
@@ -82,6 +83,7 @@ export default defineContentScript({
     };
 
     syncRouteFeatures();
+    ctx.onInvalidated(disposeUIClient);
 
     ctx.addEventListener(window, "wxt:locationchange", syncRouteFeatures);
     ctx.addEventListener(window, "popstate", syncRouteFeatures);

@@ -157,6 +157,8 @@ export interface MessageArgs {
   language_saving: undefined;
   language_saved: undefined;
   language_save_failed: undefined;
+  auth_cancelling: undefined;
+  auth_error_restart: undefined;
   auth_requesting: undefined;
   auth_enter_code: undefined;
   auth_copy: undefined;

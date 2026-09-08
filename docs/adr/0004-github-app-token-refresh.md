@@ -31,11 +31,14 @@ service worker before invalidating an account.
   recovery was still reading storage. Later recovery of that generation waits
   for invalidation, then rereads current state. Waits never hold the registry
   queue; another generation's HTTP remains independent.
-- Reviewer summary and metadata services run requests/retries in background.
-  Options recovery sends `{ type: "refreshAccessToken", accountId, generation }`;
-  responses contain a non-secret revision and callers reread storage before a
-  single retry. Missing accounts have no stale-token fallback. Retry invalidation
-  sends the revision it actually used and commits only if it remains current.
+- Reviewer summary/metadata, diagnostics and installation services run
+  requests/retries in background. UI callers request those operations, never a
+  token refresh or credential-bearing callback. The old `refreshAccessToken`
+  and invalidation runtime endpoints are removed by
+  [ADR 0008](./0008-background-credentials-and-ui-capabilities.md).
+  Background retry helpers reread current accounts before a single retry.
+  Missing accounts have no stale-token fallback; retry invalidation commits
+  only if the revision actually used remains current.
 - The storage schema carries `refreshToken`, `expiresAt`,
   `refreshTokenExpiresAt`, and an opaque `credentialGeneration` (`v4`, migrated
   from `v3`/`v2`). Sign-in and rotation issue a new UUID; initialization persists
@@ -43,7 +46,8 @@ service worker before invalidating an account.
   snapshots, later reads and worker restarts agree until a real rotation.
 - The background-only `accountMutations` queue owns initialization, registry
   repair, login identity resolution, duplicate consolidation, removal and auth
-  commits. Options sign-in/removal route through validated runtime messages.
+  commits. Background device flow and validated options removal capabilities
+  reuse this owner.
   Conditional auth commits recheck revision and registry membership inside this
   queue. GitHub HTTP runs outside it, so another account can progress while one
   refresh is stalled. This boundary is reused by later account-boundary work.
@@ -58,7 +62,7 @@ Refresh outcomes are classified into two kinds:
   left valid and the row-level failure surfaces; rows self-heal on the next
   refresh attempt once GitHub recovers.
 
-Diagnostics in the options page use the same retry-with-refresh path
+Diagnostics requested by options use the same background retry-with-refresh path
 (`validateRepositoryAccessWithAccount`) so "Check matched account" mirrors
 runtime behavior — an expired access token is not reported as a failure while
 the runtime recovers silently.
@@ -101,9 +105,10 @@ the runtime recovers silently.
 
 - Background initialization and subsequent owner operations serialize legacy
   migration/repair. Queries can read old schemas but never write a stale index.
-- Existing local-storage visibility is unchanged. No service-worker keepalive
-  guarantee is added: process termination between server rotation and durable
-  local persistence remains an unrecoverable rotation window.
+- ADR 0008 restricts content storage and removes credentials from UI application
+  paths. It adds no service-worker keepalive guarantee: process termination
+  between server rotation and durable local persistence remains an
+  unrecoverable rotation window.
 
 ## Links
 

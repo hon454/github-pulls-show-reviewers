@@ -1,6 +1,6 @@
 # ADR 0003: GitHub App + Device Flow
 
-- Status: Accepted — token lifecycle amended by [ADR 0004](./0004-github-app-token-refresh.md); installation-cache completeness amended on 2026-05-18
+- Status: Accepted — token lifecycle amended by [ADR 0004](./0004-github-app-token-refresh.md); installation-cache completeness amended on 2026-05-18; credential ownership amended by [ADR 0008](./0008-background-credentials-and-ui-capabilities.md)
 - Date: 2026-04-21
 
 ## Context
@@ -18,12 +18,14 @@ whether a token actually covers a given repository.
 
 Ship a maintainer-owned GitHub App plus OAuth Device Flow.
 
-- Store multiple accounts in `browser.storage.local` under a single versioned
-  `settings` key. Each account caches its installations (`all` or `selected`
-  with explicit full names). Selected-installation repository snapshots record
-  whether repository pagination completed.
-- Run device code polling on the options page because MV3 service workers
-  unload on idle.
+- Store multiple accounts in `browser.storage.local`: the v4 `settings` key
+  contains account IDs, with separate profile, auth and installation fragments.
+  Each account caches installations (`all` or `selected` with explicit full
+  names) and selected-repository pagination completeness.
+- Options schedules polling ticks; background owns device initiation, token
+  HTTP, user/installation discovery and account commits. Trusted session state
+  preserves waiting flows across worker suspension. See ADR 0008 for the
+  cancellation and interrupted-exchange recovery contract.
 - Resolve repository access via `resolveAccountForRepo(owner, repo)` using
   the cached installations — no user-typed scope patterns. A selected
   installation with a truncated repository snapshot is non-authoritative for
@@ -71,9 +73,9 @@ Ship a maintainer-owned GitHub App plus OAuth Device Flow.
 - User-to-server tokens have no refresh in a pure-client setting (the refresh
   endpoint requires a client secret). Users sign in again when a token is
   revoked — detected lazily and surfaced through the banner and options page.
-  *(Amended by [ADR 0004](./0004-github-app-token-refresh.md): GitHub's
+  _(Amended by [ADR 0004](./0004-github-app-token-refresh.md): GitHub's
   device-flow refresh grant does work without a client secret; the extension
-  now exchanges refresh tokens in the service worker before invalidating.)*
+  now exchanges refresh tokens in the service worker before invalidating.)_
 
 ### Neutral
 

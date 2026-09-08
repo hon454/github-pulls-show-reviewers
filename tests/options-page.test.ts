@@ -1,3 +1,5 @@
+import type * as UIClientModule from "../src/runtime/ui-client";
+import type { MockInstance } from "vitest";
 // @vitest-environment jsdom
 import { fireEvent } from "@testing-library/react";
 import { act, createElement } from "react";
@@ -9,6 +11,11 @@ import {
   type LocaleStore,
 } from "../src/i18n";
 import type { Root } from "react-dom/client";
+let bridgeHarness: ReturnType<typeof createUIBridgeHarness>;
+let flowClient: ReturnType<ReturnType<typeof createUIBridgeHarness>["client"]>;
+let commitSpy: MockInstance<
+  typeof accountMutations.upsertAccountByLogin
+>;
 
 import type * as GitHubApiModule from "../src/github/api";
 import type { RepositoryValidationResult } from "../src/github/api";
@@ -80,15 +87,27 @@ vi.mock("../src/storage/accounts", async (importActual) => {
   };
 });
 
+vi.mock("../src/runtime/accounts", () => ({
+  listAccounts: async () => (await listAccountsMock()).map(summarizeAccount),
+}));
+vi.mock("../src/runtime/ui-client", async (importActual) => ({
+  ...(await importActual<typeof UIClientModule>()),
+  getUIClient: () => ({
+    // Presentation fixtures keep account-load/failure schedules explicit;
+    // authentication below still runs the real background flow service.
+    subscribe: () => () => {},
+    subscribeFlows: (...args: Parameters<typeof flowClient.subscribeFlows>) =>
+      flowClient.subscribeFlows(...args),
+  }),
+}));
+
 vi.mock("../src/runtime/account-mutations", async () => {
-  const accounts = await import("../src/storage/accounts");
   return {
-    upsertAccountByLogin: accounts.upsertAccountByLogin,
     removeAccount: removeAccountMock,
   };
 });
 
-vi.mock("../src/storage/preferences", () => ({
+vi.mock("../src/runtime/preferences", () => ({
   getPreferences: getPreferencesMock,
   updatePreferences: updatePreferencesMock,
   DEFAULT_PREFERENCES: {
@@ -119,6 +138,11 @@ vi.mock("../src/github/api", async (importActual) => ({
   ...(await importActual<GitHubApiModuleType>()),
   validateGitHubRepositoryAccess: validateGitHubRepositoryAccessMock,
 }));
+
+const { createUIBridgeHarness, containsSecret, drain } =
+  await import("./helpers/ui-bridge-harness");
+const { accountMutations } = await import("../src/storage/accounts");
+const { summarizeAccount } = await import("../src/background/account-summary");
 
 const mountedRoots: Root[] = [];
 async function renderOptionsPage(localeStore?: LocaleStore) {
@@ -186,7 +210,7 @@ function validationResult(
   } as RepositoryValidationResult;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   // `vi.mock` factory results are cached across `vi.resetModules()` in
   // this file (module cache is reset but factory outputs are reused), so
   // auth mock call history leaks between tests unless cleared here.
@@ -222,19 +246,32 @@ beforeEach(() => {
   validateGitHubRepositoryAccessMock.mockResolvedValue(
     validationResult({ message: "Repository is accessible." }),
   );
-  vi.stubGlobal("browser", {
-    i18n: { getUILanguage: () => "en-US" },
-    storage: { onChanged: { addListener: vi.fn(), removeListener: vi.fn() } },
-    runtime: {
-      sendMessage: runtimeSendMessageMock,
-    },
-  });
+  bridgeHarness = createUIBridgeHarness();
+  flowClient = bridgeHarness.client();
+  await bridgeHarness.initialize();
+  commitSpy = vi.spyOn(accountMutations, "upsertAccountByLogin");
+  runtimeSendMessageMock.mockImplementation((request) =>
+    bridgeHarness.send(request),
+  );
+  bridgeHarness.browserMock.runtime.sendMessage =
+    runtimeSendMessageMock as typeof bridgeHarness.browserMock.runtime.sendMessage;
 });
 
-afterEach(() => {
+afterEach(async () => {
   act(() => {
     for (const root of mountedRoots.splice(0)) root.unmount();
   });
+  flowClient.dispose();
+  await drain();
+  expect(
+    containsSecret([
+      bridgeHarness.replies,
+      [...bridgeHarness.notifications.values()],
+    ]),
+  ).toBe(false);
+  bridgeHarness.dispose();
+  await drain();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -604,7 +641,10 @@ describe("OptionsPage", () => {
   it("routes manual installation refresh through the background service", async () => {
     listAccountsMock.mockResolvedValue([account()]);
     await renderOptionsPage();
-    runtimeSendMessageMock.mockResolvedValueOnce({ ok: true });
+    runtimeSendMessageMock.mockResolvedValueOnce({
+      ok: true,
+      data: { ok: true },
+    });
     const refreshButton = Array.from(
       document.querySelectorAll<HTMLButtonElement>("button"),
     ).find((button) => button.textContent?.trim() === "Refresh installations")!;
@@ -639,8 +679,8 @@ describe("OptionsPage", () => {
     await renderOptionsPage();
 
     runtimeSendMessageMock.mockResolvedValueOnce({
-      ok: false,
-      reason: "failed",
+      ok: true,
+      data: { ok: false, reason: "failed" },
     });
 
     const refreshButton = Array.from(
@@ -803,7 +843,6 @@ describe("OptionsPage", () => {
   it("keeps the reopened panel when a canceled poll succeeds late", async () => {
     await renderOptionsPageInStrictMode();
     const auth = await import("../src/github/auth");
-    const mutations = await import("../src/runtime/account-mutations");
     let resolveOld!: (
       value: Awaited<ReturnType<typeof auth.pollForAccessToken>>,
     ) => void;
@@ -840,6 +879,9 @@ describe("OptionsPage", () => {
           .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
           .click();
       });
+      expect(
+        document.querySelector('[data-testid="device-user-code"]')?.textContent,
+      ).toBe("OLD-CODE");
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5000);
       });
@@ -866,7 +908,7 @@ describe("OptionsPage", () => {
       expect(
         document.querySelector('[data-testid="device-user-code"]')?.textContent,
       ).toBe("NEW-CODE");
-      expect(mutations.upsertAccountByLogin).not.toHaveBeenCalled();
+      expect(commitSpy).not.toHaveBeenCalled();
       expect(auth.fetchAuthenticatedUser).not.toHaveBeenCalled();
       expect(auth.initiateDeviceFlow).toHaveBeenCalledTimes(2);
     } finally {
@@ -899,11 +941,14 @@ describe("OptionsPage", () => {
       verificationUriComplete:
         "https://github.com/login/device?user_code=ABCD-EFGH",
       expiresIn: 900,
-      interval: 0,
+      interval: 1,
     });
     pollForAccessToken.mockResolvedValue({
       status: "success",
       accessToken: "ghu_abc",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     fetchAuthenticatedUser.mockResolvedValue({
       login: "hon454",
@@ -921,6 +966,9 @@ describe("OptionsPage", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
     expect(initiateDeviceFlow).toHaveBeenCalledTimes(1);
     expect(
       document.querySelector('[data-testid="accounts-add"]'),

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createSelfHealingAccountResolver } from "../src/features/reviewers/account-resolution";
+import { createSelfHealingAccountResolver } from "../src/background/account-resolution";
 import type { Account } from "../src/storage/accounts";
 
 const resolveAccountForRepoMock = vi.hoisted(() => vi.fn());

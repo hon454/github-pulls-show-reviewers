@@ -28,32 +28,32 @@ evidence belongs in the release tracking issue, using the existing
 [staged action reference](./cws-agent-handoff.md).
 The unchecked boxes below are a reusable checklist, not claims of completed writes.
 
-| Dashboard locale | Reviewed description and catalog link | Matching screenshots | Saved/reopened evidence |
-| --- | --- | --- | --- |
-| English (`en`) | [English](./chrome-web-store-locales/en.md) | [English root](./chrome-web-store-assets/) | [ ] |
-| 한국어 (`ko`) | [한국어](./chrome-web-store-locales/ko.md) | [ko/](./chrome-web-store-assets/ko/) | [ ] |
-| 日本語 (`ja`) | [日本語](./chrome-web-store-locales/ja.md) | [ja/](./chrome-web-store-assets/ja/) | [ ] |
-| 简体中文 (`zh_CN`) | [简体中文](./chrome-web-store-locales/zh_CN.md) | [zh_CN/](./chrome-web-store-assets/zh_CN/) | [ ] |
-| 繁體中文 (`zh_TW`) | [繁體中文](./chrome-web-store-locales/zh_TW.md) | [zh_TW/](./chrome-web-store-assets/zh_TW/) | [ ] |
+| Dashboard locale   | Reviewed description and catalog link           | Matching screenshots                       | Saved/reopened evidence |
+| ------------------ | ----------------------------------------------- | ------------------------------------------ | ----------------------- |
+| English (`en`)     | [English](./chrome-web-store-locales/en.md)     | [English root](./chrome-web-store-assets/) | [ ]                     |
+| 한국어 (`ko`)      | [한국어](./chrome-web-store-locales/ko.md)      | [ko/](./chrome-web-store-assets/ko/)       | [ ]                     |
+| 日本語 (`ja`)      | [日本語](./chrome-web-store-locales/ja.md)      | [ja/](./chrome-web-store-assets/ja/)       | [ ]                     |
+| 简体中文 (`zh_CN`) | [简体中文](./chrome-web-store-locales/zh_CN.md) | [zh_CN/](./chrome-web-store-assets/zh_CN/) | [ ]                     |
+| 繁體中文 (`zh_TW`) | [繁體中文](./chrome-web-store-locales/zh_TW.md) | [zh_TW/](./chrome-web-store-assets/zh_TW/) | [ ]                     |
 
 For each row:
 
 - [ ] Confirm the checked package contains all five `_locales` catalogs and
-  `default_locale: en`; run `pnpm verify:locales` against that package's extracted
-  output. Confirm the unchanged name and catalog summary match the displayed
-  metadata. Adding catalogs does not populate detailed descriptions.
+      `default_locale: en`; run `pnpm verify:locales` against that package's extracted
+      output. Confirm the unchanged name and catalog summary match the displayed
+      metadata. Adding catalogs does not populate detailed descriptions.
 - [ ] Select the matching language in the Store listing language dropdown.
 - [ ] Preserve scoped before-state. Paste that file's detailed description;
-  retain matching images, replace identified previous-release images within
-  the assigned listing scope, and add missing screenshots in `01`, `02`, `03`
-  order. No repeated approval is needed for expected replacement; resolve
-  unidentifiable or out-of-scope images before removal.
+      retain matching images, replace identified previous-release images within
+      the assigned listing scope, and add missing screenshots in `01`, `02`, `03`
+      order. No repeated approval is needed for expected replacement; resolve
+      unidentifiable or out-of-scope images before removal.
 - [ ] Check the preview for the right language, readable CJK text and no clipping.
-  Confirm reviewer-only features, no-token public use, private GitHub App access,
-  multiple accounts and `Pull requests: Read` agree across every language.
+      Confirm reviewer-only features, no-token public use, private GitHub App access,
+      multiple accounts and `Pull requests: Read` agree across every language.
 - [ ] Save, navigate away and back, compare the full persisted text and all
-  three ordered previews. Record copy/image hashes, UTC and scoped evidence
-  in the release issue per the canonical runbook. A save toast is insufficient.
+      three ordered previews. Record copy/image hashes, UTC and scoped evidence
+      in the release issue per the canonical runbook. A save toast is insufficient.
 
 Chrome chooses packaged metadata independently of the extension's saved manual
 UI language. That selector does not choose or update a dashboard listing locale.
@@ -135,7 +135,7 @@ Permission justification:
 - `storage`: stores locally the GitHub App accounts (user-to-server access token, refresh token, and token-expiry timestamps per account) so the user can access private repositories. It also stores the review-chip display preferences (`showStateBadge`, `showReviewerName`, and `openPullsOnly`) and UI language preference (`language`, default `auto`) under the local `preferences` key.
 - `alarms`: schedules a recurring 15-minute background task that refreshes GitHub App access tokens ahead of expiry. Without this, every eight-hour token lifetime would force the user to sign in again even while actively using the extension, and reviewer lookups on private repositories would stall until the next sign-in.
 - `https://github.com/*`: reads the current GitHub pull request list page to find repository context and render reviewer chips inline.
-- `https://api.github.com/*`: fetches requested reviewers, requested teams, and review history from GitHub's REST API. Requests originate from the extension's background service worker; the access token never enters the content-script execution context.
+- `https://api.github.com/*`: fetches requested reviewers, requested teams, and review history from GitHub's REST API. OAuth and authenticated API operations originate from background. Content and options receive safe summaries and progress, without access/refresh tokens or the OAuth device-code secret. Chrome restricts content storage; options exclusion is an application contract because options remains a trusted extension page. Trusted session storage retains pending sign-in state across worker suspension, and clears secret fields on cancellation, expiry, completion or detected owner loss. Connected accounts remain in local storage. See the canonical privacy policy for retention and limitations.
 
 Remote code:
 `No, this extension does not execute remote code.`

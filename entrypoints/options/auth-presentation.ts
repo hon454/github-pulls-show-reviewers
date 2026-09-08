@@ -5,6 +5,7 @@ type AuthErrorKey = Extract<
   `auth_error_${string}` | "auth_expired" | "auth_denied"
 >;
 const errorKeys: Record<string, AuthErrorKey> = {
+  restart_required: "auth_error_restart",
   expired_token: "auth_expired",
   access_denied: "auth_denied",
   device_flow_disabled: "auth_error_disabled",

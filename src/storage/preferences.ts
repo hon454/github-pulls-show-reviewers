@@ -1,33 +1,18 @@
-import { z } from "zod";
-
-import { SUPPORTED_LOCALES } from "../i18n/locale";
+import {
+  parsePreferences,
+  preferencePatchSchema,
+  type Preferences,
+  type PreferencePatch,
+} from "../shared/preferences";
+export {
+  DEFAULT_PREFERENCES,
+  parsePreferences,
+  type Preferences,
+} from "../shared/preferences";
 
 const PREFERENCES_KEY = "preferences";
 const SETTINGS_KEY = "settings";
 const ACCOUNT_KEY_PREFIX = "account:";
-
-const preferencesSchema = z.object({
-  version: z.literal(1),
-  language: z.enum(["auto", ...SUPPORTED_LOCALES]).catch("auto"),
-  showStateBadge: z.boolean(),
-  showReviewerName: z.boolean(),
-  openPullsOnly: z.boolean().default(true),
-});
-
-export type Preferences = z.infer<typeof preferencesSchema>;
-
-export const DEFAULT_PREFERENCES: Preferences = {
-  version: 1,
-  language: "auto",
-  showStateBadge: true,
-  showReviewerName: false,
-  openPullsOnly: true,
-};
-
-export function parsePreferences(value: unknown): Preferences {
-  const parsed = preferencesSchema.safeParse(value);
-  return parsed.success ? parsed.data : { ...DEFAULT_PREFERENCES };
-}
 
 export async function getPreferences(): Promise<Preferences> {
   const result = await browser.storage.local.get(PREFERENCES_KEY);
@@ -37,12 +22,19 @@ export async function getPreferences(): Promise<Preferences> {
 let pendingUpdate: Promise<void> = Promise.resolve();
 
 export function updatePreferences(
-  patch: Partial<Omit<Preferences, "version">>,
+  patch: PreferencePatch,
 ): Promise<Preferences> {
-  // Concurrent controls in one options context must merge against the latest write.
+  // Background-only owner: every options document shares this short queue.
+  const validated = preferencePatchSchema.parse(patch);
   const update = pendingUpdate.then(async () => {
     const current = await getPreferences();
-    const next: Preferences = { ...current, ...patch, version: 1 };
+    const next: Preferences = {
+      version: 1,
+      language: validated.language ?? current.language,
+      showStateBadge: validated.showStateBadge ?? current.showStateBadge,
+      showReviewerName: validated.showReviewerName ?? current.showReviewerName,
+      openPullsOnly: validated.openPullsOnly ?? current.openPullsOnly,
+    };
     await browser.storage.local.set({ [PREFERENCES_KEY]: next });
     return next;
   });

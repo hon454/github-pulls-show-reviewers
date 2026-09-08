@@ -2,9 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bootAuthBackground,
   connectInput,
-  createHttpHarness,
   createStorageHarness,
-  rotated,
 } from "./helpers/auth-harness";
 
 beforeEach(() => vi.resetModules());
@@ -12,184 +10,151 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-
 async function boot() {
   const storage = createStorageHarness();
-  const http = createHttpHarness();
-  vi.stubGlobal("fetch", http.fetch);
   const background = await bootAuthBackground(storage);
-  const { accountMutations, credentialGeneration } =
-    await import("../src/storage/accounts");
+  const { accountMutations } = await import("../src/storage/accounts");
   await accountMutations.initialize();
-  const wrappers = await import("../src/runtime/account-mutations");
   return {
     storage,
-    http,
     background,
     accountMutations,
-    credentialGeneration,
-    wrappers,
+    wrappers: await import("../src/runtime/account-mutations"),
   };
 }
-
-describe("real background account message boundary", () => {
-  it.each(["upsertAccountByLogin", "removeAccount"])(
-    "%s rejects every sender except the exact options page in this extension",
+const allowed = (
+  background: Awaited<ReturnType<typeof boot>>["background"],
+) => ({
+  id: background.id,
+  url: background.optionsUrl,
+  documentId: "options-doc",
+});
+async function response(
+  background: Awaited<ReturnType<typeof boot>>["background"],
+  message: unknown,
+  sender = allowed(background),
+) {
+  return new Promise((resolve) => {
+    const channel = background.listener(message, sender, resolve);
+    if (channel !== true) resolve(channel);
+  });
+}
+describe("real background credential capability retirement and async dispatch", () => {
+  it.each([
+    "refreshAccessToken",
+    "invalidateAccessToken",
+    "upsertAccountByLogin",
+  ])(
+    "rejects retired %s from both options and content without writes or logging",
     async (type) => {
-      const { storage, http, background, accountMutations } = await boot();
+      const { storage, background, accountMutations } = await boot();
       await accountMutations.upsertAccountByLogin(connectInput());
-      const writes = storage.local.set.mock.calls.length;
-      const removals = storage.local.remove.mock.calls.length;
-      const message =
-        type === "upsertAccountByLogin"
-          ? {
-              type,
-              input: connectInput({ token: "fixture-access-replacement" }),
-            }
-          : { type, accountId: "acc-1" };
-      const send = vi.fn();
+      const before = storage.snapshot();
+      const log = vi.spyOn(console, "error").mockImplementation(() => {});
       for (const sender of [
-        {},
-        { id: "other", url: background.optionsUrl },
-        { id: background.id },
-        { id: background.id, url: "https://github.com/octo/repo/pulls" },
-        { id: background.id, url: `${background.optionsUrl}?spoof=1` },
-        { id: background.id, url: `${background.optionsUrl}/nested` },
-        { id: background.id, url: "chrome-extension://other/options.html" },
+        allowed(background),
+        {
+          ...allowed(background),
+          url: "https://github.com/octo/repo/pulls",
+          tab: { id: 1 },
+          frameId: 0,
+        },
       ]) {
-        expect(background.listener(message, sender, send)).toBeUndefined();
+        for (const message of [
+          { type },
+          { type, accountId: "acc-1", generation: "g0" },
+          { type, input: connectInput() },
+        ]) {
+          expect(await response(background, message, sender)).toEqual({
+            ok: false,
+            error: "invalid-request",
+          });
+        }
       }
-      expect(send.mock.calls.length).toBe(0);
-      expect(storage.local.set.mock.calls.length).toBe(writes);
-      expect(storage.local.remove.mock.calls.length).toBe(removals);
-      expect(http.requests.length).toBe(0);
+      expect(storage.snapshot()).toEqual(before);
+      expect(log).not.toHaveBeenCalled();
     },
   );
 
-  it("does not dispatch or log malformed auth and mutation messages from an allowed sender", async () => {
-    const { storage, http, background } = await boot();
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const writes = storage.local.set.mock.calls.length;
-    const send = vi.fn();
+  it("rejects unauthorized removal and malformed allowed requests without changing the registry", async () => {
+    const { storage, background, accountMutations } = await boot();
+    await accountMutations.upsertAccountByLogin(connectInput());
+    const before = storage.snapshot();
+    for (const sender of [
+      { ...allowed(background), id: "foreign" },
+      { ...allowed(background), documentId: "" },
+      {
+        ...allowed(background),
+        url: "https://github.com/octo/repo/pulls",
+        tab: { id: 1 },
+        frameId: 0,
+      },
+      { ...allowed(background), url: `${background.optionsUrl}/nested` },
+      {
+        ...allowed(background),
+        url: "chrome-extension://foreign/options.html",
+      },
+    ]) {
+      const result = await response(
+        background,
+        { type: "removeAccount", accountId: "acc-1" },
+        sender,
+      );
+      expect(
+        result === undefined ||
+          (result as { error: string }).error === "forbidden",
+      ).toBe(true);
+    }
     for (const message of [
       null,
-      { type: "refreshAccessToken", accountId: "acc-1" },
-      { type: "invalidateAccessToken", accountId: "acc-1", generation: " " },
-      {
-        type: "refreshAccessToken",
-        accountId: "acc-1",
-        generation: "g0",
-        token: "fixture-extra",
-      },
-      {
-        type: "upsertAccountByLogin",
-        input: { ...connectInput(), installations: null },
-      },
-      { type: "removeAccount", accountId: "" },
+      { type: "removeAccount" },
+      { type: "removeAccount", accountId: " " },
+      { type: "removeAccount", accountId: "acc-1", token: "synthetic" },
     ]) {
-      expect(
-        background.listener(
-          message,
-          { id: background.id, url: background.optionsUrl },
-          send,
-        ),
-      ).toBeUndefined();
+      expect(await response(background, message)).toEqual({
+        ok: false,
+        error: "invalid-request",
+      });
     }
-    expect(send.mock.calls.length).toBe(0);
-    expect(storage.local.set.mock.calls.length).toBe(writes);
-    expect(storage.local.remove.mock.calls.length).toBe(0);
-    expect(http.requests.length).toBe(0);
-    expect(error.mock.calls.length + warn.mock.calls.length).toBe(0);
+    expect(storage.snapshot()).toEqual(before);
   });
 
-  it.each(["refreshAccessToken", "invalidateAccessToken"])(
-    "%s requires this extension's sender ID",
-    async (type) => {
-      const {
-        storage,
-        http,
-        background,
-        accountMutations,
-        credentialGeneration,
-      } = await boot();
-      const account =
-        await accountMutations.upsertAccountByLogin(connectInput());
-      const writes = storage.local.set.mock.calls.length;
-      const send = vi.fn();
-      for (const sender of [{}, { id: "other", url: background.optionsUrl }]) {
-        expect(
-          background.listener(
-            {
-              type,
-              accountId: account.id,
-              generation: credentialGeneration(account),
-            },
-            sender,
-            send,
-          ),
-        ).toBeUndefined();
-      }
-      expect(send.mock.calls.length).toBe(0);
-      expect(storage.local.set.mock.calls.length).toBe(writes);
-      expect(http.requests.length).toBe(0);
-    },
-  );
-
-  it("keeps the async auth channel open and returns only the committed generation", async () => {
-    const { http, background, accountMutations, credentialGeneration } =
-      await boot();
-    const account = await accountMutations.upsertAccountByLogin(connectInput());
-    let response: unknown;
-    const complete = new Promise<void>((resolve) => {
-      expect(
-        background.listener(
-          {
-            type: "refreshAccessToken",
-            accountId: account.id,
-            generation: credentialGeneration(account),
-          },
-          { id: background.id, url: "https://github.com/octo/repo/pulls" },
-          (value) => {
-            response = value;
-            resolve();
-          },
-        ),
-      ).toBe(true);
-    });
-    (await http.next()).response.resolve(rotated());
-    await complete;
-    expect(Object.keys(response as object).sort()).toEqual([
-      "generation",
-      "ok",
-    ]);
-    const current = (await accountMutations.getAccountById(account.id))!;
-    expect((response as { generation: string }).generation).toBe(
-      credentialGeneration(current),
+  it("keeps Chrome's async channel open and replies only after a successful removal", async () => {
+    const { storage, background, accountMutations } = await boot();
+    await accountMutations.upsertAccountByLogin(connectInput());
+    const barrier = storage.pauseSet();
+    const send = vi.fn();
+    expect(
+      background.listener(
+        { type: "removeAccount", accountId: "acc-1" },
+        allowed(background),
+        send,
+      ),
+    ).toBe(true);
+    await barrier.entered.promise;
+    expect(send).not.toHaveBeenCalled();
+    barrier.release.resolve();
+    await vi.waitFor(() =>
+      expect(send).toHaveBeenCalledWith({ ok: true, data: null }),
     );
+    expect(await accountMutations.listAccounts()).toEqual([]);
   });
 
-  it("reports sanitized commit/removal failures and admits subsequent wrapper retries", async () => {
+  it("reports a sanitized removal failure and permits a later wrapper retry", async () => {
     const { storage, wrappers, accountMutations } = await boot();
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const account = await accountMutations.upsertAccountByLogin(connectInput());
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     storage.local.set.mockRejectedValueOnce(
-      new Error("fixture-storage-failure"),
-    );
-    await expect(wrappers.upsertAccountByLogin(connectInput())).rejects.toThrow(
-      "account_commit_failed",
-    );
-    const account = await wrappers.upsertAccountByLogin(connectInput());
-    storage.local.set.mockRejectedValueOnce(
-      new Error("fixture-storage-failure"),
+      new Error("SYNTHETIC_STORAGE_SECRET"),
     );
     await expect(wrappers.removeAccount(account.id)).rejects.toThrow(
-      "account_remove_failed",
+      "unavailable",
     );
-    expect((await accountMutations.listAccounts()).map((a) => a.id)).toEqual([
-      account.id,
-    ]);
+    expect(
+      (await accountMutations.listAccounts()).map((item) => item.id),
+    ).toEqual([account.id]);
     await wrappers.removeAccount(account.id);
-    expect((await accountMutations.listAccounts()).length).toBe(0);
-    expect(error.mock.calls.length).toBe(0);
+    expect(await accountMutations.listAccounts()).toEqual([]);
+    expect(log).not.toHaveBeenCalled();
   });
 });

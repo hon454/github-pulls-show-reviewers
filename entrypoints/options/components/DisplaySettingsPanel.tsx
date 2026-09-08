@@ -1,3 +1,4 @@
+import { getUIClient } from "../../../src/runtime/ui-client";
 import type { Translator, MessageKey } from "../../../src/i18n";
 import { useEffect, useRef, useState } from "react";
 
@@ -6,7 +7,7 @@ import {
   getPreferences,
   updatePreferences,
   type Preferences,
-} from "../../../src/storage/preferences";
+} from "../../../src/runtime/preferences";
 
 export function DisplaySettingsPanel({ t }: { t: Translator }) {
   const [preferences, setPreferences] =
@@ -22,18 +23,31 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
     >;
   } | null>(null);
   const busyRef = useRef(false);
+  const events = useRef(0);
 
   useEffect(() => {
+    let active = true;
+    const unsubscribe = getUIClient().subscribe(({ snapshot }) => {
+      events.current += 1;
+      setPreferences(snapshot.preferences);
+    });
+    const readingAt = events.current;
     void (async () => {
       try {
-        setPreferences(await getPreferences());
+        const next = await getPreferences();
+        if (active && events.current === readingAt) setPreferences(next);
       } catch {
-        setStatus({
-          tone: "error",
-          key: "options_display_load_failed",
-        });
+        if (active && events.current === readingAt)
+          setStatus({
+            tone: "error",
+            key: "options_display_load_failed",
+          });
       }
     })();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   async function handleChange(patch: Partial<Omit<Preferences, "version">>) {
@@ -44,9 +58,10 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
     busyRef.current = true;
     setBusy(true);
     setStatus({ tone: "neutral", key: "options_display_saving" });
+    const writingAt = events.current;
     try {
       const next = await updatePreferences(patch);
-      setPreferences(next);
+      if (events.current === writingAt) setPreferences(next);
       setStatus(null);
     } catch {
       setStatus({

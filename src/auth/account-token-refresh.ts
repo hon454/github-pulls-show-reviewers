@@ -3,15 +3,16 @@ import {
   validateGitHubRepositoryAccess,
   type RepositoryValidationResult,
 } from "../github/api";
-import { getAccountById, type Account } from "../storage/accounts";
 import {
-  recoverAccountToken,
-  invalidateAccountToken,
-} from "../runtime/account-auth";
-
+  accountMutations,
+  credentialGeneration,
+  type Account,
+} from "../storage/accounts";
+import type { RefreshCoordinator } from "./refresh-coordinator";
 export async function validateRepositoryAccessWithAccount(input: {
   account: Account;
   repository: string;
+  coordinator: RefreshCoordinator;
 }): Promise<RepositoryValidationResult> {
   const { account, repository } = input;
   const first = await validateGitHubRepositoryAccess(account, repository);
@@ -20,17 +21,23 @@ export async function validateRepositoryAccessWithAccount(input: {
     return first;
   }
 
-  const outcome = await recoverAccountToken(account);
+  const outcome = await input.coordinator.refreshAccountToken(
+    account.id,
+    credentialGeneration(account),
+  );
 
   if (!outcome || outcome.ok !== true) {
     return first;
   }
 
-  const refreshed = await getAccountById(account.id);
+  const refreshed = await accountMutations.getAccountById(account.id);
   if (refreshed == null || refreshed.invalidated) return first;
   const retry = await validateGitHubRepositoryAccess(refreshed, repository);
   if (!retry.ok && retry.outcome === "token-invalid") {
-    await invalidateAccountToken(refreshed);
+    await input.coordinator.invalidateAccountToken(
+      refreshed.id,
+      credentialGeneration(refreshed),
+    );
   }
   return retry;
 }
@@ -38,6 +45,7 @@ export async function validateRepositoryAccessWithAccount(input: {
 export async function retryWithAccountRefresh<T>(input: {
   account: Account | null;
   execute: (token: string | null) => Promise<T>;
+  coordinator: RefreshCoordinator;
 }): Promise<T> {
   const { account, execute } = input;
 
@@ -48,19 +56,25 @@ export async function retryWithAccountRefresh<T>(input: {
       throw error;
     }
 
-    const outcome = await recoverAccountToken(account);
+    const outcome = await input.coordinator.refreshAccountToken(
+      account.id,
+      credentialGeneration(account),
+    );
 
     if (!outcome || outcome.ok !== true) {
       throw error;
     }
 
-    const refreshed = await getAccountById(account.id);
+    const refreshed = await accountMutations.getAccountById(account.id);
     if (refreshed == null || refreshed.invalidated) throw error;
     try {
       return await execute(refreshed.token);
     } catch (retryError) {
       if (extractGitHubApiStatus(retryError) === 401) {
-        await invalidateAccountToken(refreshed);
+        await input.coordinator.invalidateAccountToken(
+          refreshed.id,
+          credentialGeneration(refreshed),
+        );
       }
       throw retryError;
     }

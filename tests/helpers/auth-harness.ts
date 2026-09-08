@@ -1,3 +1,4 @@
+import type { UISender } from "../../src/background/ui-sender";
 import { vi } from "vitest";
 import type { AccountConnectInput } from "../../src/storage/accounts";
 
@@ -171,7 +172,7 @@ export async function bootAuthBackground(
 ) {
   type Listener = (
     message: unknown,
-    sender: { id?: string; url?: string },
+    sender: UISender,
     send: (value?: unknown) => void,
   ) => unknown;
   let listener!: Listener;
@@ -180,13 +181,24 @@ export async function bootAuthBackground(
   const sendMessage = vi.fn(
     (message: unknown): Promise<unknown> =>
       new Promise((resolve) => {
-        const result = listener(message, { id, url: optionsUrl }, resolve);
+        const result = listener(
+          message,
+          { id, url: optionsUrl, documentId: "test-options-document" },
+          resolve,
+        );
         if (result !== true) resolve(result);
       }),
   );
   vi.stubGlobal("defineBackground", (main: () => void) => ({ main }));
   vi.stubGlobal("browser", {
-    storage: { local: storage.local },
+    storage: {
+      local: { ...storage.local, setAccessLevel: vi.fn(async () => {}) },
+      session: {
+        ...createStorageHarness().local,
+        setAccessLevel: vi.fn(async () => {}),
+      },
+      onChanged: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
     runtime: {
       id,
       getURL: (path: string) => `chrome-extension://${id}${path}`,
@@ -195,6 +207,7 @@ export async function bootAuthBackground(
           listener = value;
         },
       },
+      onConnect: { addListener: vi.fn() },
       onInstalled: { addListener: vi.fn() },
       openOptionsPage: vi.fn(),
       sendMessage,

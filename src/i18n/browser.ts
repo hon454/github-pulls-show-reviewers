@@ -1,8 +1,5 @@
-import {
-  getPreferences,
-  parsePreferences,
-  updatePreferences,
-} from "../storage/preferences";
+import { getUIClient } from "../runtime/ui-client";
+import { getPreferences, updatePreferences } from "../runtime/preferences";
 import { createLocaleStore, type LocaleStore } from "./store";
 
 let store: LocaleStore | undefined;
@@ -16,15 +13,9 @@ export function getLocaleStore(): LocaleStore {
       await updatePreferences({ language });
     },
     subscribe(listener) {
-      const onChanged: Parameters<
-        typeof browser.storage.onChanged.addListener
-      >[0] = (changes, area) => {
-        if (area === "local" && "preferences" in changes) {
-          listener(parsePreferences(changes.preferences?.newValue).language);
-        }
-      };
-      browser.storage.onChanged.addListener(onChanged);
-      return () => browser.storage.onChanged.removeListener(onChanged);
+      return getUIClient().subscribe(({ snapshot }) =>
+        listener(snapshot.preferences.language),
+      );
     },
   });
   const shared: LocaleStore = {

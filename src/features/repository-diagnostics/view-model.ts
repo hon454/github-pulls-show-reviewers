@@ -1,14 +1,13 @@
 import type {
   GitHubRateLimitSnapshot,
-  RepositoryValidationEndpointFailure,
   RepositoryValidationOutcome,
-  RepositoryValidationResult,
 } from "../../github/api";
 import { createTranslator, type Translator } from "../../i18n";
 import type {
-  AccountCoverageResolution,
-  Account,
-} from "../../storage/accounts";
+  RepositoryValidationSummary as RepositoryValidationResult,
+  RepositoryDiagnosticFailure as RepositoryValidationEndpointFailure,
+} from "../../runtime/diagnostics";
+import type { AccountSummary as Account } from "../../runtime/ui-contract";
 
 export type RepositoryDiagnosticTone =
   | "neutral"
@@ -27,7 +26,7 @@ export type RepositoryDiagnosticViewModel = {
 };
 type MatchedAccountInput = {
   repository: string;
-  coverageStatus: Exclude<AccountCoverageResolution["status"], "uncovered">;
+  coverageStatus: "covered" | "maybe-covered-truncated";
   account: Pick<Account, "login">;
   result: RepositoryValidationResult;
 };

@@ -44,11 +44,21 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - `src/i18n/`
   Typed bundled localization, locale resolution and lifecycle-owned subscriptions.
   See `docs/adr/0006-bundled-localization-and-render-only-language.md` for the shared contract.
+- `src/background/`
+  Credential-owning services, storage access policy, sender authorization,
+  device-flow restoration and the sanitized UI snapshot/event bridge.
+- `src/runtime/`
+  Schema-validated UI capabilities and the per-document snapshot client.
+  UI code uses `AccountSummary`; full accounts and OAuth helpers stay in background.
+- `src/shared/preferences.ts`
+  Pure preference schemas/defaults shared by UI contracts and background storage.
 - `src/storage/`
-  Extension settings and persistence. `accounts.ts::accountMutations` is the
+  Background-only extension settings and persistence. `accounts.ts::accountMutations` is the
   background-only account registry/auth commit owner, including initialization
-  and repair. Options auth mutations use `src/runtime/account-mutations.ts`;
-  future account work must reuse this boundary and keep HTTP outside its queue.
+  and repair. Background device flow commits through that owner; options removal
+  uses `src/runtime/account-mutations.ts`. Future account work must reuse this
+  boundary and keep HTTP outside its queue. UI must not read storage or subscribe
+  to raw `storage.onChanged`; use the safe runtime snapshot/preferences APIs.
 - `src/cache/`
   Request and page-session caching helpers.
 - `tests/`

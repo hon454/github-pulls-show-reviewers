@@ -1,22 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createFallbackAccountIntegration } from "../src/features/reviewers/fallback-account";
-import type { Account } from "../src/storage/accounts";
+import type { AccountSummary as Account } from "../src/runtime/ui-contract";
 
 function makeAccount(id: string): Account {
   return {
     id,
     login: id,
     avatarUrl: null,
-    token: "ghu_example",
-    createdAt: 1,
+    revision: "g0",
     installations: [],
     installationsRefreshedAt: 1,
     invalidated: false,
     invalidatedReason: null,
-    refreshToken: null,
-    expiresAt: null,
-    refreshTokenExpiresAt: null,
   };
 }
 

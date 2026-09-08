@@ -2,13 +2,16 @@
 
 ## Current MVP behavior
 
-- Settings store multiple connected GitHub accounts under a single versioned
-  `settings` key. Each account carries a user-to-server token plus a cache of
+- Background stores multiple connected accounts in v4 local storage: a versioned
+  `settings` ID registry and separate profile/auth/installation fragments. UI
+  receives only allowlisted summaries and safe preferences. Each account caches
   its GitHub App installations. `all` installations cover the owner directly;
   `selected` installations carry an explicit repository snapshot with both
   full names and a `complete` / `truncated` completeness marker.
-- Device flow runs on the options page. Polling stops when the options tab
-  closes; restarts are clean.
+- Options schedules device-flow polling ticks using opaque IDs. Background owns
+  OAuth HTTP, user/installation discovery and commits. Trusted session records
+  restore waiting flows across worker suspension; interrupted exchanges offer
+  a new code. Cancellation is acknowledged only before commit admission.
 - Content scripts detect PR rows and dispatch a `fetchPullReviewerSummary`
   message to the background service worker. The background resolves the
   covering account per repo via the cached installations and performs the
@@ -45,6 +48,16 @@
   Focused boundary tests exercise pagination validation and budgets, metadata
   freshness and fallback behavior, fallback lookup deduplication, cancelable
   runtime requests, and extension-owned versus GitHub-owned DOM mutations.
+
+- `src/background/ui-bridge.ts` validates sender/context capabilities;
+  `ui-state.ts` owns raw storage events and safe snapshots. `storage-policy.ts`
+  gates access and initialization, `account-summary.ts` projects safe accounts,
+  and `device-flow.ts` owns sign-in state/HTTP/restoration/commit admission.
+- `src/runtime/ui-contract.ts` and `ui-client.ts` provide strict UI messages and
+  shared revision-aware subscriptions. Account/preferences/diagnostics wrappers
+  expose capabilities without credentials; `src/shared/preferences.ts` is pure.
+- Background `account-resolution.ts` preserves bounded self-healing and current
+  fallback selection. The content module delegates using its repository context.
 
 ## Runtime flow
 
@@ -316,14 +329,14 @@ uses the existing bounded revalidation path.
 
 ## Access banner classification
 
-| Account state | Failure pattern                                      | Banner kind             | CTA              |
-| ------------- | ---------------------------------------------------- | ----------------------- | ---------------- |
-| Signed in     | 401 on any reviewer endpoint                         | `auth-expired`          | Sign in          |
-| Signed in     | 404 / 403 with no rate-limit signal                  | `app-uncovered`         | Configure access |
+| Account state | Failure pattern                                      | Banner kind             | CTA                             |
+| ------------- | ---------------------------------------------------- | ----------------------- | ------------------------------- |
+| Signed in     | 401 on any reviewer endpoint                         | `auth-expired`          | Sign in                         |
+| Signed in     | 404 / 403 with no rate-limit signal                  | `app-uncovered`         | Configure access                |
 | Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`          | `auth-rate-limit`       | (no button; reload after reset) |
-| No account    | 429, or 403 with rate-limit signal                   | `unauth-rate-limit`     | Sign in          |
-| No account    | 401, 403, or 404 without rate-limit signal           | `signin-required`       | Sign in          |
-| Either        | Network / schema / unknown / empty endpoint envelope | `reviewers-unavailable` | Reload page      |
+| No account    | 429, or 403 with rate-limit signal                   | `unauth-rate-limit`     | Sign in                         |
+| No account    | 401, 403, or 404 without rate-limit signal           | `signin-required`       | Sign in                         |
+| Either        | Network / schema / unknown / empty endpoint envelope | `reviewers-unavailable` | Reload page                     |
 
 Severity priority for cross-row resolution: `auth-expired` > `app-uncovered` >
 `auth-rate-limit` > `unauth-rate-limit` > `signin-required` >
@@ -377,16 +390,15 @@ without changing generations, outcomes, caches, dismissal or request order.
 - `accountMutations` in `src/storage/accounts.ts` is the background-only owner.
   Its short commit queue rereads the registry before normalized-login upsert,
   duplicate consolidation, removal, initialization/repair and conditional auth
-  writes. All registry and fragment writes share that queue. Options sign-in
-  and removal call `src/runtime/account-mutations.ts`; the background validates
-  the request and permits those mutations only from its own options page.
-  Future account-boundary work must reuse this owner, not create another queue.
+  writes. All registry and fragment writes share that queue. Background device
+  flow commits through that owner, and `src/runtime/account-mutations.ts` exposes
+  options-only local removal. Future account work must reuse this owner.
 - The options account card keeps local removal available whether credentials are
   active or invalidated. It calls the same background mutation wrapper by
   account ID, so removal neither starts device sign-in nor revokes the GitHub
   App; while it is pending, every action on that one card is disabled.
 - Reviewer summaries and metadata batches, installation refresh, options
-  diagnostics and the generic options retry helper identify the credential
+  diagnostics and background retry helpers identify the credential
   actually used. On 401, the coordinator reuses a newer valid generation or
   joins its active refresh; it rotates only a still-current failed generation.
   One API retry is allowed. A rejected retry invalidates only its own generation
@@ -401,17 +413,19 @@ without changing generations, outcomes, caches, dismissal or request order.
   If refresh is transient, a genuinely rejected still-current retry may retain
   the existing `revoked` outcome. Refresh completion and terminal failure
   use the same conditional commit, so old work cannot overwrite a newer sign-in
-  or revive a removed account. Runtime refresh responses contain the revision,
-  not a token; retry callers reread the account and stop if it is gone/invalid.
+  or revive a removed account. The raw refresh/invalidation runtime endpoints
+  are removed. UI requests operations; background retry helpers reread current
+  accounts and stop if an account is gone or invalid.
 - HTTP never holds the registry commit queue, preserving network concurrency
   across accounts. Installation snapshots commit conditionally against their
   request generation. The manual options refresh uses the background
   installation service. The 15-minute alarm rechecks current expiry and the
   30-minute threshold inside the coordinator, including expiry invalidation.
-- This does not change which extension contexts can read local storage or make
-  the options UI token-free. It cannot guarantee service-worker lifetime or
-  persistence if the process stops after GitHub rotates a token but before the
-  new credentials are durably stored.
+- Local/session storage is restricted to trusted contexts before initialization
+  or sensitive operations. Content access is browser-blocked; options is still
+  trusted by Chrome, so its token-free guarantee is enforced by application
+  boundaries. Worker lifetime and persistence after server rotation but before
+  the durable credential write remain unguaranteed. See ADR 0008.
 - Deferred regression coverage uses real service/coordinator/storage/HTTP
   parsing boundaries: A and B start with g0; A rotates to g1 and starts its retry;
   only then does B's g0 response fail. Both succeed on g1 with one refresh.
@@ -442,9 +456,15 @@ without changing generations, outcomes, caches, dismissal or request order.
   `/user/installations` list hits the local page ceiling while a `next` link
   still exists, the refresh fails without replacing the previous installation
   snapshot because omitted installations cannot be tied to an owner.
-- `createSelfHealingAccountResolver` (`src/features/reviewers/account-resolution.ts`) wraps the resolution: when a complete cached selected-installation lookup misses, it scans for accounts that own a `selected` installation on the same owner but do not list the repo, then sends a `refreshAccountInstallations` message to the background and re-runs the resolution.
-- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. The service response does not include tokens; existing local-storage read access is unchanged.
-- Each candidate is refreshed at most once per page session. A successful refresh writes to `account:installations:*`, which the existing `accountsChange` storage listener uses to clear the row cache and re-render covered rows transparently.
+- `createSelfHealingAccountResolver` (`src/background/account-resolution.ts`)
+  wraps resolution: a complete cached selected-installation miss checks stored
+  same-owner candidates, requests the background installation service and reruns
+  resolution. The content facade receives an `AccountSummary`, never a full
+  account. Repository context and installation owner restrict content refresh.
+- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. The service response does not include tokens; content has no direct local-storage access.
+- Each candidate is refreshed at most once per page session. Successful
+  installation writes change the sanitized account/coverage digest; the content
+  snapshot subscriber clears the row cache and rerenders covered rows.
 - Genuinely uncovered repos still flow into the `app-uncovered` /
   `signin-required` banner copy after the refresh attempt completes. When a
   connected fallback account is available, uncovered private repositories are
@@ -474,27 +494,48 @@ without changing generations, outcomes, caches, dismissal or request order.
     successful response, then verifies those stale chips remain visible beside
     the unavailable banner when the next response fails schema validation.
 
-## Device flow
+## Device flow and UI boundary
 
-- Polling lives on the options page because MV3 service workers unload on idle.
-- `POST /login/oauth/access_token` uses the `urn:ietf:params:oauth:grant-type:device_code` grant type. No `client_secret` is required or sent.
-- Each user-started attempt owns its identity, polling timer, interval, deadline,
-  and AbortController. Starting again, canceling, or unmounting invalidates the
-  previous attempt and clears its timer. Initiation, polling, user lookup, and
-  installation discovery share its signal; identity checks still suppress late
-  responses/errors when a transport ignores abort. Only the mounted current
-  attempt may schedule polling, begin a new account write, or publish completion.
-- Account writes use the background-owned `upsertAccountByLogin` runtime boundary.
-  Cancellation stops forward progress, not an admitted storage transaction: a
-  write already started may finish. Its stale completion cannot invoke
-  `onConnected` or close a newer panel. Never delete/roll back the account on
-  cancellation, since a newer sign-in may have updated the same login.
-- Initiation remains user-click-only and StrictMode-safe. Language changes only
-  rerender the existing attempt and its stable error codes; they do not restart
-  or cancel authentication.
-- On `slow_down`, the interval bumps by 5 seconds.
-- On `expired_token` or the local clock passing `expires_at`, the panel offers a
-  retry that requests a fresh device code.
+- `src/background/device-flow.ts` owns initiation, polling HTTP, user and
+  installation discovery, and commit admission. Options creates an attempt ID
+  before initiation and schedules ticks with its returned opaque flow ID.
+  UI receives only user codes, verified links, interval/deadline and stable
+  progress/error codes. The OAuth device code and access/refresh tokens stay
+  in background. The existing Device Flow grant and permission scope are unchanged.
+- One ordered flow owner admits cancel and commit. A persisted cancellation ACK
+  prevents later commit for that attempt. Already admitted writes return
+  `committing`/`connected`; the UI waits for the outcome, without rollback or
+  deleting an account. Completion returns the actual ID chosen by the existing
+  normalized-login registry owner. Late results cannot advance a newer panel.
+- Trusted session records restore waiting flows with their original ID, deadline,
+  slowdown interval and next allowed poll. Concurrent polls share a request and
+  background enforces the interval. On `slow_down`, add at least five seconds.
+  Interrupted HTTP returns `restart_required`; interrupted commits reconcile
+  the account's atomic opaque `connectionAttemptId` receipt before returning.
+- Cancel, expiry, completion and detected owner loss clear secret flow fields.
+  Worker activation and flow entrypoints expire abandoned entries; there is no
+  background polling loop, keepalive or new alarm. A browser restart clears
+  pending session state and offers a new code without removing connected accounts.
+- Sender authorization requires the same extension ID, browser document ID and
+  recognized options/content URL. Flows belong to their options document.
+  Content cannot invoke login/removal/diagnostics/preference writes; its
+  repository-bound resolution/refresh capabilities preserve existing self-healing.
+- Background alone receives raw storage changes. Both UIs share a validated
+  snapshot/port client with worker epoch and monotonic revision. Stale initial
+  reads, delayed RPC results and callbacks from disconnected workers are ignored.
+  Teardown releases subscriptions; reconnect hydrates fresh state without pings.
+  The reviewer page starts row work on its first valid read or subscription
+  snapshot, including recovery after an initial read failure. A late initial
+  read cannot replace preferences already delivered by the subscription.
+- Preference writes use strict partial patches and one short background
+  read/merge/write queue across options documents. Only successful commits emit
+  changed snapshots. Different-field updates preserve both values; same-field
+  updates follow admitted order. Failed writes leave the queue usable.
+- Account/coverage digest changes invalidate data decisions. Language and
+  `showStateBadge`, `showReviewerName`, `openPullsOnly` rerender existing UI only;
+  reviewer caches, outcomes, four-slot FIFO order and request counts stay intact.
+- Full rationale, restoration cases, trusted-context limitations and contracts
+  for #176/#171: [ADR 0008](./adr/0008-background-credentials-and-ui-capabilities.md).
 
 ## Registering a personal GitHub App for development
 
@@ -517,8 +558,8 @@ Five canonical Chrome catalogs under `public/_locales/` are statically bundled
 by the pure `src/i18n/` formatter. English is the fallback. Auto detection reads
 Chrome's UI language; an explicit local preference overrides extension UI only.
 Chrome-owned manifest metadata follows Chrome independently. The shared locale
-store owns one local-storage listener while subscribed, safely orders hydration
-against events and writes, and exposes React and DOM adapters with disposal.
+store subscribes to the shared safe UI snapshot client while active, safely
+orders hydration against events/writes, and exposes React/DOM disposal adapters.
 Language is presentation state; no translated strings belong in reviewer caches,
 request keys or technical error evidence. Options and diagnostics integration is
 implemented in #148–#149; reviewer and access-banner integration is implemented
@@ -546,13 +587,13 @@ Validate catalogs with the i18n unit tests and emitted metadata with
   fallback instead of displaying raw external exception prose. Cancellation
   also ignores delayed failures. Poll intervals, credentials, account order,
   permission scope and refresh behavior are unchanged.
-- Device codes, verification URLs, account identifiers, product/App names and
+- User verification codes, URLs, account identifiers, product/App names and
   `Pull requests: Read` remain literal. Expiry is formatted with the selected
   BCP 47 locale and the user's existing timezone; UTC instants are not changed.
 - Display saves and account refresh/remove/load status keep keys/actions, not
   translated sentences. Changing language reformats visible status without
-  repeating work. Preference writes within one context are serialized so
-  overlapping language/display changes merge against the latest saved record.
+  repeating work. Preference patches from all options documents are serialized
+  in background against the latest saved record.
 - `DiagnosticsPanel` renders structured data with the parent translator. The
   parent never keys or remounts the subtree by locale, so repository input and
   active operations survive. Layout wraps long identifiers and actions at 360px.
@@ -597,7 +638,7 @@ Validate catalogs with the i18n unit tests and emitted metadata with
 ## Reviewer and access-banner language integration
 
 - Reviewer and banner DOM roots share the context locale store. Each feature
-  subscribes once; the store owns a single locale storage listener. Reviewer
+  subscribes once; the store uses the shared safe UI snapshot client. Reviewer
   subscriptions stop outside PR-list routes and on context invalidation; banner
   teardown releases its subscription on route changes and invalidation.
 - `page-controller.ts` applies display and language changes only to existing

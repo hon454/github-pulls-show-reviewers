@@ -1,3 +1,4 @@
+import type * as UIClientModule from "../src/runtime/ui-client";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -63,7 +64,7 @@ async function bootContent(aggregator: Aggregator): Promise<{
     },
   );
 
-  const ctx = { addEventListener: vi.fn() };
+  const ctx = { addEventListener: vi.fn(), onInvalidated: vi.fn() };
   const { default: content } = await import("../entrypoints/content");
   content.main(ctx as never);
 
@@ -115,6 +116,7 @@ describe("content entrypoint", () => {
 
     const listeners = new Map<string, Listener[]>();
     const ctx = {
+      onInvalidated: vi.fn(),
       addEventListener: vi.fn(
         (_target: EventTarget, event: string, listener: Listener) => {
           listeners.set(event, [...(listeners.get(event) ?? []), listener]);
@@ -469,7 +471,18 @@ it("shares one locale subscription across content features and releases it on ro
   vi.doUnmock("../src/features/access-banner");
   vi.doUnmock("../src/features/reviewers");
   vi.resetModules();
-  const storageListeners = new Set<(changes: object, area: string) => void>();
+  const { createUIPresentationFixtures } =
+    await import("./helpers/ui-presentation-fixtures");
+  const { DEFAULT_PREFERENCES } = await import("../src/shared/preferences");
+  const uiFixtures = createUIPresentationFixtures(
+    async () => DEFAULT_PREFERENCES,
+  );
+  const storageListeners = uiFixtures.listeners;
+  vi.doMock("../src/runtime/ui-client", async (importActual) => ({
+    ...(await importActual<typeof UIClientModule>()),
+    getUIClient: () => uiFixtures.client,
+    disposeUIClient: () => uiFixtures.client.dispose(),
+  }));
   const routeListeners = new Map<string, Array<() => void>>();
   const invalidations: Array<() => void> = [];
   vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "Iv1.testclient");
@@ -483,12 +496,10 @@ it("shares one locale subscription across content features and releases it on ro
       sendMessage: vi.fn(),
     },
     storage: {
-      local: { get: async () => ({}) },
       onChanged: {
-        addListener: (fn: (changes: object, area: string) => void) =>
-          storageListeners.add(fn),
-        removeListener: (fn: (changes: object, area: string) => void) =>
-          storageListeners.delete(fn),
+        addListener: vi.fn(() => {
+          throw new Error("UI storage listener");
+        }),
       },
     },
   });
@@ -503,7 +514,7 @@ it("shares one locale subscription across content features and releases it on ro
   try {
     const { default: content } = await import("../entrypoints/content");
     content.main(ctx as never);
-    // One central locale listener plus the reviewer's data preference listener.
+    // One shared locale subscription plus the reviewer snapshot subscription.
     expect(storageListeners.size).toBe(2);
     window.history.replaceState({}, "", "/org/repo/issues");
     routeListeners.get("wxt:locationchange")!.forEach((fn) => fn());
@@ -515,6 +526,7 @@ it("shares one locale subscription across content features and releases it on ro
     expect(storageListeners.size).toBe(0);
   } finally {
     invalidations.forEach((fn) => fn());
+    vi.doUnmock("../src/runtime/ui-client");
     vi.doMock("../src/features/access-banner", () => ({
       bootAccessBanner: bootAccessBannerMock,
     }));

@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-
-import type { Account } from "../../src/storage/accounts";
-import { upsertAccountByLogin } from "../../src/runtime/account-mutations";
+import { getUIClient, requestCapability } from "../../src/runtime/ui-client";
 import {
-  DeviceFlowError,
-  fetchAuthenticatedUser,
-  initiateDeviceFlow,
-  pollForAccessToken,
-  type DeviceFlowInit,
-} from "../../src/github/auth";
-import { loadAccountInstallations } from "../../src/github/installations";
+  deviceFlowProgressSchema,
+  type AccountSummary,
+  type DeviceFlowProgress,
+} from "../../src/runtime/ui-contract";
 
 export type DeviceFlowState =
-  | { phase: "idle" }
   | {
-      phase: "initiating";
+      phase:
+        | "idle"
+        | "initiating"
+        | "cancelling"
+        | "fetching_installations"
+        | "committing";
     }
   | {
       phase: "waiting";
@@ -24,236 +23,181 @@ export type DeviceFlowState =
       interval: number;
       expiresAt: number;
     }
-  | { phase: "fetching_installations" }
   | { phase: "connected"; accountId: string }
-  | { phase: "expired" }
-  | { phase: "denied" }
+  | { phase: "expired" | "denied" }
   | { phase: "fatal"; code: string };
-
 export type DeviceFlowController = {
   state: DeviceFlowState;
   start(): void;
-  cancel(): void;
+  cancel(): Promise<boolean>;
 };
-
-type DeviceFlowAttempt = {
-  controller: AbortController;
+type Attempt = {
+  id: string;
+  flowId?: string;
   timer: number | null;
-  interval: number;
-  expiresAt: number;
+  completed: boolean;
+  cancelling?: boolean;
+  latestProgress?: DeviceFlowProgress;
 };
 
 export function useDeviceFlowController(input: {
-  clientId: string;
-  onConnected: (account: Account) => void;
+  onConnected: (account: AccountSummary) => void;
 }): DeviceFlowController {
   const [state, setState] = useState<DeviceFlowState>({ phase: "idle" });
-  const attemptRef = useRef<DeviceFlowAttempt | null>(null);
-  const mountedRef = useRef(false);
-
-  const invalidateAttempt = useCallback(() => {
+  const attemptRef = useRef<Attempt | null>(null);
+  const mounted = useRef(false);
+  const onConnected = useRef(input.onConnected);
+  onConnected.current = input.onConnected;
+  const isCurrent = useCallback(
+    (attempt: Attempt) => mounted.current && attemptRef.current === attempt,
+    [],
+  );
+  const detach = useCallback(() => {
     const attempt = attemptRef.current;
     attemptRef.current = null;
-    if (attempt) {
-      if (attempt.timer != null) window.clearTimeout(attempt.timer);
-      attempt.timer = null;
-      attempt.controller.abort();
-    }
+    if (attempt?.timer != null) window.clearTimeout(attempt.timer);
+    if (attempt) attempt.timer = null;
+    return attempt;
   }, []);
-
-  const isCurrent = useCallback(
-    (attempt: DeviceFlowAttempt) =>
-      mountedRef.current && attemptRef.current === attempt,
+  const cancelRequest = useCallback(
+    (attempt: Attempt) =>
+      requestCapability(
+        { type: "cancelDeviceFlow", attemptId: attempt.id },
+        deviceFlowProgressSchema,
+      ),
     [],
   );
 
-  const cancel = useCallback(() => {
-    invalidateAttempt();
-    if (mountedRef.current) setState({ phase: "idle" });
-  }, [invalidateAttempt]);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      invalidateAttempt();
-    };
-  }, [invalidateAttempt]);
-
-  const runPollLoop = useCallback(
-    (attempt: DeviceFlowAttempt, init: DeviceFlowInit) => {
-      const scheduleNext = () => {
-        if (!isCurrent(attempt)) {
-          return;
-        }
-        if (Date.now() >= attempt.expiresAt) {
-          setState({ phase: "expired" });
-          return;
-        }
-        attempt.timer = window.setTimeout(async () => {
-          attempt.timer = null;
-          if (!isCurrent(attempt)) return;
-          if (Date.now() >= attempt.expiresAt) {
-            setState({ phase: "expired" });
-            return;
-          }
-          try {
-            const result = await pollForAccessToken({
-              clientId: input.clientId,
-              deviceCode: init.deviceCode,
-              signal: attempt.controller.signal,
-            });
-            if (!isCurrent(attempt)) {
-              return;
-            }
-            if (result.status === "slow_down") {
-              attempt.interval = Math.max(
-                attempt.interval + 5,
-                result.interval || attempt.interval + 5,
-              );
-              setState({
-                phase: "waiting",
-                userCode: init.userCode,
-                verificationUri: init.verificationUri,
-                verificationUriComplete: init.verificationUriComplete,
-                interval: attempt.interval,
-                expiresAt: attempt.expiresAt,
-              });
-              scheduleNext();
-              return;
-            }
-            if (result.status === "pending") {
-              scheduleNext();
-              return;
-            }
-            setState({ phase: "fetching_installations" });
-            const connected = await completeAccountConnect(
-              result,
-              input.onConnected,
-              () => isCurrent(attempt),
-              attempt.controller.signal,
-            );
-            if (!connected || !isCurrent(attempt)) {
-              return;
-            }
-            setState({ phase: "connected", accountId: "pending" });
-          } catch (error) {
-            if (!isCurrent(attempt)) return;
-            if (error instanceof DeviceFlowError) {
-              if (error.code === "expired_token") {
-                setState({ phase: "expired" });
-                return;
-              }
-              if (error.code === "access_denied") {
-                setState({ phase: "denied" });
-                return;
-              }
-              setState({
-                phase: "fatal",
-                code: error.code,
-              });
-              return;
-            }
-            setState({
-              phase: "fatal",
-              code: "unknown_error",
-            });
-          }
-        }, attempt.interval * 1000);
-      };
-      scheduleNext();
+  const apply = useCallback(
+    (attempt: Attempt, progress: DeviceFlowProgress) => {
+      if (!isCurrent(attempt)) return;
+      if (attempt.cancelling) {
+        attempt.latestProgress = progress;
+        return;
+      }
+      if (progress.phase === "connected") {
+        if (attempt.completed) return;
+        attempt.completed = true;
+        setState({ phase: "connected", accountId: progress.account.id });
+        onConnected.current(progress.account);
+      } else if (progress.phase === "cancelled") setState({ phase: "idle" });
+      else setState(progress);
     },
-    [input.clientId, input.onConnected, isCurrent],
+    [isCurrent],
   );
 
+  useEffect(() => {
+    mounted.current = true;
+    const unsubscribe = getUIClient().subscribeFlows((attemptId, progress) => {
+      const attempt = attemptRef.current;
+      if (attempt?.id === attemptId) apply(attempt, progress);
+    });
+    return () => {
+      mounted.current = false;
+      unsubscribe();
+      const attempt = detach();
+      if (attempt) void cancelRequest(attempt).catch(() => undefined);
+    };
+  }, [apply, cancelRequest, detach]);
+
+  const cancel = useCallback(async () => {
+    const attempt = attemptRef.current;
+    if (!attempt) {
+      if (mounted.current) setState({ phase: "idle" });
+      return true;
+    }
+    if (attempt.timer != null) window.clearTimeout(attempt.timer);
+    attempt.timer = null;
+    attempt.cancelling = true;
+    if (mounted.current) setState({ phase: "cancelling" });
+    try {
+      const progress = await cancelRequest(attempt);
+      if (!isCurrent(attempt)) return false;
+      attempt.cancelling = false;
+      if (progress.phase === "committing" || progress.phase === "connected") {
+        apply(
+          attempt,
+          attempt.latestProgress?.phase === "connected"
+            ? attempt.latestProgress
+            : progress,
+        );
+        return false;
+      }
+      detach();
+      setState({ phase: "idle" });
+      return true;
+    } catch {
+      attempt.cancelling = false;
+      if (isCurrent(attempt))
+        setState({ phase: "fatal", code: "network_error" });
+      return false;
+    }
+  }, [apply, cancelRequest, detach, isCurrent]);
+
   const start = useCallback(() => {
-    invalidateAttempt();
-    if (!mountedRef.current) return;
-    const attempt: DeviceFlowAttempt = {
-      controller: new AbortController(),
+    const previous = detach();
+    if (previous) void cancelRequest(previous).catch(() => undefined);
+    if (!mounted.current) return;
+    // Created before initiation awaits: cancel never needs the server flow ID.
+    const attempt: Attempt = {
+      id: crypto.randomUUID(),
       timer: null,
-      interval: 5,
-      expiresAt: 0,
+      completed: false,
     };
     attemptRef.current = attempt;
     setState({ phase: "initiating" });
-    void (async () => {
-      try {
-        const init = await initiateDeviceFlow({
-          clientId: input.clientId,
-          signal: attempt.controller.signal,
-        });
-        if (!isCurrent(attempt)) {
-          return;
-        }
-        attempt.interval = init.interval;
-        attempt.expiresAt = Date.now() + init.expiresIn * 1000;
-        setState({
-          phase: "waiting",
-          userCode: init.userCode,
-          verificationUri: init.verificationUri,
-          verificationUriComplete: init.verificationUriComplete,
-          interval: init.interval,
-          expiresAt: attempt.expiresAt,
-        });
-        runPollLoop(attempt, init);
-      } catch (error) {
+
+    const schedule = (
+      waiting: Extract<DeviceFlowProgress, { phase: "waiting" }>,
+    ) => {
+      if (!isCurrent(attempt)) return;
+      attempt.flowId = waiting.flowId;
+      attempt.timer = window.setTimeout(
+        async () => {
+          attempt.timer = null;
+          if (!isCurrent(attempt)) return;
+          if (Date.now() >= waiting.expiresAt) {
+            setState({ phase: "expired" });
+            void cancelRequest(attempt).catch(() => undefined);
+            return;
+          }
+          try {
+            const progress = await requestCapability(
+              {
+                type: "pollDeviceFlow",
+                attemptId: attempt.id,
+                flowId: waiting.flowId,
+              },
+              deviceFlowProgressSchema,
+            );
+            if (!isCurrent(attempt)) return;
+            apply(attempt, progress);
+            if (progress.phase === "waiting") schedule(progress);
+          } catch {
+            if (isCurrent(attempt))
+              setState({ phase: "fatal", code: "network_error" });
+          }
+        },
+        Math.max(
+          1,
+          Math.min(waiting.nextPollAt, waiting.expiresAt) - Date.now(),
+        ),
+      );
+    };
+    void requestCapability(
+      { type: "startDeviceFlow", attemptId: attempt.id },
+      deviceFlowProgressSchema,
+    ).then(
+      (progress) => {
         if (!isCurrent(attempt)) return;
-        setState({
-          phase: "fatal",
-          code: error instanceof DeviceFlowError ? error.code : "unknown_error",
-        });
-      }
-    })();
-  }, [input.clientId, runPollLoop, invalidateAttempt, isCurrent]);
-
+        apply(attempt, progress);
+        if (progress.phase === "waiting") schedule(progress);
+      },
+      () => {
+        if (isCurrent(attempt))
+          setState({ phase: "fatal", code: "network_error" });
+      },
+    );
+  }, [apply, cancelRequest, detach, isCurrent]);
   return { state, start, cancel };
-}
-
-async function completeAccountConnect(
-  poll: {
-    accessToken: string;
-    refreshToken: string | null;
-    expiresAt: number | null;
-    refreshTokenExpiresAt: number | null;
-  },
-  onConnected: (account: Account) => void,
-  isCurrent: () => boolean,
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (!isCurrent()) {
-    return false;
-  }
-  const user = await fetchAuthenticatedUser({
-    token: poll.accessToken,
-    signal,
-  });
-  if (!isCurrent()) {
-    return false;
-  }
-  const installations = await loadAccountInstallations({
-    token: poll.accessToken,
-    signal,
-  });
-  if (!isCurrent()) {
-    return false;
-  }
-  // Admission is the cancellation boundary: the background owns this write.
-  // Once started it may commit; never roll it back on behalf of a stale attempt.
-  const account = await upsertAccountByLogin({
-    login: user.login,
-    avatarUrl: user.avatarUrl,
-    token: poll.accessToken,
-    refreshToken: poll.refreshToken,
-    expiresAt: poll.expiresAt,
-    refreshTokenExpiresAt: poll.refreshTokenExpiresAt,
-    installations,
-    newAccountId: globalThis.crypto.randomUUID(),
-    now: Date.now(),
-  });
-  if (!isCurrent()) {
-    return false;
-  }
-  onConnected(account);
-  return true;
 }

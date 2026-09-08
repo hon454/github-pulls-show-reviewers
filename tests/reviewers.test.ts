@@ -1,3 +1,5 @@
+import type * as AccountsStorageModule from "../src/storage/accounts";
+import type * as UIClientModule from "../src/runtime/ui-client";
 // @vitest-environment jsdom
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -8,7 +10,8 @@ import type { ContentScriptContext } from "wxt/utils/content-script-context";
 import type { Locale } from "../src/i18n";
 import type { PullReviewerSummary } from "../src/github/api";
 import type { Account } from "../src/storage/accounts";
-import type * as PreferencesModule from "../src/storage/preferences";
+import type * as PreferencesModule from "../src/runtime/preferences";
+import { createUIPresentationFixtures } from "./helpers/ui-presentation-fixtures";
 import {
   createPullListFixtureHtml,
   FILTERED_PULL_LIST_PULL_NUMBERS,
@@ -35,18 +38,75 @@ const modernMetadataFixtureHtml = readFileSync(
   "utf8",
 );
 
-vi.mock("../src/storage/accounts", () => ({
+vi.mock("../src/storage/accounts", async (importActual) => ({
+  ...(await importActual<typeof AccountsStorageModule>()),
   resolveAccountForRepo: resolveAccountForRepoMock,
   listAccounts: listAccountsMock,
 }));
 
-vi.mock("../src/storage/preferences", async () => {
+vi.mock("../src/runtime/preferences", async () => {
   const actual = await vi.importActual<typeof PreferencesModule>(
-    "../src/storage/preferences",
+    "../src/runtime/preferences",
   );
   return {
     ...actual,
     getPreferences: getPreferencesMock,
+  };
+});
+
+vi.mock("../src/runtime/ui-client", async (importActual) => ({
+  ...(await importActual<typeof UIClientModule>()),
+  getUIClient: () => uiFixtures.client,
+}));
+vi.mock("../src/runtime/accounts", async () => {
+  const { createSelfHealingAccountResolver } =
+    await import("../src/background/account-resolution");
+  const { summarizeAccount } =
+    await import("../src/background/account-summary");
+  const resolver = createSelfHealingAccountResolver({
+    requestRefresh: async (accountId) => {
+      const response = await runtimeSendMessageMock({
+        type: "refreshAccountInstallations",
+        accountId,
+      });
+      return response?.ok === true;
+    },
+  });
+  return {
+    resolveAccountForRepo: async (owner: string, repo: string) => {
+      const result = await resolver.resolveAccount(owner, repo);
+      return result
+        ? summarizeAccount(
+            Object.assign(
+              {
+                avatarUrl: null,
+                invalidated: false,
+                invalidatedReason: null,
+                installations: [],
+                installationsRefreshedAt: 0,
+              },
+              result,
+            ),
+          )
+        : null;
+    },
+    resolveFallbackAccount: async (owner: string) => {
+      const result = await resolver.resolveFallbackAccount(owner);
+      return result
+        ? summarizeAccount(
+            Object.assign(
+              {
+                avatarUrl: null,
+                invalidated: false,
+                invalidatedReason: null,
+                installations: [],
+                installationsRefreshedAt: 0,
+              },
+              result,
+            ),
+          )
+        : null;
+    },
   };
 });
 
@@ -60,8 +120,9 @@ type StorageListener = (
   areaName: string,
 ) => void;
 
-let capturedStorageListener: StorageListener | null = null;
-let storageListeners = new Set<StorageListener>();
+let publishFixtureChange: StorageListener | null = null;
+let uiFixtures: ReturnType<typeof createUIPresentationFixtures>;
+let uiListeners: ReturnType<typeof createUIPresentationFixtures>["listeners"];
 let pendingTeardowns: Array<() => void>;
 
 type TestCtx = {
@@ -108,22 +169,19 @@ beforeEach(() => {
     showReviewerName: false,
     openPullsOnly: true,
   });
-  capturedStorageListener = null;
-  storageListeners = new Set();
+  uiFixtures = createUIPresentationFixtures(getPreferencesMock);
+  publishFixtureChange = uiFixtures.publishFixtureChange;
+  uiListeners = uiFixtures.listeners;
   pendingTeardowns = [];
 
   vi.stubGlobal("browser", {
     i18n: { getUILanguage: () => "en" },
     storage: {
       onChanged: {
-        addListener: vi.fn((listener: StorageListener) => {
-          storageListeners.add(listener);
-          capturedStorageListener = (changes, area) =>
-            storageListeners.forEach((fn) => fn(changes, area));
+        addListener: vi.fn(() => {
+          throw new Error("UI must not subscribe to storage");
         }),
-        removeListener: vi.fn((listener: StorageListener) =>
-          storageListeners.delete(listener),
-        ),
+        removeListener: vi.fn(),
       },
     },
     runtime: {
@@ -163,7 +221,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
     const oldValue = { token: "fixture-access", invalidated: false };
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         "account:auth:acc-1": {
           oldValue,
@@ -249,7 +307,9 @@ describe("bootReviewerListPage", () => {
       owner: "cinev",
       repo: "shotloom",
       account: null,
-      error: expect.objectContaining({ envelope: schemaError }),
+      error: expect.objectContaining({
+        envelope: { kind: schemaError.kind, status: schemaError.status },
+      }),
     });
   });
 
@@ -331,7 +391,7 @@ describe("bootReviewerListPage", () => {
       showReviewerName: true,
       openPullsOnly: true,
     });
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         preferences: {
           oldValue: {
@@ -382,7 +442,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
 
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         settings: {
           oldValue: { version: 2, accounts: [] },
@@ -629,9 +689,15 @@ describe("bootReviewerListPage", () => {
     expect(onRowFailure).toHaveBeenCalledWith({
       owner: "hon454",
       repo: "private-repo",
-      account,
+      account: expect.objectContaining({
+        id: account.id,
+        login: account.login,
+      }),
       error: expect.objectContaining({
-        envelope: notFoundError,
+        envelope: expect.objectContaining({
+          kind: notFoundError.kind,
+          status: notFoundError.status,
+        }),
       }),
     });
   });
@@ -1694,7 +1760,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
 
     const { createTranslator } = await import("../src/i18n");
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         preferences: {
           oldValue: {
@@ -1948,7 +2014,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         settings: {
           oldValue: { version: 4, accountIds: [] },
@@ -2028,7 +2094,7 @@ describe("bootReviewerListPage", () => {
       ok: false,
       error: { kind: "unknown", status: null, message: "boom" },
     });
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         settings: {
           oldValue: { version: 4, accountIds: [] },
@@ -2043,7 +2109,7 @@ describe("bootReviewerListPage", () => {
     expect(document.body.textContent).not.toContain("alice");
     expect(document.body.textContent).not.toContain("Loading reviewers");
 
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         settings: {
           oldValue: { version: 4, accountIds: ["acc-1"] },
@@ -2080,7 +2146,7 @@ describe("bootReviewerListPage", () => {
         window.history.replaceState({}, "", "/cinev/shotloom/pull/42");
         getRegisteredListener(ctx, "wxt:locationchange")?.();
       } else if (trigger === "account change") {
-        capturedStorageListener!(
+        publishFixtureChange!(
           {
             settings: {
               oldValue: { version: 4, accountIds: [] },
@@ -2307,7 +2373,7 @@ describe("bootReviewerListPage", () => {
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
 
     blockAccountResolution = true;
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         settings: {
           oldValue: { version: 4, accountIds: [] },
@@ -2741,7 +2807,7 @@ describe("settled reviewer request ownership", () => {
         .forEach((root) => expect(root.textContent).toBe(""));
 
       // A display reprocess must reuse the final metadata failure cache.
-      capturedStorageListener!(
+      publishFixtureChange!(
         {
           preferences: {
             oldValue: { showReviewerName: false },
@@ -2901,7 +2967,7 @@ describe("settled reviewer request ownership", () => {
       if (trigger === "route")
         getRegisteredListener(ctx, "wxt:locationchange")!();
       else
-        capturedStorageListener!(
+        publishFixtureChange!(
           {
             settings: {
               oldValue: { version: 4, accountIds: [] },
@@ -2950,7 +3016,7 @@ describe("reviewer asynchronous presentation ownership", () => {
     completedReviews: [],
   });
   function displayChange(): void {
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         preferences: {
           oldValue: prefs,
@@ -2985,14 +3051,12 @@ describe("reviewer asynchronous presentation ownership", () => {
       bootReviewerListPage(makeCtx());
       await flushMicrotasks();
       expect(getPreferencesMock).toHaveBeenCalledTimes(2);
-      expect(
-        cache.getReviewerCacheEntry(key)?.summary.requestedUsers[0]?.login,
-      ).toBe("alice");
+      expect(cache.getReviewerCacheEntry(key)).toBeUndefined();
       expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
       displayChange();
       login = "bob";
       if (trigger === "account")
-        capturedStorageListener!(
+        publishFixtureChange!(
           {
             settings: {
               oldValue: { version: 4, accountIds: [] },
@@ -3293,7 +3357,7 @@ describe("render-only reviewer display events", () => {
     previous: PreferencesModule.Preferences,
     next: PreferencesModule.Preferences,
   ): Promise<void> {
-    capturedStorageListener!(
+    publishFixtureChange!(
       { preferences: { oldValue: previous, newValue: next } },
       "local",
     );
@@ -3478,8 +3542,8 @@ describe("render-only reviewer display events", () => {
     await flushMicrotasks();
     expect(getPreferencesMock).toHaveBeenCalledTimes(2);
     expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
-    const calls = runtimeSendMessageMock.mock.calls.length;
     await changeDisplay(initialPreferences, changedPreferences);
+    const calls = runtimeSendMessageMock.mock.calls.length;
     preferences.resolve(initialPreferences);
     await flushMicrotasks();
     expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
@@ -3506,7 +3570,7 @@ describe("render-only reviewer locale events", () => {
       showReviewerName: false,
       openPullsOnly: true,
     };
-    capturedStorageListener!(
+    publishFixtureChange!(
       {
         preferences: {
           oldValue: { ...prefs, language: previous },
@@ -3588,12 +3652,12 @@ describe("render-only reviewer locale events", () => {
         originalText,
       );
       // Navigating out releases the locale store listener, leaving only data events.
-      expect(storageListeners.size).toBe(2);
+      expect(uiListeners.size).toBe(2);
       window.history.replaceState({}, "", "/cinev/shotloom/issues");
       getRegisteredListener(ctx, "wxt:locationchange")!();
-      expect(storageListeners.size).toBe(1);
+      expect(uiListeners.size).toBe(1);
       pendingTeardowns.forEach((fn) => fn());
-      expect(storageListeners.size).toBe(0);
+      expect(uiListeners.size).toBe(0);
       fingerprint.mockRestore();
     },
   );

@@ -1,3 +1,4 @@
+import type { MockInstance } from "vitest";
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,51 +21,42 @@ vi.mock("../src/github/auth", () => ({
   fetchInstallationRepositories: vi.fn(),
 }));
 
-const upsertAccountByLoginMock = vi.hoisted(() =>
-  vi.fn(
-    async (input: {
-      login: string;
-      avatarUrl: string | null;
-      token: string;
-      refreshToken: string | null;
-      expiresAt: number | null;
-      refreshTokenExpiresAt: number | null;
-      installations: unknown[];
-      newAccountId: string;
-      now: number;
-    }) => ({
-      id: input.newAccountId,
-      login: input.login,
-      avatarUrl: input.avatarUrl,
-      createdAt: input.now,
-      token: input.token,
-      refreshToken: input.refreshToken,
-      expiresAt: input.expiresAt,
-      refreshTokenExpiresAt: input.refreshTokenExpiresAt,
-      installations: input.installations,
-      installationsRefreshedAt: input.now,
-      invalidated: false,
-      invalidatedReason: null,
-    }),
-  ),
-);
-
-const removeAccountMock = vi.hoisted(() => vi.fn());
-
-vi.mock("../src/runtime/account-mutations", () => ({
-  removeAccount: removeAccountMock,
-  upsertAccountByLogin: upsertAccountByLoginMock,
-}));
+import { accountMutations } from "../src/storage/accounts";
+import {
+  createUIBridgeHarness,
+  containsSecret,
+  drain,
+} from "./helpers/ui-bridge-harness";
+import { disposeUIClient } from "../src/runtime/ui-client";
+let harness: ReturnType<typeof createUIBridgeHarness>;
+let upsertAccountByLoginMock: MockInstance<
+  typeof accountMutations.upsertAccountByLogin
+>;
+let removeAccountMock: MockInstance<
+  typeof accountMutations.removeAccount
+>;
 
 const auth = await import("../src/github/auth");
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.useFakeTimers();
-  upsertAccountByLoginMock.mockClear();
+  harness = createUIBridgeHarness();
+  await harness.initialize();
+  upsertAccountByLoginMock = vi.spyOn(accountMutations, "upsertAccountByLogin");
+  removeAccountMock = vi.spyOn(accountMutations, "removeAccount");
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  disposeUIClient();
+  await drain();
+  expect(
+    containsSecret([harness.replies, [...harness.notifications.values()]]),
+  ).toBe(false);
+  harness.dispose();
+  await drain();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -73,7 +65,6 @@ describe("useDeviceFlowController", () => {
   it("starts idle", () => {
     const { result } = renderHook(() =>
       useDeviceFlowController({
-        clientId: "Iv1.test",
         onConnected: vi.fn(),
       }),
     );
@@ -121,7 +112,7 @@ describe("useDeviceFlowController", () => {
 
     const onConnected = vi.fn();
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected }),
+      useDeviceFlowController({ onConnected }),
     );
 
     await act(async () => {
@@ -166,7 +157,7 @@ describe("useDeviceFlowController", () => {
       .mockResolvedValue({ status: "pending" });
 
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+      useDeviceFlowController({ onConnected: vi.fn() }),
     );
     await act(async () => {
       result.current.start();
@@ -198,7 +189,7 @@ describe("useDeviceFlowController", () => {
       status: "pending",
     });
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+      useDeviceFlowController({ onConnected: vi.fn() }),
     );
     await act(async () => {
       result.current.start();
@@ -228,7 +219,7 @@ describe("useDeviceFlowController", () => {
     });
 
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+      useDeviceFlowController({ onConnected: vi.fn() }),
     );
     await act(async () => {
       result.current.start();
@@ -260,7 +251,7 @@ describe("useDeviceFlowController", () => {
     );
 
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+      useDeviceFlowController({ onConnected: vi.fn() }),
     );
 
     await act(async () => {
@@ -326,7 +317,7 @@ describe("useDeviceFlowController", () => {
 
     const onConnected = vi.fn();
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected }),
+      useDeviceFlowController({ onConnected }),
     );
 
     await act(async () => {
@@ -365,7 +356,7 @@ describe("locale-independent authentication evidence", () => {
         ),
       );
       const { result } = renderHook(() =>
-        useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+        useDeviceFlowController({ onConnected: vi.fn() }),
       );
       await act(async () => {
         result.current.start();
@@ -382,11 +373,12 @@ describe("locale-independent authentication evidence", () => {
         }),
     );
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+      useDeviceFlowController({ onConnected: vi.fn() }),
     );
     await act(async () => {
       result.current.start();
-      result.current.cancel();
+      await drain();
+      await result.current.cancel();
       reject(new Error("private raw details"));
     });
     expect(result.current.state).toEqual({ phase: "idle" });
@@ -478,7 +470,7 @@ describe("attempt ownership with transports that ignore abort", () => {
         .mockResolvedValue({ status: "pending" });
       const onConnected = vi.fn();
       const { result } = renderHook(() =>
-        useDeviceFlowController({ clientId: "Iv1.test", onConnected }),
+        useDeviceFlowController({ onConnected }),
       );
       await act(async () => {
         result.current.start();
@@ -553,7 +545,7 @@ describe("attempt ownership with transports that ignore abort", () => {
           stageMock.mockImplementationOnce(() => pending.promise);
           const onConnected = vi.fn();
           const { result, unmount } = renderHook(() =>
-            useDeviceFlowController({ clientId: "Iv1.test", onConnected }),
+            useDeviceFlowController({ onConnected }),
           );
           await act(async () => {
             result.current.start();
@@ -617,7 +609,7 @@ describe("attempt ownership with transports that ignore abort", () => {
       .mockResolvedValue(attemptInit("new"));
     vi.mocked(auth.pollForAccessToken).mockResolvedValue({ status: "pending" });
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+      useDeviceFlowController({ onConnected: vi.fn() }),
     );
     await act(async () => {
       result.current.start();
@@ -644,7 +636,7 @@ describe("attempt ownership with transports that ignore abort", () => {
       .mockResolvedValueOnce(successfulPoll);
     const onConnected = vi.fn();
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected }),
+      useDeviceFlowController({ onConnected }),
     );
     await act(async () => {
       result.current.start();
@@ -681,7 +673,7 @@ describe("attempt ownership with transports that ignore abort", () => {
         : new auth.DeviceFlowError(code),
     );
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected: vi.fn() }),
+      useDeviceFlowController({ onConnected: vi.fn() }),
     );
     await act(async () => {
       result.current.start();
@@ -699,71 +691,60 @@ describe("attempt ownership with transports that ignore abort", () => {
 
   for (const lifetime of ["cancel", "restart", "unmount"] as const) {
     it.each(["resolve", "reject"] as const)(
-      `allows an admitted write to settle via %s after ${lifetime} without stale UI or rollback`,
+      `settles the real admitted commit via %s after ${lifetime} without rollback`,
       async (settlement) => {
-        const write =
-          deferred<Awaited<ReturnType<typeof upsertAccountByLoginMock>>>();
-        let committed = false;
-        upsertAccountByLoginMock.mockImplementationOnce(async () => {
-          const account = await write.promise;
-          committed = true;
-          return account;
-        });
+        const write = harness.storage.pauseSet();
         const onConnected = vi.fn();
         const { result, unmount } = renderHook(() =>
-          useDeviceFlowController({ clientId: "Iv1.test", onConnected }),
+          useDeviceFlowController({ onConnected }),
         );
         await act(async () => {
           result.current.start();
         });
         await advancePoll();
+        await write.entered.promise;
         expect(upsertAccountByLoginMock).toHaveBeenCalledTimes(1);
-        const signal = vi.mocked(auth.initiateDeviceFlow).mock.calls[0][0]
-          .signal!;
-        for (const mock of [
-          auth.pollForAccessToken,
-          auth.fetchAuthenticatedUser,
-          auth.fetchUserInstallations,
-          auth.fetchInstallationRepositories,
-        ]) {
-          expect(vi.mocked(mock).mock.calls[0][0].signal).toBe(signal);
-        }
+        expect(result.current.state.phase).toBe("committing");
         vi.mocked(auth.initiateDeviceFlow).mockResolvedValue(
           attemptInit("new"),
         );
+        let cancelled: boolean | undefined;
         await act(async () => {
           if (lifetime === "unmount") unmount();
-          else {
-            result.current.cancel();
-            if (lifetime === "restart") result.current.start();
-          }
+          else if (lifetime === "restart") result.current.start();
+          else cancelled = await result.current.cancel();
         });
-        const current = result.current.state;
+        if (lifetime === "cancel") {
+          expect(cancelled).toBe(false);
+          expect(result.current.state.phase).toBe("committing");
+        }
         await act(async () => {
-          if (settlement === "reject") write.reject(new Error("write failure"));
-          else
-            write.resolve({
-              id: "admitted-account",
-              login: "canceled-user",
-              avatarUrl: null,
-              createdAt: 1,
-              token: "fake-access",
-              refreshToken: null,
-              expiresAt: null,
-              refreshTokenExpiresAt: null,
-              installations: [],
-              installationsRefreshedAt: 1,
-              invalidated: false,
-              invalidatedReason: null,
-            });
+          if (settlement === "reject")
+            write.release.reject(new Error("synthetic write failure"));
+          else write.release.resolve();
+          await drain();
         });
-        expect(committed).toBe(settlement === "resolve");
-        expect(signal.aborted).toBe(true);
-        expect(result.current.state).toEqual(current);
-        expect(onConnected).not.toHaveBeenCalled();
+        const accounts = await accountMutations.listAccounts();
+        expect(accounts).toHaveLength(settlement === "resolve" ? 1 : 0);
+        if (lifetime === "cancel") {
+          expect(result.current.state.phase).toBe(
+            settlement === "resolve" ? "connected" : "fatal",
+          );
+          expect(onConnected).toHaveBeenCalledTimes(
+            settlement === "resolve" ? 1 : 0,
+          );
+          if (settlement === "resolve")
+            expect(result.current.state).toEqual({
+              phase: "connected",
+              accountId: accounts[0]!.id,
+            });
+        } else {
+          expect(onConnected).not.toHaveBeenCalled();
+          if (lifetime === "restart")
+            expect(result.current.state.phase).toBe("waiting");
+        }
         expect(upsertAccountByLoginMock).toHaveBeenCalledTimes(1);
         expect(removeAccountMock).not.toHaveBeenCalled();
-        expect(vi.getTimerCount()).toBe(lifetime.includes("restart") ? 1 : 0);
       },
     );
   }
@@ -773,7 +754,7 @@ describe("attempt ownership with transports that ignore abort", () => {
       result.current.start();
     });
     const { result } = renderHook(() =>
-      useDeviceFlowController({ clientId: "Iv1.test", onConnected }),
+      useDeviceFlowController({ onConnected }),
     );
     await act(async () => {
       result.current.start();

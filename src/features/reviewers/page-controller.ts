@@ -1,3 +1,4 @@
+import { getUIClient } from "../../runtime/ui-client";
 import { getLocaleStore } from "../../i18n/browser";
 
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
@@ -12,15 +13,15 @@ import {
 } from "../../cache/reviewer-cache";
 import type { PullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
-import type { Account } from "../../storage/accounts";
+import type {
+  AccountSummary as Account,
+  UISnapshot,
+} from "../../runtime/ui-contract";
 import {
   DEFAULT_PREFERENCES,
   getPreferences,
-  isAccountsChange,
-  isPreferencesChange,
-  parsePreferences,
   type Preferences,
-} from "../../storage/preferences";
+} from "../../runtime/preferences";
 
 import { createSelfHealingAccountResolver } from "./account-resolution";
 import {
@@ -48,7 +49,6 @@ import {
 import {
   fetchReviewerSummary,
   isAbortError,
-  requestInstallationsRefresh,
   shouldRetryWithFallbackAccount,
 } from "./runtime-requests";
 import { createAbortAwareRequestScheduler } from "./request-scheduler";
@@ -76,6 +76,7 @@ export function bootReviewerListPage(
   let currentHref = window.location.href;
   let generation = 0;
   let disposed = false;
+  let hydrated = false;
   const mountOperations = new WeakMap<HTMLElement, object>();
   // Keep the last request identity after settlement to reject delayed renders.
   const requestOwners = new Map<string, object>();
@@ -146,11 +147,9 @@ export function bootReviewerListPage(
   const inflightRequests = new Map<string, InflightRequest>();
   let cachedPreferences: Promise<Preferences> | null = null;
   let latestDisplayPreferences: Preferences | null = null;
-  const accountResolver = createSelfHealingAccountResolver({
-    requestRefresh: requestInstallationsRefresh,
-  });
+  const accountResolver = createSelfHealingAccountResolver();
   const fallbackAccounts = createFallbackAccountIntegration((owner) =>
-    accountResolver.resolveFallbackAccount(owner),
+    accountResolver.resolveFallbackAccount(owner, currentRoute?.repo ?? ""),
   );
   const pageMetadata = createPageMetadataCoordinator({ fallbackAccounts });
   const reviewerSummaryScheduler = createAbortAwareRequestScheduler(
@@ -226,6 +225,7 @@ export function bootReviewerListPage(
   }
 
   async function processRow(row: Element): Promise<void> {
+    if (!hydrated || disposed) return;
     if (disposed || currentRoute == null || !row.isConnected) return;
 
     const pullNumber = extractPullNumber(row);
@@ -507,50 +507,54 @@ export function bootReviewerListPage(
   }
 
   const observer = rowLifecycle.observe();
-  rowLifecycle.processRows();
+  function hydrate(snapshot: UISnapshot): void {
+    // A reconnect can deliver the first usable snapshot after read() failed.
+    // Once subscribed state wins, a delayed initial read must not replace it.
+    if (disposed || hydrated) return;
+    hydrated = true;
+    latestDisplayPreferences = snapshot.preferences;
+    cachedPreferences = Promise.resolve(snapshot.preferences);
+    rowLifecycle.processRows();
+  }
 
   ctx.addEventListener(window, "wxt:locationchange", () => refreshRoute(true));
   ctx.addEventListener(window, "popstate", () => refreshRoute(true));
   ctx.addEventListener(document, "turbo:render", () => refreshRoute(true));
   ctx.addEventListener(document, "pjax:end", () => refreshRoute(true));
 
-  const storageListener: Parameters<
-    typeof browser.storage.onChanged.addListener
-  >[0] = (changes, areaName) => {
-    if (areaName !== "local") return;
-
-    let displayChanged = false;
-    if (isPreferencesChange(changes)) {
-      const previous = parsePreferences(changes.preferences?.oldValue);
-      const next = parsePreferences(changes.preferences?.newValue);
-      displayChanged =
-        previous.showStateBadge !== next.showStateBadge ||
-        previous.showReviewerName !== next.showReviewerName ||
-        previous.openPullsOnly !== next.openPullsOnly;
-      if (displayChanged) {
-        latestDisplayPreferences = next;
-        cachedPreferences = Promise.resolve(next);
-      }
+  const unsubscribeState = getUIClient().subscribe(({ snapshot, previous }) => {
+    if (disposed) return;
+    if (!hydrated) {
+      hydrate(snapshot);
+      return;
     }
-
-    if (isAccountsChange(changes)) {
+    const next = snapshot.preferences;
+    const before = previous?.preferences;
+    const displayChanged =
+      !before ||
+      before.showStateBadge !== next.showStateBadge ||
+      before.showReviewerName !== next.showReviewerName ||
+      before.openPullsOnly !== next.openPullsOnly;
+    latestDisplayPreferences = next;
+    cachedPreferences = Promise.resolve(next);
+    if (previous && previous.accountsRevision !== snapshot.accountsRevision) {
       clearReviewerCache();
       fallbackAccounts.clear();
       abortInflightRequests();
       rowLifecycle.processRows();
-    } else if (displayChanged && latestDisplayPreferences != null) {
-      renderDisplay(latestDisplayPreferences);
-    }
-  };
+    } else if (displayChanged) renderDisplay(next);
+  });
+  void getUIClient()
+    .read()
+    .then(hydrate, () => undefined);
 
-  browser.storage.onChanged.addListener(storageListener);
   ctx.setInterval(() => refreshRoute(), 1000);
   ctx.onInvalidated(() => {
     disposed = true;
     observer.disconnect();
     unsubscribeLocale?.();
     unsubscribeLocale = undefined;
-    browser.storage.onChanged.removeListener(storageListener);
+    unsubscribeState();
     abortInflightRequests();
   });
 

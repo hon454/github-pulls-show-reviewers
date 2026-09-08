@@ -1,3 +1,6 @@
+import type * as AccountsStorageModule from "../src/storage/accounts";
+import type * as UIClientModule from "../src/runtime/ui-client";
+import type * as RuntimePreferencesModule from "../src/runtime/preferences";
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
@@ -6,19 +9,49 @@ import type { ReviewerOutcomeSnapshot } from "../src/features/reviewers/outcomes
 import type { PullReviewerSummary } from "../src/github/api";
 import type { Locale } from "../src/i18n";
 import type { Account } from "../src/storage/accounts";
-import type { Preferences } from "../src/storage/preferences";
+import type { Preferences } from "../src/shared/preferences";
+import { createUIPresentationFixtures } from "./helpers/ui-presentation-fixtures";
 import { createPullListFixtureHtml } from "./helpers/pull-list-fixtures";
 
 const resolveAccount = vi.fn();
 const listAccounts = vi.fn();
-vi.mock("../src/storage/accounts", () => ({
+vi.mock("../src/storage/accounts", async (importActual) => ({
+  ...(await importActual<typeof AccountsStorageModule>()),
   resolveAccountForRepo: resolveAccount,
   listAccounts,
 }));
 
+vi.mock("../src/runtime/ui-client", async (importActual) => ({
+  ...(await importActual<typeof UIClientModule>()),
+  getUIClient: () => uiFixtures.client,
+  disposeUIClient: () => uiFixtures.client.dispose(),
+}));
+vi.mock("../src/runtime/preferences", async (importActual) => ({
+  ...(await importActual<typeof RuntimePreferencesModule>()),
+  getPreferences: async () => preferences,
+}));
+vi.mock("../src/runtime/accounts", async () => {
+  const { createSelfHealingAccountResolver } =
+    await import("../src/background/account-resolution");
+  const { summarizeAccount } =
+    await import("../src/background/account-summary");
+  const resolver = createSelfHealingAccountResolver({
+    requestRefresh: async () => false,
+  });
+  return {
+    resolveAccountForRepo: async (owner: string, repo: string) => {
+      const result = await resolver.resolveAccount(owner, repo);
+      return result ? summarizeAccount(result) : null;
+    },
+    resolveFallbackAccount: async (owner: string) => {
+      const result = await resolver.resolveFallbackAccount(owner);
+      return result ? summarizeAccount(result) : null;
+    },
+  };
+});
+
 type Message = { type: string; pullNumber?: string; accountId?: string };
-type StorageListener = (changes: object, area: string) => void;
-let storageListeners: Set<StorageListener>;
+let uiFixtures: ReturnType<typeof createUIPresentationFixtures>;
 let teardown: Array<() => void>;
 let snapshots: ReviewerOutcomeSnapshot[];
 let preferences: Preferences;
@@ -104,7 +137,10 @@ function messages(type: string): Message[] {
     .filter((message) => message.type === type);
 }
 function storage(changes: object): void {
-  [...storageListeners].forEach((listener) => listener(changes, "local"));
+  uiFixtures.publishFixtureChange(
+    changes as Record<string, { oldValue?: unknown; newValue?: unknown }>,
+    "local",
+  );
 }
 function connect(): void {
   resolveAccount.mockResolvedValue(account);
@@ -142,7 +178,8 @@ function refresh(path = pathname): void {
 }
 async function boot(): Promise<void> {
   // Observe the real coordinator's publications without replacing any feature
-  // boot, controller, scheduler, account resolver, banner or locale lifecycle.
+  // boot, controller, scheduler, banner or locale lifecycle. The account and
+  // snapshot fixtures here exercise presentation; real bridge tests cover isolation.
   const module = await import("../src/features/reviewers/outcomes");
   const create = module.createReviewerOutcomeCoordinator;
   vi.spyOn(module, "createReviewerOutcomeCoordinator").mockImplementation(
@@ -181,7 +218,7 @@ beforeEach(() => {
   });
   metadata = async () => ({ ok: true, metadata: [] });
   summary = async () => success();
-  storageListeners = new Set();
+  uiFixtures = createUIPresentationFixtures(async () => preferences);
   teardown = [];
   snapshots = [];
   preferences = {
@@ -203,12 +240,10 @@ beforeEach(() => {
       sendMessage,
     },
     storage: {
-      local: { get: async () => ({ preferences }) },
       onChanged: {
-        addListener: (listener: StorageListener) =>
-          storageListeners.add(listener),
-        removeListener: (listener: StorageListener) =>
-          storageListeners.delete(listener),
+        addListener: vi.fn(() => {
+          throw new Error("UI cannot subscribe to auth storage");
+        }),
       },
     },
   });

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { PullReviewerMetadata } from "../src/github/api";
 import type { FallbackAccountIntegration } from "../src/features/reviewers/fallback-account";
 import { createPageMetadataCoordinator } from "../src/features/reviewers/page-metadata";
-import type { Account } from "../src/storage/accounts";
+import type { AccountSummary as Account } from "../src/runtime/ui-contract";
 
 const route = { owner: "acme", repo: "widgets" };
 const metadata: PullReviewerMetadata = {
@@ -18,15 +18,11 @@ function makeAccount(id = "acc-1"): Account {
     id,
     login: id,
     avatarUrl: null,
-    token: "ghu_example",
-    createdAt: 1,
+    revision: "g0",
     installations: [],
     installationsRefreshedAt: 1,
     invalidated: false,
     invalidatedReason: null,
-    refreshToken: null,
-    expiresAt: null,
-    refreshTokenExpiresAt: null,
   };
 }
 

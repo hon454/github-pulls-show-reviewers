@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getLocaleStore } from "../../src/i18n/browser";
 import { useLocale } from "../../src/i18n/react";
@@ -6,7 +6,9 @@ import type { LocaleStore } from "../../src/i18n";
 import { LanguageSelector } from "./components/LanguageSelector";
 
 import { readGitHubAppConfig } from "../../src/config/github-app";
-import { listAccounts, type Account } from "../../src/storage/accounts";
+import { listAccounts } from "../../src/runtime/accounts";
+import { getUIClient } from "../../src/runtime/ui-client";
+import type { AccountSummary as Account } from "../../src/runtime/ui-contract";
 
 import { AccountsList } from "./components/AccountsList";
 import { AddAccountPanel } from "./components/AddAccountPanel";
@@ -28,20 +30,35 @@ export function OptionsPage({
   }, [locale.lang, t]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const accountsRevision = useRef(0);
   const appConfigResult = readGitHubAppConfig();
   const appConfig = appConfigResult.ok ? appConfigResult.config : null;
 
   const reload = useCallback(async () => {
+    const readingAt = ++accountsRevision.current;
     try {
-      setAccounts(await listAccounts());
+      const next = await listAccounts();
+      if (accountsRevision.current !== readingAt) return;
+      setAccounts(next);
       setLoadFailed(false);
     } catch {
-      setLoadFailed(true);
+      if (accountsRevision.current === readingAt) setLoadFailed(true);
     }
   }, []);
 
   useEffect(() => {
+    const unsubscribe = getUIClient().subscribe(({ snapshot }) => {
+      if (snapshot.accounts) {
+        accountsRevision.current += 1;
+        setAccounts(snapshot.accounts);
+        setLoadFailed(false);
+      }
+    });
     void reload();
+    return () => {
+      accountsRevision.current += 1;
+      unsubscribe();
+    };
   }, [reload]);
 
   const handleConnected = useCallback(async () => {
@@ -54,7 +71,6 @@ export function OptionsPage({
   // from a user-driven click handler, never from a useEffect that
   // StrictMode double-invokes.
   const controller = useDeviceFlowController({
-    clientId: appConfig?.clientId ?? "",
     onConnected: handleConnected,
   });
 
@@ -63,7 +79,9 @@ export function OptionsPage({
     const inFlight =
       controller.state.phase === "initiating" ||
       controller.state.phase === "waiting" ||
-      controller.state.phase === "fetching_installations";
+      controller.state.phase === "fetching_installations" ||
+      controller.state.phase === "committing" ||
+      controller.state.phase === "cancelling";
     if (!inFlight) {
       controller.start();
     }

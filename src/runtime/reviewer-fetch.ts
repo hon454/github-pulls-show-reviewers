@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { repositoryOwnerSchema, repositoryNameSchema } from "./ui-contract";
+import { rateLimitSnapshotSchema } from "./diagnostics";
 
 import {
   GitHubApiError,
@@ -26,12 +28,12 @@ const pullReviewerMetadataMessageSchema = z.object({
   requestedTeams: z.array(z.string()),
 }) satisfies z.ZodType<PullReviewerMetadata>;
 
-export const fetchPullReviewerSummaryMessageSchema = z.object({
+export const fetchPullReviewerSummaryMessageSchema = z.strictObject({
   type: z.literal("fetchPullReviewerSummary"),
   requestId: nonEmptyStringSchema,
-  owner: nonEmptyStringSchema,
-  repo: nonEmptyStringSchema,
-  pullNumber: nonEmptyStringSchema,
+  owner: repositoryOwnerSchema,
+  repo: repositoryNameSchema,
+  pullNumber: z.string().regex(/^[1-9]\d*$/),
   accountId: z.string().nullable(),
   pullMetadata: pullReviewerMetadataMessageSchema.optional(),
 });
@@ -40,7 +42,7 @@ export type FetchPullReviewerSummaryMessage = z.infer<
   typeof fetchPullReviewerSummaryMessageSchema
 >;
 
-export const cancelPullReviewerSummaryMessageSchema = z.object({
+export const cancelPullReviewerSummaryMessageSchema = z.strictObject({
   type: z.literal("cancelPullReviewerSummary"),
   requestId: nonEmptyStringSchema,
 });
@@ -49,11 +51,11 @@ export type CancelPullReviewerSummaryMessage = z.infer<
   typeof cancelPullReviewerSummaryMessageSchema
 >;
 
-export const fetchPullReviewerMetadataBatchMessageSchema = z.object({
+export const fetchPullReviewerMetadataBatchMessageSchema = z.strictObject({
   type: z.literal("fetchPullReviewerMetadataBatch"),
   requestId: nonEmptyStringSchema,
-  owner: nonEmptyStringSchema,
-  repo: nonEmptyStringSchema,
+  owner: repositoryOwnerSchema,
+  repo: repositoryNameSchema,
   accountId: z.string().nullable(),
   targetPullNumbers: z.array(nonEmptyStringSchema).optional(),
 });
@@ -73,14 +75,13 @@ export type ReviewerFetchFailure = {
   status: number;
   endpoint: string | null;
   rateLimited: boolean;
-  rateLimit?: ReviewerFetchRateLimitSnapshot;
+  rateLimit?: ReviewerFetchRateLimitSnapshot | undefined;
 };
 
 export type ReviewerFetchErrorEnvelope = {
   kind: "github-api" | "github-endpoints" | "schema" | "unknown";
   status: number | null;
-  failures?: ReviewerFetchFailure[];
-  message?: string;
+  failures?: ReviewerFetchFailure[] | undefined;
 };
 
 export type FetchPullReviewerSummaryResponse =
@@ -103,9 +104,54 @@ export type FetchPullReviewerMetadataBatchResponse =
       error: ReviewerFetchErrorEnvelope;
     };
 
+export const reviewerFetchErrorSchema = z.object({
+  kind: z.enum(["github-api", "github-endpoints", "schema", "unknown"]),
+  status: z.number().nullable(),
+  failures: z
+    .array(
+      z.object({
+        status: z.number(),
+        endpoint: z.string().nullable(),
+        rateLimited: z.boolean(),
+        rateLimit: rateLimitSnapshotSchema.optional(),
+      }),
+    )
+    .optional(),
+});
+const pullReviewerSummarySchema = z.object({
+  status: z.enum(["ok", "no-coverage", "network-error", "rate-limited"]),
+  requestedUsers: z.array(reviewerUserMessageSchema),
+  requestedTeams: z.array(z.string()),
+  completedReviews: z.array(
+    reviewerUserMessageSchema.extend({
+      state: z.enum([
+        "APPROVED",
+        "CHANGES_REQUESTED",
+        "COMMENTED",
+        "DISMISSED",
+      ]),
+    }),
+  ),
+});
+export const fetchPullReviewerSummaryResponseSchema = z.discriminatedUnion(
+  "ok",
+  [
+    z.object({ ok: z.literal(true), summary: pullReviewerSummarySchema }),
+    z.object({ ok: z.literal(false), error: reviewerFetchErrorSchema }),
+  ],
+);
+export const fetchPullReviewerMetadataBatchResponseSchema =
+  z.discriminatedUnion("ok", [
+    z.object({
+      ok: z.literal(true),
+      metadata: z.array(pullReviewerMetadataMessageSchema),
+    }),
+    z.object({ ok: z.literal(false), error: reviewerFetchErrorSchema }),
+  ]);
+
 export class ReviewerFetchRuntimeError extends Error {
   constructor(public readonly envelope: ReviewerFetchErrorEnvelope) {
-    super(envelope.message ?? "Background reviewer fetch failed.");
+    super("Background reviewer fetch failed.");
     this.name = "ReviewerFetchRuntimeError";
   }
 }
@@ -136,7 +182,6 @@ export function serializeReviewerFetchError(
       kind: "github-endpoints",
       status: extractGitHubApiStatus(error),
       failures: error.failures.map(toReviewerFetchFailure),
-      message: error.message,
     };
   }
 
@@ -145,7 +190,6 @@ export function serializeReviewerFetchError(
       kind: "github-api",
       status: error.status,
       failures: [toReviewerFetchFailure(error)],
-      message: error.message,
     };
   }
 
@@ -153,7 +197,6 @@ export function serializeReviewerFetchError(
     return {
       kind: "schema",
       status: null,
-      message: error.message,
     };
   }
 
@@ -161,7 +204,6 @@ export function serializeReviewerFetchError(
     return {
       kind: "unknown",
       status: extractGitHubApiStatus(error),
-      message: error.message,
     };
   }
 
@@ -203,7 +245,9 @@ export function extractReviewerFetchFailures(
       }
     ).failures
       .filter(
-        (failure): failure is {
+        (
+          failure,
+        ): failure is {
           status: number;
           endpoint?: string | null;
           rateLimited?: boolean;
