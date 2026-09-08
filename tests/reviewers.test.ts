@@ -1187,6 +1187,18 @@ describe("bootReviewerListPage", () => {
     expect(document.body.textContent).toContain("@alice");
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
 
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@alice");
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
     resolveSummary!({
       status: "ok",
       requestedUsers: [{ login: "bob", avatarUrl: null }],
@@ -1467,6 +1479,96 @@ describe("bootReviewerListPage", () => {
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
 
     clearReviewerCache();
+  });
+
+  it("restores a fresh cached reviewer mount after equivalent GitHub metadata replacement", async () => {
+    getPreferencesMock.mockResolvedValue({
+      version: 1,
+      language: "auto",
+      showStateBadge: true,
+      showReviewerName: true,
+      openPullsOnly: true,
+    });
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      buildReviewerCacheKey("cinev", "shotloom", "42"),
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+      { fetchedAt: Date.now() },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(document.querySelector(".ghpsr-avatar")).not.toBeNull();
+    const runtimeMessageCount = runtimeSendMessageMock.mock.calls.length;
+
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    expect(document.querySelector(".ghpsr-avatar")).not.toBeNull();
+    expect(runtimeSendMessageMock.mock.calls).toHaveLength(runtimeMessageCount);
+
+    clearReviewerCache();
+  });
+
+  it("repairs an empty cached mount without starting more reviewer work", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({
+        ok: true,
+        summary: {
+          status: "ok",
+          requestedUsers: [],
+          requestedTeams: [],
+          completedReviews: [],
+        },
+      });
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const runtimeMessageCount = runtimeSendMessageMock.mock.calls.length;
+
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const root = document.querySelector<HTMLElement>("[data-ghpsr-root]")!;
+    expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    expect(root.textContent).toBe("");
+    expect(runtimeSendMessageMock.mock.calls).toHaveLength(runtimeMessageCount);
   });
 
   it("revalidates mutated existing rows when metadata children are added", async () => {
@@ -2326,6 +2428,55 @@ describe("render-only reviewer locale events", () => {
       fingerprint.mockRestore();
     },
   );
+
+  it("keeps repaired cached reviewer mounts render-only across all supported locales", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const cache = await import("../src/cache/reviewer-cache");
+    cache.clearReviewerCache();
+    cache.setCachedReviewerSummary(
+      cache.buildReviewerCacheKey("cinev", "shotloom", "42"),
+      summary,
+    );
+    const lifecycle = await import("../src/features/reviewers/row-lifecycle");
+    const lifecycleFactory = vi.spyOn(lifecycle, "createReviewerRowLifecycle");
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const processRows = vi.spyOn(
+      lifecycleFactory.mock.results[0].value,
+      "processRows",
+    );
+    const calls = runtimeSendMessageMock.mock.calls.length;
+    const accounts = resolveAccountForRepoMock.mock.calls.length;
+    const prefs = getPreferencesMock.mock.calls.length;
+    for (const language of ["en", "ko", "ja", "zh_CN", "zh_TW"]) {
+      await switchLanguage(language);
+      const { createTranslator, toLanguageTag } = await import("../src/i18n");
+      const locale = language as Locale;
+      const root = document.querySelector<HTMLElement>(".ghpsr-root")!;
+      expect(root.lang).toBe(toLanguageTag(locale));
+      expect(root.textContent).toContain(
+        createTranslator(locale)("reviewers_section"),
+      );
+      expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
+      expect(getPreferencesMock).toHaveBeenCalledTimes(prefs);
+      expect(processRows).not.toHaveBeenCalled();
+    }
+    lifecycleFactory.mockRestore();
+    cache.clearReviewerCache();
+  });
 
   it("keeps four in-flight slots and FIFO queued work through locale switches and mutation stress", async () => {
     document.body.innerHTML = new DOMParser().parseFromString(

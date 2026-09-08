@@ -23,7 +23,8 @@
 - Reuses page-level reviewer metadata across visible rows, including searched
   or paginated pull request lists when GitHub's REST pagination exposes those
   rows.
-- Keeps working as GitHub updates the page during normal navigation.
+- Keeps working as GitHub updates the page during normal navigation, including
+  restoring an extension mount when equivalent native PR metadata replaces it.
 - Keeps reviewer metadata visible in narrow desktop and split-window layouts
   without restoring GitHub metadata that GitHub intentionally hides there.
 - Leaves rows visually unchanged when a pull request has no reviewers. If a

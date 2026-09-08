@@ -17,6 +17,13 @@ const stressFixtureHtml = readFileSync(
   path.join(process.cwd(), "tests/fixtures/github-pulls-mutation-stress.html"),
   "utf8",
 );
+const modernMetadataFixtureHtml = readFileSync(
+  path.join(
+    process.cwd(),
+    "tests/fixtures/github-pulls-list-item-metadata.html",
+  ),
+  "utf8",
+);
 const route = { owner: "hon454", repo: "github-pulls-show-reviewers" };
 
 function flushMutations(): Promise<void> {
@@ -61,6 +68,68 @@ describe("reviewer row lifecycle", () => {
 
     expect(processRow).toHaveBeenCalledWith(row);
     expect(markPageMetadataStale).toHaveBeenCalledTimes(1);
+  });
+
+  it("repairs a missing mount without invalidating an unchanged row fingerprint", async () => {
+    const { ensureReviewerMount } =
+      await import("../src/features/reviewers/dom");
+    const processRow = vi.fn();
+    const markPageMetadataStale = vi.fn();
+    const lifecycle = createReviewerRowLifecycle({
+      getRoute: () => route,
+      processRow,
+      markPageMetadataStale,
+    });
+    const row = document.querySelector(".js-issue-row")!;
+    ensureReviewerMount(row);
+    lifecycle.recordFingerprint(row, "42", route);
+    const observer = lifecycle.observe();
+
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+    await flushMutations();
+    observer.disconnect();
+
+    expect(processRow).toHaveBeenCalledOnce();
+    expect(processRow).toHaveBeenCalledWith(row);
+    expect(markPageMetadataStale).not.toHaveBeenCalled();
+  });
+
+  it("repairs a missing mount in the CSS-module metadata fixture", async () => {
+    document.body.innerHTML = new DOMParser().parseFromString(
+      modernMetadataFixtureHtml,
+      "text/html",
+    ).body.innerHTML;
+    const { ensureReviewerMount } =
+      await import("../src/features/reviewers/dom");
+    const processRow = vi.fn();
+    const markPageMetadataStale = vi.fn();
+    const lifecycle = createReviewerRowLifecycle({
+      getRoute: () => route,
+      processRow,
+      markPageMetadataStale,
+    });
+    const row = document.querySelector(".js-issue-row")!;
+    ensureReviewerMount(row);
+    lifecycle.recordFingerprint(row, "42", route);
+    const observer = lifecycle.observe();
+
+    const metadata = document.querySelector<HTMLElement>(
+      '[class*="ListItem-module__ListItemMetadataRow"]',
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+    await flushMutations();
+    observer.disconnect();
+
+    expect(processRow).toHaveBeenCalledOnce();
+    expect(processRow).toHaveBeenCalledWith(row);
+    expect(markPageMetadataStale).not.toHaveBeenCalled();
   });
 
   it("ignores extension-owned DOM mutations", async () => {
