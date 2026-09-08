@@ -389,7 +389,7 @@ describe("OptionsPage", () => {
     await act(async () => {
       matchedButton.click();
       await Promise.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 20));
     });
 
     expect(resolveAccountCoverageForRepoMock).toHaveBeenCalledWith(
@@ -864,10 +864,15 @@ describe("OptionsPage", () => {
       document.querySelectorAll<HTMLButtonElement>("button"),
     ).find((b) => b.textContent?.trim() === "Cancel");
     expect(cancelButton).toBeDefined();
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-testid="add-account-panel"]'),
+    );
 
     await act(async () => {
+      cancelButton!.focus();
       cancelButton!.click();
       await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
     });
 
     expect(
@@ -876,6 +881,9 @@ describe("OptionsPage", () => {
     expect(
       document.querySelector('[data-testid="accounts-add"]'),
     ).not.toBeNull();
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-testid="accounts-add"]'),
+    );
   });
 
   it("keeps the reopened panel when a canceled poll succeeds late", async () => {
@@ -1006,20 +1014,207 @@ describe("OptionsPage", () => {
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1100));
+      await new Promise((resolve) => setTimeout(resolve, 20));
     });
     expect(initiateDeviceFlow).toHaveBeenCalledTimes(1);
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '[data-testid="accounts-add"]',
+    );
+    expect(addButton).not.toBeNull();
+    expect(document.activeElement).toBe(addButton);
     expect(
-      document.querySelector('[data-testid="accounts-add"]'),
-    ).not.toBeNull();
+      document.querySelector('[data-testid="account-connected-status"]')
+        ?.textContent,
+    ).toBe("Account connected.");
+    expect(
+      document.querySelector('[data-testid="add-account-panel"]'),
+    ).toBeNull();
+
+    await act(async () => {
+      addButton!.click();
+      await Promise.resolve();
+    });
+
+    expect(initiateDeviceFlow).toHaveBeenCalledTimes(2);
+    const languageSelect = document.querySelector<HTMLSelectElement>(
+      '[data-testid="language-select"]',
+    )!;
+    languageSelect.focus();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+    expect(document.activeElement).toBe(languageSelect);
+    expect(
+      document.querySelector('[data-testid="account-connected-status"]')
+        ?.textContent,
+    ).toBe("Account connected.");
+  });
+
+  it("restores the fallback after completion removes a focused waiting child", async () => {
+    await renderOptionsPage();
+    const auth = await import("../src/github/auth");
+    let releaseUser!: () => void;
+    vi.mocked(auth.initiateDeviceFlow).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 1,
+    });
+    vi.mocked(auth.pollForAccessToken).mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_abc",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+    vi.mocked(auth.fetchAuthenticatedUser).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseUser = () => resolve({ login: "hon454", avatarUrl: null });
+        }),
+    );
+    vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
 
     await act(async () => {
       document
         .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
         .click();
       await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const copy = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Copy",
+    );
+    expect(copy).toBeDefined();
+    copy!.focus();
+    expect(document.activeElement).toBe(copy);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+    expect(auth.fetchAuthenticatedUser).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(document.body);
+
+    await act(async () => {
+      releaseUser();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-testid="accounts-add"]'),
+    ).toBe(document.activeElement);
+  });
+
+  it("does not reclaim focus after an external pointer intent during completion", async () => {
+    await renderOptionsPage();
+    const auth = await import("../src/github/auth");
+    let releaseUser!: () => void;
+    vi.mocked(auth.initiateDeviceFlow).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 1,
+    });
+    vi.mocked(auth.pollForAccessToken).mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_abc",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+    vi.mocked(auth.fetchAuthenticatedUser).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseUser = () => resolve({ login: "hon454", avatarUrl: null });
+        }),
+    );
+    vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
+      items: [],
+      truncated: false,
     });
 
-    expect(initiateDeviceFlow).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "Copy")!
+      .focus();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+    expect(auth.fetchAuthenticatedUser).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.pointerDown(document.querySelector(".options-intro")!);
+
+    await act(async () => {
+      releaseUser();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("does not restore the opener when completion follows an intentional in-panel blur", async () => {
+    await renderOptionsPage();
+    const auth = await import("../src/github/auth");
+    vi.mocked(auth.initiateDeviceFlow).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 1,
+    });
+    vi.mocked(auth.pollForAccessToken).mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_abc",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+    vi.mocked(auth.fetchAuthenticatedUser).mockResolvedValue({
+      login: "hon454",
+      avatarUrl: null,
+    });
+    vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const panel = document.querySelector<HTMLElement>(
+      '[data-testid="add-account-panel"]',
+    )!;
+    expect(document.activeElement).toBe(panel);
+    panel.blur();
+    expect(document.activeElement).toBe(document.body);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1120));
+    });
+    expect(document.querySelector('[data-testid="accounts-add"]')).not.toBeNull();
+    expect(document.activeElement).toBe(document.body);
   });
 
   it("does not start the device flow twice under React StrictMode", async () => {

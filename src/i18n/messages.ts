@@ -126,6 +126,7 @@ export interface MessageArgs {
   options_retry: undefined;
   options_accounts_empty: undefined;
   options_accounts_empty_description: undefined;
+  options_account_connected: undefined;
   options_installed_none: undefined;
   options_installed_on: { accounts: string };
   options_signin_again: undefined;
@@ -163,6 +164,9 @@ export interface MessageArgs {
   auth_requesting: undefined;
   auth_enter_code: undefined;
   auth_copy: undefined;
+  auth_copying: undefined;
+  auth_code_copied: undefined;
+  auth_code_copy_failed: undefined;
   auth_open_github: undefined;
   auth_waiting: undefined;
   auth_expires_at: { time: string };

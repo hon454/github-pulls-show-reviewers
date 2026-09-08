@@ -120,6 +120,38 @@ boundary: a successful cancel ACK forbids later commit; an already admitted
 write returns committing/completed instead. A stale callback cannot close a
 newer panel. Cancellation never rolls back or deletes a saved account.
 
+### Sign-in clipboard, keyboard, and status feedback
+
+Use an isolated Chrome profile and synthetic device-flow responses for this
+check. Do not complete a real GitHub authorization or change an account,
+permission, or clipboard setting.
+
+1. With the keyboard, focus **+ Add another account** and activate it. Focus
+   moves to the programmatically focusable sign-in panel once; waiting, polling,
+   a slow-down response, and changing the extension language must not move it
+   again. Confirm **Copy**, the authorization link, **Cancel**, **Close**, and
+   retry controls remain keyboard-operable.
+2. Stub a successful Clipboard API write and activate **Copy**. It is disabled
+   only while that write is pending, then an atomic polite status says that the
+   code was copied. Stub a rejected write and an unavailable Clipboard API in
+   separate runs; each must instead say to select and copy manually. The device
+   code remains selectable and the authorization link still works. No raw
+   browser-error text appears.
+3. Begin a deferred copy for code A, replace it with code B, then complete A.
+   A's result must not alter B's feedback. A new copy of B can proceed, and its
+   outcome is the only one shown.
+4. Focus **Cancel** or **Close** and activate it. Once the panel disappears,
+   focus returns to the control that opened it, or to **+ Add another account**
+   when that control no longer exists. Complete a synthetic successful sign-in
+   once with focus inside the panel and once after moving focus to another
+   control: only the former returns focus. In both cases the accounts section
+   has one concise localized connected status after the panel closes.
+5. VoiceOver-specific spoken-output testing is out of scope. Do not add a
+   VoiceOver pass/fail gate for these states. Keep the ordinary web
+   accessibility checks above: keyboard operation, focus recovery, localized
+   visible status feedback, and the existing HTML/ARIA semantics remain part
+   of this manual check.
+
 ### Background credential boundary and worker recovery
 
 Use an isolated profile and synthetic credentials. Do not print auth records,

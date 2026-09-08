@@ -120,6 +120,10 @@
     "message": "公開儲存庫仍會顯示審查者資訊。",
     "description": "Options page accounts empty description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
+  "options_account_connected": {
+    "message": "帳號已連結。",
+    "description": "Accounts-section completion status after the sign-in panel closes."
+  },
   "options_installed_none": {
     "message": "安裝位置：尚無",
     "description": "Options page installed none. Visible text; keep GitHub names, codes and identifiers unchanged."
@@ -264,6 +268,18 @@
   "auth_copy": {
     "message": "複製",
     "description": "Options page copy. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_copying": {
+    "message": "正在複製…",
+    "description": "Options page copy button while a Clipboard API write is pending."
+  },
+  "auth_code_copied": {
+    "message": "代碼已複製。",
+    "description": "Polite status after the device code is copied."
+  },
+  "auth_code_copy_failed": {
+    "message": "無法複製代碼。請選取後手動複製。",
+    "description": "Polite status when Clipboard API is unavailable or rejects."
   },
   "auth_open_github": {
     "message": "開啟 GitHub 以授權 →",

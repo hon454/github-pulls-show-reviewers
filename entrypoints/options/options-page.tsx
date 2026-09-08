@@ -30,9 +30,45 @@ export function OptionsPage({
   }, [locale.lang, t]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | null>(
+    null,
+  );
+  const [focusRestorationIntent, setFocusRestorationIntent] = useState<
+    number | null
+  >(null);
   const accountsRevision = useRef(0);
+  const addAccountButton = useRef<HTMLButtonElement | null>(null);
+  const openingControl = useRef<HTMLElement | null>(null);
+  const addAccountPanel = useRef<HTMLDivElement | null>(null);
+  const panelFocusOwned = useRef(false);
+  const focusIntentGeneration = useRef(0);
   const appConfigResult = readGitHubAppConfig();
   const appConfig = appConfigResult.ok ? appConfigResult.config : null;
+
+  useEffect(() => {
+    const relinquishPanelFocus = (target: EventTarget | null) => {
+      if (
+        !(target instanceof Node) ||
+        addAccountPanel.current?.contains(target)
+      )
+        return;
+      panelFocusOwned.current = false;
+      focusIntentGeneration.current += 1;
+    };
+    const handleFocusIn = (event: FocusEvent) =>
+      relinquishPanelFocus(event.target);
+    const handlePointerDown = (event: PointerEvent) =>
+      relinquishPanelFocus(event.target);
+    // When a focused waiting child is removed, browsers can move focus to
+    // body without another focus event. Listen for the next external intent
+    // so stale ownership cannot reclaim focus on completion.
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
 
   const reload = useCallback(async () => {
     const readingAt = ++accountsRevision.current;
@@ -61,10 +97,33 @@ export function OptionsPage({
     };
   }, [reload]);
 
+  const restoreOpeningFocus = useCallback(() => {
+    setFocusRestorationIntent(focusIntentGeneration.current);
+  }, []);
+
+  useEffect(() => {
+    if (showAddPanel || focusRestorationIntent === null) return;
+    if (focusIntentGeneration.current === focusRestorationIntent && (
+      document.activeElement === document.body ||
+      !document.activeElement?.isConnected
+    )) {
+      const target = openingControl.current;
+      (target?.isConnected ? target : addAccountButton.current)?.focus();
+    }
+    setFocusRestorationIntent(null);
+  }, [focusRestorationIntent, showAddPanel]);
+
   const handleConnected = useCallback(async () => {
+    // The focused waiting control can be removed while the flow fetches and
+    // commits account data. Preserve ownership captured while that control was
+    // live; intentional focus moving out of the panel clears it.
+    const shouldRestoreFocus = panelFocusOwned.current;
+    panelFocusOwned.current = false;
+    setConnectionStatus("connected");
     setShowAddPanel(false);
+    if (shouldRestoreFocus) restoreOpeningFocus();
     await reload();
-  }, [reload]);
+  }, [reload, restoreOpeningFocus]);
 
   // Controller is owned by the parent so it survives AddAccountPanel's
   // simulated remount under StrictMode and so start() is only ever called
@@ -74,7 +133,11 @@ export function OptionsPage({
     onConnected: handleConnected,
   });
 
-  const openAddPanel = () => {
+  const openAddPanel = (control: HTMLElement) => {
+    openingControl.current = control;
+    panelFocusOwned.current = false;
+    setConnectionStatus(null);
+    setFocusRestorationIntent(null);
     setShowAddPanel(true);
     const inFlight =
       controller.state.phase === "initiating" ||
@@ -156,12 +219,23 @@ export function OptionsPage({
             t={t}
             accounts={accounts}
             onChange={reload}
-            onReauthenticate={() => {
+            onReauthenticate={(_, control) => {
               if (appConfig) {
-                openAddPanel();
+                openAddPanel(control);
               }
             }}
           />
+          {connectionStatus === "connected" ? (
+            <p
+              className="inline-status"
+              data-testid="account-connected-status"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {t("options_account_connected")}
+            </p>
+          ) : null}
           {!appConfig ? (
             <div
               className="notice notice--error"
@@ -174,14 +248,23 @@ export function OptionsPage({
             <AddAccountPanel
               locale={locale}
               controller={controller}
-              onCancel={() => setShowAddPanel(false)}
+              panelRef={addAccountPanel}
+              onFocusOwnershipChange={(owned) => {
+                panelFocusOwned.current = owned;
+              }}
+              onCancel={(shouldRestoreFocus) => {
+                panelFocusOwned.current = false;
+                setShowAddPanel(false);
+                if (shouldRestoreFocus) restoreOpeningFocus();
+              }}
             />
           ) : (
             <button
               type="button"
               className="button button--primary add-account-button"
-              onClick={openAddPanel}
+              onClick={(event) => openAddPanel(event.currentTarget)}
               data-testid="accounts-add"
+              ref={addAccountButton}
             >
               {t("options_add_account")}
             </button>

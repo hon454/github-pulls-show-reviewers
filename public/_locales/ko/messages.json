@@ -120,6 +120,10 @@
     "message": "공개 저장소의 리뷰어 정보는 계속 표시됩니다.",
     "description": "Options page accounts empty description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
+  "options_account_connected": {
+    "message": "계정을 연결했습니다.",
+    "description": "Accounts-section completion status after the sign-in panel closes."
+  },
   "options_installed_none": {
     "message": "설치된 계정: 아직 없음",
     "description": "Options page installed none. Visible text; keep GitHub names, codes and identifiers unchanged."
@@ -264,6 +268,18 @@
   "auth_copy": {
     "message": "복사",
     "description": "Options page copy. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_copying": {
+    "message": "복사 중…",
+    "description": "Options page copy button while a Clipboard API write is pending."
+  },
+  "auth_code_copied": {
+    "message": "코드를 복사했습니다.",
+    "description": "Polite status after the device code is copied."
+  },
+  "auth_code_copy_failed": {
+    "message": "코드를 복사하지 못했습니다. 직접 선택해 복사하세요.",
+    "description": "Polite status when Clipboard API is unavailable or rejects."
   },
   "auth_open_github": {
     "message": "GitHub에서 승인하기 →",

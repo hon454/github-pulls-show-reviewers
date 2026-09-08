@@ -140,9 +140,14 @@ test("cross-tab language switches retain device code, diagnostic input and a sin
       await expect(page.getByTestId("device-user-code")).toHaveText(
         "ABCD-EFGH",
       );
-      await expect(page.locator(".connection-panel [role=status]")).toHaveText(
-        messages.auth_waiting.message,
-      );
+      await expect(
+        page.getByRole("region", {
+          name: messages.options_add_account.message,
+        }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".connection-hint--waiting[role=status]"),
+      ).toHaveText(messages.auth_waiting.message);
       await expect(
         page.getByRole("link", { name: messages.auth_open_github.message }),
       ).toHaveAttribute(

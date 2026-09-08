@@ -566,6 +566,19 @@ it is not a live private-repository permission check.
   UI receives only user codes, verified links, interval/deadline and stable
   progress/error codes. The OAuth device code and access/refresh tokens stay
   in background. The existing Device Flow grant and permission scope are unchanged.
+- The options sign-in panel keeps clipboard feedback as a stable status
+  identifier plus its device-code generation, not as rendered prose. A pending
+  copy disables only its matching **Copy** control. A successful, rejected, or
+  unavailable Clipboard API result is localized when rendered; late results
+  from an earlier code cannot replace feedback for a newer code. Language
+  changes reformat this presentation without restarting a flow or clipboard
+  operation.
+- User-driven panel opening and retry focus its programmatically focusable
+  region once. Routine flow progress and language changes never steal focus.
+  Cancel/Close returns focus after the panel is removed only when it remained
+  inside the panel, and successful connection applies the same condition so a
+  user-selected external control is retained. The accounts section then emits
+  one concise localized completion status after the panel closes.
 - One ordered flow owner admits cancel and commit. A persisted cancellation ACK
   prevents later commit for that attempt. Already admitted writes return
   `committing`/`connected`; the UI waits for the outcome, without rollback or

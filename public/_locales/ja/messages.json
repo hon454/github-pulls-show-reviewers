@@ -120,6 +120,10 @@
     "message": "公開リポジトリのレビュアー情報は引き続き表示されます。",
     "description": "Options page accounts empty description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
+  "options_account_connected": {
+    "message": "アカウントを接続しました。",
+    "description": "Accounts-section completion status after the sign-in panel closes."
+  },
   "options_installed_none": {
     "message": "インストール先：まだありません",
     "description": "Options page installed none. Visible text; keep GitHub names, codes and identifiers unchanged."
@@ -264,6 +268,18 @@
   "auth_copy": {
     "message": "コピー",
     "description": "Options page copy. Visible text; keep GitHub names, codes and identifiers unchanged."
+  },
+  "auth_copying": {
+    "message": "コピー中…",
+    "description": "Options page copy button while a Clipboard API write is pending."
+  },
+  "auth_code_copied": {
+    "message": "コードをコピーしました。",
+    "description": "Polite status after the device code is copied."
+  },
+  "auth_code_copy_failed": {
+    "message": "コードをコピーできませんでした。選択して手動でコピーしてください。",
+    "description": "Polite status when Clipboard API is unavailable or rejects."
   },
   "auth_open_github": {
     "message": "GitHubで認可する →",
