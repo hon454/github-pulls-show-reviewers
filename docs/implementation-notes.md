@@ -179,6 +179,13 @@ roots and volatile relative-time elements remain excluded from fingerprint
 input, and `wxt:locationchange`, `popstate`, `turbo:render`, and `pjax:end`
 continue to force route refreshes.
 
+An unchanged fingerprint does not by itself prove that the extension mount
+survived. The lifecycle separately remembers rows that previously had a mount.
+When equivalent native metadata replaces that mount, it reprocesses the row
+without making the reviewer or page-metadata caches stale. A fresh summary
+therefore remounts from cache without another runtime request; a stale summary
+uses the existing bounded revalidation path.
+
 ## Current limitations
 
 - The extension still depends on GitHub metadata DOM structure.

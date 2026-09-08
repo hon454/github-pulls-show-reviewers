@@ -27,6 +27,13 @@ const mutationStressFixtureHtml = readFileSync(
   path.join(process.cwd(), "tests/fixtures/github-pulls-mutation-stress.html"),
   "utf8",
 );
+const modernMetadataFixtureHtml = readFileSync(
+  path.join(
+    process.cwd(),
+    "tests/fixtures/github-pulls-list-item-metadata.html",
+  ),
+  "utf8",
+);
 
 vi.mock("../src/storage/accounts", () => ({
   resolveAccountForRepo: resolveAccountForRepoMock,
@@ -1233,6 +1240,18 @@ describe("bootReviewerListPage", () => {
     expect(document.body.textContent).toContain("@alice");
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
 
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.body.textContent).toContain("@alice");
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
     resolveSummary!({
       status: "ok",
       requestedUsers: [{ login: "bob", avatarUrl: null }],
@@ -1513,6 +1532,316 @@ describe("bootReviewerListPage", () => {
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
 
     clearReviewerCache();
+  });
+
+  it("restores a fresh cached reviewer mount after equivalent GitHub metadata replacement", async () => {
+    getPreferencesMock.mockResolvedValue({
+      version: 1,
+      language: "auto",
+      showStateBadge: true,
+      showReviewerName: true,
+      openPullsOnly: true,
+    });
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    const {
+      buildReviewerCacheKey,
+      clearReviewerCache,
+      setCachedReviewerSummary,
+    } = await import("../src/cache/reviewer-cache");
+    clearReviewerCache();
+    setCachedReviewerSummary(
+      buildReviewerCacheKey("cinev", "shotloom", "42"),
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+      { fetchedAt: Date.now() },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(document.querySelector(".ghpsr-avatar")).not.toBeNull();
+    const runtimeMessageCount = runtimeSendMessageMock.mock.calls.length;
+
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    expect(document.querySelector(".ghpsr-avatar")).not.toBeNull();
+    expect(runtimeSendMessageMock.mock.calls).toHaveLength(runtimeMessageCount);
+
+    clearReviewerCache();
+  });
+
+  it("restores a fresh cached reviewer mount in the modern metadata fixture without API work", async () => {
+    document.body.innerHTML = new DOMParser().parseFromString(
+      modernMetadataFixtureHtml,
+      "text/html",
+    ).body.innerHTML;
+    window.history.replaceState(
+      {},
+      "",
+      "/hon454/github-pulls-show-reviewers/pulls",
+    );
+    resolveAccountForRepoMock.mockResolvedValue(null);
+
+    const cache = await import("../src/cache/reviewer-cache");
+    cache.clearReviewerCache();
+    cache.setCachedReviewerSummary(
+      cache.buildReviewerCacheKey(
+        "hon454",
+        "github-pulls-show-reviewers",
+        "42",
+      ),
+      {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const metadata = document.querySelector<HTMLElement>(
+      '[class*="ListItem-module__ListItemMetadataRow"]',
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(
+      document.querySelectorAll("[data-ghpsr-reviewer-meta]"),
+    ).toHaveLength(1);
+    expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    expect(
+      document.querySelector('a.ghpsr-avatar[title*="@alice"]'),
+    ).not.toBeNull();
+    expect(runtimeSendMessageMock).not.toHaveBeenCalled();
+
+    cache.clearReviewerCache();
+  });
+
+  it("does not restart queued reviewer work when GitHub replaces its pending mount", async () => {
+    const pullNumbers = ["42", "43", "44", "45", "46", "47"];
+    installPullListFixture(pullNumbers);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const completions: Array<() => void> = [];
+    const started: string[] = [];
+    let active = 0;
+    let peak = 0;
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type: string; pullNumber?: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve({ ok: true, metadata: [] });
+        if (message.type === "cancelPullReviewerSummary")
+          return Promise.resolve();
+
+        started.push(message.pullNumber!);
+        active += 1;
+        peak = Math.max(peak, active);
+        return new Promise((resolve) =>
+          completions.push(() => {
+            active -= 1;
+            resolve({
+              ok: true,
+              summary: {
+                status: "ok",
+                requestedUsers: [
+                  { login: `reviewer-${message.pullNumber}`, avatarUrl: null },
+                ],
+                requestedTeams: [],
+                completedReviews: [],
+              },
+            });
+          }),
+        );
+      },
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(started).toEqual(["42", "43", "44", "45"]);
+    const queuedMetadata = document.querySelector<HTMLElement>(
+      "#issue_46 .d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = queuedMetadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    queuedMetadata.replaceWith(replacement);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const { createTranslator } = await import("../src/i18n");
+    capturedStorageListener!(
+      {
+        preferences: {
+          oldValue: {
+            version: 1,
+            language: "auto",
+            showStateBadge: true,
+            showReviewerName: false,
+            openPullsOnly: true,
+          },
+          newValue: {
+            version: 1,
+            language: "ko",
+            showStateBadge: true,
+            showReviewerName: false,
+            openPullsOnly: true,
+          },
+        },
+      },
+      "local",
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const queuedRoot = document.querySelector<HTMLElement>(
+      "#issue_46 [data-ghpsr-root]",
+    )!;
+    expect(queuedRoot.lang).toBe("ko");
+    expect(queuedRoot.textContent).toBe(
+      createTranslator("ko")("reviewers_loading"),
+    );
+    expect(started).toEqual(["42", "43", "44", "45"]);
+
+    while (completions.length > 0) {
+      completions.shift()!();
+      await flushMicrotasks();
+      await flushMicrotasks();
+    }
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(peak).toBe(4);
+    expect(active).toBe(0);
+    expect(started).toEqual(pullNumbers);
+    expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(6);
+    expect(
+      document.querySelector('#issue_46 a.ghpsr-avatar[title*="@reviewer-46"]'),
+    ).not.toBeNull();
+  });
+
+  it("keeps one in-flight request through repeated native mount replacements and extension rendering", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const summaryRequest = createDeferred<{
+      ok: true;
+      summary: PullReviewerSummary;
+    }>();
+    runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch")
+        return Promise.resolve({ ok: true, metadata: [] });
+      if (message.type === "fetchPullReviewerSummary")
+        return summaryRequest.promise;
+      return Promise.resolve();
+    });
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    for (let index = 0; index < 3; index += 1) {
+      const metadata = document.querySelector<HTMLElement>(
+        ".d-flex.mt-1.text-small.color-fg-muted",
+      )!;
+      const replacement = metadata.cloneNode(true) as HTMLElement;
+      replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+      metadata.replaceWith(replacement);
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(
+        document.querySelectorAll("[data-ghpsr-reviewer-meta]"),
+      ).toHaveLength(1);
+      expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+    }
+
+    const mount = document.querySelector<HTMLElement>("[data-ghpsr-root]")!;
+    mount.textContent = "extension-owned loading update";
+    await flushMicrotasks();
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
+    summaryRequest.resolve({
+      ok: true,
+      summary: {
+        status: "ok",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+        completedReviews: [],
+      },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(
+      document.querySelectorAll("[data-ghpsr-reviewer-meta]"),
+    ).toHaveLength(1);
+    expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    expect(
+      document.querySelector('a.ghpsr-avatar[title*="@alice"]'),
+    ).not.toBeNull();
+    expect(onRowFailure).not.toHaveBeenCalled();
+  });
+
+  it("repairs an empty cached mount without starting more reviewer work", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({
+        ok: true,
+        summary: {
+          status: "ok",
+          requestedUsers: [],
+          requestedTeams: [],
+          completedReviews: [],
+        },
+      });
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const runtimeMessageCount = runtimeSendMessageMock.mock.calls.length;
+
+    const metadata = document.querySelector<HTMLElement>(
+      ".d-flex.mt-1.text-small.color-fg-muted",
+    )!;
+    const replacement = metadata.cloneNode(true) as HTMLElement;
+    replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+    metadata.replaceWith(replacement);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const root = document.querySelector<HTMLElement>("[data-ghpsr-root]")!;
+    expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+    expect(root.textContent).toBe("");
+    expect(runtimeSendMessageMock.mock.calls).toHaveLength(runtimeMessageCount);
   });
 
   it("revalidates mutated existing rows when metadata children are added", async () => {
@@ -3269,6 +3598,61 @@ describe("render-only reviewer locale events", () => {
     },
   );
 
+  it("keeps repaired cached reviewer mounts render-only across all supported locales", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const cache = await import("../src/cache/reviewer-cache");
+    cache.clearReviewerCache();
+    cache.setCachedReviewerSummary(
+      cache.buildReviewerCacheKey("cinev", "shotloom", "42"),
+      summary,
+    );
+    const lifecycle = await import("../src/features/reviewers/row-lifecycle");
+    const lifecycleFactory = vi.spyOn(lifecycle, "createReviewerRowLifecycle");
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const processRows = vi.spyOn(
+      lifecycleFactory.mock.results[0].value,
+      "processRows",
+    );
+    const calls = runtimeSendMessageMock.mock.calls.length;
+    const accounts = resolveAccountForRepoMock.mock.calls.length;
+    const prefs = getPreferencesMock.mock.calls.length;
+    for (const language of ["en", "ko", "ja", "zh_CN", "zh_TW"]) {
+      await switchLanguage(language);
+      const metadata = document.querySelector<HTMLElement>(
+        ".d-flex.mt-1.text-small.color-fg-muted",
+      )!;
+      const replacement = metadata.cloneNode(true) as HTMLElement;
+      replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+      metadata.replaceWith(replacement);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      const { createTranslator, toLanguageTag } = await import("../src/i18n");
+      const locale = language as Locale;
+      const root = document.querySelector<HTMLElement>(".ghpsr-root")!;
+      expect(
+        document.querySelectorAll("[data-ghpsr-reviewer-meta]"),
+      ).toHaveLength(1);
+      expect(document.querySelectorAll("[data-ghpsr-root]")).toHaveLength(1);
+      expect(root.lang).toBe(toLanguageTag(locale));
+      expect(root.textContent).toContain(
+        createTranslator(locale)("reviewers_section"),
+      );
+      expect(root.textContent).not.toContain(
+        createTranslator(locale)("reviewers_loading"),
+      );
+      expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
+      expect(getPreferencesMock).toHaveBeenCalledTimes(prefs);
+      expect(processRows).not.toHaveBeenCalled();
+    }
+    lifecycleFactory.mockRestore();
+    cache.clearReviewerCache();
+  });
   it.each([false, true])(
     "preserves FIFO recovery and render-only locales with failed, active, and queued rows (abort: %s)",
     async (abortQueued) => {
