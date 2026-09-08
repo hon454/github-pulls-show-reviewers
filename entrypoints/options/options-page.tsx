@@ -33,20 +33,27 @@ export function OptionsPage({
   const [connectionStatus, setConnectionStatus] = useState<"connected" | null>(
     null,
   );
-  const [focusRestorationPending, setFocusRestorationPending] = useState(false);
+  const [focusRestorationIntent, setFocusRestorationIntent] = useState<
+    number | null
+  >(null);
   const accountsRevision = useRef(0);
   const addAccountButton = useRef<HTMLButtonElement | null>(null);
   const openingControl = useRef<HTMLElement | null>(null);
   const addAccountPanel = useRef<HTMLDivElement | null>(null);
   const panelFocusOwned = useRef(false);
+  const focusIntentGeneration = useRef(0);
   const appConfigResult = readGitHubAppConfig();
   const appConfig = appConfigResult.ok ? appConfigResult.config : null;
 
   useEffect(() => {
     const relinquishPanelFocus = (target: EventTarget | null) => {
-      if (!panelFocusOwned.current || !(target instanceof Node)) return;
-      if (!addAccountPanel.current?.contains(target))
-        panelFocusOwned.current = false;
+      if (
+        !(target instanceof Node) ||
+        addAccountPanel.current?.contains(target)
+      )
+        return;
+      panelFocusOwned.current = false;
+      focusIntentGeneration.current += 1;
     };
     const handleFocusIn = (event: FocusEvent) =>
       relinquishPanelFocus(event.target);
@@ -91,20 +98,20 @@ export function OptionsPage({
   }, [reload]);
 
   const restoreOpeningFocus = useCallback(() => {
-    setFocusRestorationPending(true);
+    setFocusRestorationIntent(focusIntentGeneration.current);
   }, []);
 
   useEffect(() => {
-    if (showAddPanel || !focusRestorationPending) return;
-    if (
+    if (showAddPanel || focusRestorationIntent === null) return;
+    if (focusIntentGeneration.current === focusRestorationIntent && (
       document.activeElement === document.body ||
       !document.activeElement?.isConnected
-    ) {
+    )) {
       const target = openingControl.current;
       (target?.isConnected ? target : addAccountButton.current)?.focus();
     }
-    setFocusRestorationPending(false);
-  }, [focusRestorationPending, showAddPanel]);
+    setFocusRestorationIntent(null);
+  }, [focusRestorationIntent, showAddPanel]);
 
   const handleConnected = useCallback(async () => {
     // The focused waiting control can be removed while the flow fetches and
@@ -130,7 +137,7 @@ export function OptionsPage({
     openingControl.current = control;
     panelFocusOwned.current = false;
     setConnectionStatus(null);
-    setFocusRestorationPending(false);
+    setFocusRestorationIntent(null);
     setShowAddPanel(true);
     const inFlight =
       controller.state.phase === "initiating" ||
