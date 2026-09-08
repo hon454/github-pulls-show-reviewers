@@ -2560,6 +2560,224 @@ describe("settled reviewer request ownership", () => {
   );
 });
 
+describe("render-only reviewer display events", () => {
+  const summary: PullReviewerSummary = {
+    status: "ok",
+    requestedUsers: [{ login: "alice", avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [{ login: "alice", avatarUrl: null, state: "APPROVED" }],
+  };
+  const initialPreferences: PreferencesModule.Preferences = {
+    version: 1,
+    language: "auto",
+    showStateBadge: true,
+    showReviewerName: false,
+    openPullsOnly: true,
+  };
+  const changedPreferences: PreferencesModule.Preferences = {
+    ...initialPreferences,
+    showStateBadge: false,
+    showReviewerName: true,
+    openPullsOnly: false,
+  };
+  async function changeDisplay(
+    previous: PreferencesModule.Preferences,
+    next: PreferencesModule.Preferences,
+  ): Promise<void> {
+    capturedStorageListener!(
+      { preferences: { oldValue: previous, newValue: next } },
+      "local",
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  it.each([
+    "fresh",
+    "stale",
+    "evicted",
+    "empty",
+    "summary failure",
+    "account rejection",
+    "metadata failure",
+  ])(
+    "rerenders %s presentation after metadata TTL without any data work",
+    async (state) => {
+      // Metadata captures Date.now at boot; advance that same function's value.
+      let now = Date.now();
+      vi.spyOn(Date, "now").mockImplementation(() => now);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      if (state === "account rejection")
+        resolveAccountForRepoMock.mockRejectedValueOnce(
+          new Error("Storage unavailable"),
+        );
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (
+          (state === "metadata failure" &&
+            message.type === "fetchPullReviewerMetadataBatch") ||
+          (state === "summary failure" &&
+            message.type === "fetchPullReviewerSummary")
+        ) {
+          return Promise.resolve({
+            ok: false,
+            error: {
+              kind: "github-api",
+              status: 429,
+              failures: [{ status: 429, endpoint: null, rateLimited: true }],
+            },
+          });
+        }
+        return Promise.resolve(
+          message.type === "fetchPullReviewerMetadataBatch"
+            ? { ok: true, metadata: [] }
+            : {
+                ok: true,
+                summary:
+                  state === "empty"
+                    ? { ...summary, requestedUsers: [], completedReviews: [] }
+                    : summary,
+              },
+        );
+      });
+      const cache = await import("../src/cache/reviewer-cache");
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const onRowFailure = vi.fn();
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      if (state === "stale") cache.markReviewerCacheStale(key);
+      if (state === "evicted") cache.clearReviewerCache();
+      if (["fresh", "stale", "evicted"].includes(state))
+        expect(document.querySelector(".ghpsr-badge")).not.toBeNull();
+      const cached = cache.getReviewerCacheEntry(key);
+      const calls = runtimeSendMessageMock.mock.calls.length;
+      const accounts = resolveAccountForRepoMock.mock.calls.length;
+      const preferencesReads = getPreferencesMock.mock.calls.length;
+      const failures = onRowFailure.mock.calls.length;
+      now += 60_000;
+      let previous = initialPreferences;
+      for (const next of [
+        { ...previous, showReviewerName: true },
+        { ...previous, showReviewerName: true, showStateBadge: false },
+        changedPreferences,
+      ]) {
+        await changeDisplay(previous, next);
+        previous = next;
+        expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+        expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
+        expect(getPreferencesMock).toHaveBeenCalledTimes(preferencesReads);
+        expect(onRowFailure).toHaveBeenCalledTimes(failures);
+        expect(cache.getReviewerCacheEntry(key)).toBe(cached);
+        expect(document.querySelector(".ghpsr-status")).toBeNull();
+      }
+      if (["fresh", "stale", "evicted"].includes(state)) {
+        const link = document.querySelector<HTMLAnchorElement>("a.ghpsr-pill")!;
+        expect(link).not.toBeNull();
+        expect(link.textContent).toContain("alice");
+        expect(new URL(link.href).searchParams.get("q")).toBe(
+          "is:pr review-requested:alice",
+        );
+        expect(document.querySelector(".ghpsr-badge")).toBeNull();
+      } else {
+        expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
+      }
+      // The display event must also preserve the latest preferences for future data.
+      if (state === "account rejection") {
+        document
+          .querySelector(".issue-meta-section")!
+          .append(" explicit retry");
+        await flushMicrotasks();
+        await flushMicrotasks();
+        expect(document.querySelector("a.ghpsr-pill")).not.toBeNull();
+        expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+      }
+    },
+  );
+
+  it("preserves active and queued FIFO work and applies the latest display when each settles", async () => {
+    const numbers = ["42", "43", "44", "45", "46", "47"];
+    installPullListFixture(numbers);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const completions = new Map<string, () => void>();
+    let active = 0;
+    let peak = 0;
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type: string; pullNumber: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve({ ok: true, metadata: [] });
+        active++;
+        peak = Math.max(peak, active);
+        return new Promise((resolve) =>
+          completions.set(message.pullNumber, () => {
+            active--;
+            resolve({ ok: true, summary });
+          }),
+        );
+      },
+    );
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const started = () =>
+      getRuntimeMessages("fetchPullReviewerSummary").map(
+        (message) => message.pullNumber,
+      );
+    expect(started()).toEqual(numbers.slice(0, 4));
+    const calls = runtimeSendMessageMock.mock.calls.length;
+    const accounts = resolveAccountForRepoMock.mock.calls.length;
+    await changeDisplay(initialPreferences, changedPreferences);
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+    expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
+    expect(document.querySelectorAll(".ghpsr-status")).toHaveLength(6);
+    expect(started()).toEqual(numbers.slice(0, 4));
+    for (const [index, number] of numbers.entries()) {
+      completions.get(number)!();
+      await flushMicrotasks();
+      expect(started()).toEqual(numbers.slice(0, Math.min(5 + index, 6)));
+      const link = document.querySelector<HTMLAnchorElement>(
+        `#issue_${number} a.ghpsr-pill`,
+      )!;
+      expect(link).not.toBeNull();
+      expect(new URL(link.href).searchParams.get("q")).toBe(
+        "is:pr review-requested:alice",
+      );
+    }
+    expect(peak).toBe(4);
+    expect(active).toBe(0);
+    expect(document.querySelectorAll(".ghpsr-status")).toHaveLength(0);
+    expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(0);
+  });
+
+  it("does not let a pending preference read overwrite a newer display event", async () => {
+    const preferences = createDeferred<PreferencesModule.Preferences>();
+    getPreferencesMock.mockReturnValueOnce(preferences.promise);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+      Promise.resolve(
+        message.type === "fetchPullReviewerMetadataBatch"
+          ? { ok: true, metadata: [] }
+          : { ok: true, summary },
+      ),
+    );
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    const calls = runtimeSendMessageMock.mock.calls.length;
+    await changeDisplay(initialPreferences, changedPreferences);
+    preferences.resolve(initialPreferences);
+    await flushMicrotasks();
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+    const link = document.querySelector<HTMLAnchorElement>("a.ghpsr-pill")!;
+    expect(link).not.toBeNull();
+    expect(new URL(link.href).searchParams.get("q")).toBe(
+      "is:pr review-requested:alice",
+    );
+  });
+});
+
 describe("render-only reviewer locale events", () => {
   const summary: PullReviewerSummary = {
     status: "ok",

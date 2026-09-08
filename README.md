@@ -30,7 +30,8 @@
   reviewer request fails unexpectedly, shows one page-level reload prompt and
   keeps any previously loaded reviewer chips visible. Failed rows can recover
   when GitHub updates their metadata or the page is refreshed; waiting for an
-  API limit to reset does not itself retry reviewer requests.
+  API limit to reset does not itself retry reviewer requests. Display and
+  language changes only update presentation, including on failed rows.
 
 ## Why Use It
 

@@ -1,6 +1,4 @@
 import { getLocaleStore } from "../../i18n/browser";
-import type { ReviewerEntry } from "./view-model";
-import type { RenderReviewersOptions } from "./dom";
 
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
@@ -80,8 +78,11 @@ export function bootReviewerListPage(
     | { kind: "loading" }
     | {
         kind: "resolved";
-        entries: ReviewerEntry[];
-        options: RenderReviewersOptions;
+        source: {
+          route: NonNullable<typeof currentRoute>;
+          summary: PullReviewerSummary;
+        } | null;
+        preferences: Preferences;
       };
   const presentations = new WeakMap<HTMLElement, Presentation>();
   function renderPresentation(mount: HTMLElement): void {
@@ -89,7 +90,15 @@ export function bootReviewerListPage(
     if (!state) return;
     const locale = localeStore.getSnapshot();
     if (state.kind === "loading") renderLoading(mount, locale);
-    else renderReviewers(mount, state.entries, state.options, locale);
+    else {
+      const entries =
+        state.source == null
+          ? []
+          : buildReviewers(state.source.route, state.source.summary, {
+              openPullsOnly: state.preferences.openPullsOnly,
+            });
+      renderReviewers(mount, entries, state.preferences, locale);
+    }
   }
   function showLoading(mount: HTMLElement): void {
     presentations.set(mount, { kind: "loading" });
@@ -100,6 +109,16 @@ export function bootReviewerListPage(
     document
       .querySelectorAll<HTMLElement>("[data-ghpsr-root]")
       .forEach(renderPresentation);
+  }
+  function renderDisplay(preferences: Preferences): void {
+    document
+      .querySelectorAll<HTMLElement>("[data-ghpsr-root]")
+      .forEach((mount) => {
+        const state = presentations.get(mount);
+        if (state?.kind !== "resolved") return;
+        presentations.set(mount, { ...state, preferences });
+        renderPresentation(mount);
+      });
   }
   let unsubscribeLocale: (() => void) | undefined;
   function syncLocaleSubscription(): void {
@@ -114,6 +133,7 @@ export function bootReviewerListPage(
   syncLocaleSubscription();
   const inflightRequests = new Map<string, InflightRequest>();
   let cachedPreferences: Promise<Preferences> | null = null;
+  let latestDisplayPreferences: Preferences | null = null;
   const accountResolver = createSelfHealingAccountResolver({
     requestRefresh: requestInstallationsRefresh,
   });
@@ -151,17 +171,11 @@ export function bootReviewerListPage(
     summary: PullReviewerSummary | undefined,
   ): Promise<void> {
     if (!summary) return;
-    const preferences = await readPreferences();
-    const reviewers = buildReviewers(route, summary, {
-      openPullsOnly: preferences.openPullsOnly,
-    });
+    const loadedPreferences = await readPreferences();
     presentations.set(mount, {
       kind: "resolved",
-      entries: reviewers,
-      options: {
-        showStateBadge: preferences.showStateBadge,
-        showReviewerName: preferences.showReviewerName,
-      },
+      source: { route, summary },
+      preferences: latestDisplayPreferences ?? loadedPreferences,
     });
     renderPresentation(mount);
   }
@@ -414,7 +428,10 @@ export function bootReviewerListPage(
         previous.showStateBadge !== next.showStateBadge ||
         previous.showReviewerName !== next.showReviewerName ||
         previous.openPullsOnly !== next.openPullsOnly;
-      if (displayChanged) cachedPreferences = null;
+      if (displayChanged) {
+        latestDisplayPreferences = next;
+        cachedPreferences = Promise.resolve(next);
+      }
     }
 
     if (isAccountsChange(changes)) {
@@ -422,8 +439,8 @@ export function bootReviewerListPage(
       fallbackAccounts.clear();
       abortInflightRequests();
       rowLifecycle.processRows();
-    } else if (displayChanged) {
-      rowLifecycle.processRows();
+    } else if (displayChanged && latestDisplayPreferences != null) {
+      renderDisplay(latestDisplayPreferences);
     }
   };
 
@@ -449,11 +466,8 @@ export function bootReviewerListPage(
     clearRenderedReviewerState(mount);
     presentations.set(mount, {
       kind: "resolved",
-      entries: [],
-      options: {
-        showStateBadge: true,
-        showReviewerName: false,
-      },
+      source: null,
+      preferences: latestDisplayPreferences ?? DEFAULT_PREFERENCES,
     });
     renderPresentation(mount);
   }
