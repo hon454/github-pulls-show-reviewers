@@ -94,7 +94,9 @@ pnpm verify:cws
 runs do not rewrite listing assets. It builds with `TESTING_CLIENT_ID`,
 `test-app`, and `GitHub Pulls Show Reviewers (testing)`. These are synthetic
 **TESTING** captures, not production-config artifacts or private-access proof.
-No account is connected. Captures use isolated disposable Chromium profiles and
+No account is connected. The pull-list metadata, individual pull requests and
+review history are fulfilled by the same synthetic scenes, including the shared
+repository-discovery request introduced in v1.17.0. Captures use isolated disposable Chromium profiles and
 block external HTTPS except explicit fixture responses.
 
 Each locale is selected and persisted before capture. Fixture spacing frames all
@@ -224,10 +226,10 @@ reviewed source and reuses its verified artifact without another CWS submission.
 Expected package path after `pnpm zip:release`:
 
 ```text
-.output/github-pulls-show-reviewers-1.16.1-chrome.zip
+.output/github-pulls-show-reviewers-1.17.0-chrome.zip
 ```
 
-See the [v1.16.1 readiness handoff](./releases/v1.16.1-readiness.md) for local
+See the [v1.17.0 readiness handoff](./releases/v1.17.0-readiness.md) for local
 package, capture and validation evidence. This target
 does not attest an uploaded draft, saved listings or publication.
 

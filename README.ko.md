@@ -12,6 +12,8 @@
 
 ![리뷰어 칩과 리뷰 상태 배지가 표시된 GitHub PR 목록](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
+[v1.17.0 릴리스 노트](./docs/releases/v1.17.0.md)(영어): 연결 계정을 제한된 순서로 탐색하는 저장소 접근과 background가 소유하는 인증.
+
 ## 주요 기능
 
 - GitHub 풀 리퀘스트 목록의 각 행에 리뷰를 요청한 사용자를 표시합니다.
