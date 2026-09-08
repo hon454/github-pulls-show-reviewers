@@ -448,6 +448,20 @@ snapshot is in-memory only — it is never persisted.
 
 - Polling lives on the options page because MV3 service workers unload on idle.
 - `POST /login/oauth/access_token` uses the `urn:ietf:params:oauth:grant-type:device_code` grant type. No `client_secret` is required or sent.
+- Each user-started attempt owns its identity, polling timer, interval, deadline,
+  and AbortController. Starting again, canceling, or unmounting invalidates the
+  previous attempt and clears its timer. Initiation, polling, user lookup, and
+  installation discovery share its signal; identity checks still suppress late
+  responses/errors when a transport ignores abort. Only the mounted current
+  attempt may schedule polling, begin a new account write, or publish completion.
+- Account writes use the background-owned `upsertAccountByLogin` runtime boundary.
+  Cancellation stops forward progress, not an admitted storage transaction: a
+  write already started may finish. Its stale completion cannot invoke
+  `onConnected` or close a newer panel. Never delete/roll back the account on
+  cancellation, since a newer sign-in may have updated the same login.
+- Initiation remains user-click-only and StrictMode-safe. Language changes only
+  rerender the existing attempt and its stable error codes; they do not restart
+  or cancel authentication.
 - On `slow_down`, the interval bumps by 5 seconds.
 - On `expired_token` or the local clock passing `expires_at`, the panel offers a
   retry that requests a fresh device code.
