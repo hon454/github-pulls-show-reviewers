@@ -280,6 +280,114 @@ it("does not let an old code's delayed clipboard result replace the next code's 
   expect(writeText).toHaveBeenNthCalledWith(1, "OLD-CODE");
   expect(writeText).toHaveBeenNthCalledWith(2, "NEW-CODE");
 });
+
+it.each([
+  {
+    name: "successful",
+    writeText: vi.fn(async () => undefined),
+    feedback: "Code copied.",
+  },
+  {
+    name: "failed",
+    writeText: vi.fn(async () => {
+      throw new Error("clipboard denied");
+    }),
+    feedback: "Could not copy the code. Select and copy it manually.",
+  },
+])(
+  "does not reuse a settled $name copy result when a device code returns in a new generation",
+  async ({ writeText, feedback }) => {
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const controller = {
+      state: waitingState("FIRST-CODE"),
+      start: vi.fn(),
+      cancel: vi.fn(async () => true),
+    };
+    const view = render(
+      createElement(AddAccountPanel, {
+        controller,
+        onCancel: vi.fn(),
+        locale: locale("en"),
+      }),
+    );
+    await act(async () =>
+      fireEvent.click(view.getByRole("button", { name: "Copy" })),
+    );
+    expect(view.getByTestId("clipboard-feedback").textContent).toBe(feedback);
+
+    controller.state = waitingState("SECOND-CODE");
+    view.rerender(
+      createElement(AddAccountPanel, {
+        controller,
+        onCancel: vi.fn(),
+        locale: locale("en"),
+      }),
+    );
+    expect(view.getByTestId("clipboard-feedback").textContent).toBe("");
+
+    controller.state = waitingState("FIRST-CODE");
+    view.rerender(
+      createElement(AddAccountPanel, {
+        controller,
+        onCancel: vi.fn(),
+        locale: locale("en"),
+      }),
+    );
+    expect(view.getByTestId("clipboard-feedback").textContent).toBe("");
+  },
+);
+
+it("lets a recurring code start a new copy while its earlier generation is pending", async () => {
+  const first = deferred<void>();
+  const second = deferred<void>();
+  const writeText = vi
+    .fn()
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  const controller = {
+    state: waitingState("FIRST-CODE"),
+    start: vi.fn(),
+    cancel: vi.fn(async () => true),
+  };
+  const view = render(
+    createElement(AddAccountPanel, {
+      controller,
+      onCancel: vi.fn(),
+      locale: locale("en"),
+    }),
+  );
+  fireEvent.click(view.getByRole("button", { name: "Copy" }));
+
+  controller.state = waitingState("SECOND-CODE");
+  view.rerender(
+    createElement(AddAccountPanel, {
+      controller,
+      onCancel: vi.fn(),
+      locale: locale("en"),
+    }),
+  );
+  controller.state = waitingState("FIRST-CODE");
+  view.rerender(
+    createElement(AddAccountPanel, {
+      controller,
+      onCancel: vi.fn(),
+      locale: locale("en"),
+    }),
+  );
+
+  const copy = view.getByRole("button", { name: "Copy" }) as HTMLButtonElement;
+  expect(copy.disabled).toBe(false);
+  fireEvent.click(copy);
+  expect(writeText).toHaveBeenCalledTimes(2);
+
+  await act(async () => first.resolve());
+  expect(view.getByTestId("clipboard-feedback").textContent).toBe("");
+  await act(async () => second.resolve());
+  expect(view.getByTestId("clipboard-feedback").textContent).toBe(
+    "Code copied.",
+  );
+});
 it.each([
   ["expired_token", "auth_expired"],
   ["access_denied", "auth_denied"],

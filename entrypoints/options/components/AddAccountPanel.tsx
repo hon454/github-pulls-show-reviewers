@@ -12,8 +12,12 @@ type Props = {
 };
 
 type CopyFeedback =
-  | { phase: "idle"; code: null }
-  | { phase: "copying" | "copied" | "copy-failed"; code: string };
+  | { phase: "idle"; code: null; generation: null }
+  | {
+      phase: "copying" | "copied" | "copy-failed";
+      code: string;
+      generation: number;
+    };
 
 export function AddAccountPanel({
   controller,
@@ -26,6 +30,7 @@ export function AddAccountPanel({
   const [copyFeedback, setCopyFeedback] = useState<CopyFeedback>({
     phase: "idle",
     code: null,
+    generation: null,
   });
   const copyRequest = useRef(0);
   const copyGeneration = useRef(0);
@@ -75,7 +80,7 @@ export function AddAccountPanel({
 
     const request = ++copyRequest.current;
     copyInFlight.current = generation;
-    setCopyFeedback({ phase: "copying", code: userCode });
+    setCopyFeedback({ phase: "copying", code: userCode, generation });
     try {
       if (!navigator.clipboard?.writeText) throw new Error("clipboard_missing");
       await navigator.clipboard.writeText(userCode);
@@ -83,14 +88,18 @@ export function AddAccountPanel({
         copyGeneration.current === generation &&
         currentCode.current === userCode
       ) {
-        setCopyFeedback({ phase: "copied", code: userCode });
+        setCopyFeedback({ phase: "copied", code: userCode, generation });
       }
     } catch {
       if (
         copyGeneration.current === generation &&
         currentCode.current === userCode
       ) {
-        setCopyFeedback({ phase: "copy-failed", code: userCode });
+        setCopyFeedback({
+          phase: "copy-failed",
+          code: userCode,
+          generation,
+        });
       }
     } finally {
       if (copyRequest.current === request) copyInFlight.current = null;
@@ -139,11 +148,13 @@ export function AddAccountPanel({
             className="button button--secondary"
             disabled={
               copyFeedback.phase === "copying" &&
-              copyFeedback.code === state.userCode
+              copyFeedback.code === state.userCode &&
+              copyFeedback.generation === copyGeneration.current
             }
           >
             {copyFeedback.phase === "copying" &&
-            copyFeedback.code === state.userCode
+            copyFeedback.code === state.userCode &&
+            copyFeedback.generation === copyGeneration.current
               ? t("auth_copying")
               : t("auth_copy")}
           </button>
@@ -156,6 +167,7 @@ export function AddAccountPanel({
           aria-atomic="true"
         >
           {copyFeedback.code === state.userCode &&
+          copyFeedback.generation === copyGeneration.current &&
           copyFeedback.phase !== "copying"
             ? t(
                 copyFeedback.phase === "copied"
