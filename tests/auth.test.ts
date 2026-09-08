@@ -11,6 +11,8 @@ import {
   pollForAccessToken,
 } from "../src/github/auth";
 
+import { loadAccountInstallations } from "../src/github/installations";
+
 function fixture(name: string): unknown {
   return JSON.parse(
     readFileSync(
@@ -565,5 +567,48 @@ describe("auth schema diagnostics", () => {
     await expect(
       fetchInstallationRepositories({ token: "ghu_abc", installationId: 1 }),
     ).rejects.toBeInstanceOf(GitHubAuthSchemaError);
+  });
+});
+
+describe("loadAccountInstallations cancellation", () => {
+  it("does not start HTTP with an already aborted signal", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    await expect(
+      loadAccountInstallations({
+        token: "fake-token",
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("passes the signal through installation discovery and repository pagination", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(fixture("user-installations.json")))
+      .mockResolvedValueOnce(
+        paginatedResponse(
+          repositoryPage("cinev/one"),
+          "https://api.github.com/user/installations/67890/repositories?page=2",
+        ),
+      )
+      .mockResolvedValueOnce(paginatedResponse(repositoryPage("cinev/two")));
+    const installations = await loadAccountInstallations({
+      token: "fake-token",
+      signal: controller.signal,
+    });
+    expect(
+      installations.find((installation) => installation.id === 67890)
+        ?.repoSnapshot,
+    ).toEqual({
+      fullNames: ["cinev/one", "cinev/two"],
+      completeness: "complete",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, request] of fetchMock.mock.calls)
+      expect(request?.signal).toBe(controller.signal);
   });
 });

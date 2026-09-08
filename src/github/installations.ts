@@ -1,13 +1,17 @@
 import type { Installation } from "../storage/accounts";
-import {
-  fetchInstallationRepositories,
-  fetchUserInstallations,
-} from "./auth";
+import { fetchInstallationRepositories, fetchUserInstallations } from "./auth";
 
 export async function loadAccountInstallations(input: {
   token: string;
+  signal?: AbortSignal;
 }): Promise<Installation[]> {
-  const apiInstallations = await fetchUserInstallations({ token: input.token });
+  input.signal?.throwIfAborted();
+  const signal = input.signal ? { signal: input.signal } : {};
+  const apiInstallations = await fetchUserInstallations({
+    token: input.token,
+    ...signal,
+  });
+  input.signal?.throwIfAborted();
   if (apiInstallations.truncated) {
     throw new Error(
       "GitHub App installation list was truncated before all installations were loaded.",
@@ -28,7 +32,9 @@ export async function loadAccountInstallations(input: {
       const repositories = await fetchInstallationRepositories({
         token: input.token,
         installationId: installation.id,
+        ...signal,
       });
+      input.signal?.throwIfAborted();
       return {
         id: installation.id,
         account: installation.account,

@@ -678,6 +678,83 @@ describe("OptionsPage", () => {
     ).not.toBeNull();
   });
 
+  it("keeps the reopened panel when a canceled poll succeeds late", async () => {
+    await renderOptionsPageInStrictMode();
+    const auth = await import("../src/github/auth");
+    const mutations = await import("../src/runtime/account-mutations");
+    let resolveOld!: (
+      value: Awaited<ReturnType<typeof auth.pollForAccessToken>>,
+    ) => void;
+    vi.mocked(auth.pollForAccessToken).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    const init = {
+      deviceCode: "old",
+      userCode: "OLD-CODE",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=OLD-CODE",
+      expiresIn: 900,
+      interval: 5,
+    };
+    vi.mocked(auth.initiateDeviceFlow)
+      .mockResolvedValueOnce(init)
+      .mockResolvedValue({ ...init, deviceCode: "new", userCode: "NEW-CODE" });
+    vi.mocked(auth.fetchAuthenticatedUser).mockResolvedValue({
+      login: "canceled-user",
+      avatarUrl: null,
+    });
+    vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        document
+          .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+          .click();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(auth.pollForAccessToken).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+          .find((button) => button.textContent?.trim() === "Cancel")!
+          .click();
+      });
+      await act(async () => {
+        document
+          .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+          .click();
+      });
+      await act(async () => {
+        resolveOld({
+          status: "success",
+          accessToken: "fake-old",
+          refreshToken: null,
+          expiresAt: null,
+          refreshTokenExpiresAt: null,
+        });
+      });
+      expect(
+        document.querySelector('[data-testid="device-user-code"]')?.textContent,
+      ).toBe("NEW-CODE");
+      expect(mutations.upsertAccountByLogin).not.toHaveBeenCalled();
+      expect(auth.fetchAuthenticatedUser).not.toHaveBeenCalled();
+      expect(auth.initiateDeviceFlow).toHaveBeenCalledTimes(2);
+    } finally {
+      act(() => {
+        for (const root of mountedRoots.splice(0)) root.unmount();
+      });
+      vi.useRealTimers();
+    }
+  });
+
   it("restarts the device flow when reopening the add-account panel after a successful connection", async () => {
     await renderOptionsPage();
 
