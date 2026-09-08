@@ -28,6 +28,7 @@ function ensureBannerStyles(): void {
 }
 
 export type BannerMount = {
+  isConnected(): boolean;
   update(state: BannerState, locale?: Pick<LocaleSnapshot, "t" | "lang">): void;
   teardown(): void;
 };
@@ -114,8 +115,9 @@ export function mountBanner(input: {
         "align-items: center",
         "font-size: 13px",
       ].join(";");
-      input.insertAfter.insertAdjacentElement("afterend", element);
     }
+    if (!element.isConnected)
+      input.insertAfter.insertAdjacentElement("afterend", element);
 
     element.replaceChildren();
     element.lang = locale.lang;
@@ -159,6 +161,7 @@ export function mountBanner(input: {
   }
 
   return {
+    isConnected: () => element == null || element.isConnected,
     update: render,
     teardown() {
       element?.remove();

@@ -21,6 +21,11 @@ export type BannerFailureInfo = {
   rateLimit?: BannerRateLimitSnapshot;
 };
 
+export type BannerFailure = {
+  kind: BannerKind;
+  info?: BannerFailureInfo;
+};
+
 export type BannerState = {
   current: BannerKind | null;
   dismissed: boolean;
@@ -32,6 +37,11 @@ export type BannerAggregator = {
   getState(): BannerState;
   subscribe(listener: (state: BannerState) => void): () => void;
   reportFailure(kind: BannerKind, info?: BannerFailureInfo): void;
+  reconcile(result: {
+    generation: number;
+    pending: boolean;
+    failures: readonly BannerFailure[];
+  }): void;
   dismiss(): void;
 };
 
@@ -65,6 +75,8 @@ export function createBannerAggregator(options: {
   let current: BannerKind | null = null;
   let rateLimit: BannerRateLimitSnapshot | undefined;
   let dismissed = readDismissed(options.pathname, current);
+  let generation = -1;
+  let activeFailures: BannerFailure[] = [];
   const listeners = new Set<(state: BannerState) => void>();
 
   function snapshot(): BannerState {
@@ -107,6 +119,49 @@ export function createBannerAggregator(options: {
           ? info?.rateLimit
           : undefined;
       dismissed = readDismissed(options.pathname, current);
+      emit();
+    },
+    reconcile(result) {
+      if (result.generation < generation) return;
+      if (result.generation !== generation) activeFailures = [];
+      generation = result.generation;
+      // Preserve the first current non-empty snapshot in arrival order. Shared
+      // metadata failures have one identity even when they suppress many rows.
+      const incoming = new Set(result.failures);
+      activeFailures = activeFailures.filter((failure) =>
+        incoming.has(failure),
+      );
+      const retained = new Set(activeFailures);
+      for (const failure of incoming) {
+        if (!retained.has(failure)) activeFailures.push(failure);
+      }
+      let best: BannerFailure | undefined;
+      for (const failure of activeFailures) {
+        if (
+          isHigherPriority(failure.kind, best?.kind ?? null) ||
+          (failure.kind === best?.kind &&
+            best.info?.rateLimit == null &&
+            failure.info?.rateLimit != null)
+        )
+          best = failure;
+      }
+      const next = best?.kind ?? null;
+      // A pending row (including a queued request) is never recovery evidence.
+      // Keep the published guidance until it can be replaced by a complete set,
+      // while still allowing new, more urgent failures to appear immediately.
+      if (
+        result.pending &&
+        (next == null || (next !== current && !isHigherPriority(next, current)))
+      )
+        return;
+      const nextRate =
+        next === "auth-rate-limit" || next === "unauth-rate-limit"
+          ? best?.info?.rateLimit
+          : undefined;
+      if (next === current && nextRate === rateLimit) return;
+      if (next !== current) dismissed = readDismissed(options.pathname, next);
+      current = next;
+      rateLimit = nextRate;
       emit();
     },
     dismiss() {

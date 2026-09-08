@@ -29,6 +29,7 @@ export function createReviewerRowLifecycle(input: {
   getRoute: () => PullListRoute | null;
   processRow: (row: Element) => void | Promise<void>;
   markPageMetadataStale: () => void;
+  onRowsChanged?: () => void;
   diagnostics?: ReviewerRowLifecycleDiagnostics;
 }): ReviewerRowLifecycle {
   const rowFingerprints = new Map<string, string>();
@@ -50,6 +51,7 @@ export function createReviewerRowLifecycle(input: {
 
   function processRows(root: ParentNode = document): void {
     if (input.getRoute() == null) return;
+    input.onRowsChanged?.();
     root.querySelectorAll(githubSelectors.row).forEach((row) => {
       processRow(row);
     });
@@ -80,11 +82,18 @@ export function createReviewerRowLifecycle(input: {
       input.diagnostics?.onObserverCallback?.(mutations.length);
       const addedRows = new Set<Element>();
       const mutatedRows = new Set<Element>();
+      const removedRows = new Set<Element>();
+      let rowIdentityChanged = false;
 
       for (const mutation of mutations) {
         if (mutation.type !== "childList") {
           const row = findMutationRow(mutation.target);
           if (row != null) mutatedRows.add(row);
+          if (
+            mutation.type === "attributes" &&
+            !isFingerprintExcludedNode(mutation.target)
+          )
+            rowIdentityChanged = true;
           continue;
         }
 
@@ -100,8 +109,20 @@ export function createReviewerRowLifecycle(input: {
           if (isFingerprintExcludedNode(node)) return;
           collectRows(node, addedRows);
         });
+        mutation.removedNodes.forEach((node) => {
+          if (!(node instanceof Element)) return;
+          if (isFingerprintExcludedNode(node)) return;
+          collectRows(node, removedRows);
+        });
       }
 
+      if (
+        addedRows.size ||
+        mutatedRows.size ||
+        removedRows.size ||
+        rowIdentityChanged
+      )
+        input.onRowsChanged?.();
       for (const row of addedRows) {
         mutatedRows.delete(row);
         processRow(row);

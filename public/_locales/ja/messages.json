@@ -798,8 +798,8 @@
     "description": "Fallback quota when no numeric rate-limit evidence is available."
   },
   "banner_auth_rate_unknown": {
-    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 上限がリセットされると、レビュアーの読み込みが自動的に再開されます。",
-    "description": "auth rate-limit guidance with unknown reset timing; preserve retry claim and rounding.",
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ リセット時刻は不明です。上限がリセットされた後、このページを再読み込みして再試行してください。",
+    "description": "Authenticated rate-limit guidance with unknown reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -816,8 +816,8 @@
     }
   },
   "banner_auth_rate_shortly": {
-    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ まもなくレビュアーの読み込みが再開されます。",
-    "description": "auth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 上限はまもなくリセットされます。上限がリセットされた後、このページを再読み込みして再試行してください。",
+    "description": "Authenticated rate-limit guidance with shortly reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -834,8 +834,8 @@
     }
   },
   "banner_auth_rate_minute": {
-    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 約 1 分後にレビュアーの読み込みが再開されます。",
-    "description": "auth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 上限は約 1 分後にリセットされます。上限がリセットされた後、このページを再読み込みして再試行してください。",
+    "description": "Authenticated rate-limit guidance with minute reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -852,8 +852,8 @@
     }
   },
   "banner_auth_rate_minutes": {
-    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 約 $COUNT$ 分後にレビュアーの読み込みが再開されます。",
-    "description": "auth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 上限は約 $COUNT$ 分後にリセットされます。上限がリセットされた後、このページを再読み込みして再試行してください。",
+    "description": "Authenticated rate-limit guidance with minutes reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -876,8 +876,8 @@
     }
   },
   "banner_auth_rate_hour": {
-    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 約 1 時間後にレビュアーの読み込みが再開されます。",
-    "description": "auth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 上限は約 1 時間後にリセットされます。上限がリセットされた後、このページを再読み込みして再試行してください。",
+    "description": "Authenticated rate-limit guidance with hour reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"
@@ -894,8 +894,8 @@
     }
   },
   "banner_auth_rate_hours": {
-    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 約 $COUNT$ 時間後にレビュアーの読み込みが再開されます。",
-    "description": "auth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
+    "message": "GitHub の時間あたりのリクエスト上限に達しました。$USAGE$ 上限は約 $COUNT$ 時間後にリセットされます。上限がリセットされた後、このページを再読み込みして再試行してください。",
+    "description": "Authenticated rate-limit guidance with hours reset timing. Describe the quota reset, then tell the user to reload this page after reset to retry; never promise automatic loading. Preserve placeholders and reset rounding.",
     "placeholders": {
       "usage": {
         "content": "$1"

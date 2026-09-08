@@ -126,11 +126,14 @@
    (still-requested) chips link to `review-requested:<login>`; colored-ring
    (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use
    `is:pr is:open` searches by default.
-9. On API errors, emit a signal to the banner aggregator; do not render
+9. Publish typed page/account-generation and PR/request outcomes to the banner
+   integration; do not render
    row-level error text. Network, schema, and unknown failures use the generic
    reviewer-unavailable state with a same-page reload link. Repeated failures
-   are deduplicated by the aggregator, and a successful empty reviewer summary
-   does not emit any failure state.
+   are deduplicated by the aggregator. Every visible row is registered as pending
+   before processing, including queued requests. Fresh cache hits and successful
+   empty reviewer summaries settle successfully; stale chips alone do not.
+   A shared metadata failure has one identity but settles every suppressed row.
 10. Re-run row processing when GitHub mutates the page or performs SPA
     navigation. Same-repository navigation/render events mark visible row
     summaries stale instead of trusting the active page-session cache forever.
@@ -310,14 +313,31 @@ continue to force route refreshes.
 | ------------- | ---------------------------------------------------- | ----------------------- | ---------------- |
 | Signed in     | 401 on any reviewer endpoint                         | `auth-expired`          | Sign in          |
 | Signed in     | 404 / 403 with no rate-limit signal                  | `app-uncovered`         | Configure access |
-| Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`          | `auth-rate-limit`       | (passive wait)   |
+| Signed in     | 429, or 403 with `x-ratelimit-remaining: 0`          | `auth-rate-limit`       | (no button; reload after reset) |
 | No account    | 429, or 403 with rate-limit signal                   | `unauth-rate-limit`     | Sign in          |
 | No account    | 401, 403, or 404 without rate-limit signal           | `signin-required`       | Sign in          |
 | Either        | Network / schema / unknown / empty endpoint envelope | `reviewers-unavailable` | Reload page      |
 
 Severity priority for cross-row resolution: `auth-expired` > `app-uncovered` >
 `auth-rate-limit` > `unauth-rate-limit` > `signin-required` >
-`reviewers-unavailable`. The highest-priority kind seen on a page wins.
+`reviewers-unavailable`. Guidance reflects current outcomes for the visible PRs
+in the active page/account generation. Route or account invalidation registers
+the new visible set as pending before any work can complete. While any work is
+pending (including the fifth and later FIFO-queued rows), the previously
+published guidance may remain; a new higher-priority failure can still appear.
+Once all relevant work settles, the highest-priority remaining failure wins, so
+recovery can downgrade guidance or clear it entirely. One successful row cannot
+hide another row's failure or pending request.
+
+A partial row retry replaces only that PR's outcome and retains other visible
+results. Removing rows removes their outcomes; an empty list clears guidance
+from removed rows. Duplicate DOM rows share the PR/request identity. Mount-only
+restoration preserves data outcomes rather than treating DOM rendering as a
+successful retry. Stale/cold mounts still use the existing bounded revalidation
+or in-flight join; a real new attempt replaces only its PR's outcome with pending.
+Old generations and superseded request identities cannot
+publish results into the current aggregate. Membership and synchronous row work
+are published together, avoiding a transient recovery during a mutation batch.
 
 Banner dismissal is keyed by `pathname + kind`, so dismissing one kind on a page
 does not suppress a later, higher-priority kind on the same page.
@@ -329,6 +349,12 @@ aggregator, so the banner can report `(used/limit)` and a relative reset
 time. Callers fall back segment-by-segment: missing limit/remaining omits the
 usage clause, and a missing reset timestamp keeps the static reset copy. The
 snapshot is in-memory only — it is never persisted.
+Quota-reset copy describes when the limit resets and instructs the user to
+reload the page afterward. A missing timestamp uses localized unknown-time
+guidance. Reprocessing on an account change, meaningful GitHub row mutation, or
+navigation can also retry; no timer, polling or quota-reset-triggered retry is
+scheduled. Locale and display preference changes only reformat presentation,
+without changing generations, outcomes, caches, dismissal or request order.
 
 ## Proactive token refresh
 
@@ -527,7 +553,9 @@ Validate catalogs with the i18n unit tests and emitted metadata with
   green/red/gray/purple ring and matching optional badge, sort order and links.
 - All six access-banner kinds, CTAs, dismiss labels, usage clauses and reset
   cases are localized. Reset timing still uses ceiling minutes, then rounded
-  hours; past resets say shortly. Existing retry claims are preserved. Locale
+  hours; past resets say shortly. Authenticated rate-limit copy in every timing
+  variant describes the quota reset followed by a user-initiated page reload,
+  including the unknown-time fallback; it does not promise automatic resumption. Locale
   changes read `aggregator.getState()` without reporting failures or resetting
   dismissal. Banner actions wrap on narrow screens.
 - Translation uses text content and safe attributes. `lang` is set only on

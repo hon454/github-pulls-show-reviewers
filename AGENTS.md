@@ -39,8 +39,8 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - `src/features/reviewers/`
   Reviewer-focused feature orchestration and rendering. `index.ts` is the
   stable facade; the page controller delegates page metadata caching, fallback
-  account integration, runtime requests, and row mutation handling to focused
-  modules.
+  account integration, runtime requests, generation-scoped row outcomes, and row
+  mutation handling to focused modules.
 - `src/i18n/`
   Typed bundled localization, locale resolution and lifecycle-owned subscriptions.
   See `docs/adr/0006-bundled-localization-and-render-only-language.md` for the shared contract.

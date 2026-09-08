@@ -13,6 +13,7 @@ import { createBannerAggregator, type BannerAggregator } from "./aggregator";
 import { mountBanner, type BannerMount } from "./dom";
 
 export type AccessBannerHandle = BannerAggregator & {
+  refreshMount(): void;
   teardown(): void;
 };
 
@@ -49,6 +50,7 @@ export function bootAccessBanner(
   }
 
   let mount: BannerMount | null = null;
+  let mountTarget: HTMLElement | null = null;
 
   function ensureMountTarget(): HTMLElement | null {
     return (
@@ -62,8 +64,13 @@ export function bootAccessBanner(
   const localeStore = getLocaleStore();
   const render = () => {
     const state = aggregator.getState();
+    const target = ensureMountTarget();
+    if (target !== mountTarget) {
+      mount?.teardown();
+      mount = null;
+      mountTarget = target;
+    }
     if (mount == null) {
-      const target = ensureMountTarget();
       if (target == null) {
         return;
       }
@@ -93,6 +100,13 @@ export function bootAccessBanner(
 
   return {
     ...aggregator,
+    refreshMount() {
+      if (
+        mountTarget !== ensureMountTarget() ||
+        (mount != null && !mount.isConnected())
+      )
+        render();
+    },
     teardown,
   };
 }

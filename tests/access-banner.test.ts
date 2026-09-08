@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createBannerAggregator,
   formatBannerMessage,
+  type BannerFailure,
 } from "../src/features/access-banner/aggregator";
 
 const TEST_REPO = { owner: "cinev", name: "shotloom" } as const;
@@ -256,7 +257,7 @@ describe("formatBannerMessage", () => {
     expect(
       formatBannerMessage({ current: "auth-rate-limit", repo: TEST_REPO }),
     ).toBe(
-      "GitHub's hourly request limit was reached. Reviewers will resume automatically when the limit resets.",
+      "GitHub's hourly request limit was reached. The reset time is unavailable. Reload this page after the limit resets to retry.",
     );
   });
 
@@ -284,7 +285,7 @@ describe("formatBannerMessage", () => {
         { now: () => 1_700_000_000 * 1000 }, // ~5 minutes before reset
       ),
     ).toBe(
-      "GitHub's hourly request limit was reached. (5000/5000 used) Reviewers will resume in about 5 minutes.",
+      "GitHub's hourly request limit was reached. (5000/5000 used) The limit resets in about 5 minutes. Reload this page after the limit resets to retry.",
     );
   });
 
@@ -321,7 +322,7 @@ describe("formatBannerMessage", () => {
         },
       }),
     ).toBe(
-      "GitHub's hourly request limit was reached. (5000/5000 used) Reviewers will resume automatically when the limit resets.",
+      "GitHub's hourly request limit was reached. (5000/5000 used) The reset time is unavailable. Reload this page after the limit resets to retry.",
     );
   });
 
@@ -341,7 +342,7 @@ describe("formatBannerMessage", () => {
         { now: () => 1_700_000_000 * 1000 }, // ~1 hour before reset
       ),
     ).toBe(
-      "GitHub's hourly request limit was reached. Reviewers will resume in about 1 hour.",
+      "GitHub's hourly request limit was reached. The limit resets in about 1 hour. Reload this page after the limit resets to retry.",
     );
   });
 
@@ -361,7 +362,7 @@ describe("formatBannerMessage", () => {
         { now: () => 1_700_000_000 * 1000 },
       ),
     ).toBe(
-      "GitHub's hourly request limit was reached. Reviewers will resume shortly.",
+      "GitHub's hourly request limit was reached. The limit resets shortly. Reload this page after the limit resets to retry.",
     );
   });
 
@@ -741,7 +742,183 @@ describe("bootAccessBanner", () => {
   });
 });
 
+describe("banner result reconciliation", () => {
+  function setup() {
+    return createBannerAggregator({
+      pathname: "/cinev/shotloom/pulls",
+      repo: TEST_REPO,
+    });
+  }
+  const high: BannerFailure = { kind: "auth-expired" };
+  const low: BannerFailure = { kind: "reviewers-unavailable" };
+
+  it("holds previous guidance while pending, then downgrades and recovers from current outcomes", () => {
+    const aggregator = setup();
+    aggregator.reconcile({
+      generation: 0,
+      pending: false,
+      failures: [high, low],
+    });
+    expect(aggregator.getState().current).toBe("auth-expired");
+    aggregator.reconcile({ generation: 1, pending: true, failures: [] });
+    expect(aggregator.getState().current).toBe("auth-expired");
+    aggregator.reconcile({ generation: 1, pending: true, failures: [low] });
+    expect(aggregator.getState().current).toBe("auth-expired");
+    aggregator.reconcile({ generation: 1, pending: false, failures: [low] });
+    expect(aggregator.getState().current).toBe("reviewers-unavailable");
+    aggregator.reconcile({ generation: 1, pending: false, failures: [] });
+    expect(aggregator.getState().current).toBeNull();
+  });
+
+  it("rejects old failure and recovery snapshots, deduplicates shared failure publications, and reports urgent failures while pending", () => {
+    const aggregator = setup();
+    const listener = vi.fn();
+    aggregator.subscribe(listener);
+    listener.mockClear();
+    aggregator.reconcile({
+      generation: 2,
+      pending: true,
+      failures: [low, low],
+    });
+    aggregator.reconcile({
+      generation: 2,
+      pending: true,
+      failures: [low, low],
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    aggregator.reconcile({ generation: 1, pending: false, failures: [] });
+    aggregator.reconcile({ generation: 1, pending: false, failures: [high] });
+    expect(listener).toHaveBeenCalledTimes(1);
+    aggregator.reconcile({
+      generation: 2,
+      pending: true,
+      failures: [high, low],
+    });
+    expect(aggregator.getState().current).toBe("auth-expired");
+    aggregator.reconcile({ generation: 3, pending: false, failures: [] });
+    aggregator.reconcile({ generation: 2, pending: false, failures: [high] });
+    expect(aggregator.getState().current).toBeNull();
+  });
+
+  it("keeps the first current rate snapshot and replaces it when that failure recovers", () => {
+    const aggregator = setup();
+    const noRate: BannerFailure = { kind: "auth-rate-limit" };
+    const first: BannerFailure = {
+      kind: "auth-rate-limit",
+      info: {
+        rateLimit: { limit: 5000, remaining: 0, resource: "core", resetAt: 1 },
+      },
+    };
+    const second: BannerFailure = {
+      kind: "auth-rate-limit",
+      info: {
+        rateLimit: { limit: 5000, remaining: 0, resource: "core", resetAt: 2 },
+      },
+    };
+    aggregator.reconcile({ generation: 0, pending: true, failures: [noRate] });
+    aggregator.reconcile({
+      generation: 0,
+      pending: true,
+      failures: [noRate, first],
+    });
+    aggregator.reconcile({
+      generation: 0,
+      pending: false,
+      failures: [second, noRate, first],
+    });
+    expect(aggregator.getState().rateLimit).toBe(first.info!.rateLimit);
+    aggregator.reconcile({
+      generation: 0,
+      pending: false,
+      failures: [noRate, second],
+    });
+    expect(aggregator.getState().rateLimit).toBe(second.info!.rateLimit);
+    aggregator.reconcile({ generation: 1, pending: false, failures: [noRate] });
+    expect(aggregator.getState().rateLimit).toBeUndefined();
+    aggregator.reconcile({ generation: 1, pending: false, failures: [low] });
+    expect(aggregator.getState().rateLimit).toBeUndefined();
+  });
+
+  it("preserves a pathname/kind dismissal across recovery, recurrence, and downgrade", () => {
+    const aggregator = setup();
+    aggregator.reconcile({ generation: 0, pending: false, failures: [low] });
+    aggregator.dismiss();
+    aggregator.reconcile({ generation: 1, pending: false, failures: [] });
+    expect(aggregator.getState()).toMatchObject({
+      current: null,
+      dismissed: false,
+    });
+    aggregator.reconcile({
+      generation: 2,
+      pending: false,
+      failures: [low, high],
+    });
+    expect(aggregator.getState()).toMatchObject({
+      current: "auth-expired",
+      dismissed: false,
+    });
+    aggregator.reconcile({ generation: 2, pending: false, failures: [low] });
+    expect(aggregator.getState()).toMatchObject({
+      current: "reviewers-unavailable",
+      dismissed: true,
+    });
+  });
+});
+
 describe("localized banner states", () => {
+  it.each([
+    [
+      "en",
+      "limit resets",
+      "Reload this page",
+      /automatically|Reviewers will resume/,
+    ],
+    [
+      "ko",
+      "한도가 초기화",
+      "페이지를 새로고침",
+      /자동으로|후 리뷰어를 다시 불러/,
+    ],
+    ["ja", "上限がリセット", "ページを再読み込み", /自動的|読み込みが再開/],
+    ["zh_CN", "限额重置", "重新加载此页面", /自动恢复|恢复加载审阅者/],
+    ["zh_TW", "限額重設", "重新載入此頁面", /自動恢復|恢復載入審查者/],
+  ] as const)(
+    "describes reset then user reload in all six authenticated timing variants in %s",
+    async (locale, reset, reload, automatic) => {
+      const { createTranslator } = await import("../src/i18n");
+      const { default: catalog } = await import(
+        `../public/_locales/${locale}/messages.json`
+      );
+      const t = createTranslator(locale);
+      for (const resetAt of [null, 999, 1001, 1061, 4599, 6400]) {
+        const message = formatBannerMessage(
+          {
+            current: "auth-rate-limit",
+            repo: TEST_REPO,
+            rateLimit: { limit: 5000, remaining: 0, resource: "core", resetAt },
+          },
+          { t, now: () => 1_000_000 },
+        );
+        expect(message).toContain(reset);
+        expect(message).toContain(reload);
+        expect(message).not.toMatch(automatic);
+        expect(message).not.toMatch(/\$(USAGE|COUNT)\$/);
+      }
+      for (const variant of [
+        "unknown",
+        "shortly",
+        "minute",
+        "minutes",
+        "hour",
+        "hours",
+      ]) {
+        const description = catalog[`banner_auth_rate_${variant}`].description;
+        expect(description).toContain("user to reload");
+        expect(description).toContain("never promise automatic loading");
+        expect(description).not.toContain("preserve retry claim");
+      }
+    },
+  );
   it.each(["en", "ko", "ja", "zh_CN", "zh_TW"] as const)(
     "renders six kinds, actions and reset grammatical cases in %s",
     async (locale) => {
