@@ -132,6 +132,12 @@ export function createRefreshCoordinator(input: {
       recover(accountId, { failedGeneration }),
     refreshAccountIfDue: (accountId, now) => recover(accountId, { now }),
     async invalidateAccountToken(accountId, failedGeneration): Promise<void> {
+      // GitHub may have rotated this generation while its successful response
+      // is still in transit. Let that recovery commit before deciding whether
+      // the rejected retry still identifies the current credential. This wait
+      // is outside the registry queue and never waits on another generation.
+      const pending = inFlight.get(accountId);
+      if (pending?.generation === failedGeneration) await pending.promise;
       await accountMutations.commitAuth(accountId, failedGeneration, {
         invalidatedReason: "revoked",
       });

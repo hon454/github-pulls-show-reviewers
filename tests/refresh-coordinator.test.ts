@@ -288,4 +288,107 @@ describe("generation-aware refresh coordinator with real storage and HTTP parsin
     ).toEqual({ ok: false, terminal: true });
     expect(http.requests.length).toBe(0);
   });
+
+  it.each(["success", "terminal", "transient"])(
+    "waiting invalidation preserves reauthentication and newer independent recovery after old %s",
+    async (result) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const oldRecovery = coordinator.refreshAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      const oldHttp = await http.next();
+      const invalidation = coordinator.invalidateAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      await accountMutations.listAccounts();
+      const signedIn = await accountMutations.upsertAccountByLogin(
+        connectInput({ token: "fixture-access-login" }),
+      );
+      const newRecovery = coordinator.refreshAccountToken(
+        signedIn.id,
+        credentialGeneration(signedIn),
+      );
+      const newHttp = await http.next();
+      // Neither the old HTTP nor its invalidation wait blocks a new generation.
+      newHttp.response.resolve(rotated("newest"));
+      expect((await newRecovery).ok).toBe(true);
+      const unrelated = await accountMutations.upsertAccountByLogin(
+        connectInput({
+          login: "other",
+          newAccountId: "other",
+          refreshToken: "fixture-refresh-other",
+        }),
+      );
+      const otherRecovery = coordinator.refreshAccountToken(
+        unrelated.id,
+        credentialGeneration(unrelated),
+      );
+      (await http.next()).response.resolve(rotated("other-next"));
+      expect((await otherRecovery).ok).toBe(true);
+      oldHttp.response.resolve(
+        result === "success"
+          ? rotated("obsolete")
+          : result === "terminal"
+            ? json({ error: "bad_refresh_token" }, 400)
+            : json({}, 503),
+      );
+      await Promise.all([oldRecovery, invalidation]);
+      const current = (await accountMutations.getAccountById(old.id))!;
+      expect(current.invalidated).toBe(false);
+      expect(current.token === "fixture-access-newest").toBe(true);
+    },
+  );
+
+  it.each(["success", "terminal", "transient"])(
+    "waiting invalidation does not resurrect removal after refresh %s",
+    async (result) => {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const recovery = coordinator.refreshAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      const request = await http.next();
+      const invalidation = coordinator.invalidateAccountToken(
+        old.id,
+        credentialGeneration(old),
+      );
+      await accountMutations.removeAccount(old.id);
+      request.response.resolve(
+        result === "success"
+          ? rotated()
+          : result === "terminal"
+            ? json({ error: "bad_refresh_token" }, 400)
+            : json({}, 503),
+      );
+      await Promise.all([recovery, invalidation]);
+      expect((await accountMutations.getAccountById(old.id)) == null).toBe(
+        true,
+      );
+      expect(
+        Object.keys(storage.snapshot()).filter((key) =>
+          key.startsWith("account:"),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it("does not make a stale invalidation wait for a different generation's HTTP", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const signedIn = await accountMutations.upsertAccountByLogin(
+      connectInput({ token: "fixture-access-login" }),
+    );
+    const recovery = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(signedIn),
+    );
+    const request = await http.next();
+    await coordinator.invalidateAccountToken(old.id, credentialGeneration(old));
+    expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+      false,
+    );
+    request.response.resolve(rotated());
+    expect((await recovery).ok).toBe(true);
+  });
 });

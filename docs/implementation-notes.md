@@ -343,6 +343,11 @@ snapshot is in-memory only — it is never persisted.
   joins its active refresh; it rotates only a still-current failed generation.
   One API retry is allowed. A rejected retry invalidates only its own generation
   while it is still current. Refresh completion and terminal refresh failure
+  cannot be overtaken by retry invalidation for the same in-flight generation:
+  invalidation waits outside the registry queue, then rechecks current storage.
+  A successful rotation survives; a terminal failure retains `refresh_failed`.
+  If refresh is transient, a genuinely rejected still-current retry may retain
+  the existing `revoked` outcome. Refresh completion and terminal failure
   use the same conditional commit, so old work cannot overwrite a newer sign-in
   or revive a removed account. Runtime refresh responses contain the revision,
   not a token; retry callers reread the account and stop if it is gone/invalid.

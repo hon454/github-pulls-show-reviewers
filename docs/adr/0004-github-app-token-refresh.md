@@ -25,6 +25,9 @@ service worker before invalidating an account.
   used with current storage before recovery. Delayed failures reuse newer valid
   credentials, including after an earlier refresh promise has settled. Current
   concurrent failures share one in-flight refresh per account/generation.
+  A rejected retry waits for an already in-flight refresh of its generation
+  before conditional invalidation, allowing a successful rotation to commit.
+  The wait never holds the registry queue or waits on another generation.
 - Reviewer summary and metadata services run requests/retries in background.
   Options recovery sends `{ type: "refreshAccessToken", accountId, generation }`;
   responses contain a non-secret revision and callers reread storage before a

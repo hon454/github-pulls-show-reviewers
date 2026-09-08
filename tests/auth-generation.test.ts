@@ -21,6 +21,7 @@ import {
   connectInput,
   createHttpHarness,
   createStorageHarness,
+  deferred,
   json,
   rotated,
 } from "./helpers/auth-harness";
@@ -52,6 +53,63 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("deferred authenticated service schedules", () => {
+  it.each(["success", "terminal", "transient"])(
+    "waits for an in-flight same-generation refresh before retry invalidation (%s)",
+    async (result) => {
+      await accountMutations.upsertAccountByLogin(connectInput());
+      const a = createReviewerFetchService({
+        refreshCoordinator: coordinator,
+      }).handleFetchMessage(message("retry-before-refresh-commit"));
+      (await http.next()).response.resolve(json({}, 401));
+      (await http.next()).response.resolve(rotated("1"));
+      const retry = await http.next();
+      expect(retry.credential).toBe("1");
+      const g1 = (await accountMutations.getAccountById("acc-1"))!;
+      const b = coordinator.refreshAccountToken(
+        g1.id,
+        credentialGeneration(g1),
+      );
+      const rotation = await http.next();
+      const entered = deferred<void>();
+      const invalidate = coordinator.invalidateAccountToken;
+      const spy = vi
+        .spyOn(coordinator, "invalidateAccountToken")
+        .mockImplementation((id, generation) => {
+          const work = invalidate(id, generation);
+          entered.resolve();
+          return work;
+        });
+      retry.response.resolve(json({}, 401));
+      await entered.promise;
+      // Drain immediate registry commits without awaiting A: corrected A waits
+      // for B, so holding B until A finishes would deadlock the test itself.
+      const before = await accountMutations.getAccountById("acc-1");
+      rotation.response.resolve(
+        result === "success"
+          ? rotated("2")
+          : result === "terminal"
+            ? json({ error: "bad_refresh_token" }, 400)
+            : json({}, 503),
+      );
+      const [oldRetry, refresh] = await Promise.all([a, b]);
+      spy.mockRestore();
+      const current = (await accountMutations.getAccountById("acc-1"))!;
+      expect(before?.invalidated).toBe(false);
+      expect(oldRetry.ok).toBe(false);
+      expect(refresh.ok).toBe(result === "success");
+      expect(current.invalidatedReason).toBe(
+        result === "success"
+          ? null
+          : result === "terminal"
+            ? "refresh_failed"
+            : "revoked",
+      );
+      expect(current.token === "fixture-access-2").toBe(result === "success");
+      expect(http.requests.filter((r) => r.kind === "api").length).toBe(2);
+      expect(http.requests.filter((r) => r.kind === "refresh").length).toBe(2);
+    },
+  );
+
   it("recovers an options snapshot read before missing-generation migration", async () => {
     await accountMutations.upsertAccountByLogin(connectInput());
     const key = "account:auth:acc-1";
