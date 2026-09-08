@@ -52,7 +52,10 @@ export const contentSender = (
   frameId: 0,
 });
 
-export function createUIBridgeHarness(initial: Record<string, unknown> = {}) {
+export function createUIBridgeHarness(
+  initial: Record<string, unknown> = {},
+  nativeDiscoveryLiveness = false,
+) {
   const storage = createStorageHarness(initial);
   const session = createStorageHarness();
   const changes =
@@ -115,6 +118,21 @@ export function createUIBridgeHarness(initial: Record<string, unknown> = {}) {
       sendMessage: vi.fn((request: unknown) => send(request, optionsSender())),
       connect: () => connect(optionsSender()),
     },
+    tabs: {
+      get: vi.fn(async () => ({ discarded: false, frozen: false })),
+      sendMessage: vi.fn(
+        async (
+          _id: number,
+          _message: unknown,
+          options: { documentId: string },
+        ) => {
+          if (!alive.has(options.documentId))
+            throw new Error("Receiving end does not exist");
+          return { alive: true };
+        },
+      ),
+      onRemoved: event<(tabId: number) => void>(),
+    },
     i18n: { getUILanguage: () => "en" },
   };
   vi.stubGlobal("crypto", webcrypto);
@@ -132,6 +150,12 @@ export function createUIBridgeHarness(initial: Record<string, unknown> = {}) {
     return createUIBridge({
       ensureReady,
       coordinator,
+      ...(nativeDiscoveryLiveness
+        ? {}
+        : {
+            isDiscoveryOwnerAlive: async (owner: { documentId: string }) =>
+              alive.has(owner.documentId),
+          }),
       installations: createInstallationRefreshService({
         refreshCoordinator: coordinator,
       }),

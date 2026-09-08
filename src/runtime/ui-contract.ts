@@ -51,6 +51,7 @@ export const uiSnapshotSchema = z.strictObject({
   epoch: opaqueIdSchema,
   revision: z.number().int().nonnegative(),
   accountsRevision: z.string(),
+  discoveryRevision: z.string().optional(),
   preferences: preferencesSchema.strict(),
   // Content needs only the opaque account revision. Only options lists accounts.
   accounts: z.array(accountSummarySchema).nullable(),
@@ -126,9 +127,25 @@ export const uiRequestSchema = z.discriminatedUnion("type", [
     repository: repositoryContextSchema.optional(),
   }),
   z.strictObject({
+    type: z.literal("beginRepositoryDiscovery"),
+    pageSession: opaqueIdSchema,
+    generation: z.number().int().nonnegative(),
+    ...repositoryContextSchema.shape,
+  }),
+  z.strictObject({
+    type: z.literal("retireRepositoryDiscovery"),
+    discoveryId: opaqueIdSchema,
+  }),
+  z.strictObject({
     type: z.literal("diagnoseRepository"),
     mode: z.enum(["matched", "no-token"]),
+    runId: opaqueIdSchema.optional(),
+    generation: z.number().int().nonnegative().optional(),
     ...repositoryContextSchema.shape,
+  }),
+  z.strictObject({
+    type: z.literal("cancelRepositoryDiagnostic"),
+    runId: opaqueIdSchema,
   }),
   z.strictObject({
     type: z.literal("startDeviceFlow"),

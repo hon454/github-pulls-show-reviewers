@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  classifyProvisionalRepositoryFailure,
-  orderProvisionalRepositoryCandidates,
-  type ProvisionalAccountFact,
-  type ProvisionalFailureFact,
-  type ProvisionalInstallationFact,
-} from "../src/background/repository-account-policy.provisional";
+  classifyRepositoryFailure,
+  orderRepositoryCandidates,
+  type RepositoryAccountFact,
+  type RepositoryFailureFact,
+  type RepositoryInstallationFact,
+} from "../src/background/repository-account-policy";
 
-// Independent Phase P facts only: no Account, runtime, storage, or HTTP mocks.
-const all = (owner = "acme"): ProvisionalInstallationFact => ({
+// Exercise the pure policy separately from real service/bridge tests.
+const all = (owner = "acme"): RepositoryInstallationFact => ({
   owner,
   selection: "all",
 });
@@ -17,7 +17,7 @@ const selected = (
   repositoryFullNames: string[] = [],
   truncated = false,
   owner = "acme",
-): ProvisionalInstallationFact => ({
+): RepositoryInstallationFact => ({
   owner,
   selection: "selected",
   repositoryFullNames,
@@ -25,9 +25,9 @@ const selected = (
 });
 const account = (
   accountId: string,
-  installations: readonly ProvisionalInstallationFact[] = [all()],
-  overrides: Partial<ProvisionalAccountFact> = {},
-): ProvisionalAccountFact => ({
+  installations: readonly RepositoryInstallationFact[] = [all()],
+  overrides: Partial<RepositoryAccountFact> = {},
+): RepositoryAccountFact => ({
   accountId,
   active: true,
   present: true,
@@ -35,12 +35,12 @@ const account = (
   ...overrides,
 });
 const candidates = (
-  accounts: readonly ProvisionalAccountFact[],
+  accounts: readonly RepositoryAccountFact[],
   attemptedAccountIds: readonly string[] = [],
   owner = "acme",
   repo = "private-b",
 ) =>
-  orderProvisionalRepositoryCandidates({
+  orderRepositoryCandidates({
     owner,
     repo,
     accounts,
@@ -48,17 +48,17 @@ const candidates = (
   });
 const failure = (
   status: number | null,
-  overrides: Partial<ProvisionalFailureFact> = {},
-): ProvisionalFailureFact => ({
+  overrides: Partial<RepositoryFailureFact> = {},
+): RepositoryFailureFact => ({
   kind: "http",
   status,
   scope: "repository",
   ...overrides,
 });
-const classify = (failures: readonly ProvisionalFailureFact[]) =>
-  classifyProvisionalRepositoryFailure({ authenticated: true, failures });
+const classify = (failures: readonly RepositoryFailureFact[]) =>
+  classifyRepositoryFailure({ authenticated: true, failures });
 
-describe("provisional repository candidate policy", () => {
+describe("repository candidate policy", () => {
   it.each([
     ["A", "B"],
     ["B", "A"],
@@ -155,7 +155,7 @@ describe("provisional repository candidate policy", () => {
     expect(candidates([account("A", [selected([], true)])])).toEqual([
       { accountId: "A", tier: "truncated" },
     ]);
-    // This models reevaluation only, not the still-unimplemented refresh path.
+    // Service tests separately exercise the actual bounded refresh path.
     expect(candidates([before])).toEqual([]);
   });
 
@@ -190,7 +190,7 @@ describe("provisional repository candidate policy", () => {
   });
 });
 
-describe("provisional authenticated failure policy", () => {
+describe("authenticated failure policy", () => {
   it.each([403, 404])(
     "accepts a non-rate-limited repository HTTP %s denial",
     (status) => {
@@ -206,7 +206,7 @@ describe("provisional authenticated failure policy", () => {
     });
   });
 
-  const stoppingFacts: Array<[string, ProvisionalFailureFact, string]> = [
+  const stoppingFacts: Array<[string, RepositoryFailureFact, string]> = [
     ["HTTP 429", failure(429), "rate-limit"],
     [
       "primary exhaustion",
@@ -296,7 +296,7 @@ describe("provisional authenticated failure policy", () => {
     "keeps anonymous HTTP %s outside this policy",
     (status) => {
       expect(
-        classifyProvisionalRepositoryFailure({
+        classifyRepositoryFailure({
           authenticated: false,
           failures: [failure(status)],
         }),

@@ -3,7 +3,6 @@ import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import { getGitHubAppConfig } from "../config/github-app";
 import { accountMutations } from "../storage/accounts";
 import { updatePreferences } from "../storage/preferences";
-import { createSelfHealingAccountResolver } from "./account-resolution";
 import { summarizeAccount } from "./account-summary";
 import { createDeviceFlowService, FlowOwnershipError } from "./device-flow";
 import { createDiagnosticsService } from "./diagnostics";
@@ -35,6 +34,12 @@ import {
 } from "../runtime/reviewer-fetch";
 import { isOpenOptionsPageMessage } from "../runtime/options-page";
 import { installationRefreshOutcomeSchema } from "../runtime/installation-refresh";
+import {
+  DISCOVERY_DOCUMENT_PROBE,
+  repositoryDiscoverySchema,
+} from "../runtime/repository-discovery";
+import { createRepositoryAccountService } from "./repository-accounts";
+import type { DiscoveryOwner } from "./repository-discovery-ledger";
 
 export function createUIBridge(input: {
   ensureReady: () => Promise<void>;
@@ -42,14 +47,10 @@ export function createUIBridge(input: {
   installations: InstallationRefreshService;
   reviewers: ReviewerFetchService;
   isOwnerAlive?: (owner: string) => Promise<boolean>;
+  isDiscoveryOwnerAlive?: (owner: DiscoveryOwner) => Promise<boolean>;
 }) {
-  const state = createUIStateService(input.ensureReady);
   type Port = ReturnType<typeof browser.runtime.connect>;
   const ports = new Map<string, Set<Port>>();
-  const resolvers = new Map<
-    string,
-    ReturnType<typeof createSelfHealingAccountResolver>
-  >();
   const isOwnerAlive =
     input.isOwnerAlive ??
     (async (owner: string) => {
@@ -61,6 +62,53 @@ export function createUIBridge(input: {
       });
       return contexts.some((context) => context.documentId === owner);
     });
+  const repositories = createRepositoryAccountService({
+    ...input,
+    isOwnerAlive:
+      input.isDiscoveryOwnerAlive ??
+      (async (owner) => {
+        if (owner.lane === "diagnostic") return isOwnerAlive(owner.documentId);
+        // Chrome getContexts omits live content documents. A disconnected port
+        // or worker reconnection must therefore never reset their ledger.
+        if (owner.tabId === undefined || !browser.tabs?.get) return true;
+        try {
+          const tab = await browser.tabs.get(owner.tabId);
+          if (tab.discarded) return false;
+          if (tab.frozen) return true;
+          if (!browser.tabs.sendMessage) return true;
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          try {
+            // A suspended/unresponsive document is uncertain, not confirmed lost.
+            // It must not block another tab's startup or lose its attempt budget.
+            const reply: unknown = await Promise.race([
+              browser.tabs.sendMessage(
+                owner.tabId,
+                { type: DISCOVERY_DOCUMENT_PROBE },
+                { documentId: owner.documentId },
+              ),
+              new Promise((resolve) => {
+                timer = setTimeout(() => resolve({ alive: true }), 1_000);
+              }),
+            ]);
+            return z.object({ alive: z.literal(true) }).safeParse(reply)
+              .success;
+          } finally {
+            if (timer !== undefined) clearTimeout(timer);
+          }
+        } catch {
+          return false;
+        }
+      }),
+  });
+  const state = createUIStateService(
+    input.ensureReady,
+    repositories.accountsChanged,
+  );
+  const discoveryOwner = (context: UIContext): DiscoveryOwner => ({
+    documentId: context.documentId,
+    lane: context.kind === "content" ? "content" : "diagnostic",
+    ...(context.tabId === undefined ? {} : { tabId: context.tabId }),
+  });
   const flow = createDeviceFlowService({
     ensureReady: input.ensureReady,
     getClientId: () => getGitHubAppConfig().clientId,
@@ -80,18 +128,28 @@ export function createUIBridge(input: {
       }
     },
   });
-  const diagnose = createDiagnosticsService(input.coordinator);
+  const diagnose = createDiagnosticsService(input.coordinator, repositories);
+  const diagnosticControllers = new Map<string, Set<AbortController>>();
+  const canceledDiagnostics = new Map<string, number>();
+  const onTabRemoved = () => {
+    void repositories.prune().catch(() => undefined);
+    for (const [requestKey, controllers] of diagnosticControllers)
+      void isOwnerAlive(requestKey.split(":")[0])
+        .then((alive) => {
+          if (!alive) for (const controller of controllers) controller.abort();
+        })
+        .catch(() => undefined);
+  };
+  browser.tabs?.onRemoved?.addListener(onTabRemoved);
 
   function resolver(context: UIContext) {
-    let service = resolvers.get(context.documentId);
-    if (!service) {
-      service = createSelfHealingAccountResolver({
-        requestRefresh: async (accountId) =>
-          (await input.installations.refreshAccountInstallations(accountId)).ok,
-      });
-      resolvers.set(context.documentId, service);
-    }
-    return service;
+    const owner = discoveryOwner(context);
+    return {
+      resolveAccount: (repositoryOwner: string, repo: string) =>
+        repositories.resolveAccount(owner, repositoryOwner, repo),
+      resolveFallbackAccount: (repositoryOwner: string) =>
+        repositories.resolveFallbackAccount(owner, repositoryOwner),
+    };
   }
   function success<T extends z.ZodType>(schema: T, data: unknown) {
     return capabilityResponseSchema(schema).parse({ ok: true, data });
@@ -116,6 +174,8 @@ export function createUIBridge(input: {
             "resolveAccount",
             "resolveFallbackAccount",
             "refreshAccountInstallations",
+            "beginRepositoryDiscovery",
+            "retireRepositoryDiscovery",
           ].includes(request.type)
         )
           return forbidden();
@@ -127,6 +187,18 @@ export function createUIBridge(input: {
         switch (request.type) {
           case "getUISnapshot":
             return success(uiSnapshotSchema, await state.read(context.kind));
+          case "beginRepositoryDiscovery":
+            await repositories.prune();
+            return success(
+              repositoryDiscoverySchema,
+              await repositories.begin(discoveryOwner(context), request),
+            );
+          case "retireRepositoryDiscovery":
+            await repositories.retire(
+              discoveryOwner(context),
+              request.discoveryId,
+            );
+            return success(z.null(), null);
           case "patchPreferences":
             await updatePreferences(request.patch);
             return success(uiSnapshotSchema, await state.read("options"));
@@ -181,11 +253,44 @@ export function createUIBridge(input: {
               ),
             );
           }
-          case "diagnoseRepository":
-            return success(
-              repositoryDiagnosticSchema,
-              await diagnose(request.owner, request.repo, request.mode),
-            );
+          case "diagnoseRepository": {
+            const runId = request.runId ?? crypto.randomUUID();
+            const requestKey = `${context.documentId}:${runId}`;
+            const controller = new AbortController();
+            for (const [id, canceledAt] of canceledDiagnostics)
+              if (Date.now() - canceledAt > 60_000)
+                canceledDiagnostics.delete(id);
+            if (canceledDiagnostics.has(requestKey)) controller.abort();
+            const controllers =
+              diagnosticControllers.get(requestKey) ?? new Set();
+            controllers.add(controller);
+            diagnosticControllers.set(requestKey, controllers);
+            try {
+              return success(
+                repositoryDiagnosticSchema,
+                await diagnose(request.owner, request.repo, request.mode, {
+                  owner: discoveryOwner(context),
+                  runId,
+                  generation: request.generation ?? Date.now(),
+                  signal: controller.signal,
+                }),
+              );
+            } finally {
+              controllers.delete(controller);
+              if (controllers.size === 0)
+                diagnosticControllers.delete(requestKey);
+            }
+          }
+          case "cancelRepositoryDiagnostic": {
+            const key = `${context.documentId}:${request.runId}`;
+            for (const [id, canceledAt] of canceledDiagnostics)
+              if (Date.now() - canceledAt > 60_000)
+                canceledDiagnostics.delete(id);
+            canceledDiagnostics.set(key, Date.now());
+            for (const controller of diagnosticControllers.get(key) ?? [])
+              controller.abort();
+            return success(z.null(), null);
+          }
           case "startDeviceFlow":
             return success(
               deviceFlowProgressSchema,
@@ -222,11 +327,26 @@ export function createUIBridge(input: {
       if (summary.success && context.kind === "content") {
         if (!ownsRepository(context, summary.data.owner, summary.data.repo))
           return forbidden();
+        if (!summary.data.discoveryId)
+          return { ok: false, error: "unavailable" };
+        const owner = discoveryOwner(context);
+        const discovery = await repositories.reference(
+          owner,
+          summary.data.discoveryId,
+        );
+        if (
+          discovery.owner !== summary.data.owner.toLowerCase() ||
+          discovery.repo !== summary.data.repo.toLowerCase()
+        )
+          return forbidden();
         return fetchPullReviewerSummaryResponseSchema.parse(
-          await input.reviewers.handleFetchMessage({
-            ...summary.data,
-            requestId: `${context.documentId}:${summary.data.requestId}`,
-          }),
+          await input.reviewers.handleFetchMessage(
+            {
+              ...summary.data,
+              requestId: `${context.documentId}:${summary.data.requestId}`,
+            },
+            { service: repositories, owner, discovery },
+          ),
         );
       }
       const metadata =
@@ -234,11 +354,26 @@ export function createUIBridge(input: {
       if (metadata.success && context.kind === "content") {
         if (!ownsRepository(context, metadata.data.owner, metadata.data.repo))
           return forbidden();
+        if (!metadata.data.discoveryId)
+          return { ok: false, error: "unavailable" };
+        const owner = discoveryOwner(context);
+        const discovery = await repositories.reference(
+          owner,
+          metadata.data.discoveryId,
+        );
+        if (
+          discovery.owner !== metadata.data.owner.toLowerCase() ||
+          discovery.repo !== metadata.data.repo.toLowerCase()
+        )
+          return forbidden();
         return fetchPullReviewerMetadataBatchResponseSchema.parse(
-          await input.reviewers.handleMetadataBatchMessage({
-            ...metadata.data,
-            requestId: `${context.documentId}:${metadata.data.requestId}`,
-          }),
+          await input.reviewers.handleMetadataBatchMessage(
+            {
+              ...metadata.data,
+              requestId: `${context.documentId}:${metadata.data.requestId}`,
+            },
+            { service: repositories, owner, discovery },
+          ),
         );
       }
       return { ok: false, error: "invalid-request" };
@@ -281,14 +416,18 @@ export function createUIBridge(input: {
       ownerPorts.delete(port);
       if (ownerPorts.size === 0) {
         ports.delete(context.documentId);
-        resolvers.delete(context.documentId);
         if (context.kind === "options") {
           void (async () => {
             if (
               typeof browser.runtime.getContexts === "function" &&
               !(await isOwnerAlive(context.documentId))
-            )
+            ) {
               await flow.retireOwner(context.documentId);
+              for (const [key, controllers] of diagnosticControllers)
+                if (key.startsWith(`${context.documentId}:`))
+                  for (const controller of controllers) controller.abort();
+              await repositories.prune();
+            }
           })().catch(() => undefined);
         }
       }
@@ -298,7 +437,18 @@ export function createUIBridge(input: {
   return {
     handle,
     connect,
-    initialize: () => flow.initialize(),
-    dispose: () => state.dispose(),
+    initialize: async () => {
+      await flow.initialize();
+      await repositories.initialize();
+    },
+    dispose: () => {
+      state.dispose();
+      repositories.dispose();
+      browser.tabs?.onRemoved?.removeListener(onTabRemoved);
+      for (const controllers of diagnosticControllers.values())
+        for (const controller of controllers) controller.abort();
+      diagnosticControllers.clear();
+      canceledDiagnostics.clear();
+    },
   };
 }

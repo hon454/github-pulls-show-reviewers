@@ -14,6 +14,14 @@ import { createUIPresentationFixtures } from "./helpers/ui-presentation-fixtures
 import { createPullListFixtureHtml } from "./helpers/pull-list-fixtures";
 
 const resolveAccount = vi.fn();
+vi.mock("../src/runtime/repository-discovery", () => ({
+  beginRepositoryDiscovery: async (input: {
+    owner: string;
+    repo: string;
+    generation: number;
+  }) => ({ ...input, id: `fixture-discovery-${input.generation}` }),
+  retireRepositoryDiscovery: async () => null,
+}));
 const listAccounts = vi.fn();
 vi.mock("../src/storage/accounts", async (importActual) => ({
   ...(await importActual<typeof AccountsStorageModule>()),
@@ -375,8 +383,19 @@ describe("real content access banner recovery", () => {
 
   it("reports successful fallback-account retries as success without retaining the initial signed-out failure", async () => {
     listAccounts.mockResolvedValue([account]);
-    summary = async ({ accountId }) =>
-      accountId == null ? failure(404) : success();
+    summary = async () => ({
+      ...success(),
+      account: {
+        id: account.id,
+        login: account.login,
+        avatarUrl: null,
+        revision: "fixture-generation",
+        invalidated: false,
+        invalidatedReason: null,
+        installations: [],
+        installationsRefreshedAt: 1,
+      },
+    });
     await boot();
     expect(
       latest().rows.every(({ outcome }) => outcome.status === "success"),
@@ -384,7 +403,7 @@ describe("real content access banner recovery", () => {
     expect(banner()).toBeNull();
     expect(
       messages("fetchPullReviewerSummary").map(({ accountId }) => accountId),
-    ).toEqual([null, null, account.id, account.id]);
+    ).toEqual([null, null]);
     expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(2);
   });
 

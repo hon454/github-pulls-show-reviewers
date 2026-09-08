@@ -551,7 +551,7 @@
     }
   },
   "diagnostics_permission": {
-    "message": "GitHub 拒絕存取 $REPOSITORY$，請檢查 GitHub App 安裝及其 Pull requests: Read 權限。",
+    "message": "GitHub 拒絕存取 $REPOSITORY$。請檢查此帳號的儲存庫權限，以及 GitHub App 安裝的 Pull requests: Read 權限。",
     "description": "Repository diagnostics permission. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -560,7 +560,7 @@
     }
   },
   "diagnostics_not_found": {
-    "message": "此帳號無法在 GitHub 找到 $REPOSITORY$。請確認名稱及 GitHub App 安裝存取權限；儲存庫可能已刪除或存取受限。",
+    "message": "此帳號找不到 $REPOSITORY$。請確認名稱、帳號權限及 GitHub App 安裝存取範圍；儲存庫可能已刪除或受到限制。",
     "description": "Repository diagnostics not found. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -746,8 +746,8 @@
     "description": "Expired GitHub session guidance."
   },
   "banner_app_uncovered": {
-    "message": "若要查看此頁面的審查者，請將 $REPOSITORY$ 加入 @$OWNER$ 的 GitHub App 安裝中。",
-    "description": "App installation coverage guidance; identifiers remain unchanged.",
+    "message": "無法載入 $REPOSITORY$ 的所有審查者資訊。請檢查帳號的儲存庫權限，以及 @$OWNER$ 的 GitHub App 安裝存取範圍。",
+    "description": "Account permissions and App installation access guidance; identifiers remain unchanged.",
     "placeholders": {
       "repository": {
         "content": "$1"
@@ -924,5 +924,17 @@
   "auth_error_restart": {
     "message": "無法還原此次登入。請取得新代碼後登入。",
     "description": "Device flow session was lost or its interrupted result cannot be recovered; user can request a fresh code."
+  },
+  "diagnostics_pull_unavailable": {
+    "message": "儲存庫存取成功，但 $REPOSITORY$ 的 PR #$PULL$ 傳回 403/404。請確認該 PR 是否可用；這不表示整個儲存庫都無法存取。",
+    "description": "Individual PR access failure after a successful repository probe. Preserve repository and PR identifiers.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      },
+      "pull": {
+        "content": "$2"
+      }
+    }
   }
 }

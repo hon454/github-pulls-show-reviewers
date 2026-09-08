@@ -22,6 +22,16 @@ const resolveAccountForRepoMock = vi.fn();
 const listAccountsMock = vi.fn();
 const getPreferencesMock = vi.fn();
 const runtimeSendMessageMock = vi.fn();
+// Presentation/scheduler tests mock the token-free background boundary. Real
+// discovery admission and HTTP live in repository-accounts/bridge DOM suites.
+vi.mock("../src/runtime/repository-discovery", () => ({
+  beginRepositoryDiscovery: async (input: {
+    owner: string;
+    repo: string;
+    generation: number;
+  }) => ({ ...input, id: `fixture-discovery-${input.generation}` }),
+  retireRepositoryDiscovery: async () => null,
+}));
 const singleRowFixtureHtml = readFileSync(
   path.join(process.cwd(), "tests/fixtures/github-pulls-single-row.html"),
   "utf8",
@@ -109,6 +119,19 @@ vi.mock("../src/runtime/accounts", async () => {
     },
   };
 });
+
+function safeFixtureAccount(account: { id: string; login: string }) {
+  return {
+    id: account.id,
+    login: account.login,
+    avatarUrl: null,
+    revision: "legacy",
+    invalidated: false,
+    invalidatedReason: null,
+    installations: [],
+    installationsRefreshedAt: 1,
+  };
+}
 
 function flushMicrotasks() {
   return new Promise((resolve) => setTimeout(resolve, 0));
@@ -559,17 +582,12 @@ describe("bootReviewerListPage", () => {
     };
     runtimeSendMessageMock.mockImplementation(
       (message: { type?: string; accountId?: string | null }) => {
-        if (
-          message.type === "fetchPullReviewerMetadataBatch" &&
-          message.accountId == null
-        ) {
-          return Promise.resolve({ ok: false, error: rateLimitError });
-        }
-        if (
-          message.type === "fetchPullReviewerMetadataBatch" &&
-          message.accountId === "acc-owner"
-        ) {
-          return Promise.resolve({ ok: true, metadata: [] });
+        if (message.type === "fetchPullReviewerMetadataBatch") {
+          return Promise.resolve({
+            ok: true,
+            metadata: [],
+            account: safeFixtureAccount({ id: "acc-owner", login: "hon454" }),
+          });
         }
         if (
           message.type === "fetchPullReviewerSummary" &&
@@ -599,7 +617,7 @@ describe("bootReviewerListPage", () => {
       getRuntimeMessages("fetchPullReviewerMetadataBatch").map(
         (message) => message.accountId,
       ),
-    ).toEqual([null, "acc-owner"]);
+    ).toEqual([null]);
     expect(
       getRuntimeMessages("fetchPullReviewerSummary").map(
         (message) => message.accountId,
@@ -650,17 +668,12 @@ describe("bootReviewerListPage", () => {
     };
     runtimeSendMessageMock.mockImplementation(
       (message: { type?: string; accountId?: string | null }) => {
-        if (
-          message.type === "fetchPullReviewerMetadataBatch" &&
-          message.accountId == null
-        ) {
-          return Promise.resolve({ ok: false, error: rateLimitError });
-        }
-        if (
-          message.type === "fetchPullReviewerMetadataBatch" &&
-          message.accountId === "acc-owner"
-        ) {
-          return Promise.resolve({ ok: true, metadata: [] });
+        if (message.type === "fetchPullReviewerMetadataBatch") {
+          return Promise.resolve({
+            ok: true,
+            metadata: [],
+            account: safeFixtureAccount(account),
+          });
         }
         if (
           message.type === "fetchPullReviewerSummary" &&
@@ -750,18 +763,10 @@ describe("bootReviewerListPage", () => {
         accountId?: string | null;
         pullNumber?: string;
       }) => {
-        if (
-          message.type === "fetchPullReviewerMetadataBatch" &&
-          message.accountId == null
-        ) {
-          return Promise.resolve({ ok: false, error: rateLimitError });
-        }
-        if (
-          message.type === "fetchPullReviewerMetadataBatch" &&
-          message.accountId === "acc-owner"
-        ) {
+        if (message.type === "fetchPullReviewerMetadataBatch") {
           return Promise.resolve({
             ok: true,
+            account: safeFixtureAccount(account),
             metadata: [
               {
                 number: "42",
@@ -803,7 +808,7 @@ describe("bootReviewerListPage", () => {
       getRuntimeMessages("fetchPullReviewerMetadataBatch").map(
         (message) => message.accountId,
       ),
-    ).toEqual([null, "acc-owner"]);
+    ).toEqual([null]);
     expect(
       getRuntimeMessages("fetchPullReviewerSummary").map(
         (message) => message.accountId,
@@ -1136,16 +1141,7 @@ describe("bootReviewerListPage", () => {
 
     runtimeSendMessageMock.mockImplementation(
       (message: { type?: string; accountId?: string | null }) => {
-        if (
-          message.type === "fetchPullReviewerMetadataBatch" &&
-          message.accountId == null
-        ) {
-          return Promise.resolve({ ok: false, error: rateLimitError });
-        }
-        if (
-          message.type === "fetchPullReviewerMetadataBatch" &&
-          message.accountId === "acc-owner"
-        ) {
+        if (message.type === "fetchPullReviewerMetadataBatch") {
           fallbackMetadataCalls += 1;
           if (fallbackMetadataCalls === 1) {
             return new Promise<Record<string, unknown>>((resolve) => {
@@ -1189,6 +1185,7 @@ describe("bootReviewerListPage", () => {
 
     resolveSecondFallbackMetadata!({
       ok: true,
+      account: safeFixtureAccount(account),
       metadata: [
         {
           number: "42",
@@ -1207,7 +1204,11 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    resolveFirstFallbackMetadata!({ ok: false, error: rateLimitError });
+    resolveFirstFallbackMetadata!({
+      ok: false,
+      error: rateLimitError,
+      account: safeFixtureAccount(account),
+    });
     await flushMicrotasks();
     await flushMicrotasks();
     await flushMicrotasks();
@@ -2261,11 +2262,6 @@ describe("bootReviewerListPage", () => {
       refreshTokenExpiresAt: null,
     };
     listAccountsMock.mockResolvedValue([fallbackAccount]);
-    const rateLimitError = {
-      kind: "github-api" as const,
-      status: 429,
-      failures: [{ status: 429, endpoint: null, rateLimited: true }],
-    };
     const summary: PullReviewerSummary = {
       status: "ok",
       requestedUsers: [],
@@ -2275,6 +2271,7 @@ describe("bootReviewerListPage", () => {
     let activeCount = 0;
     let peakConcurrency = 0;
     const completions: Array<() => void> = [];
+    const attemptedAccounts: Array<string | null> = [];
 
     runtimeSendMessageMock.mockImplementation(
       (message: { type?: string; accountId?: string | null }) => {
@@ -2296,13 +2293,17 @@ describe("bootReviewerListPage", () => {
           activeCount += 1;
           peakConcurrency = Math.max(peakConcurrency, activeCount);
           return new Promise((resolve) => {
+            attemptedAccounts.push(null);
             completions.push(() => {
-              activeCount -= 1;
-              resolve(
-                message.accountId == null
-                  ? { ok: false, error: rateLimitError }
-                  : { ok: true, summary },
-              );
+              attemptedAccounts.push(fallbackAccount.id);
+              completions.push(() => {
+                activeCount -= 1;
+                resolve({
+                  ok: true,
+                  summary,
+                  account: safeFixtureAccount(fallbackAccount),
+                });
+              });
             });
           });
         }
@@ -2333,8 +2334,11 @@ describe("bootReviewerListPage", () => {
       pullNumbers.length,
     );
     expect(
-      accountIds.filter((accountId) => accountId === fallbackAccount.id),
+      attemptedAccounts.filter((accountId) => accountId === fallbackAccount.id),
     ).toHaveLength(pullNumbers.length);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+      pullNumbers.length,
+    );
     expect(peakConcurrency).toBe(4);
     expect(activeCount).toBe(0);
     expect(onRowFailure).not.toHaveBeenCalled();
@@ -2893,21 +2897,15 @@ describe("settled reviewer request ownership", () => {
       resolveAccountForRepoMock.mockResolvedValue(null);
       if (stage === "account")
         resolveAccountForRepoMock.mockRejectedValueOnce(error);
-      else
-        listAccountsMock.mockResolvedValueOnce([]).mockRejectedValueOnce(error);
       let recovered = false;
       runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
         if (message.type === "fetchPullReviewerMetadataBatch")
-          return Promise.resolve(
-            !recovered && stage === "metadata fallback"
-              ? failure(403)
-              : { ok: true, metadata: [] },
-          );
-        return Promise.resolve(
-          !recovered && stage === "summary fallback"
-            ? failure(403)
-            : { ok: true, summary },
-        );
+          return !recovered && stage === "metadata fallback"
+            ? Promise.reject(error)
+            : Promise.resolve({ ok: true, metadata: [] });
+        return !recovered && stage === "summary fallback"
+          ? Promise.reject(error)
+          : Promise.resolve({ ok: true, summary });
       });
       const onRowFailure = vi.fn();
       const { bootReviewerListPage } =

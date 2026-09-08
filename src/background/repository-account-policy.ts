@@ -1,11 +1,5 @@
-/**
- * #176 Phase P only: independent, provisional policy inputs.
- *
- * These facts are NOT #175 account/runtime contracts. Nothing imports this
- * module except its independent tests. Adapt or replace these inputs after
- * #175 is merged and verified; do not wire them to storage, HTTP, or UI first.
- */
-export type ProvisionalInstallationFact = Readonly<
+/** Pure policy facts projected from current background-owned account records. */
+export type RepositoryInstallationFact = Readonly<
   { owner: string } & (
     | { selection: "all" }
     | {
@@ -16,14 +10,14 @@ export type ProvisionalInstallationFact = Readonly<
   )
 >;
 
-export type ProvisionalAccountFact = Readonly<{
+export type RepositoryAccountFact = Readonly<{
   accountId: string;
   present: boolean;
   active: boolean;
-  installations: readonly ProvisionalInstallationFact[];
+  installations: readonly RepositoryInstallationFact[];
 }>;
 
-export type ProvisionalCandidate = Readonly<{
+export type RepositoryCandidate = Readonly<{
   accountId: string;
   tier: "covered" | "truncated";
 }>;
@@ -31,21 +25,21 @@ export type ProvisionalCandidate = Readonly<{
 /**
  * The array is a coherent snapshot in current listAccounts() order, with the
  * first record for an ID authoritative if duplicated. IDs remain opaque.
- * This only enumerates alternatives; it does not change initial resolution,
- * reserve an attempt, or replace the required recheck immediately before HTTP.
+ * This enumerates alternatives without changing initial resolution. It does not
+ * reserve an attempt or replace the required recheck immediately before HTTP.
  * A complete selected miss stays excluded until self-healing changes the facts.
  */
-export function orderProvisionalRepositoryCandidates(input: {
+export function orderRepositoryCandidates(input: {
   owner: string;
   repo: string;
-  accounts: readonly ProvisionalAccountFact[];
+  accounts: readonly RepositoryAccountFact[];
   attemptedAccountIds: readonly string[];
-}): ProvisionalCandidate[] {
+}): RepositoryCandidate[] {
   const owner = input.owner.toLowerCase();
   const fullName = `${owner}/${input.repo.toLowerCase()}`;
   const excluded = new Set(input.attemptedAccountIds);
-  const covered: ProvisionalCandidate[] = [];
-  const truncated: ProvisionalCandidate[] = [];
+  const covered: RepositoryCandidate[] = [];
+  const truncated: RepositoryCandidate[] = [];
 
   for (const account of input.accounts) {
     if (excluded.has(account.accountId)) continue;
@@ -79,7 +73,7 @@ export function orderProvisionalRepositoryCandidates(input: {
 }
 
 /** Decoded, non-secret failure facts; no raw body/message or credential input. */
-export type ProvisionalFailureFact = Readonly<{
+export type RepositoryFailureFact = Readonly<{
   kind: "http" | "network" | "schema" | "cancellation" | "unknown";
   status: number | null;
   scope: "repository" | "pull" | "unknown";
@@ -88,7 +82,7 @@ export type ProvisionalFailureFact = Readonly<{
   secondaryRateLimited?: boolean;
 }>;
 
-export type ProvisionalFailureDecision =
+export type RepositoryFailureDecision =
   | { kind: "repository-denial" }
   | { kind: "repository-evidence-required" }
   | {
@@ -105,16 +99,16 @@ export type ProvisionalFailureDecision =
  * Inspect ALL relevant unresolved failures after same-account recovery (#166).
  * A recovered 401 belongs to the earlier attempt result, not the new envelope.
  * This classifier does not perform recovery or discard original evidence:
- * the future owner must retain the full sanitized envelope for final results.
+ * the service retains the full sanitized envelope for final results.
  *
  * A PR-only denial needs repository evidence before another account is tried
  * or a repository-wide negative is written. Neither result reserves a probe.
  * Anonymous fallback has its own existing policy and must never use this one.
  */
-export function classifyProvisionalRepositoryFailure(input: {
+export function classifyRepositoryFailure(input: {
   authenticated: boolean;
-  failures: readonly ProvisionalFailureFact[];
-}): ProvisionalFailureDecision {
+  failures: readonly RepositoryFailureFact[];
+}): RepositoryFailureDecision {
   if (!input.authenticated) return { kind: "stop", reason: "anonymous" };
   const { failures } = input;
   if (failures.length === 0)

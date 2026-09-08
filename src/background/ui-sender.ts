@@ -9,6 +9,7 @@ export type UIContext = {
   kind: "options" | "content";
   documentId: string;
   url: URL;
+  tabId?: number | undefined;
 };
 
 export function identifyUIContext(
@@ -33,7 +34,12 @@ export function identifyUIContext(
       sender.tab?.id != null &&
       sender.frameId === 0
     ) {
-      return { kind: "content", documentId: sender.documentId, url };
+      return {
+        kind: "content",
+        documentId: sender.documentId,
+        url,
+        tabId: sender.tab.id,
+      };
     }
   } catch {
     /* A malformed sender is never a privileged context. */

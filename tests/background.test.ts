@@ -41,6 +41,48 @@ createInstallationRefreshServiceMock.mockImplementation(() => ({
   refreshAccountInstallations: refreshAccountInstallationsMock,
 }));
 
+// These listener tests isolate API/coordinator dispatch. The production
+// selection/ledger path is exercised with actual storage in repository-accounts
+// and ui-bridge regression suites.
+vi.mock("../src/background/account-resolution", () => ({
+  createSelfHealingAccountResolver: () => ({
+    resolveAccount: async () =>
+      completeAccount(await getAccountByIdMock("acc-1")),
+    resolveFallbackAccount: async () => null,
+  }),
+}));
+function completeAccount(value: Record<string, unknown> | null | undefined) {
+  if (!value) return null;
+  return {
+    login: "fixture-user",
+    avatarUrl: null,
+    createdAt: 1,
+    invalidated: false,
+    invalidatedReason: null,
+    installationsRefreshedAt: 1,
+    refreshToken: null,
+    expiresAt: null,
+    refreshTokenExpiresAt: null,
+    installations: [
+      {
+        id: 1,
+        account: { login: "cinev", type: "Organization", avatarUrl: null },
+        repositorySelection: "all",
+        repoSnapshot: null,
+      },
+    ],
+    ...value,
+  };
+}
+async function unauthorized() {
+  const { GitHubApiError } = await import("../src/github/api");
+  return new GitHubApiError(401, undefined, {
+    name: "reviews",
+    method: "GET",
+    path: "/repos/cinev/shotloom/pulls/42/reviews",
+  });
+}
+
 vi.mock("../src/auth/refresh-coordinator", () => ({
   createRefreshCoordinator: createRefreshCoordinatorMock,
 }));
@@ -57,7 +99,8 @@ vi.mock("../src/storage/accounts", async (importActual) => ({
   ...(await importActual<typeof AccountsStorageModule>()),
   accountMutations: {
     initialize: vi.fn(async () => {}),
-    getAccountById: getAccountByIdMock,
+    getAccountById: async (id: string) =>
+      completeAccount(await getAccountByIdMock(id)),
     listAccounts: listAccountsMock,
   },
 }));
@@ -124,7 +167,7 @@ beforeEach(() => {
   vi.resetModules();
   refreshAccountTokenMock.mockReset();
   fetchPullReviewerSummaryMock.mockReset();
-  fetchPullReviewerMetadataBatchMock.mockReset();
+  fetchPullReviewerMetadataBatchMock.mockReset().mockResolvedValue([]);
   getAccountByIdMock.mockReset();
   listAccountsMock.mockReset().mockResolvedValue([]);
   markAccountInvalidatedMock.mockReset();
@@ -192,7 +235,35 @@ async function bootBackground(): Promise<MessageListener> {
   if (capturedMessageListener == null) {
     throw new Error("background did not register a runtime.onMessage listener");
   }
-  return capturedMessageListener;
+  const listener = capturedMessageListener;
+  const admission = (await callListener(
+    listener,
+    {
+      type: "beginRepositoryDiscovery",
+      pageSession: "listener-fixture",
+      generation: 0,
+      owner: "cinev",
+      repo: "shotloom",
+    },
+    CONTENT_SENDER,
+  )) as { ok: true; data: { id: string } };
+  return (message, sender, send) => {
+    if (
+      message &&
+      typeof message === "object" &&
+      "type" in message &&
+      ["fetchPullReviewerSummary", "fetchPullReviewerMetadataBatch"].includes(
+        String(message.type),
+      )
+    ) {
+      return listener(
+        { ...message, discoveryId: admission.data.id },
+        sender,
+        send,
+      );
+    }
+    return listener(message, sender, send);
+  };
 }
 
 describe("background runtime.onMessage handler", () => {
@@ -340,7 +411,7 @@ describe("background runtime.onMessage handler", () => {
       CONTENT_SENDER,
     );
 
-    expect(response).toEqual({ ok: true, summary });
+    expect(response).toMatchObject({ ok: true, summary });
     expect(fetchPullReviewerSummaryMock).toHaveBeenCalledWith({
       owner: "cinev",
       repo: "shotloom",
@@ -358,19 +429,21 @@ describe("background runtime.onMessage handler", () => {
       requestedTeams: [],
       completedReviews: [],
     };
-    getAccountByIdMock
-      .mockResolvedValueOnce({
-        id: "acc-1",
-        token: "ghu_old",
-        refreshToken: "ghr_old",
-      })
-      .mockResolvedValueOnce({
+    getAccountByIdMock.mockResolvedValue({
+      id: "acc-1",
+      token: "ghu_old",
+      refreshToken: "ghr_old",
+    });
+    refreshAccountTokenMock.mockImplementationOnce(async () => {
+      getAccountByIdMock.mockResolvedValue({
         id: "acc-1",
         token: "ghu_new",
         refreshToken: "ghr_new",
       });
+      return { ok: true, generation: "legacy" };
+    });
     fetchPullReviewerSummaryMock
-      .mockRejectedValueOnce({ status: 401 })
+      .mockRejectedValueOnce(await unauthorized())
       .mockResolvedValueOnce(summary);
 
     const response = await callListener(
@@ -386,7 +459,7 @@ describe("background runtime.onMessage handler", () => {
       CONTENT_SENDER,
     );
 
-    expect(response).toEqual({ ok: true, summary });
+    expect(response).toMatchObject({ ok: true, summary });
     expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(fetchPullReviewerSummaryMock).toHaveBeenCalledTimes(2);
     expect(fetchPullReviewerSummaryMock.mock.calls[1][0]).toMatchObject({
@@ -405,19 +478,21 @@ describe("background runtime.onMessage handler", () => {
         requestedTeams: ["maintainers"],
       },
     ];
-    getAccountByIdMock
-      .mockResolvedValueOnce({
-        id: "acc-1",
-        token: "ghu_old",
-        refreshToken: "ghr_old",
-      })
-      .mockResolvedValueOnce({
+    getAccountByIdMock.mockResolvedValue({
+      id: "acc-1",
+      token: "ghu_old",
+      refreshToken: "ghr_old",
+    });
+    refreshAccountTokenMock.mockImplementationOnce(async () => {
+      getAccountByIdMock.mockResolvedValue({
         id: "acc-1",
         token: "ghu_new",
         refreshToken: "ghr_new",
       });
+      return { ok: true, generation: "legacy" };
+    });
     fetchPullReviewerMetadataBatchMock
-      .mockRejectedValueOnce({ status: 401 })
+      .mockRejectedValueOnce(await unauthorized())
       .mockResolvedValueOnce(metadata);
 
     const response = await callListener(
@@ -433,7 +508,7 @@ describe("background runtime.onMessage handler", () => {
       CONTENT_SENDER,
     );
 
-    expect(response).toEqual({ ok: true, metadata });
+    expect(response).toMatchObject({ ok: true, metadata });
     expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(fetchPullReviewerMetadataBatchMock).toHaveBeenCalledTimes(2);
     expect(fetchPullReviewerMetadataBatchMock.mock.calls[1][0]).toMatchObject({
@@ -454,7 +529,7 @@ describe("background runtime.onMessage handler", () => {
       ok: false,
       terminal: false,
     });
-    fetchPullReviewerSummaryMock.mockRejectedValueOnce({ status: 401 });
+    fetchPullReviewerSummaryMock.mockRejectedValueOnce(await unauthorized());
 
     const response = await callListener(
       listener,
@@ -471,7 +546,7 @@ describe("background runtime.onMessage handler", () => {
 
     expect(response).toMatchObject({
       ok: false,
-      error: { kind: "unknown", status: 401 },
+      error: { kind: "github-api", status: 401 },
     });
     expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
@@ -484,7 +559,7 @@ describe("background runtime.onMessage handler", () => {
       token: "ghu_old",
       refreshToken: null,
     });
-    fetchPullReviewerSummaryMock.mockRejectedValueOnce({ status: 401 });
+    fetchPullReviewerSummaryMock.mockRejectedValueOnce(await unauthorized());
     refreshAccountTokenMock.mockResolvedValueOnce({
       ok: false,
       terminal: true,
@@ -505,7 +580,7 @@ describe("background runtime.onMessage handler", () => {
 
     expect(response).toMatchObject({
       ok: false,
-      error: { kind: "unknown", status: 401 },
+      error: { kind: "github-api", status: 401 },
     });
     expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
@@ -513,20 +588,22 @@ describe("background runtime.onMessage handler", () => {
 
   it("marks the account revoked when the retry after refresh also returns 401", async () => {
     const listener = await bootBackground();
-    getAccountByIdMock
-      .mockResolvedValueOnce({
-        id: "acc-1",
-        token: "ghu_old",
-        refreshToken: "ghr_old",
-      })
-      .mockResolvedValueOnce({
+    getAccountByIdMock.mockResolvedValue({
+      id: "acc-1",
+      token: "ghu_old",
+      refreshToken: "ghr_old",
+    });
+    refreshAccountTokenMock.mockImplementationOnce(async () => {
+      getAccountByIdMock.mockResolvedValue({
         id: "acc-1",
         token: "ghu_new",
         refreshToken: "ghr_new",
       });
+      return { ok: true, generation: "legacy" };
+    });
     fetchPullReviewerSummaryMock
-      .mockRejectedValueOnce({ status: 401 })
-      .mockRejectedValueOnce({ status: 401 });
+      .mockRejectedValueOnce(await unauthorized())
+      .mockRejectedValueOnce(await unauthorized());
 
     const response = await callListener(
       listener,
@@ -543,7 +620,7 @@ describe("background runtime.onMessage handler", () => {
 
     expect(response).toMatchObject({
       ok: false,
-      error: { kind: "unknown", status: 401 },
+      error: { kind: "github-api", status: 401 },
     });
     expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");
     expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "legacy");
@@ -579,7 +656,7 @@ describe("background runtime.onMessage handler", () => {
     );
 
     await flushMicrotasks();
-    expect(capturedSignal).not.toBeNull();
+    await vi.waitFor(() => expect(capturedSignal).not.toBeNull());
     const signal = capturedSignal as AbortSignal | null;
     if (signal == null) {
       throw new Error("expected background fetch signal");
@@ -676,7 +753,7 @@ describe("background runtime.onMessage handler", () => {
       dispatchStaleFetch(listener);
 
       await flushMicrotasks();
-      expect(getCapturedSignal().aborted).toBe(false);
+      await vi.waitFor(() => expect(getCapturedSignal().aborted).toBe(false));
     });
 
     it("prunes on fetch entry even without another cancel", async () => {
@@ -686,7 +763,7 @@ describe("background runtime.onMessage handler", () => {
       dispatchStaleFetch(listener);
 
       await flushMicrotasks();
-      expect(getCapturedSignal().aborted).toBe(false);
+      await vi.waitFor(() => expect(getCapturedSignal().aborted).toBe(false));
     });
   });
 
@@ -730,12 +807,9 @@ describe("background runtime.onMessage handler", () => {
     );
 
     await flushMicrotasks();
-    expect(capturedSignal).not.toBeNull();
-    const signal = capturedSignal as AbortSignal | null;
-    if (signal == null) {
-      throw new Error("expected background fetch signal");
-    }
-    expect(signal.aborted).toBe(true);
+    expect(capturedSignal).toBeNull();
+    expect(fetchPullReviewerSummaryMock).not.toHaveBeenCalled();
+    expect(fetchPullReviewerMetadataBatchMock).not.toHaveBeenCalled();
   });
 });
 

@@ -1,5 +1,6 @@
 import { summarizeAccount } from "./account-summary";
-import { accountMutations } from "../storage/accounts";
+import { accountAccessKey, accountDiscoveryKey } from "./account-request";
+import { accountMutations, type Account } from "../storage/accounts";
 import {
   getPreferences,
   isAccountsChange,
@@ -10,7 +11,10 @@ import { uiSnapshotSchema, type UISnapshot } from "../runtime/ui-contract";
 export type UIContextKind = "options" | "content";
 
 /** Only background subscribes to raw storage. Every outgoing value is projected. */
-export function createUIStateService(ensureReady: () => Promise<void>) {
+export function createUIStateService(
+  ensureReady: () => Promise<void>,
+  onAccounts?: (accounts: Account[]) => void,
+) {
   const epoch = crypto.randomUUID();
   const subscribers = new Set<{
     kind: UIContextKind;
@@ -25,6 +29,7 @@ export function createUIStateService(ensureReady: () => Promise<void>) {
       epoch: snapshot.epoch,
       revision: snapshot.revision,
       accountsRevision: snapshot.accountsRevision,
+      discoveryRevision: snapshot.discoveryRevision,
       preferences: snapshot.preferences,
       accounts: kind === "options" ? snapshot.accounts : null,
     });
@@ -39,29 +44,33 @@ export function createUIStateService(ensureReady: () => Promise<void>) {
         accountMutations.listAccounts(),
         getPreferences(),
       ]);
-      // The digest contains safe summaries only, including their opaque auth
-      // revision; content receives neither inventories nor another tab's data.
+      // Internal token rotation updates options summaries but does not reopen
+      // content discovery. Only an auth incarnation/coverage change does that.
       const digest = await crypto.subtle.digest(
         "SHA-256",
         new TextEncoder().encode(
-          JSON.stringify(
-            accounts.map((account) => ({
-              summary: summarizeAccount(account),
-              coverage: account.installations.map((installation) => ({
-                id: installation.id,
-                selection: installation.repositorySelection,
-                repositories: installation.repoSnapshot,
-              })),
-            })),
-          ),
+          JSON.stringify(accounts.map(accountAccessKey)),
         ),
       );
       const accountsRevision = Array.from(new Uint8Array(digest), (byte) =>
         byte.toString(16).padStart(2, "0"),
       ).join("");
+      const discoveryDigest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(
+          JSON.stringify(accounts.map(accountDiscoveryKey)),
+        ),
+      );
+      const discoveryRevision = Array.from(
+        new Uint8Array(discoveryDigest),
+        (byte) => byte.toString(16).padStart(2, "0"),
+      ).join("");
       if (disposed) throw new Error("ui_state_disposed");
+      onAccounts?.(accounts);
+      const summaries = accounts.map(summarizeAccount);
       if (
         current?.accountsRevision === accountsRevision &&
+        JSON.stringify(current.accounts) === JSON.stringify(summaries) &&
         JSON.stringify(current.preferences) === JSON.stringify(preferences)
       )
         return current;
@@ -69,8 +78,9 @@ export function createUIStateService(ensureReady: () => Promise<void>) {
         epoch,
         revision: (current?.revision ?? -1) + 1,
         accountsRevision,
+        discoveryRevision,
         preferences,
-        accounts: accounts.map(summarizeAccount),
+        accounts: summaries,
       });
       for (const subscriber of subscribers)
         subscriber.send(forContext(current, subscriber.kind));

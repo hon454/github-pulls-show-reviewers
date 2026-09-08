@@ -22,6 +22,12 @@ beforeEach(() => {
   bootAccessBannerMock.mockReset();
   bootReviewerListPageMock.mockReset();
   vi.stubGlobal("defineContentScript", <T>(config: T) => config);
+  vi.stubGlobal("browser", {
+    runtime: {
+      id: "content-test",
+      onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
+    },
+  });
   window.history.replaceState({}, "", "/hon454/github-pulls-show-reviewers");
 });
 

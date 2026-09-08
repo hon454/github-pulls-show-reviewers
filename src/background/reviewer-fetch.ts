@@ -1,4 +1,8 @@
 import type { RefreshCoordinator } from "../auth/refresh-coordinator";
+import type { RepositoryAccountService } from "./repository-accounts";
+import type { DiscoveryOwner } from "./repository-discovery-ledger";
+import type { RepositoryDiscovery } from "../runtime/repository-discovery";
+import { ReviewerFetchRuntimeError } from "../runtime/reviewer-fetch";
 import {
   fetchPullReviewerMetadataBatch,
   fetchPullReviewerSummary,
@@ -15,14 +19,21 @@ import {
 } from "../runtime/reviewer-fetch";
 
 export const CANCELED_REQUEST_TTL_MS = 60_000;
+type RepositoryFetchContext = {
+  service: RepositoryAccountService;
+  owner: DiscoveryOwner;
+  discovery: RepositoryDiscovery;
+};
 
 export type ReviewerFetchService = {
   cancelRequest(requestId: string): void;
   handleFetchMessage(
     message: FetchPullReviewerSummaryMessage,
+    context?: RepositoryFetchContext,
   ): Promise<FetchPullReviewerSummaryResponse>;
   handleMetadataBatchMessage(
     message: FetchPullReviewerMetadataBatchMessage,
+    context?: RepositoryFetchContext,
   ): Promise<FetchPullReviewerMetadataBatchResponse>;
 };
 
@@ -40,7 +51,7 @@ export function createReviewerFetchService(input: {
   refreshCoordinator: RefreshCoordinator;
 }): ReviewerFetchService {
   const { refreshCoordinator } = input;
-  const inFlightControllers = new Map<string, AbortController>();
+  const inFlightControllers = new Map<string, Set<AbortController>>();
   const canceledRequestIds = new Map<string, number>();
 
   function pruneCanceledRequestIds(now: number): void {
@@ -57,13 +68,20 @@ export function createReviewerFetchService(input: {
     pruneCanceledRequestIds(Date.now());
 
     const controller = new AbortController();
-    inFlightControllers.set(requestId, controller);
+    const controllers = inFlightControllers.get(requestId) ?? new Set();
+    controllers.add(controller);
+    inFlightControllers.set(requestId, controllers);
 
-    if (canceledRequestIds.delete(requestId)) {
+    if (canceledRequestIds.has(requestId)) {
       controller.abort();
     }
 
     return controller;
+  }
+  function releaseController(requestId: string, controller: AbortController) {
+    const controllers = inFlightControllers.get(requestId);
+    controllers?.delete(controller);
+    if (controllers?.size === 0) inFlightControllers.delete(requestId);
   }
 
   async function runWithRefreshRetry<
@@ -129,25 +147,53 @@ export function createReviewerFetchService(input: {
         }
       }
     } finally {
-      inFlightControllers.delete(message.requestId);
+      releaseController(message.requestId, controller);
     }
   }
 
   return {
     cancelRequest(requestId: string): void {
-      const controller = inFlightControllers.get(requestId);
-      if (controller != null) {
-        controller.abort();
-        return;
-      }
-
       const now = Date.now();
       pruneCanceledRequestIds(now);
       canceledRequestIds.set(requestId, now);
+      for (const controller of inFlightControllers.get(requestId) ?? [])
+        controller.abort();
     },
     async handleFetchMessage(
       message: FetchPullReviewerSummaryMessage,
+      context?: RepositoryFetchContext,
     ): Promise<FetchPullReviewerSummaryResponse> {
+      if (context) {
+        const controller = createController(message.requestId);
+        try {
+          const result = await context.service.summary(
+            context.owner,
+            context.discovery,
+            {
+              pullNumber: message.pullNumber,
+              signal: controller.signal,
+              ...(message.pullMetadata
+                ? { pullMetadata: message.pullMetadata }
+                : {}),
+              metadataAccount:
+                message.accountId !== null && message.accountRevision
+                  ? { id: message.accountId, revision: message.accountRevision }
+                  : null,
+            },
+          );
+          return { ok: true, ...result };
+        } catch (error) {
+          return {
+            ok: false,
+            error: serializeReviewerFetchError(error),
+            ...(error instanceof ReviewerFetchRuntimeError
+              ? { account: error.account }
+              : {}),
+          };
+        } finally {
+          releaseController(message.requestId, controller);
+        }
+      }
       return runWithRefreshRetry(
         message,
         (token, signal) =>
@@ -166,7 +212,35 @@ export function createReviewerFetchService(input: {
     },
     async handleMetadataBatchMessage(
       message: FetchPullReviewerMetadataBatchMessage,
+      context?: RepositoryFetchContext,
     ): Promise<FetchPullReviewerMetadataBatchResponse> {
+      if (context) {
+        const controller = createController(message.requestId);
+        try {
+          const result = await context.service.metadata(
+            context.owner,
+            context.discovery,
+            controller.signal,
+            message.targetPullNumbers,
+            message.refresh,
+          );
+          return {
+            ok: true,
+            metadata: result.metadata ?? [],
+            account: result.account,
+          };
+        } catch (error) {
+          return {
+            ok: false,
+            error: serializeReviewerFetchError(error),
+            ...(error instanceof ReviewerFetchRuntimeError
+              ? { account: error.account }
+              : {}),
+          };
+        } finally {
+          releaseController(message.requestId, controller);
+        }
+      }
       return runWithRefreshRetry(
         message,
         (token, signal) =>

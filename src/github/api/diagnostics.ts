@@ -8,6 +8,7 @@ import { fetchPullReviewerSummary } from "./reviewer-summary";
 import {
   GitHubApiError,
   GitHubApiSchemaError,
+  GitHubApiTransportError,
   GitHubPullRequestEndpointsError,
   type GitHubAuthContext,
   type GitHubEndpointDescriptor,
@@ -26,7 +27,7 @@ export function describeGitHubApiError(
 ): string {
   if (error instanceof GitHubPullRequestEndpointsError) {
     return error.failures
-      .map((failure) => describeGitHubEndpointError(failure, auth))
+      .map((failure) => describeGitHubApiError(failure, auth))
       .join(" ");
   }
 
@@ -94,6 +95,7 @@ export async function validateAccountToken(
 export async function validateGitHubRepositoryAccess(
   account: { token: string } | null,
   repository: string,
+  signal?: AbortSignal,
 ): Promise<RepositoryValidationResult> {
   const token = account?.token ?? null;
   const auth = createAuthContext(token);
@@ -118,6 +120,7 @@ export async function validateGitHubRepositoryAccess(
     response = await fetchGitHubApiResponse(
       `https://api.github.com${listEndpoint.path}`,
       createGitHubHeaders(auth.githubToken),
+      signal,
     );
   } catch (error) {
     return {
@@ -194,6 +197,7 @@ export async function validateGitHubRepositoryAccess(
       repo: parsedRepository.repo,
       pullNumber,
       githubToken: auth.githubToken,
+      ...(signal ? { signal } : {}),
     });
   } catch (error) {
     return {
@@ -447,9 +451,14 @@ function hasRateLimitEvidence(
 
 function getPrimaryGitHubApiError(error: unknown): GitHubApiError | null {
   if (error instanceof GitHubPullRequestEndpointsError) {
+    const failures = error.failures.flatMap((failure) => {
+      const http = getPrimaryGitHubApiError(failure);
+      return http ? [http] : [];
+    });
     return (
-      error.failures.find((failure) => isRateLimitError(failure)) ??
-      error.failures[0] ??
+      failures.find((failure) => isRateLimitError(failure)) ??
+      failures.find((failure) => failure.status === 401) ??
+      failures[0] ??
       null
     );
   }
@@ -477,6 +486,7 @@ export function extractRepositoryValidationFailures(
       {
         kind: "http",
         httpStatus: error.status,
+        ...(isRateLimitError(error) ? { rateLimited: true } : {}),
         ...(endpoint ? { endpoint } : {}),
         ...(hasRateLimitEvidence(error.rateLimit)
           ? { rateLimit: error.rateLimit }
@@ -484,16 +494,22 @@ export function extractRepositoryValidationFailures(
       },
     ];
   }
+  if (error instanceof GitHubApiTransportError) {
+    return [{ kind: error.kind, endpoint: error.endpoint }];
+  }
   const endpoint =
     error instanceof GitHubApiSchemaError ? error.endpoint : fallbackEndpoint;
   return [
     {
       kind:
-        error instanceof GitHubApiSchemaError || error instanceof SyntaxError
-          ? "schema"
-          : error instanceof TypeError
-            ? "network"
-            : "unknown",
+        error instanceof Error && error.name === "AbortError"
+          ? "cancellation"
+          : error instanceof GitHubApiSchemaError ||
+              error instanceof SyntaxError
+            ? "schema"
+            : error instanceof TypeError
+              ? "network"
+              : "unknown",
       ...(endpoint ? { endpoint } : {}),
     },
   ];

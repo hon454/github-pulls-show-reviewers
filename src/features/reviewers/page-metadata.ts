@@ -1,7 +1,7 @@
 import type { PullReviewerMetadata } from "../../github/api";
 import type { PullListRoute } from "../../github/routes";
 import type { AccountSummary as Account } from "../../runtime/ui-contract";
-
+import { ReviewerFetchRuntimeError } from "../../runtime/reviewer-fetch";
 import type { FallbackAccountIntegration } from "./fallback-account";
 import {
   fetchReviewerMetadataBatch,
@@ -10,53 +10,49 @@ import {
 } from "./runtime-requests";
 
 const PAGE_METADATA_FRESH_MS = 10_000;
-
 export type PageMetadataFailure = {
   account: Account | null;
   error: unknown;
   reported: boolean;
   suppressRowFallback: boolean;
 };
-
 export type PageMetadataResult = {
   metadata: Map<string, PullReviewerMetadata>;
   failure: PageMetadataFailure | null;
+  account?: Account | null;
 };
-
+type Input = {
+  route: PullListRoute;
+  account: Account | null;
+  targetPullNumbers: string[];
+  signal: AbortSignal;
+  discoveryId?: string;
+};
 export type PageMetadataCoordinator = {
-  get(input: {
-    route: PullListRoute;
-    account: Account | null;
-    targetPullNumbers: string[];
-    signal: AbortSignal;
-  }): Promise<PageMetadataResult>;
+  get(input: Input): Promise<PageMetadataResult>;
   markStale(): void;
   abortAndClear(): void;
 };
-
-type PageMetadataRequest = {
-  owner: string;
-  repo: string;
-  accountId: string | null;
-  targetPullNumbersKey: string;
-  sequence: number;
-  promise: Promise<PageMetadataResult>;
+type Request = {
   controller: AbortController;
+  consumers: Set<object>;
+  promise: Promise<PageMetadataResult>;
 };
-
-type PageMetadataCache = {
-  owner: string;
-  repo: string;
-  accountId: string | null;
-  targetPullNumbers: string[];
-  targetPullNumbersKey: string;
-  metadata: Map<string, PullReviewerMetadata>;
-  fetchedAt: number;
+type Cache = {
+  identity: string;
+  account: Account | null;
+  targets: string;
+  result: PageMetadataResult;
   sequence: number;
+  fetchedAt: number;
   stale: boolean;
-  failure: PageMetadataFailure | null;
 };
+const emptyResult = (): PageMetadataResult => ({
+  metadata: new Map(),
+  failure: null,
+});
 
+/** Caller signals own subscriptions. Only the last detach aborts the shared HTTP. */
 export function createPageMetadataCoordinator(input: {
   fallbackAccounts: FallbackAccountIntegration;
   fetchMetadata?: typeof fetchReviewerMetadataBatch;
@@ -64,266 +60,200 @@ export function createPageMetadataCoordinator(input: {
 }): PageMetadataCoordinator {
   const fetchMetadata = input.fetchMetadata ?? fetchReviewerMetadataBatch;
   const now = input.now ?? Date.now;
-  let request: PageMetadataRequest | null = null;
-  let cache: PageMetadataCache | null = null;
+  const requests = new Map<string, Request>();
+  let cache: Cache | undefined;
   let sequence = 0;
+  let epoch = 0;
+  const identity = (args: Input) =>
+    JSON.stringify([
+      args.route.owner.toLowerCase(),
+      args.route.repo.toLowerCase(),
+      args.discoveryId ?? null,
+    ]);
+  const accountKey = (account: Account | null) =>
+    JSON.stringify([account?.id ?? null, account?.revision ?? null]);
+  const fresh = (entry: Cache) =>
+    !entry.stale && now() - entry.fetchedAt <= PAGE_METADATA_FRESH_MS;
 
-  function cacheIsFresh(candidate: PageMetadataCache): boolean {
-    return (
-      !candidate.stale && now() - candidate.fetchedAt <= PAGE_METADATA_FRESH_MS
-    );
-  }
-
-  function readExactCache(args: {
-    route: PullListRoute;
-    accountId: string | null;
-    targetPullNumbersKey: string;
-  }): PageMetadataCache | null {
-    if (
-      cache == null ||
-      cache.owner !== args.route.owner ||
-      cache.repo !== args.route.repo ||
-      cache.accountId !== args.accountId ||
-      cache.targetPullNumbersKey !== args.targetPullNumbersKey ||
-      !cacheIsFresh(cache)
-    ) {
-      return null;
-    }
-    return cache;
-  }
-
-  function readCoveringCache(args: {
-    route: PullListRoute;
-    accountId: string | null;
-    targetPullNumbers: string[];
-  }): PageMetadataCache | null {
-    if (
-      cache == null ||
-      cache.owner !== args.route.owner ||
-      cache.repo !== args.route.repo ||
-      cache.accountId !== args.accountId ||
-      cache.failure != null ||
-      !cacheIsFresh(cache)
-    ) {
-      return null;
-    }
-
-    return args.targetPullNumbers.every((pullNumber) =>
-      cache?.metadata.has(pullNumber),
-    )
-      ? cache
-      : null;
-  }
-
-  function resultFromCache(candidate: PageMetadataCache): PageMetadataResult {
-    return {
-      metadata: candidate.metadata,
-      failure: candidate.failure,
-    };
-  }
-
-  function writeCache(nextCache: PageMetadataCache): PageMetadataCache {
-    if (cache != null && cache.sequence > nextCache.sequence) {
-      return cache;
-    }
-    cache = nextCache;
-    return cache;
-  }
-
-  async function get(args: {
-    route: PullListRoute;
-    account: Account | null;
-    targetPullNumbers: string[];
-    signal: AbortSignal;
-  }): Promise<PageMetadataResult> {
-    if (args.signal.aborted) {
-      return emptyResult();
-    }
-
-    const cachedFallbackAccount =
-      args.account == null
-        ? input.fallbackAccounts.read(args.route.owner)
-        : undefined;
-    const requestAccount = cachedFallbackAccount ?? args.account;
-    const accountId = requestAccount?.id ?? null;
-    const targetPullNumbersKey = args.targetPullNumbers.join(",");
-    const cached = readExactCache({
-      route: args.route,
-      accountId,
-      targetPullNumbersKey,
-    });
-    if (cached != null) {
-      return resultFromCache(cached);
-    }
-
-    if (
-      request != null &&
-      request.owner === args.route.owner &&
-      request.repo === args.route.repo &&
-      request.accountId === accountId &&
-      request.targetPullNumbersKey === targetPullNumbersKey
-    ) {
-      return request.promise;
-    }
-
-    const controller = new AbortController();
-    args.signal.addEventListener(
-      "abort",
-      () => {
-        controller.abort();
-      },
-      { once: true },
-    );
-
-    const requestSequence = sequence + 1;
-    sequence = requestSequence;
-    const nextRequest: PageMetadataRequest = {
-      owner: args.route.owner,
-      repo: args.route.repo,
-      accountId,
-      targetPullNumbersKey,
-      sequence: requestSequence,
-      controller,
-      promise: fetchMetadata({
-        account: requestAccount,
+  async function fetch(
+    args: Input,
+    account: Account | null,
+    controller: AbortController,
+    requestSequence: number,
+    requestEpoch: number,
+  ): Promise<PageMetadataResult> {
+    let used = account;
+    let error: unknown;
+    let metadata: PullReviewerMetadata[] | undefined;
+    const invoke = () =>
+      fetchMetadata({
+        account: used,
         owner: args.route.owner,
         repo: args.route.repo,
         targetPullNumbers: args.targetPullNumbers,
         signal: controller.signal,
-      })
-        .then((metadata) => {
-          const metadataByNumber = new Map(
-            metadata.map((pullMetadata) => [pullMetadata.number, pullMetadata]),
-          );
-          const nextCache = writeCache({
-            owner: args.route.owner,
-            repo: args.route.repo,
-            accountId,
-            targetPullNumbers: args.targetPullNumbers,
-            targetPullNumbersKey,
-            metadata: metadataByNumber,
-            fetchedAt: now(),
-            sequence: nextRequest.sequence,
-            stale: false,
-            failure: null,
-          });
-          return resultFromCache(nextCache);
-        })
-        .catch(async (error) => {
-          if (!isAbortError(error) && !controller.signal.aborted) {
-            let failureAccount = requestAccount;
-            let failureError = error;
-            if (args.account == null && shouldRetryWithFallbackAccount(error)) {
-              const fallbackAccount = await input.fallbackAccounts.get(
-                args.route.owner,
-              );
-              if (controller.signal.aborted) {
-                return emptyResult();
-              }
-              if (fallbackAccount != null && !controller.signal.aborted) {
-                if (request === nextRequest) {
-                  nextRequest.accountId = fallbackAccount.id;
-                }
-                try {
-                  const metadata = await fetchMetadata({
-                    account: fallbackAccount,
-                    owner: args.route.owner,
-                    repo: args.route.repo,
-                    signal: controller.signal,
-                    targetPullNumbers: args.targetPullNumbers,
-                  });
-                  const metadataByNumber = new Map(
-                    metadata.map((pullMetadata) => [
-                      pullMetadata.number,
-                      pullMetadata,
-                    ]),
-                  );
-                  const nextCache = writeCache({
-                    owner: args.route.owner,
-                    repo: args.route.repo,
-                    accountId: fallbackAccount.id,
-                    targetPullNumbers: args.targetPullNumbers,
-                    targetPullNumbersKey,
-                    metadata: metadataByNumber,
-                    fetchedAt: now(),
-                    sequence: nextRequest.sequence,
-                    stale: false,
-                    failure: null,
-                  });
-                  return resultFromCache(nextCache);
-                } catch (fallbackError) {
-                  if (controller.signal.aborted) {
-                    return emptyResult();
-                  }
-                  failureAccount = fallbackAccount;
-                  failureError = fallbackError;
-                }
-              }
-            }
-            const coveringCache = readCoveringCache({
-              route: args.route,
-              accountId: failureAccount?.id ?? accountId,
-              targetPullNumbers: args.targetPullNumbers,
-            });
-            if (
-              coveringCache != null &&
-              coveringCache.sequence > nextRequest.sequence
-            ) {
-              return resultFromCache(coveringCache);
-            }
-            const failure = shouldRetryWithFallbackAccount(failureError)
-              ? {
-                  account: failureAccount,
-                  error: failureError,
-                  reported: false,
-                  suppressRowFallback: true,
-                }
-              : null;
-            const nextCache = writeCache({
-              owner: args.route.owner,
-              repo: args.route.repo,
-              accountId: failureAccount?.id ?? accountId,
-              targetPullNumbers: args.targetPullNumbers,
-              targetPullNumbersKey,
-              metadata: new Map(),
-              fetchedAt: now(),
-              sequence: nextRequest.sequence,
-              stale: false,
-              failure,
-            });
-            return {
-              metadata: nextCache.metadata,
-              failure: nextCache.failure,
-            };
+        ...(cache?.stale ? { refresh: true } : {}),
+        ...(args.discoveryId ? { discoveryId: args.discoveryId } : {}),
+        onAccount: (actual) => {
+          used = actual;
+        },
+      });
+    try {
+      metadata = await invoke();
+    } catch (firstError) {
+      error = firstError;
+      // Compatibility for direct anonymous callers. Production discovery owns
+      // its complete fallback sequence in background and never retries here.
+      if (
+        !args.discoveryId &&
+        args.account === null &&
+        shouldRetryWithFallbackAccount(error) &&
+        !controller.signal.aborted
+      ) {
+        const fallback = await input.fallbackAccounts.get(args.route.owner);
+        if (controller.signal.aborted) return emptyResult();
+        if (fallback) {
+          used = fallback;
+          try {
+            metadata = await invoke();
+            error = undefined;
+          } catch (fallbackError) {
+            error = fallbackError;
           }
-          return emptyResult();
-        })
-        .finally(() => {
-          if (request === nextRequest) {
-            request = null;
-          }
-        }),
+        }
+      }
+    }
+    if (
+      controller.signal.aborted ||
+      requestEpoch !== epoch ||
+      isAbortError(error)
+    )
+      return emptyResult();
+    if (
+      error instanceof ReviewerFetchRuntimeError &&
+      error.account !== undefined
+    )
+      used = error.account;
+    if (
+      error &&
+      cache &&
+      cache.sequence > requestSequence &&
+      cache.identity === identity(args) &&
+      accountKey(cache.account) === accountKey(used) &&
+      fresh(cache) &&
+      cache.result.failure === null &&
+      args.targetPullNumbers.every((number) =>
+        cache!.result.metadata.has(number),
+      )
+    )
+      return cache.result;
+    const result: PageMetadataResult = {
+      metadata: new Map((metadata ?? []).map((pull) => [pull.number, pull])),
+      failure:
+        error && (args.discoveryId || shouldRetryWithFallbackAccount(error))
+          ? { account: used, error, reported: false, suppressRowFallback: true }
+          : null,
+      account: used,
     };
-    request = nextRequest;
-    return nextRequest.promise;
+    if (!cache || cache.sequence <= requestSequence)
+      cache = {
+        identity: identity(args),
+        account: used,
+        targets: args.targetPullNumbers.join(","),
+        result,
+        sequence: requestSequence,
+        fetchedAt: now(),
+        stale: false,
+      };
+    return result;
   }
-
+  function join(
+    request: Request,
+    signal: AbortSignal,
+  ): Promise<PageMetadataResult> {
+    const consumer = {};
+    request.consumers.add(consumer);
+    return new Promise((resolve) => {
+      const detach = () => {
+        signal.removeEventListener("abort", cancel);
+        request.consumers.delete(consumer);
+      };
+      const cancel = () => {
+        detach();
+        resolve(emptyResult());
+        if (request.consumers.size === 0) request.controller.abort();
+      };
+      signal.addEventListener("abort", cancel, { once: true });
+      if (signal.aborted) cancel();
+      request.promise.then(
+        (result) => {
+          detach();
+          if (!signal.aborted) resolve(result);
+        },
+        () => {
+          detach();
+          resolve(emptyResult());
+        },
+      );
+    });
+  }
   return {
-    get,
-    markStale(): void {
-      cache = cache == null ? null : { ...cache, stale: true };
+    async get(args) {
+      if (args.signal.aborted) return emptyResult();
+      const account = args.discoveryId
+        ? args.account
+        : ((args.account === null
+            ? input.fallbackAccounts.read(args.route.owner)
+            : undefined) ?? args.account);
+      const targets = args.targetPullNumbers.join(",");
+      // A discovery key resolves its actual account in background; it never
+      // stores B's payload under the caller's initial A credential identity.
+      if (
+        cache &&
+        cache.identity === identity(args) &&
+        (args.discoveryId ||
+          accountKey(cache.account) === accountKey(account)) &&
+        cache.targets === targets &&
+        fresh(cache)
+      )
+        return cache.result;
+      const key = JSON.stringify([
+        identity(args),
+        args.discoveryId ? null : accountKey(account),
+        targets,
+      ]);
+      let request = requests.get(key);
+      if (!request || request.controller.signal.aborted) {
+        const controller = new AbortController();
+        const requestSequence = ++sequence;
+        const requestEpoch = epoch;
+        const created: Request = {
+          controller,
+          consumers: new Set(),
+          promise: Promise.resolve(emptyResult()),
+        };
+        requests.set(key, created);
+        created.promise = fetch(
+          args,
+          account,
+          controller,
+          requestSequence,
+          requestEpoch,
+        ).finally(() => {
+          if (requests.get(key) === created) requests.delete(key);
+        });
+        request = created;
+      }
+      return join(request, args.signal);
     },
-    abortAndClear(): void {
-      request?.controller.abort();
-      request = null;
-      cache = null;
+    markStale() {
+      if (cache) cache.stale = true;
     },
-  };
-}
-
-function emptyResult(): PageMetadataResult {
-  return {
-    metadata: new Map<string, PullReviewerMetadata>(),
-    failure: null,
+    abortAndClear() {
+      epoch += 1;
+      for (const request of requests.values()) request.controller.abort();
+      requests.clear();
+      cache = undefined;
+    },
   };
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, renderHook, cleanup } from "@testing-library/react";
+import { act, renderHook, cleanup, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { getLocaleStore } from "../src/i18n/browser";
 import { useLocale } from "../src/i18n/react";
@@ -58,14 +58,29 @@ it("shares a safe subscription across React/DOM and patches only committed prefe
     openPullsOnly: false,
     language: "ko",
   });
+  const notificationsBeforeRemoval =
+    harness.notifications.get("options-1")?.length ?? 0;
   await act(async () => {
     await harness.browserMock.storage.local.remove("preferences");
-    await drain();
   });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+  // The real bridge queues storage reads and asynchronous digest computation.
+  // Wait for the subscription's committed result, not one event-loop tick.
+  await waitFor(() => {
+    expect(first.result.current.locale).toBe("zh_TW");
+    expect(second.result.current.locale).toBe("zh_TW");
   });
-  expect(first.result.current.locale).toBe("zh_TW");
+  expect(
+    harness.notifications.get("options-1")?.slice(notificationsBeforeRemoval),
+  ).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "snapshot",
+        snapshot: expect.objectContaining({
+          preferences: expect.objectContaining({ language: "auto" }),
+        }),
+      }),
+    ]),
+  );
   first.unmount();
   second.unmount();
   expect(containsSecret([...harness.notifications.values()])).toBe(false);
