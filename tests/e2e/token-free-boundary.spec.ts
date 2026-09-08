@@ -358,6 +358,9 @@ test("packaged sign-in, diagnostics, refresh and two-tab settings cross only a t
     await expect(options.getByTestId("diagnostics-status")).toContainText(
       "both passed with the saved token",
     );
+    const reviewsBeforeRefresh = provenance.filter((request) =>
+      request.path.endsWith("/reviews"),
+    ).length;
     await options
       .getByRole("button", { name: "Refresh installations", exact: true })
       .click();
@@ -367,6 +370,16 @@ test("packaged sign-in, diagnostics, refresh and two-tab settings cross only a t
         exact: true,
       }),
     ).toBeEnabled();
+    // The installations button settles before content receives its coverage
+    // notification. Observe that explicit refresh's row request before taking
+    // the render-only baseline, instead of racing it against language changes.
+    await expect
+      .poll(
+        () =>
+          provenance.filter((request) => request.path.endsWith("/reviews"))
+            .length,
+      )
+      .toBe(reviewsBeforeRefresh + 1);
     // Count only OAuth/API work; rerendered avatar requests are presentation.
     const beforePresentation = provenance.length;
     await second.getByTestId("prefs-show-reviewer-name").click();
