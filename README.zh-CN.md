@@ -12,7 +12,7 @@
 
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.17.0 发布说明](./docs/releases/v1.17.0.md)（英文）：按限定顺序尝试已连接账号的仓库访问，以及由后台管理的身份验证。
+[v1.17.1 发布说明](./docs/releases/v1.17.1.md)（英文）：改进主要按钮的可读性、各语言的复制反馈和登录焦点恢复。
 
 ## 主要功能
 
