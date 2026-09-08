@@ -2212,13 +2212,909 @@ function installPullListFixture(pullNumbers: readonly string[]): void {
 function createDeferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T | PromiseLike<T>) => void;
+  reject: (reason: unknown) => void;
 } {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((nextResolve) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
     resolve = nextResolve;
+    reject = nextReject;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
+
+describe("settled reviewer request ownership", () => {
+  const summary: PullReviewerSummary = {
+    status: "ok",
+    requestedUsers: [{ login: "alice", avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [],
+  };
+  const failure = (status: number) => ({
+    ok: false,
+    error: {
+      kind: "github-api",
+      status,
+      failures: [
+        {
+          status,
+          endpoint: "/repos/cinev/shotloom/pulls",
+          rateLimited: status === 429,
+        },
+      ],
+    },
+  });
+  function mutateRows(label: string): void {
+    document.querySelectorAll(".issue-meta-section").forEach((meta, index) => {
+      meta.append(document.createTextNode(` ${label} ${index}`));
+    });
+  }
+
+  it.each(
+    [
+      "metadata suppression",
+      "summary failure",
+      "summary rejection",
+      "account rejection",
+    ].flatMap((stage) => [false, true].map((stale) => ({ stage, stale }))),
+  )(
+    "settles a replacement mount after $stage (stale chips: $stale)",
+    async ({ stage, stale }) => {
+      const pending = createDeferred<unknown>();
+      const account = createDeferred<Account | null>();
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      if (stage === "account rejection")
+        resolveAccountForRepoMock.mockImplementationOnce(() => account.promise);
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return stage === "metadata suppression"
+            ? pending.promise
+            : Promise.resolve({ ok: true, metadata: [] });
+        return pending.promise;
+      });
+      const cache = await import("../src/cache/reviewer-cache");
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      if (stale) {
+        cache.setCachedReviewerSummary(key, summary);
+        cache.markReviewerCacheStale(key);
+      }
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      const oldRow = document.querySelector("#issue_42")!;
+      const replacement = oldRow.cloneNode(true) as Element;
+      replacement.querySelector("[data-ghpsr-root]")?.remove();
+      oldRow.replaceWith(replacement);
+      await flushMicrotasks();
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(1);
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        stage === "account rejection" ? 0 : 1,
+      );
+      const summaryCalls = stage.startsWith("summary") ? 1 : 0;
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+        summaryCalls,
+      );
+      if (stale)
+        expect(replacement.querySelector("a.ghpsr-avatar")).not.toBeNull();
+      else
+        expect(replacement.querySelector(".ghpsr-status")?.textContent).toBe(
+          "Loading reviewers...",
+        );
+
+      if (stage === "account rejection")
+        account.reject(new Error("Storage unavailable"));
+      else if (stage === "summary rejection")
+        pending.reject(new Error("Runtime unavailable"));
+      else pending.resolve(failure(429));
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(replacement.querySelector(".ghpsr-status")).toBeNull();
+      if (stale) {
+        expect(replacement.querySelector("a.ghpsr-avatar")).not.toBeNull();
+        expect(cache.getReviewerCacheEntry(key)?.summary).toEqual(summary);
+      } else {
+        expect(replacement.querySelector(".ghpsr-root")?.textContent).toBe("");
+        expect(cache.getReviewerCacheEntry(key)).toBeUndefined();
+      }
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(1);
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        stage === "account rejection" ? 0 : 1,
+      );
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+        summaryCalls,
+      );
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    { status: 429, count: 1 },
+    ...[401, 403, 404, 429].map((status) => ({ status, count: 2 })),
+  ])(
+    "recovers $count rows after shared metadata $status without navigation or account changes",
+    async ({ status, count }) => {
+      if (count === 2) installPullListFixture(["42", "43"]);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      const first = createDeferred<unknown>();
+      let recovered = false;
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return recovered
+            ? Promise.resolve({ ok: true, metadata: [] })
+            : first.promise;
+        return Promise.resolve({ ok: true, summary });
+      });
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      mutateRows("pending mutation");
+      await flushMicrotasks();
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(count);
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        1,
+      );
+      first.resolve(failure(status));
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      document
+        .querySelectorAll(".ghpsr-root")
+        .forEach((root) => expect(root.textContent).toBe(""));
+
+      // A display reprocess must reuse the final metadata failure cache.
+      capturedStorageListener!(
+        {
+          preferences: {
+            oldValue: { showReviewerName: false },
+            newValue: { showReviewerName: true },
+          },
+        },
+        "local",
+      );
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        1,
+      );
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+
+      recovered = true;
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
+      try {
+        await flushMicrotasks();
+        expect(
+          getRuntimeMessages("fetchPullReviewerMetadataBatch"),
+        ).toHaveLength(1);
+        mutateRows("eligible recovery");
+        await flushMicrotasks();
+        await flushMicrotasks();
+        expect(
+          getRuntimeMessages("fetchPullReviewerMetadataBatch"),
+        ).toHaveLength(2);
+        expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+          count,
+        );
+        expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(count);
+        expect(document.querySelector(".ghpsr-status")).toBeNull();
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
+  it("preserves stale chips through metadata suppression and clears them after an empty recovery", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    let metadataFails = false;
+    let empty = false;
+    runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+      Promise.resolve(
+        message.type === "fetchPullReviewerMetadataBatch"
+          ? metadataFails
+            ? failure(429)
+            : { ok: true, metadata: [] }
+          : {
+              ok: true,
+              summary: empty ? { ...summary, requestedUsers: [] } : summary,
+            },
+      ),
+    );
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+    await flushMicrotasks();
+    expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
+    metadataFails = true;
+    mutateRows("failed revalidation");
+    await flushMicrotasks();
+    expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+    expect(onRowFailure).toHaveBeenCalledTimes(1);
+    metadataFails = false;
+    empty = true;
+    mutateRows("empty recovery");
+    await flushMicrotasks();
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      3,
+    );
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
+    expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
+    expect(onRowFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["account", "metadata fallback", "summary fallback"])(
+    "clears loading and releases ownership after %s resolution rejects",
+    async (stage) => {
+      const error = new Error("Storage unavailable");
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      if (stage === "account")
+        resolveAccountForRepoMock.mockRejectedValueOnce(error);
+      else
+        listAccountsMock.mockResolvedValueOnce([]).mockRejectedValueOnce(error);
+      let recovered = false;
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve(
+            !recovered && stage === "metadata fallback"
+              ? failure(403)
+              : { ok: true, metadata: [] },
+          );
+        return Promise.resolve(
+          !recovered && stage === "summary fallback"
+            ? failure(403)
+            : { ok: true, summary },
+        );
+      });
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(onRowFailure).toHaveBeenCalledExactlyOnceWith({
+        owner: "cinev",
+        repo: "shotloom",
+        account: null,
+        error,
+      });
+      expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
+        stage === "summary fallback" ? 1 : 0,
+      );
+      recovered = true;
+      mutateRows("retry after rejection");
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
+      expect(document.querySelector(".ghpsr-status")).toBeNull();
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    ["route", "success"],
+    ["route", "failure"],
+    ["account", "success"],
+    ["account", "failure"],
+  ])(
+    "keeps a replacement request when an old %s attempt settles with %s",
+    async (trigger, outcome) => {
+      const old = createDeferred<Account | null>();
+      const replacement = createDeferred<Account | null>();
+      resolveAccountForRepoMock
+        .mockImplementationOnce(() => old.promise)
+        .mockImplementation(() => replacement.promise);
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+        Promise.resolve(
+          message.type === "fetchPullReviewerMetadataBatch"
+            ? { ok: true, metadata: [] }
+            : { ok: true, summary },
+        ),
+      );
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const cache = await import("../src/cache/reviewer-cache");
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx, { onRowFailure });
+      await flushMicrotasks();
+      mutateRows("dedupe old request");
+      await flushMicrotasks();
+      if (trigger === "route")
+        getRegisteredListener(ctx, "wxt:locationchange")!();
+      else
+        capturedStorageListener!(
+          {
+            settings: {
+              oldValue: { version: 4, accountIds: [] },
+              newValue: { version: 4, accountIds: ["replacement"] },
+            },
+          },
+          "local",
+        );
+      await flushMicrotasks();
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(2);
+      if (outcome === "success") old.resolve(null);
+      else old.reject(new Error("Late storage failure"));
+      await flushMicrotasks();
+      mutateRows("dedupe replacement after old finalizer");
+      await flushMicrotasks();
+      expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(2);
+      expect(runtimeSendMessageMock).not.toHaveBeenCalled();
+      expect(
+        cache.getReviewerCacheEntry(
+          cache.buildReviewerCacheKey("cinev", "shotloom", "42"),
+        ),
+      ).toBeUndefined();
+      expect(onRowFailure).not.toHaveBeenCalled();
+      replacement.resolve(null);
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+      expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
+      expect(onRowFailure).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("reviewer asynchronous presentation ownership", () => {
+  const prefs: PreferencesModule.Preferences = {
+    version: 1,
+    language: "auto",
+    showStateBadge: true,
+    showReviewerName: false,
+    openPullsOnly: true,
+  };
+  const makeSummary = (login: string): PullReviewerSummary => ({
+    status: "ok",
+    requestedUsers: [{ login, avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [],
+  });
+  function displayChange(): void {
+    capturedStorageListener!(
+      {
+        preferences: {
+          oldValue: prefs,
+          newValue: { ...prefs, showReviewerName: true, openPullsOnly: false },
+        },
+      },
+      "local",
+    );
+  }
+
+  it.each(["account", "row mutation"])(
+    "keeps the newer summary after %s supersedes an older pending presentation",
+    async (trigger) => {
+      const oldPrefs = createDeferred<PreferencesModule.Preferences>();
+      // Locale hydration is first; defer the controller's second read.
+      getPreferencesMock
+        .mockResolvedValueOnce(prefs)
+        .mockReturnValueOnce(oldPrefs.promise);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      let login = "alice";
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+        Promise.resolve(
+          message.type === "fetchPullReviewerMetadataBatch"
+            ? { ok: true, metadata: [] }
+            : { ok: true, summary: makeSummary(login) },
+        ),
+      );
+      const cache = await import("../src/cache/reviewer-cache");
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      bootReviewerListPage(makeCtx());
+      await flushMicrotasks();
+      expect(getPreferencesMock).toHaveBeenCalledTimes(2);
+      expect(
+        cache.getReviewerCacheEntry(key)?.summary.requestedUsers[0]?.login,
+      ).toBe("alice");
+      expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
+      displayChange();
+      login = "bob";
+      if (trigger === "account")
+        capturedStorageListener!(
+          {
+            settings: {
+              oldValue: { version: 4, accountIds: [] },
+              newValue: { version: 4, accountIds: ["replacement"] },
+            },
+          },
+          "local",
+        );
+      else
+        document.querySelector(".issue-meta-section")!.append(" new summary");
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(document.querySelector("a.ghpsr-pill")?.textContent).toContain(
+        "bob",
+      );
+      const calls = runtimeSendMessageMock.mock.calls.length;
+      oldPrefs.resolve(prefs);
+      await flushMicrotasks();
+      expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+      expect(
+        cache.getReviewerCacheEntry(key)?.summary.requestedUsers[0]?.login,
+      ).toBe("bob");
+      expect(document.querySelector("a.ghpsr-pill")?.textContent).toContain(
+        "bob",
+      );
+    },
+  );
+
+  it.each(
+    ["settled", "fresh cache", "stale cache", "deduplicated waiter"].flatMap(
+      (stage) =>
+        ["route exit", "context invalidation", "row removal"].map(
+          (trigger) => ({ stage, trigger }),
+        ),
+    ),
+  )(
+    "stops $stage presentation after $trigger during the controller preference read",
+    async ({ stage, trigger }) => {
+      const oldPrefs = createDeferred<PreferencesModule.Preferences>();
+      const metadata = createDeferred<unknown>();
+      getPreferencesMock
+        .mockResolvedValueOnce(prefs)
+        .mockReturnValueOnce(oldPrefs.promise);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+        message.type === "fetchPullReviewerMetadataBatch"
+          ? stage === "deduplicated waiter"
+            ? metadata.promise
+            : Promise.resolve({ ok: true, metadata: [] })
+          : Promise.resolve({ ok: true, summary: makeSummary("alice") }),
+      );
+      const cache = await import("../src/cache/reviewer-cache");
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      if (stage.endsWith("cache")) {
+        cache.setCachedReviewerSummary(key, makeSummary("cached"));
+        if (stage === "stale cache") cache.markReviewerCacheStale(key);
+      }
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx);
+      await flushMicrotasks();
+      if (stage === "deduplicated waiter") {
+        document
+          .querySelector(".issue-meta-section")!
+          .append(" pending waiter");
+        await flushMicrotasks();
+        metadata.resolve({ ok: true, metadata: [] });
+        await flushMicrotasks();
+      }
+      expect(getPreferencesMock).toHaveBeenCalledTimes(2);
+      const row = document.querySelector("#issue_42")!;
+      expect(row.querySelector("a.ghpsr-avatar")).toBeNull();
+      const calls = runtimeSendMessageMock.mock.calls.length;
+      if (trigger === "route exit") {
+        window.history.replaceState({}, "", "/cinev/shotloom/issues");
+        getRegisteredListener(ctx, "wxt:locationchange")!();
+      } else if (trigger === "context invalidation")
+        pendingTeardowns.forEach((fn) => fn());
+      else row.remove();
+      oldPrefs.resolve(prefs);
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(row.querySelector("a.ghpsr-avatar")).toBeNull();
+      expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+      if (stage.endsWith("cache"))
+        expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+    },
+  );
+
+  it.each(["account", "metadata", "summary"])(
+    "releases a removed row's %s attempt without late data work and allows reentry",
+    async (stage) => {
+      const pending = createDeferred<unknown>();
+      const account = createDeferred<Account | null>();
+      let completed = false;
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      if (stage === "account")
+        resolveAccountForRepoMock.mockReturnValueOnce(account.promise);
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        const isMetadata = message.type === "fetchPullReviewerMetadataBatch";
+        if (
+          !completed &&
+          ((stage === "metadata" && isMetadata) ||
+            (stage === "summary" && !isMetadata))
+        )
+          return pending.promise;
+        return Promise.resolve(
+          isMetadata
+            ? { ok: true, metadata: [] }
+            : { ok: true, summary: makeSummary("bob") },
+        );
+      });
+      const cache = await import("../src/cache/reviewer-cache");
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const onRowFailure = vi.fn();
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      const row = document.querySelector("#issue_42")!;
+      const parent = row.parentElement!;
+      row.remove();
+      await flushMicrotasks();
+      const calls = runtimeSendMessageMock.mock.calls.length;
+      completed = true;
+      if (stage === "account") account.resolve(null);
+      else
+        pending.resolve(
+          stage === "metadata"
+            ? { ok: true, metadata: [] }
+            : { ok: true, summary: makeSummary("alice") },
+        );
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+      expect(
+        cache.getReviewerCacheEntry(
+          cache.buildReviewerCacheKey("cinev", "shotloom", "42"),
+        ),
+      ).toBeUndefined();
+      expect(row.querySelector("a.ghpsr-avatar")).toBeNull();
+      expect(onRowFailure).not.toHaveBeenCalled();
+      parent.append(row);
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(
+        row.querySelector("a.ghpsr-avatar")?.getAttribute("aria-label"),
+      ).toContain("bob");
+    },
+  );
+
+  it.each(
+    ["metadata", "summary", "queued"].flatMap((stage) =>
+      [false, true].map((removeRow) => ({ stage, removeRow })),
+    ),
+  )(
+    "keeps live-row data during $stage mount loss but discards actual row removal ($removeRow)",
+    async ({ stage, removeRow }) => {
+      const numbers =
+        stage === "queued" ? ["42", "43", "44", "45", "46"] : ["42"];
+      if (stage === "queued") installPullListFixture(numbers);
+      const target = numbers.at(-1)!;
+      const metadata = createDeferred<unknown>();
+      const completions = new Map<string, () => void>();
+      let active = 0;
+      let peak = 0;
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      runtimeSendMessageMock.mockImplementation(
+        (message: { type: string; pullNumber: string }) => {
+          if (message.type === "fetchPullReviewerMetadataBatch")
+            return stage === "metadata"
+              ? metadata.promise
+              : Promise.resolve({ ok: true, metadata: [] });
+          active++;
+          peak = Math.max(peak, active);
+          return new Promise((resolve) =>
+            completions.set(message.pullNumber, () => {
+              completions.delete(message.pullNumber);
+              active--;
+              resolve({ ok: true, summary: makeSummary("alice") });
+            }),
+          );
+        },
+      );
+      const cache = await import("../src/cache/reviewer-cache");
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const onRowFailure = vi.fn();
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      const started = () =>
+        getRuntimeMessages("fetchPullReviewerSummary").map((m) => m.pullNumber);
+      expect(started()).toEqual(
+        stage === "metadata" ? [] : numbers.slice(0, 4),
+      );
+      const row = document.querySelector(`#issue_${target}`)!;
+      const oldMount = row.querySelector("[data-ghpsr-root]")!;
+      if (removeRow) row.remove();
+      else {
+        const nativeMetadata = row.querySelector(
+          ".d-flex.mt-1.text-small.color-fg-muted",
+        )!;
+        const replacement = nativeMetadata.cloneNode(true) as Element;
+        replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+        nativeMetadata.replaceWith(replacement);
+      }
+      // Settle immediately: no mount-repair or row reprocessing is required first.
+      if (stage === "metadata") metadata.resolve({ ok: true, metadata: [] });
+      else completions.get(stage === "queued" ? "42" : target)!();
+      await flushMicrotasks();
+      await flushMicrotasks();
+      for (const complete of [...completions.values()]) complete();
+      await flushMicrotasks();
+      await flushMicrotasks();
+      const entry = cache.getReviewerCacheEntry(
+        cache.buildReviewerCacheKey("cinev", "shotloom", target),
+      );
+      if (removeRow) {
+        expect(entry).toBeUndefined();
+        expect(started()).toEqual(
+          stage === "summary" ? numbers : numbers.slice(0, -1),
+        );
+      } else {
+        expect(row.isConnected).toBe(true);
+        expect(entry?.summary).toEqual(makeSummary("alice"));
+        expect(started()).toEqual(numbers);
+      }
+      expect(oldMount.querySelector("a.ghpsr-avatar")).toBeNull();
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        1,
+      );
+      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(peak).toBeLessThanOrEqual(4);
+      expect(active).toBe(0);
+    },
+  );
+
+  it("skips removed queued consumers at the FIFO network boundary", async () => {
+    installPullListFixture(["42", "43", "44", "45", "46"]);
+    const completions = new Map<string, () => void>();
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type: string; pullNumber: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve({ ok: true, metadata: [] });
+        return new Promise((resolve) =>
+          completions.set(message.pullNumber, () =>
+            resolve({ ok: true, summary: makeSummary("alice") }),
+          ),
+        );
+      },
+    );
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map((m) => m.pullNumber),
+    ).toEqual(["42", "43", "44", "45"]);
+    const row = document.querySelector("#issue_46")!;
+    const parent = row.parentElement!;
+    row.remove();
+    completions.get("42")!();
+    await flushMicrotasks();
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
+    parent.append(row);
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map((m) => m.pullNumber),
+    ).toEqual(["42", "43", "44", "45", "46"]);
+    for (const number of ["43", "44", "45", "46"]) completions.get(number)!();
+    await flushMicrotasks();
+    expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(5);
+  });
+});
+
+describe("render-only reviewer display events", () => {
+  const summary: PullReviewerSummary = {
+    status: "ok",
+    requestedUsers: [{ login: "alice", avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [{ login: "alice", avatarUrl: null, state: "APPROVED" }],
+  };
+  const initialPreferences: PreferencesModule.Preferences = {
+    version: 1,
+    language: "auto",
+    showStateBadge: true,
+    showReviewerName: false,
+    openPullsOnly: true,
+  };
+  const changedPreferences: PreferencesModule.Preferences = {
+    ...initialPreferences,
+    showStateBadge: false,
+    showReviewerName: true,
+    openPullsOnly: false,
+  };
+  async function changeDisplay(
+    previous: PreferencesModule.Preferences,
+    next: PreferencesModule.Preferences,
+  ): Promise<void> {
+    capturedStorageListener!(
+      { preferences: { oldValue: previous, newValue: next } },
+      "local",
+    );
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  it.each([
+    "fresh",
+    "stale",
+    "evicted",
+    "empty",
+    "summary failure",
+    "account rejection",
+    "metadata failure",
+  ])(
+    "rerenders %s presentation after metadata TTL without any data work",
+    async (state) => {
+      // Metadata captures Date.now at boot; advance that same function's value.
+      let now = Date.now();
+      vi.spyOn(Date, "now").mockImplementation(() => now);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      if (state === "account rejection")
+        resolveAccountForRepoMock.mockRejectedValueOnce(
+          new Error("Storage unavailable"),
+        );
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (
+          (state === "metadata failure" &&
+            message.type === "fetchPullReviewerMetadataBatch") ||
+          (state === "summary failure" &&
+            message.type === "fetchPullReviewerSummary")
+        ) {
+          return Promise.resolve({
+            ok: false,
+            error: {
+              kind: "github-api",
+              status: 429,
+              failures: [{ status: 429, endpoint: null, rateLimited: true }],
+            },
+          });
+        }
+        return Promise.resolve(
+          message.type === "fetchPullReviewerMetadataBatch"
+            ? { ok: true, metadata: [] }
+            : {
+                ok: true,
+                summary:
+                  state === "empty"
+                    ? { ...summary, requestedUsers: [], completedReviews: [] }
+                    : summary,
+              },
+        );
+      });
+      const cache = await import("../src/cache/reviewer-cache");
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const onRowFailure = vi.fn();
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      if (state === "stale") cache.markReviewerCacheStale(key);
+      if (state === "evicted") cache.clearReviewerCache();
+      if (["fresh", "stale", "evicted"].includes(state))
+        expect(document.querySelector(".ghpsr-badge")).not.toBeNull();
+      const cached = cache.getReviewerCacheEntry(key);
+      const calls = runtimeSendMessageMock.mock.calls.length;
+      const accounts = resolveAccountForRepoMock.mock.calls.length;
+      const preferencesReads = getPreferencesMock.mock.calls.length;
+      const failures = onRowFailure.mock.calls.length;
+      now += 60_000;
+      let previous = initialPreferences;
+      for (const next of [
+        { ...previous, showReviewerName: true },
+        { ...previous, showReviewerName: true, showStateBadge: false },
+        changedPreferences,
+      ]) {
+        await changeDisplay(previous, next);
+        previous = next;
+        expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+        expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
+        expect(getPreferencesMock).toHaveBeenCalledTimes(preferencesReads);
+        expect(onRowFailure).toHaveBeenCalledTimes(failures);
+        expect(cache.getReviewerCacheEntry(key)).toBe(cached);
+        expect(document.querySelector(".ghpsr-status")).toBeNull();
+      }
+      if (["fresh", "stale", "evicted"].includes(state)) {
+        const link = document.querySelector<HTMLAnchorElement>("a.ghpsr-pill")!;
+        expect(link).not.toBeNull();
+        expect(link.textContent).toContain("alice");
+        expect(new URL(link.href).searchParams.get("q")).toBe(
+          "is:pr review-requested:alice",
+        );
+        expect(document.querySelector(".ghpsr-badge")).toBeNull();
+      } else {
+        expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
+      }
+      // The display event must also preserve the latest preferences for future data.
+      if (state === "account rejection") {
+        document
+          .querySelector(".issue-meta-section")!
+          .append(" explicit retry");
+        await flushMicrotasks();
+        await flushMicrotasks();
+        expect(document.querySelector("a.ghpsr-pill")).not.toBeNull();
+        expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+      }
+    },
+  );
+
+  it("preserves active and queued FIFO work and applies the latest display when each settles", async () => {
+    const numbers = ["42", "43", "44", "45", "46", "47"];
+    installPullListFixture(numbers);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const completions = new Map<string, () => void>();
+    let active = 0;
+    let peak = 0;
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type: string; pullNumber: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve({ ok: true, metadata: [] });
+        active++;
+        peak = Math.max(peak, active);
+        return new Promise((resolve) =>
+          completions.set(message.pullNumber, () => {
+            active--;
+            resolve({ ok: true, summary });
+          }),
+        );
+      },
+    );
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    const started = () =>
+      getRuntimeMessages("fetchPullReviewerSummary").map(
+        (message) => message.pullNumber,
+      );
+    expect(started()).toEqual(numbers.slice(0, 4));
+    const calls = runtimeSendMessageMock.mock.calls.length;
+    const accounts = resolveAccountForRepoMock.mock.calls.length;
+    await changeDisplay(initialPreferences, changedPreferences);
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+    expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
+    expect(document.querySelectorAll(".ghpsr-status")).toHaveLength(6);
+    expect(started()).toEqual(numbers.slice(0, 4));
+    for (const [index, number] of numbers.entries()) {
+      completions.get(number)!();
+      await flushMicrotasks();
+      expect(started()).toEqual(numbers.slice(0, Math.min(5 + index, 6)));
+      const link = document.querySelector<HTMLAnchorElement>(
+        `#issue_${number} a.ghpsr-pill`,
+      )!;
+      expect(link).not.toBeNull();
+      expect(new URL(link.href).searchParams.get("q")).toBe(
+        "is:pr review-requested:alice",
+      );
+    }
+    expect(peak).toBe(4);
+    expect(active).toBe(0);
+    expect(document.querySelectorAll(".ghpsr-status")).toHaveLength(0);
+    expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(0);
+  });
+
+  it("does not let a pending preference read overwrite a newer display event", async () => {
+    const preferences = createDeferred<PreferencesModule.Preferences>();
+    getPreferencesMock
+      .mockResolvedValueOnce(initialPreferences)
+      .mockReturnValueOnce(preferences.promise);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+      Promise.resolve(
+        message.type === "fetchPullReviewerMetadataBatch"
+          ? { ok: true, metadata: [] }
+          : { ok: true, summary },
+      ),
+    );
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    expect(getPreferencesMock).toHaveBeenCalledTimes(2);
+    expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
+    const calls = runtimeSendMessageMock.mock.calls.length;
+    await changeDisplay(initialPreferences, changedPreferences);
+    preferences.resolve(initialPreferences);
+    await flushMicrotasks();
+    expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+    const link = document.querySelector<HTMLAnchorElement>("a.ghpsr-pill")!;
+    expect(link).not.toBeNull();
+    expect(new URL(link.href).searchParams.get("q")).toBe(
+      "is:pr review-requested:alice",
+    );
+  });
+});
 
 describe("render-only reviewer locale events", () => {
   const summary: PullReviewerSummary = {
@@ -2324,6 +3220,135 @@ describe("render-only reviewer locale events", () => {
       pendingTeardowns.forEach((fn) => fn());
       expect(storageListeners.size).toBe(0);
       fingerprint.mockRestore();
+    },
+  );
+
+  it.each([false, true])(
+    "preserves FIFO recovery and render-only locales with failed, active, and queued rows (abort: %s)",
+    async (abortQueued) => {
+      const numbers = ["42", "43", "44", "45", "46", "47", "48", "49"];
+      installPullListFixture(numbers);
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      let metadataFails = true;
+      let immediate = false;
+      let active = 0;
+      let peak = 0;
+      const completions = new Map<string, () => void>();
+      const byRequest = new Map<string, string>();
+      runtimeSendMessageMock.mockImplementation(
+        (message: { type: string; pullNumber: string; requestId: string }) => {
+          if (message.type === "fetchPullReviewerMetadataBatch")
+            return Promise.resolve(
+              metadataFails
+                ? {
+                    ok: false,
+                    error: {
+                      kind: "github-api",
+                      status: 429,
+                      failures: [
+                        { status: 429, endpoint: null, rateLimited: true },
+                      ],
+                    },
+                  }
+                : { ok: true, metadata: [] },
+            );
+          if (message.type === "cancelPullReviewerSummary") {
+            const number = byRequest.get(message.requestId)!;
+            completions.get(number)?.();
+            return Promise.resolve();
+          }
+          if (immediate) return Promise.resolve({ ok: true, summary });
+          active++;
+          peak = Math.max(peak, active);
+          byRequest.set(message.requestId, message.pullNumber);
+          return new Promise((resolve) =>
+            completions.set(message.pullNumber, () => {
+              completions.delete(message.pullNumber);
+              active--;
+              resolve({ ok: true, summary });
+            }),
+          );
+        },
+      );
+      const onRowFailure = vi.fn();
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const { createTranslator, toLanguageTag } = await import("../src/i18n");
+      const ctx = makeCtx();
+      bootReviewerListPage(ctx, { onRowFailure });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        1,
+      );
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      metadataFails = false;
+      // Leave row 42 failed while seven rows explicitly reprocess and recover.
+      document
+        .querySelectorAll(".issue-meta-section")
+        .forEach((meta, index) => {
+          if (index > 0) meta.append(document.createTextNode(" recovery"));
+        });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      const started = () =>
+        getRuntimeMessages("fetchPullReviewerSummary").map(
+          (message) => message.pullNumber,
+        );
+      expect(started()).toEqual(numbers.slice(1, 5));
+      const calls = runtimeSendMessageMock.mock.calls.length;
+      const accountCalls = resolveAccountForRepoMock.mock.calls.length;
+      for (const locale of ["ko", "ja", "zh_CN", "zh_TW", "en"] as Locale[]) {
+        await switchLanguage(locale);
+        expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
+        expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accountCalls);
+        expect(onRowFailure).toHaveBeenCalledTimes(1);
+        const roots = [
+          ...document.querySelectorAll<HTMLElement>(".ghpsr-root"),
+        ];
+        expect(roots).toHaveLength(8);
+        roots.forEach((root, index) => {
+          expect(root.lang).toBe(toLanguageTag(locale));
+          expect(root.textContent).toBe(
+            index === 0 ? "" : createTranslator(locale)("reviewers_loading"),
+          );
+        });
+      }
+      completions.get("43")!();
+      await flushMicrotasks();
+      expect(started()).toEqual(numbers.slice(1, 6));
+      expect(active).toBe(4);
+      if (abortQueued) {
+        window.history.replaceState({}, "", "/cinev/shotloom/issues");
+        getRegisteredListener(ctx, "wxt:locationchange")!();
+        await flushMicrotasks();
+        expect(getRuntimeMessages("cancelPullReviewerSummary")).toHaveLength(4);
+        expect(started()).toEqual(numbers.slice(1, 6));
+        expect(active).toBe(0);
+        // Aborted queued rows have no runtime message and can participate again.
+        immediate = true;
+        window.history.replaceState({}, "", "/cinev/shotloom/pulls");
+        getRegisteredListener(ctx, "wxt:locationchange")!();
+        await flushMicrotasks();
+        await flushMicrotasks();
+        expect(started().slice(5)).toEqual(numbers);
+        expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(8);
+      } else {
+        for (const number of numbers.slice(2)) {
+          completions.get(number)!();
+          await flushMicrotasks();
+        }
+        expect(started()).toEqual(numbers.slice(1));
+        expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(7);
+        expect(
+          document.querySelector("#issue_42 .ghpsr-root")?.textContent,
+        ).toBe("");
+      }
+      expect(peak).toBe(4);
+      expect(active).toBe(0);
+      expect(document.querySelector(".ghpsr-status")).toBeNull();
+      expect(onRowFailure).toHaveBeenCalledTimes(1);
     },
   );
 

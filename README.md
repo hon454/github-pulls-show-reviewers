@@ -28,7 +28,10 @@
   without restoring GitHub metadata that GitHub intentionally hides there.
 - Leaves rows visually unchanged when a pull request has no reviewers. If a
   reviewer request fails unexpectedly, shows one page-level reload prompt and
-  keeps any previously loaded reviewer chips visible.
+  keeps any previously loaded reviewer chips visible. Failed rows can recover
+  when GitHub updates their metadata or the page is refreshed; waiting for an
+  API limit to reset does not itself retry reviewer requests. Display and
+  language changes only update presentation, including on failed rows.
 
 ## Why Use It
 

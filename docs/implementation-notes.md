@@ -82,7 +82,11 @@
    original per-row `pull + reviews` REST path. If the page-level metadata batch
    finally fails with an authentication, access, not-found, or rate-limit
    failure after eligible fallback-account retry, same-page row fallback is
-   suppressed and the existing page banner receives that failure once.
+   suppressed and the existing page banner receives that failure once. The
+   suppressed attempt completes and releases its row request ownership. Later
+   GitHub-owned row metadata changes, navigation, or account invalidation can
+   reprocess it and retry; reaching a rate-limit reset time alone does not
+   trigger a retry.
    If no covering account is found, the first attempt still uses the no-token
    path so public repositories keep working without authentication. When that
    no-token metadata or summary fetch fails with an authentication, access,
@@ -250,6 +254,13 @@ continue to force route refreshes.
   caches the page-level metadata result per `owner/repo/account` and visible
   pull-number set with a shorter freshness window. When page metadata already
   covers a row, row-level duplicate pull endpoint fetches are avoided.
+- Every row attempt releases in-flight ownership on settlement, including
+  account/fallback resolution rejection, suppressed metadata failure, and
+  cancellation. Cleanup checks request identity so an older completion cannot
+  remove a replacement request after invalidation. The shared metadata failure
+  cache still suppresses per-row fallback until eligible reprocessing; display
+  and locale changes only rerender and do not invalidate failures or retry
+  requests, even after metadata cache freshness expires.
 - Reviewer-summary runtime messages use
   `REVIEWER_SUMMARY_CONCURRENCY_LIMIT = 4`. The queue is FIFO in the order rows
   reach the network boundary, so the initial DOM-order scan remains ordered when
@@ -486,16 +497,28 @@ Validate catalogs with the i18n unit tests and emitted metadata with
   subscribes once; the store owns a single locale storage listener. Reviewer
   subscriptions stop outside PR-list routes and on context invalidation; banner
   teardown releases its subscription on route changes and invalidation.
-- `page-controller.ts` compares only display fields for preference-driven data
-  refresh. A language-only event never calls `processRows`, resolves accounts,
-  invalidates page metadata or caches, or aborts/restarts queued requests. Mixed
-  display/account changes still take the existing data-refresh path.
+- `page-controller.ts` applies display and language changes only to existing
+  presentations. Neither calls `processRows`, resolves accounts, invalidates
+  page metadata or caches, or aborts/restarts queued requests. Events that also
+  change accounts still take the existing data-refresh path.
 - A weak map keeps each mounted loading or resolved presentation (including
   empty/error-cleared results) independently of cache freshness or eviction.
-  Locale callbacks reformat these presentations synchronously. In-flight and
-  queued results read the latest locale when they render. The four-slot FIFO
-  scheduler, mutation batching/attribute filtering, and row fingerprints remain
-  unchanged; extension-owned localized nodes are excluded from row mutations.
+  Resolved presentations retain their source summary and route, so display
+  changes can rebuild names, badges and reviewer links without reading or
+  revalidating the cache. Locale callbacks reformat presentations synchronously.
+  In-flight and queued results use the latest display preferences and locale
+  when they render; late preference reads cannot overwrite a newer display
+  event.
+  Async presentation checks the current page/account generation, mount operation
+  and latest request identity after preference reads and before continuing data
+  work. Removed or superseded rows cannot render late results or start queued
+  requests; a live replacement row can still receive its shared request.
+  Request/cache validity follows the PR row and generation, not its presentation
+  mount. Replacing only native metadata preserves valid pending results for
+  cache-based mount recovery; detached mounts still cannot render those results.
+  The four-slot FIFO scheduler, mutation batching/attribute filtering, and row
+  fingerprints remain unchanged; extension-owned localized nodes are excluded
+  from row mutations.
 - All reviewer state labels and completed-plus-still-requested combinations are
   full catalog messages. APPROVED, CHANGES_REQUESTED, COMMENTED, and DISMISSED
   retain the existing mapping: requested reviewers keep the blue ring; approved,
