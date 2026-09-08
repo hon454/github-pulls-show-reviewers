@@ -103,6 +103,75 @@ for (const fixtureCase of renderCases) {
   });
 }
 
+test("reviewer mount recovery restores fresh chips without another API request", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, singleRowFixture),
+      "utf8",
+    );
+    let metadataRequests = 0;
+    let reviewsRequests = 0;
+
+    await routeFixturePage(context, fixtureHtml);
+    await context.route(
+      /^https:\/\/api\.github\.com\/repos\/hon454\/github-pulls-show-reviewers\/pulls\?/,
+      async (route) => {
+        metadataRequests += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            {
+              number: 42,
+              user: { login: "hon454" },
+              requested_reviewers: [{ login: "alice" }],
+              requested_teams: [],
+            },
+          ]),
+        });
+      },
+    );
+    await context.route(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews**",
+      async (route) => {
+        reviewsRequests += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      },
+    );
+
+    const page = await context.newPage();
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+    expect(metadataRequests).toBe(1);
+    expect(reviewsRequests).toBe(1);
+
+    await page.evaluate(() => {
+      const metadata = document.querySelector(
+        ".d-flex.mt-1.text-small.color-fg-muted",
+      )!;
+      const replacement = metadata.cloneNode(true) as Element;
+      replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+      metadata.replaceWith(replacement);
+    });
+
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+    await expect(page.locator("[data-ghpsr-root]")).toHaveCount(1);
+    expect(metadataRequests).toBe(1);
+    expect(reviewsRequests).toBe(1);
+  });
+});
+
 test("bounds reviewer-summary API concurrency for a representative 25-row list", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = createPullListFixtureHtml(
@@ -515,9 +584,18 @@ test("refreshes an expired selected-installation account before rendering privat
       "utf8",
     );
     const now = Date.now();
-    const refreshRequests: string[] = [];
-    const metadataAuthHeaders: string[] = [];
-    const reviewsAuthHeaders: string[] = [];
+    const refreshRequests: Array<{
+      grantType: string | null;
+      expectedToken: boolean;
+    }> = [];
+    const metadataCredentials: string[] = [];
+    const reviewsCredentials: string[] = [];
+    const credentialLabel = (authorization: string) =>
+      authorization === "Bearer ghu_expired"
+        ? "expired"
+        : authorization === "Bearer ghu_refreshed"
+          ? "refreshed"
+          : "unexpected";
 
     await seedSignedInAccount(context, {
       accountId: "acc-refresh",
@@ -535,7 +613,11 @@ test("refreshes an expired selected-installation account before rendering privat
     await context.route(
       "https://github.com/login/oauth/access_token",
       async (route) => {
-        refreshRequests.push(route.request().postData() ?? "");
+        const body = new URLSearchParams(route.request().postData() ?? "");
+        refreshRequests.push({
+          grantType: body.get("grant_type"),
+          expectedToken: body.get("refresh_token") === "ghr_refresh",
+        });
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -553,7 +635,7 @@ test("refreshes an expired selected-installation account before rendering privat
       /^https:\/\/api\.github\.com\/repos\/hon454\/github-pulls-show-reviewers\/pulls\?/,
       async (route) => {
         const authorization = route.request().headers().authorization ?? "";
-        metadataAuthHeaders.push(authorization);
+        metadataCredentials.push(credentialLabel(authorization));
         if (authorization === "Bearer ghu_expired") {
           await route.fulfill({
             status: 401,
@@ -581,7 +663,7 @@ test("refreshes an expired selected-installation account before rendering privat
       "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews**",
       async (route) => {
         const authorization = route.request().headers().authorization ?? "";
-        reviewsAuthHeaders.push(authorization);
+        reviewsCredentials.push(credentialLabel(authorization));
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -611,22 +693,23 @@ test("refreshes an expired selected-installation account before rendering privat
       root.locator('a.ghpsr-avatar[title*="@bob"][title*="approved"]'),
     ).toHaveCount(1);
     expect(refreshRequests).toHaveLength(1);
-    expect(refreshRequests[0]).toContain("grant_type=refresh_token");
-    expect(refreshRequests[0]).toContain("refresh_token=ghr_refresh");
-    expect(metadataAuthHeaders[0]).toBe("Bearer ghu_expired");
-    expect(metadataAuthHeaders).toContain("Bearer ghu_refreshed");
+    expect(refreshRequests[0]).toEqual({
+      grantType: "refresh_token",
+      expectedToken: true,
+    });
+    expect(metadataCredentials[0]).toBe("expired");
+    expect(metadataCredentials).toContain("refreshed");
     expect(
-      metadataAuthHeaders.filter((header) => header === "Bearer ghu_expired"),
+      metadataCredentials.filter((label) => label === "expired"),
     ).toHaveLength(1);
     expect(
-      metadataAuthHeaders.every(
-        (header) =>
-          header === "Bearer ghu_refreshed" || header === "Bearer ghu_expired",
+      metadataCredentials.every(
+        (label) => label === "refreshed" || label === "expired",
       ),
     ).toBe(true);
-    expect(
-      reviewsAuthHeaders.every((header) => header === "Bearer ghu_refreshed"),
-    ).toBe(true);
+    expect(reviewsCredentials.every((label) => label === "refreshed")).toBe(
+      true,
+    );
     await expectStoredAuth(context, "acc-refresh", {
       token: "ghu_refreshed",
       refreshToken: "ghr_rotated",
@@ -1086,7 +1169,12 @@ async function expectStoredAuth(
       ).chrome.storage.local;
       return storage.get(`account:auth:${id}`);
     }, accountId);
-    expect(stored[`account:auth:${accountId}`]).toMatchObject(expected);
+    const auth = stored[`account:auth:${accountId}`] as Record<string, unknown>;
+    for (const [key, value] of Object.entries(expected)) {
+      expect(auth?.[key] === value, `stored auth field ${key} matches`).toBe(
+        true,
+      );
+    }
   } finally {
     await optionsPage.close();
   }

@@ -5,7 +5,7 @@ import {
 import type { PullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
 
-import { extractPullNumber } from "./dom";
+import { extractPullNumber, hasReviewerMount } from "./dom";
 
 export type ReviewerRowLifecycle = {
   recordFingerprint(
@@ -33,6 +33,7 @@ export function createReviewerRowLifecycle(input: {
   diagnostics?: ReviewerRowLifecycleDiagnostics;
 }): ReviewerRowLifecycle {
   const rowFingerprints = new Map<string, string>();
+  const rowsWithReviewerMounts = new Set<string>();
 
   function recordFingerprint(
     row: Element,
@@ -42,6 +43,8 @@ export function createReviewerRowLifecycle(input: {
     const cacheKey = buildReviewerCacheKey(route.owner, route.repo, pullNumber);
     input.diagnostics?.onFingerprint?.();
     rowFingerprints.set(cacheKey, createRowFingerprint(row, pullNumber));
+    if (hasReviewerMount(row)) rowsWithReviewerMounts.add(cacheKey);
+    else rowsWithReviewerMounts.delete(cacheKey);
   }
 
   function processRow(row: Element): void {
@@ -69,11 +72,15 @@ export function createReviewerRowLifecycle(input: {
     const nextFingerprint = createRowFingerprint(row, pullNumber);
     const previousFingerprint = rowFingerprints.get(cacheKey);
     rowFingerprints.set(cacheKey, nextFingerprint);
-    if (previousFingerprint === nextFingerprint) {
+    const needsMountRepair =
+      rowsWithReviewerMounts.has(cacheKey) && !hasReviewerMount(row);
+    if (previousFingerprint === nextFingerprint && !needsMountRepair) {
       return;
     }
-    markReviewerCacheStale(cacheKey);
-    input.markPageMetadataStale();
+    if (previousFingerprint !== nextFingerprint) {
+      markReviewerCacheStale(cacheKey);
+      input.markPageMetadataStale();
+    }
     processRow(row);
   }
 
@@ -147,6 +154,7 @@ export function createReviewerRowLifecycle(input: {
     processRows,
     clearFingerprints(): void {
       rowFingerprints.clear();
+      rowsWithReviewerMounts.clear();
     },
     observe,
   };

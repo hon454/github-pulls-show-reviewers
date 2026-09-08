@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { accountAuthMessageSchema } from "../src/runtime/account-auth";
+import { accountMutationMessageSchema } from "../src/runtime/account-mutations";
+import { connectInput } from "./helpers/auth-harness";
 
 import {
   cancelPullReviewerSummaryMessageSchema,
@@ -130,5 +133,69 @@ describe("options page runtime message schema", () => {
 
     expect(openOptionsPageMessageSchema.safeParse(message).success).toBe(false);
     expect(isOpenOptionsPageMessage(message)).toBe(false);
+  });
+});
+
+describe("account auth and mutation runtime schemas", () => {
+  it.each(["refreshAccessToken", "invalidateAccessToken"])(
+    "%s requires the account and used generation, without secret fields",
+    (type) => {
+      const valid = { type, accountId: "acc-1", generation: "g0" };
+      expect(accountAuthMessageSchema.safeParse(valid).success).toBe(true);
+      for (const message of [
+        null,
+        { ...valid, accountId: undefined },
+        { ...valid, accountId: " " },
+        { ...valid, generation: undefined },
+        { ...valid, generation: "" },
+        { ...valid, generation: " " },
+        { ...valid, generation: 1 },
+        { ...valid, token: "fixture-extra-field" },
+      ]) {
+        expect(accountAuthMessageSchema.safeParse(message).success).toBe(false);
+      }
+    },
+  );
+
+  it("validates the complete connection input without returning schema errors containing credentials", () => {
+    const input = connectInput();
+    const valid = { type: "upsertAccountByLogin", input };
+    expect(accountMutationMessageSchema.safeParse(valid).success).toBe(true);
+    for (const malformed of [
+      undefined,
+      { ...input, login: " " },
+      { ...input, newAccountId: "" },
+      { ...input, token: "" },
+      { ...input, refreshToken: undefined },
+      { ...input, expiresAt: "tomorrow" },
+      { ...input, now: null },
+      { ...input, avatarUrl: "invalid-url" },
+      { ...input, installations: [{ id: 1 }] },
+      { ...input, credentialGeneration: "injected" },
+    ]) {
+      expect(
+        accountMutationMessageSchema.safeParse({ ...valid, input: malformed })
+          .success,
+      ).toBe(false);
+    }
+  });
+
+  it("requires a nonblank removal identity and rejects extra fields", () => {
+    expect(
+      accountMutationMessageSchema.safeParse({
+        type: "removeAccount",
+        accountId: "acc-1",
+      }).success,
+    ).toBe(true);
+    for (const message of [
+      { type: "removeAccount" },
+      { type: "removeAccount", accountId: " " },
+      { type: "removeAccount", accountId: 1 },
+      { type: "removeAccount", accountId: "acc-1", input: {} },
+    ]) {
+      expect(accountMutationMessageSchema.safeParse(message).success).toBe(
+        false,
+      );
+    }
   });
 });

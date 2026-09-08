@@ -40,7 +40,8 @@ export function selectAccountsDueForRefresh(
     if (
       account.refreshTokenExpiresAt != null &&
       account.refreshTokenExpiresAt <= now
-    ) continue;
+    )
+      continue;
     if (account.expiresAt - now >= thresholdMs) continue;
     dueIds.push(account.id);
   }
@@ -70,10 +71,6 @@ export function selectAccountsWithExpiredRefreshToken(
 export function createProactiveRefreshService(input: {
   refreshCoordinator: RefreshCoordinator;
   listAccounts: () => Promise<Account[]>;
-  markAccountInvalidated: (
-    accountId: string,
-    reason: "expired",
-  ) => Promise<void>;
   now: () => number;
 }): ProactiveRefreshService {
   return {
@@ -100,14 +97,11 @@ export function createProactiveRefreshService(input: {
       const expiredIds = selectAccountsWithExpiredRefreshToken(accounts, now);
       if (dueIds.length === 0 && expiredIds.length === 0) return;
 
-      await Promise.allSettled([
-        ...dueIds.map((accountId) =>
-          input.refreshCoordinator.refreshAccountToken(accountId),
+      await Promise.allSettled(
+        [...dueIds, ...expiredIds].map((accountId) =>
+          input.refreshCoordinator.refreshAccountIfDue(accountId, now),
         ),
-        ...expiredIds.map((accountId) =>
-          input.markAccountInvalidated(accountId, "expired"),
-        ),
-      ]);
+      );
     },
   };
 }

@@ -10,9 +10,14 @@ import {
 } from "../src/runtime/reviewer-fetch";
 import { isRefreshAccountInstallationsMessage } from "../src/runtime/installation-refresh";
 import { isOpenOptionsPageMessage } from "../src/runtime/options-page";
-import { listAccounts, markAccountInvalidated } from "../src/storage/accounts";
+import { accountMutations } from "../src/storage/accounts";
+import { accountAuthMessageSchema } from "../src/runtime/account-auth";
+import { accountMutationMessageSchema } from "../src/runtime/account-mutations";
 
 export default defineBackground(() => {
+  // All later owner operations also await this same commit queue. Failure is
+  // retryable on the next operation, without exposing stored auth in logs.
+  void accountMutations.initialize().catch(() => undefined);
   const coordinator = createRefreshCoordinator({
     getClientId: () => getGitHubAppConfig().clientId,
   });
@@ -24,8 +29,7 @@ export default defineBackground(() => {
   });
   const proactiveRefreshService = createProactiveRefreshService({
     refreshCoordinator: coordinator,
-    listAccounts,
-    markAccountInvalidated,
+    listAccounts: accountMutations.listAccounts,
     now: () => Date.now(),
   });
 
@@ -68,38 +72,40 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener(
     (
       message: unknown,
-      sender: { id?: string } | undefined,
+      sender: { id?: string; url?: string } | undefined,
       sendResponse: (response?: unknown) => void,
     ) => {
-      // Reject messages from other extensions or extension pages. Only
-      // components of this extension (content scripts, options page) are
-      // allowed to trigger a token refresh — otherwise a third party could
-      // ask us to refresh an arbitrary accountId and observe the returned
-      // token.
-      if (sender?.id !== browser.runtime.id) {
-        return undefined;
+      if (sender?.id !== browser.runtime.id) return undefined;
+      // Chrome MV3 needs true + sendResponse to keep an async channel open.
+      const authMessage = accountAuthMessageSchema.safeParse(message);
+      if (authMessage.success) {
+        const { type, accountId, generation } = authMessage.data;
+        const operation =
+          type === "refreshAccessToken"
+            ? coordinator.refreshAccountToken(accountId, generation)
+            : coordinator
+                .invalidateAccountToken(accountId, generation)
+                .then(() => ({ ok: true }));
+        operation.then(sendResponse, () => sendResponse(undefined));
+        return true;
       }
-      // Chrome MV3 does not reliably await a Promise returned from an
-      // `onMessage` listener. Returning `true` keeps the message channel
-      // open and `sendResponse` delivers the async result to the caller.
-      if (
-        message != null &&
-        typeof message === "object" &&
-        (message as { type?: unknown }).type === "refreshAccessToken" &&
-        typeof (message as { accountId?: unknown }).accountId === "string"
-      ) {
-        coordinator
-          .refreshAccountToken((message as { accountId: string }).accountId)
-          .then(
-            (outcome) => sendResponse(outcome),
-            (error) => {
-              console.error(
-                "[GitHub Pulls Show Reviewers] refreshAccountToken failed.",
-                error,
-              );
-              sendResponse(undefined);
-            },
-          );
+      const mutationMessage = accountMutationMessageSchema.safeParse(message);
+      if (mutationMessage.success) {
+        // Auth replacements/removals originate in the options page. Do not
+        // introduce a content-script endpoint that returns account credentials.
+        if (sender.url !== browser.runtime.getURL("/options.html"))
+          return undefined;
+        const mutation = mutationMessage.data;
+        const operation =
+          mutation.type === "upsertAccountByLogin"
+            ? accountMutations
+                .upsertAccountByLogin(mutation.input)
+                .then((account) => ({ ok: true, account }))
+            : accountMutations
+                .removeAccount(mutation.accountId)
+                .then(() => ({ ok: true }));
+        // Never log an input/schema error: account payloads contain secrets.
+        operation.then(sendResponse, () => sendResponse({ ok: false }));
         return true;
       }
       if (isOpenOptionsPageMessage(message)) {

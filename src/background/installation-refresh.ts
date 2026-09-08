@@ -2,9 +2,8 @@ import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import { extractGitHubApiStatus } from "../github/api";
 import { loadAccountInstallations } from "../github/installations";
 import {
-  getAccountById,
-  markAccountInvalidated,
-  replaceInstallations,
+  accountMutations,
+  credentialGeneration,
   type Account,
 } from "../storage/accounts";
 
@@ -13,7 +12,9 @@ export type InstallationRefreshOutcome =
   | { ok: false; reason: "no-account" | "invalidated" | "failed" };
 
 export type InstallationRefreshService = {
-  refreshAccountInstallations(accountId: string): Promise<InstallationRefreshOutcome>;
+  refreshAccountInstallations(
+    accountId: string,
+  ): Promise<InstallationRefreshOutcome>;
 };
 
 export function createInstallationRefreshService(input: {
@@ -23,7 +24,7 @@ export function createInstallationRefreshService(input: {
   const inFlight = new Map<string, Promise<InstallationRefreshOutcome>>();
 
   async function run(accountId: string): Promise<InstallationRefreshOutcome> {
-    const account = await getAccountById(accountId);
+    const account = await accountMutations.getAccountById(accountId);
     if (account == null) {
       return { ok: false, reason: "no-account" };
     }
@@ -32,35 +33,50 @@ export function createInstallationRefreshService(input: {
     }
 
     try {
-      const installations = await loadAccountInstallations({ token: account.token });
-      await replaceInstallations(account.id, installations);
+      const installations = await loadAccountInstallations({
+        token: account.token,
+      });
+      await accountMutations.replaceInstallations(
+        account.id,
+        installations,
+        credentialGeneration(account),
+      );
       return { ok: true };
     } catch (error) {
       if (extractGitHubApiStatus(error) !== 401) {
         return { ok: false, reason: "failed" };
       }
 
-      if (account.refreshToken == null) {
-        await markAccountInvalidated(account.id, "revoked");
-        return { ok: false, reason: "failed" };
-      }
-
-      const refreshOutcome = await refreshCoordinator.refreshAccountToken(account.id);
+      const refreshOutcome = await refreshCoordinator.refreshAccountToken(
+        account.id,
+        credentialGeneration(account),
+      );
       if (!refreshOutcome.ok) {
         return { ok: false, reason: "failed" };
       }
 
-      const refreshed: Account | null = await getAccountById(account.id);
-      const tokenForRetry = refreshed?.token ?? refreshOutcome.token;
+      const refreshed: Account | null = await accountMutations.getAccountById(
+        account.id,
+      );
+      if (refreshed == null || refreshed.invalidated)
+        return { ok: false, reason: "no-account" };
+      const tokenForRetry = refreshed.token;
       try {
         const installations = await loadAccountInstallations({
           token: tokenForRetry,
         });
-        await replaceInstallations(account.id, installations);
+        await accountMutations.replaceInstallations(
+          account.id,
+          installations,
+          credentialGeneration(refreshed),
+        );
         return { ok: true };
       } catch (retryError) {
         if (extractGitHubApiStatus(retryError) === 401) {
-          await markAccountInvalidated(account.id, "revoked");
+          await refreshCoordinator.invalidateAccountToken(
+            account.id,
+            credentialGeneration(refreshed),
+          );
         }
         return { ok: false, reason: "failed" };
       }
@@ -68,7 +84,9 @@ export function createInstallationRefreshService(input: {
   }
 
   return {
-    refreshAccountInstallations(accountId: string): Promise<InstallationRefreshOutcome> {
+    refreshAccountInstallations(
+      accountId: string,
+    ): Promise<InstallationRefreshOutcome> {
       const existing = inFlight.get(accountId);
       if (existing) {
         return existing;

@@ -3,11 +3,11 @@ import {
   validateGitHubRepositoryAccess,
   type RepositoryValidationResult,
 } from "../github/api";
+import { getAccountById, type Account } from "../storage/accounts";
 import {
-  getAccountById,
-  markAccountInvalidated,
-  type Account,
-} from "../storage/accounts";
+  recoverAccountToken,
+  invalidateAccountToken,
+} from "../runtime/account-auth";
 
 export async function validateRepositoryAccessWithAccount(input: {
   account: Account;
@@ -20,30 +20,17 @@ export async function validateRepositoryAccessWithAccount(input: {
     return first;
   }
 
-  if (account.refreshToken == null) {
-    await markAccountInvalidated(account.id, "revoked");
-    return first;
-  }
-
-  const outcome = (await browser.runtime.sendMessage({
-    type: "refreshAccessToken",
-    accountId: account.id,
-  })) as
-    | { ok: true; token: string }
-    | { ok: false; terminal: boolean }
-    | undefined;
+  const outcome = await recoverAccountToken(account);
 
   if (!outcome || outcome.ok !== true) {
     return first;
   }
 
-  const refreshed = (await getAccountById(account.id)) ?? {
-    ...account,
-    token: outcome.token,
-  };
+  const refreshed = await getAccountById(account.id);
+  if (refreshed == null || refreshed.invalidated) return first;
   const retry = await validateGitHubRepositoryAccess(refreshed, repository);
   if (!retry.ok && retry.outcome === "token-invalid") {
-    await markAccountInvalidated(account.id, "revoked");
+    await invalidateAccountToken(refreshed);
   }
   return retry;
 }
@@ -61,29 +48,19 @@ export async function retryWithAccountRefresh<T>(input: {
       throw error;
     }
 
-    if (account.refreshToken == null) {
-      await markAccountInvalidated(account.id, "revoked");
-      throw error;
-    }
-
-    const outcome = (await browser.runtime.sendMessage({
-      type: "refreshAccessToken",
-      accountId: account.id,
-    })) as
-      | { ok: true; token: string }
-      | { ok: false; terminal: boolean }
-      | undefined;
+    const outcome = await recoverAccountToken(account);
 
     if (!outcome || outcome.ok !== true) {
       throw error;
     }
 
     const refreshed = await getAccountById(account.id);
+    if (refreshed == null || refreshed.invalidated) throw error;
     try {
-      return await execute(refreshed?.token ?? outcome.token);
+      return await execute(refreshed.token);
     } catch (retryError) {
       if (extractGitHubApiStatus(retryError) === 401) {
-        await markAccountInvalidated(account.id, "revoked");
+        await invalidateAccountToken(refreshed);
       }
       throw retryError;
     }

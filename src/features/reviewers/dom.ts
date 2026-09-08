@@ -245,6 +245,10 @@ export function ensureReviewerMount(row: Element): HTMLElement | null {
   return mount;
 }
 
+export function hasReviewerMount(row: Element): boolean {
+  return row.querySelector(`[${ROOT_ATTRIBUTE}]`) != null;
+}
+
 function createFallbackMetaContainer(row: Element): HTMLElement | null {
   const link = findFirst<HTMLAnchorElement>(
     row,

@@ -64,7 +64,43 @@ export function isPreferencesChange(
 export function isAccountsChange(
   changes: Record<string, StorageChange>,
 ): boolean {
-  return Object.keys(changes).some(
-    (key) => key === SETTINGS_KEY || key.startsWith(ACCOUNT_KEY_PREFIX),
+  return Object.entries(changes).some(([key, change]) => {
+    if (key === SETTINGS_KEY) return true;
+    if (!key.startsWith(ACCOUNT_KEY_PREFIX)) return false;
+    // Revision metadata migration preserves the credential identity and must
+    // not abort/restart active reviewer work. Actual rotations still refresh.
+    return !(key.startsWith("account:auth:") && isGenerationMigration(change));
+  });
+}
+
+function isGenerationMigration({ oldValue, newValue }: StorageChange): boolean {
+  if (
+    oldValue == null ||
+    newValue == null ||
+    typeof oldValue !== "object" ||
+    typeof newValue !== "object" ||
+    Array.isArray(oldValue) ||
+    Array.isArray(newValue)
+  )
+    return false;
+  const oldRecord = oldValue as Record<string, unknown>;
+  const newRecord = newValue as Record<string, unknown>;
+  if (
+    oldRecord.credentialGeneration !== undefined ||
+    newRecord.credentialGeneration !== "legacy"
+  )
+    return false;
+  const oldKeys = Object.keys(oldRecord).filter(
+    (key) => key !== "credentialGeneration",
+  );
+  const newKeys = Object.keys(newRecord).filter(
+    (key) => key !== "credentialGeneration",
+  );
+  return (
+    oldKeys.length === newKeys.length &&
+    oldKeys.every(
+      (key) =>
+        Object.hasOwn(newRecord, key) && oldRecord[key] === newRecord[key],
+    )
   );
 }

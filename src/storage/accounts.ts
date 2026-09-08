@@ -19,16 +19,19 @@ const repoSnapshotSchema = z.object({
   completeness: z.enum(["complete", "truncated"]),
 });
 
-const canonicalInstallationSchema = z.discriminatedUnion("repositorySelection", [
-  installationBaseSchema.extend({
-    repositorySelection: z.literal("all"),
-    repoSnapshot: z.null(),
-  }),
-  installationBaseSchema.extend({
-    repositorySelection: z.literal("selected"),
-    repoSnapshot: repoSnapshotSchema,
-  }),
-]);
+const canonicalInstallationSchema = z.discriminatedUnion(
+  "repositorySelection",
+  [
+    installationBaseSchema.extend({
+      repositorySelection: z.literal("all"),
+      repoSnapshot: z.null(),
+    }),
+    installationBaseSchema.extend({
+      repositorySelection: z.literal("selected"),
+      repoSnapshot: repoSnapshotSchema,
+    }),
+  ],
+);
 
 const legacyAllInstallationSchema = installationBaseSchema
   .extend({
@@ -63,7 +66,7 @@ const legacySelectedInstallationSchema = installationBaseSchema
     };
   });
 
-const installationSchema = z.union([
+export const installationSchema = z.union([
   canonicalInstallationSchema,
   legacyAllInstallationSchema,
   legacySelectedInstallationSchema,
@@ -78,6 +81,7 @@ const accountProfileSchema = z.object({
 
 const accountAuthSchema = z.object({
   token: z.string(),
+  credentialGeneration: z.string().min(1).optional(),
   invalidated: z.boolean().default(false),
   invalidatedReason: z
     .enum(["revoked", "expired", "refresh_failed", "unknown"])
@@ -169,6 +173,7 @@ function decomposeAccount(account: Account) {
     },
     auth: {
       token: account.token,
+      credentialGeneration: account.credentialGeneration,
       invalidated: account.invalidated,
       invalidatedReason: account.invalidatedReason,
       refreshToken: account.refreshToken,
@@ -189,7 +194,9 @@ function composeAccount(input: {
 }): Account | null {
   const profile = accountProfileSchema.safeParse(input.profile);
   const auth = accountAuthSchema.safeParse(input.auth);
-  const installations = accountInstallationsSchema.safeParse(input.installations);
+  const installations = accountInstallationsSchema.safeParse(
+    input.installations,
+  );
 
   if (!profile.success || !auth.success || !installations.success) {
     return null;
@@ -224,7 +231,9 @@ async function writeAccounts(
   await browser.storage.local.set(payload);
 }
 
-async function migrateAccounts(accounts: Account[]): Promise<ExtensionSettings> {
+async function migrateAccounts(
+  accounts: Account[],
+): Promise<ExtensionSettings> {
   const settings: ExtensionSettings = {
     version: 4,
     accountIds: accounts.map((account) => account.id),
@@ -247,13 +256,13 @@ async function loadAccountsByIds(accountIds: string[]): Promise<{
 
   const accounts: Account[] = [];
   const validIds: string[] = [];
-  for (const accountId of accountIds) {
+  for (const accountId of new Set(accountIds)) {
     const account = composeAccount({
       profile: result[accountProfileKey(accountId)],
       auth: result[accountAuthKey(accountId)],
       installations: result[accountInstallationsKey(accountId)],
     });
-    if (account == null) {
+    if (account == null || account.id !== accountId) {
       continue;
     }
     accounts.push(account);
@@ -263,60 +272,139 @@ async function loadAccountsByIds(accountIds: string[]): Promise<{
   return { accounts, validIds };
 }
 
-export async function getSettings(): Promise<ExtensionSettings> {
+// Queries are read-only in every extension context. Only the background commit
+// owner below may migrate/repair storage; a query must never write an old index.
+async function readRegistry(): Promise<{
+  settings: ExtensionSettings;
+  legacyAccounts?: Account[];
+}> {
   const result = await browser.storage.local.get(SETTINGS_KEY);
   const raw = result[SETTINGS_KEY];
-
   const v4 = extensionSettingsSchemaV4.safeParse(raw);
-  if (v4.success) {
-    return v4.data;
+  if (v4.success) return { settings: v4.data };
+  const legacy = extensionSettingsSchemaV3.safeParse(raw);
+  if (legacy.success) {
+    return {
+      settings: {
+        version: 4,
+        accountIds: legacy.data.accounts.map((a) => a.id),
+      },
+      legacyAccounts: legacy.data.accounts,
+    };
   }
-
-  const v3 = extensionSettingsSchemaV3.safeParse(raw);
-  if (v3.success) {
-    return migrateAccounts(v3.data.accounts);
-  }
-
   const v2 = extensionSettingsSchemaV2.safeParse(raw);
   if (v2.success) {
-    return migrateAccounts(
-      v2.data.accounts.map((account) => ({
-        ...account,
-        refreshToken: null,
-        expiresAt: null,
-        refreshTokenExpiresAt: null,
-      })),
-    );
+    const accounts = v2.data.accounts.map((account) => ({
+      ...account,
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    }));
+    return {
+      settings: { version: 4, accountIds: accounts.map((a) => a.id) },
+      legacyAccounts: accounts,
+    };
   }
+  return { settings: EMPTY_SETTINGS };
+}
 
-  return EMPTY_SETTINGS;
+export async function getSettings(): Promise<ExtensionSettings> {
+  return (await readRegistry()).settings;
 }
 
 export async function listAccounts(): Promise<Account[]> {
-  const settings = await getSettings();
-  const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
-  if (validIds.length !== settings.accountIds.length) {
-    await writeSettings({ version: 4, accountIds: validIds });
-  }
+  const { settings, legacyAccounts } = await readRegistry();
+  const accounts =
+    legacyAccounts ?? (await loadAccountsByIds(settings.accountIds)).accounts;
   return [...accounts].sort((a, b) => a.createdAt - b.createdAt);
 }
 
-export async function getAccountById(accountId: string): Promise<Account | null> {
-  const result = await browser.storage.local.get(accountStorageKeys(accountId));
-  return composeAccount({
-    profile: result[accountProfileKey(accountId)],
-    auth: result[accountAuthKey(accountId)],
-    installations: result[accountInstallationsKey(accountId)],
-  });
+export async function getAccountById(
+  accountId: string,
+): Promise<Account | null> {
+  const { settings, legacyAccounts } = await readRegistry();
+  if (!settings.accountIds.includes(accountId)) return null;
+  if (legacyAccounts)
+    return legacyAccounts.find((a) => a.id === accountId) ?? null;
+  return (await loadAccountsByIds([accountId])).accounts[0] ?? null;
 }
 
-export async function addAccount(account: Account): Promise<void> {
+/** Stable identity for pre-migration snapshots; never derived from a secret. */
+export function credentialGeneration(account: Account): string {
+  return account.credentialGeneration ?? "legacy";
+}
+
+async function initializeAccountsUnlocked(): Promise<void> {
+  const { settings, legacyAccounts } = await readRegistry();
+  if (legacyAccounts) {
+    await migrateAccounts(
+      legacyAccounts.map((account) => ({
+        ...account,
+        credentialGeneration: credentialGeneration(account),
+      })),
+    );
+    return;
+  }
+  const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
+  const migrations = accounts.filter((a) => a.credentialGeneration == null);
+  if (migrations.length > 0) {
+    const keys = migrations.map((a) => accountAuthKey(a.id));
+    const records = await browser.storage.local.get(keys);
+    // Add only revision metadata. Rewriting profile/installations here would
+    // trigger account-change listeners and cancel the request being recovered.
+    await browser.storage.local.set(
+      Object.fromEntries(
+        migrations.map((a) => {
+          const key = accountAuthKey(a.id);
+          return [
+            key,
+            {
+              ...(records[key] as Record<string, unknown>),
+              credentialGeneration: credentialGeneration(a),
+            },
+          ];
+        }),
+      ),
+    );
+  }
+  if (validIds.length !== settings.accountIds.length) {
+    await writeSettings({ version: 4, accountIds: validIds });
+    const removedIds = settings.accountIds.filter(
+      (id) => !validIds.includes(id),
+    );
+    if (removedIds.length > 0) {
+      await browser.storage.local.remove(
+        removedIds.flatMap(accountStorageKeys),
+      );
+    }
+  }
+}
+
+// Background-only commit boundary. Never hold it across HTTP. All callers use
+// this one queue, including initialization, identity resolution and auth CAS.
+// There is no account-lock acquisition inside a commit (one lock ordering).
+let commitTail: Promise<unknown> = Promise.resolve();
+function commit<T>(operation: () => Promise<T>): Promise<T> {
+  const result = commitTail.then(async () => {
+    await initializeAccountsUnlocked();
+    return operation();
+  });
+  commitTail = result.catch(() => undefined);
+  return result;
+}
+
+async function addAccountUnlocked(account: Account): Promise<void> {
   const settings = await getSettings();
   const next: ExtensionSettings = {
     version: 4,
-    accountIds: [...settings.accountIds.filter((id) => id !== account.id), account.id],
+    accountIds: [
+      ...settings.accountIds.filter((id) => id !== account.id),
+      account.id,
+    ],
   };
-  await writeAccounts(next, [account]);
+  await writeAccounts(next, [
+    { ...account, credentialGeneration: crypto.randomUUID() },
+  ]);
 }
 
 /**
@@ -334,7 +422,7 @@ export async function addAccount(account: Account): Promise<void> {
  * Returns the resulting Account (either the updated existing one or the
  * newly appended one).
  */
-export async function upsertAccountByLogin(input: {
+async function upsertAccountByLoginUnlocked(input: {
   login: string;
   avatarUrl: string | null;
   token: string;
@@ -356,6 +444,7 @@ export async function upsertAccountByLogin(input: {
       login: input.login,
       avatarUrl: input.avatarUrl,
       token: input.token,
+      credentialGeneration: crypto.randomUUID(),
       refreshToken: input.refreshToken,
       expiresAt: input.expiresAt,
       refreshTokenExpiresAt: input.refreshTokenExpiresAt,
@@ -371,7 +460,9 @@ export async function upsertAccountByLogin(input: {
         ? settings
         : {
             version: 4,
-            accountIds: settings.accountIds.filter((id) => !duplicateIds.includes(id)),
+            accountIds: settings.accountIds.filter(
+              (id) => !duplicateIds.includes(id),
+            ),
           };
 
     // Preserve the retained account's position in the accountIds ordering.
@@ -385,11 +476,14 @@ export async function upsertAccountByLogin(input: {
   }
 
   const account: Account = {
-    id: input.newAccountId,
+    id: settings.accountIds.includes(input.newAccountId)
+      ? crypto.randomUUID()
+      : input.newAccountId,
     login: input.login,
     avatarUrl: input.avatarUrl,
     createdAt: input.now,
     token: input.token,
+    credentialGeneration: crypto.randomUUID(),
     refreshToken: input.refreshToken,
     expiresAt: input.expiresAt,
     refreshTokenExpiresAt: input.refreshTokenExpiresAt,
@@ -398,7 +492,10 @@ export async function upsertAccountByLogin(input: {
     installations: input.installations,
     installationsRefreshedAt: input.now,
   };
-  await addAccount(account);
+  await writeAccounts(
+    { version: 4, accountIds: [...settings.accountIds, account.id] },
+    [account],
+  );
   return account;
 }
 
@@ -416,11 +513,13 @@ async function findAccountsByLogin(login: string): Promise<{
   const normalized = login.toLowerCase();
   return {
     settings,
-    matches: accounts.filter((account) => account.login.toLowerCase() === normalized),
+    matches: accounts
+      .filter((account) => account.login.toLowerCase() === normalized)
+      .sort((a, b) => a.createdAt - b.createdAt),
   };
 }
 
-export async function removeAccount(id: string): Promise<void> {
+async function removeAccountUnlocked(id: string): Promise<void> {
   const settings = await getSettings();
   const next: ExtensionSettings = {
     version: 4,
@@ -430,12 +529,16 @@ export async function removeAccount(id: string): Promise<void> {
   await browser.storage.local.remove(accountStorageKeys(id));
 }
 
-export async function replaceInstallations(
+async function replaceInstallationsUnlocked(
   accountId: string,
   installations: Installation[],
 ): Promise<void> {
-  const result = await browser.storage.local.get(accountInstallationsKey(accountId));
-  const parsed = accountInstallationsSchema.safeParse(result[accountInstallationsKey(accountId)]);
+  const result = await browser.storage.local.get(
+    accountInstallationsKey(accountId),
+  );
+  const parsed = accountInstallationsSchema.safeParse(
+    result[accountInstallationsKey(accountId)],
+  );
   if (!parsed.success) {
     console.warn(
       `[accounts] replaceInstallations skipped for ${accountId}: stored installations record is missing or malformed.`,
@@ -451,7 +554,7 @@ export async function replaceInstallations(
   });
 }
 
-export async function markAccountInvalidated(
+async function markAccountInvalidatedUnlocked(
   accountId: string,
   reason: "revoked" | "expired" | "refresh_failed" | "unknown",
 ): Promise<void> {
@@ -473,7 +576,7 @@ export async function markAccountInvalidated(
   });
 }
 
-export async function updateAccountTokens(
+async function updateAccountTokensUnlocked(
   accountId: string,
   tokens: {
     token: string;
@@ -495,12 +598,87 @@ export async function updateAccountTokens(
     [accountAuthKey(accountId)]: {
       ...parsed.data,
       token: tokens.token,
+      credentialGeneration: crypto.randomUUID(),
       refreshToken: tokens.refreshToken,
       expiresAt: tokens.expiresAt,
       refreshTokenExpiresAt: tokens.refreshTokenExpiresAt,
     },
   });
 }
+
+export type AccountConnectInput = Parameters<
+  typeof upsertAccountByLoginUnlocked
+>[0];
+export type AccountTokens = Parameters<typeof updateAccountTokensUnlocked>[1];
+export type AccountInvalidationReason = NonNullable<
+  Account["invalidatedReason"]
+>;
+
+// These storage mutation exports are background-only. Options must use the
+// corresponding runtime/account-mutations wrappers, never a context-local queue.
+export const addAccount = (account: Account): Promise<void> =>
+  commit(() => addAccountUnlocked(account));
+export const upsertAccountByLogin = (
+  input: AccountConnectInput,
+): Promise<Account> => commit(() => upsertAccountByLoginUnlocked(input));
+export const removeAccount = (id: string): Promise<void> =>
+  commit(() => removeAccountUnlocked(id));
+export const replaceInstallations = (
+  id: string,
+  installations: Installation[],
+  expectedGeneration?: string,
+): Promise<void> =>
+  commit(async () => {
+    const account = await getAccountById(id);
+    if (
+      expectedGeneration != null &&
+      (account == null ||
+        credentialGeneration(account) !== expectedGeneration ||
+        account.invalidated)
+    )
+      return;
+    await replaceInstallationsUnlocked(id, installations);
+  });
+export const markAccountInvalidated = (
+  id: string,
+  reason: AccountInvalidationReason,
+): Promise<void> => commit(() => markAccountInvalidatedUnlocked(id, reason));
+export const updateAccountTokens = (
+  id: string,
+  tokens: AccountTokens,
+): Promise<void> => commit(() => updateAccountTokensUnlocked(id, tokens));
+
+export const accountMutations = {
+  initialize: (): Promise<void> => commit(async () => {}),
+  listAccounts: (): Promise<Account[]> => commit(listAccounts),
+  getAccountById: (id: string): Promise<Account | null> =>
+    commit(() => getAccountById(id)),
+  upsertAccountByLogin,
+  removeAccount,
+  replaceInstallations,
+  /** Return the current record, including when an obsolete commit is skipped. */
+  commitAuth: (
+    id: string,
+    expectedGeneration: string,
+    change:
+      | { tokens: AccountTokens }
+      | { invalidatedReason: AccountInvalidationReason },
+  ): Promise<Account | null> =>
+    commit(async () => {
+      const current = await getAccountById(id);
+      if (
+        current == null ||
+        current.invalidated ||
+        credentialGeneration(current) !== expectedGeneration
+      ) {
+        return current;
+      }
+      if ("tokens" in change)
+        await updateAccountTokensUnlocked(id, change.tokens);
+      else await markAccountInvalidatedUnlocked(id, change.invalidatedReason);
+      return getAccountById(id);
+    }),
+};
 
 export async function resolveAccountCoverageForRepo(
   owner: string,

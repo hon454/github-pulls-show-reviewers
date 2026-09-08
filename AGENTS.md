@@ -45,7 +45,10 @@ Agents working in this repository should preserve that narrow product scope. Do 
   Typed bundled localization, locale resolution and lifecycle-owned subscriptions.
   See `docs/adr/0006-bundled-localization-and-render-only-language.md` for the shared contract.
 - `src/storage/`
-  Extension settings and persistence.
+  Extension settings and persistence. `accounts.ts::accountMutations` is the
+  background-only account registry/auth commit owner, including initialization
+  and repair. Options auth mutations use `src/runtime/account-mutations.ts`;
+  future account work must reuse this boundary and keep HTTP outside its queue.
 - `src/cache/`
   Request and page-session caching helpers.
 - `tests/`
