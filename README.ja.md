@@ -10,8 +10,6 @@
 
 `GitHub Pulls Show Reviewers` は、プルリクエスト一覧にレビュアーの状態を表示することに特化した Chrome 拡張機能です。誰にレビューを依頼したか、どのようなレビューが完了しているかを確認するために、PR を一つずつ開く必要はありません。
 
-[30 秒の製品紹介を見る](https://hon454.github.io/github-pulls-show-reviewers/)。
-
 ![レビュアーチップとレビュー状態バッジを表示した GitHub PR 一覧](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
 ## 主な機能

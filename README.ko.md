@@ -10,8 +10,6 @@
 
 `GitHub Pulls Show Reviewers`는 풀 리퀘스트 목록에 리뷰어 상태를 표시하는 데 집중한 Chrome 확장 프로그램입니다. 리뷰를 누구에게 요청했는지, 어떤 리뷰가 완료됐는지 확인하려고 PR을 하나씩 열 필요가 없습니다.
 
-[30초 제품 소개 보기](https://hon454.github.io/github-pulls-show-reviewers/).
-
 ![리뷰어 칩과 리뷰 상태 배지가 표시된 GitHub PR 목록](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
 ## 주요 기능
