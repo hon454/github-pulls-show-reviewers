@@ -355,6 +355,10 @@ snapshot is in-memory only — it is never persisted.
   and removal call `src/runtime/account-mutations.ts`; the background validates
   the request and permits those mutations only from its own options page.
   Future account-boundary work must reuse this owner, not create another queue.
+- The options account card keeps local removal available whether credentials are
+  active or invalidated. It calls the same background mutation wrapper by
+  account ID, so removal neither starts device sign-in nor revokes the GitHub
+  App; while it is pending, every action on that one card is disabled.
 - Reviewer summaries and metadata batches, installation refresh, options
   diagnostics and the generic options retry helper identify the credential
   actually used. On 401, the coordinator reuses a newer valid generation or

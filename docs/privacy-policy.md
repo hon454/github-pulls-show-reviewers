@@ -38,7 +38,9 @@ To provide its reviewer visibility feature, the extension may access:
   snapshot names plus whether those snapshots were fully paginated,
   invalidation state, and an opaque credential revision used to reject stale
   authentication updates. The revision is not derived from token contents.
-  Entries live there until the user removes the account.
+  Entries live there until the user removes the account locally, including when
+  its credentials have been invalidated. Local removal does not revoke the
+  GitHub App authorization.
 - Display preferences are stored locally in `browser.storage.local` under a
   separate `preferences` key. That record currently stores whether review-state
   badges stay visible, whether reviewer names expand into text pills, and

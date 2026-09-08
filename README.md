@@ -89,7 +89,8 @@ The extension is built around the minimum access needed to show reviewer informa
 - Public repository support does not require signing in.
 - Private repository support uses GitHub sign-in through the extension's GitHub App.
 - The GitHub App requests `Pull requests: Read` only.
-- Removing an account from the options page deletes the locally stored token for that account.
+- Removing an active or invalidated account from the options page deletes that
+  account's locally stored credentials only.
 - To revoke the GitHub App itself, remove it from GitHub's Applications settings.
 
 See the

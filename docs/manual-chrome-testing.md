@@ -136,8 +136,13 @@ selected-repository results truncated.
    in again.
 4. Open the options page; confirm the account card shows the invalidated
    styling and a **Sign in again** button.
-5. Click **Sign in again** and complete the device flow with the same GitHub
-   account. Confirm the invalidated card is replaced in place — there should
+5. In a separate run of this invalidated setup, use Tab then Enter or Space on
+   **Remove** to discard the account locally without starting sign-in or
+   contacting GitHub. Confirm the normal empty state appears if it was the last
+   account.
+6. For the reauthentication path, click **Sign in again** and complete the
+   device flow with the same GitHub account. Confirm the invalidated card is
+   replaced in place — there should
    still be exactly one card for that login, with the same position in the
    list, not a new second card with a duplicate login.
 
@@ -184,6 +189,9 @@ credentials into logs or test reports.
 2. Reload the private PR list.
 3. Confirm the account is marked invalidated with
    `invalidatedReason: "refresh_failed"` and the UI prompts for sign-in again.
+4. Use **Remove** with the keyboard (Tab, then Enter or Space) to discard the
+   invalidated local account without starting sign-in or contacting GitHub.
+   Confirm the usual empty state appears when it was the last account.
 
 ### Unauthenticated rate limit
 
