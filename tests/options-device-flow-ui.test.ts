@@ -152,6 +152,9 @@ it("awaits one clipboard write, reports its localized result, and keeps focus st
   );
   const panel = view.getByTestId("add-account-panel");
   expect(document.activeElement).toBe(panel);
+  expect(
+    view.getByRole("region", { name: locale("en").t("options_add_account") }),
+  ).toBe(panel);
 
   const copy = view.getByRole("button", {
     name: "Copy",

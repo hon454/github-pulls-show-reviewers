@@ -86,8 +86,11 @@ export function OptionsPage({
 
   const handleConnected = useCallback(async () => {
     const activeElement = document.activeElement;
+    // Only focus that is still inside the live panel authorizes restoration.
+    // `body` before removal can also be an intentional blur, so the later
+    // effect uses it only to decide whether an already-authorized recovery is
+    // still necessary after React removes the panel.
     const shouldRestoreFocus =
-      activeElement === document.body ||
       addAccountPanel.current?.contains(activeElement) === true;
     setConnectionStatus("connected");
     setShowAddPanel(false);

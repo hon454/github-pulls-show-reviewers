@@ -1050,6 +1050,55 @@ describe("OptionsPage", () => {
     ).toBe("Account connected.");
   });
 
+  it("does not restore the opener when completion follows an intentional in-panel blur", async () => {
+    await renderOptionsPage();
+    const auth = await import("../src/github/auth");
+    vi.mocked(auth.initiateDeviceFlow).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 1,
+    });
+    vi.mocked(auth.pollForAccessToken).mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_abc",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+    vi.mocked(auth.fetchAuthenticatedUser).mockResolvedValue({
+      login: "hon454",
+      avatarUrl: null,
+    });
+    vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const panel = document.querySelector<HTMLElement>(
+      '[data-testid="add-account-panel"]',
+    )!;
+    expect(document.activeElement).toBe(panel);
+    panel.blur();
+    expect(document.activeElement).toBe(document.body);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1120));
+    });
+    expect(document.querySelector('[data-testid="accounts-add"]')).not.toBeNull();
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("does not start the device flow twice under React StrictMode", async () => {
     await renderOptionsPageInStrictMode();
 

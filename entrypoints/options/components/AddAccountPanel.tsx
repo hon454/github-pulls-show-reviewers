@@ -109,6 +109,7 @@ export function AddAccountPanel({
   const panelProps = {
     ref: focusTarget,
     tabIndex: -1,
+    role: "region",
     "data-testid": "add-account-panel",
     "aria-label": t("options_add_account"),
   };
