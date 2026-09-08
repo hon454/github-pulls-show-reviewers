@@ -13,7 +13,10 @@ import {
 } from "../../cache/reviewer-cache";
 import type { PullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
-import type { AccountSummary as Account } from "../../runtime/ui-contract";
+import type {
+  AccountSummary as Account,
+  UISnapshot,
+} from "../../runtime/ui-contract";
 import {
   DEFAULT_PREFERENCES,
   getPreferences,
@@ -504,19 +507,15 @@ export function bootReviewerListPage(
   }
 
   const observer = rowLifecycle.observe();
-  void getUIClient()
-    .read()
-    .then(
-      (snapshot) => {
-        if (!disposed) {
-          hydrated = true;
-          latestDisplayPreferences = snapshot.preferences;
-          cachedPreferences = Promise.resolve(snapshot.preferences);
-          rowLifecycle.processRows();
-        }
-      },
-      () => undefined,
-    );
+  function hydrate(snapshot: UISnapshot): void {
+    // A reconnect can deliver the first usable snapshot after read() failed.
+    // Once subscribed state wins, a delayed initial read must not replace it.
+    if (disposed || hydrated) return;
+    hydrated = true;
+    latestDisplayPreferences = snapshot.preferences;
+    cachedPreferences = Promise.resolve(snapshot.preferences);
+    rowLifecycle.processRows();
+  }
 
   ctx.addEventListener(window, "wxt:locationchange", () => refreshRoute(true));
   ctx.addEventListener(window, "popstate", () => refreshRoute(true));
@@ -525,6 +524,10 @@ export function bootReviewerListPage(
 
   const unsubscribeState = getUIClient().subscribe(({ snapshot, previous }) => {
     if (disposed) return;
+    if (!hydrated) {
+      hydrate(snapshot);
+      return;
+    }
     const next = snapshot.preferences;
     const before = previous?.preferences;
     const displayChanged =
@@ -541,6 +544,9 @@ export function bootReviewerListPage(
       rowLifecycle.processRows();
     } else if (displayChanged) renderDisplay(next);
   });
+  void getUIClient()
+    .read()
+    .then(hydrate, () => undefined);
 
   ctx.setInterval(() => refreshRoute(), 1000);
   ctx.onInvalidated(() => {

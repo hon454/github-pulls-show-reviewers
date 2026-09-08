@@ -133,6 +133,9 @@ cannot overwrite it. There are no port pings. Last unsubscribe/teardown releases
 listeners, ports, pending reads and reconnect timers. Locale and options adapters
 use this same boundary. Initial reads and delayed preference/account RPC results
 cannot overwrite later committed notifications.
+The reviewer page hydrates once from its first valid read or subscription
+snapshot. If the initial read fails, a later reconnect snapshot still starts row
+work; a delayed initial response cannot replace newer subscribed preferences.
 
 `patchPreferences` accepts only the existing optional language/display fields.
 The background preference owner serializes read/merge/write against the latest

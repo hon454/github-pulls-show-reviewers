@@ -524,6 +524,9 @@ without changing generations, outcomes, caches, dismissal or request order.
   snapshot/port client with worker epoch and monotonic revision. Stale initial
   reads, delayed RPC results and callbacks from disconnected workers are ignored.
   Teardown releases subscriptions; reconnect hydrates fresh state without pings.
+  The reviewer page starts row work on its first valid read or subscription
+  snapshot, including recovery after an initial read failure. A late initial
+  read cannot replace preferences already delivered by the subscription.
 - Preference writes use strict partial patches and one short background
   read/merge/write queue across options documents. Only successful commits emit
   changed snapshots. Different-field updates preserve both values; same-field
