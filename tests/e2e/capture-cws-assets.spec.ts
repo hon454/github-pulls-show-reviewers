@@ -396,7 +396,22 @@ async function routeReviewerScenes(
   context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
   scenes: PullScene[],
 ): Promise<() => Promise<void>> {
-  const routeUrls: string[] = [];
+  // Repository discovery now starts with shared pull-list metadata. Keep this
+  // endpoint synthetic too; an aborted request stops the entire discovery.
+  const listRoute = `https://api.github.com/repos/${screenshotRepoFullName}/pulls?**`;
+  const routeUrls: string[] = [listRoute];
+  await context.route(listRoute, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        scenes.map((scene) => ({
+          ...scene.summary,
+          number: Number(scene.pullNumber),
+        })),
+      ),
+    });
+  });
 
   for (const scene of scenes) {
     const pullRoute = `https://api.github.com/repos/${screenshotRepoFullName}/pulls/${scene.pullNumber}`;
