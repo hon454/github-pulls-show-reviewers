@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type RefObject,
+} from "react";
 
 import type { LocaleSnapshot } from "../../../src/i18n";
 import { authErrorKey } from "../auth-presentation";
@@ -8,6 +14,7 @@ type Props = {
   locale: LocaleSnapshot;
   controller: DeviceFlowController;
   onCancel: (restoreFocus: boolean) => void;
+  onFocusOwnershipChange?: (owned: boolean) => void;
   panelRef?: RefObject<HTMLDivElement | null>;
 };
 
@@ -24,6 +31,7 @@ export function AddAccountPanel({
   onCancel,
   locale,
   panelRef,
+  onFocusOwnershipChange,
 }: Props) {
   const { t, lang } = locale;
   const { state } = controller;
@@ -112,6 +120,17 @@ export function AddAccountPanel({
     role: "region",
     "data-testid": "add-account-panel",
     "aria-label": t("options_add_account"),
+    onFocusCapture: () => onFocusOwnershipChange?.(true),
+    onBlurCapture: (event: FocusEvent<HTMLDivElement>) => {
+      const next = event.relatedTarget;
+      if (next instanceof Node && focusTarget.current?.contains(next)) return;
+      // A waiting control can be removed during fetching/committing. Its blur
+      // target is disconnected in that case, so retain the ownership captured
+      // while it was live. A connected target means the user intentionally
+      // left the panel (including blur to body), which must not be restored.
+      if ((event.target as HTMLElement).isConnected)
+        onFocusOwnershipChange?.(false);
+    },
   };
 
   if (

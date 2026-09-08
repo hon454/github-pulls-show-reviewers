@@ -1050,6 +1050,124 @@ describe("OptionsPage", () => {
     ).toBe("Account connected.");
   });
 
+  it("restores the fallback after completion removes a focused waiting child", async () => {
+    await renderOptionsPage();
+    const auth = await import("../src/github/auth");
+    let releaseUser!: () => void;
+    vi.mocked(auth.initiateDeviceFlow).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 1,
+    });
+    vi.mocked(auth.pollForAccessToken).mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_abc",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+    vi.mocked(auth.fetchAuthenticatedUser).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseUser = () => resolve({ login: "hon454", avatarUrl: null });
+        }),
+    );
+    vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const copy = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Copy",
+    );
+    expect(copy).toBeDefined();
+    copy!.focus();
+    expect(document.activeElement).toBe(copy);
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+    expect(auth.fetchAuthenticatedUser).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(document.body);
+
+    await act(async () => {
+      releaseUser();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-testid="accounts-add"]'),
+    ).toBe(document.activeElement);
+  });
+
+  it("does not reclaim focus after an external pointer intent during completion", async () => {
+    await renderOptionsPage();
+    const auth = await import("../src/github/auth");
+    let releaseUser!: () => void;
+    vi.mocked(auth.initiateDeviceFlow).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 1,
+    });
+    vi.mocked(auth.pollForAccessToken).mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_abc",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+    vi.mocked(auth.fetchAuthenticatedUser).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseUser = () => resolve({ login: "hon454", avatarUrl: null });
+        }),
+    );
+    vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
+      items: [],
+      truncated: false,
+    });
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "Copy")!
+      .focus();
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+    expect(auth.fetchAuthenticatedUser).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.pointerDown(document.querySelector(".options-intro")!);
+
+    await act(async () => {
+      releaseUser();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(document.activeElement).toBe(document.body);
+  });
+
   it("does not restore the opener when completion follows an intentional in-panel blur", async () => {
     await renderOptionsPage();
     const auth = await import("../src/github/auth");

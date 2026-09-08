@@ -38,8 +38,30 @@ export function OptionsPage({
   const addAccountButton = useRef<HTMLButtonElement | null>(null);
   const openingControl = useRef<HTMLElement | null>(null);
   const addAccountPanel = useRef<HTMLDivElement | null>(null);
+  const panelFocusOwned = useRef(false);
   const appConfigResult = readGitHubAppConfig();
   const appConfig = appConfigResult.ok ? appConfigResult.config : null;
+
+  useEffect(() => {
+    const relinquishPanelFocus = (target: EventTarget | null) => {
+      if (!panelFocusOwned.current || !(target instanceof Node)) return;
+      if (!addAccountPanel.current?.contains(target))
+        panelFocusOwned.current = false;
+    };
+    const handleFocusIn = (event: FocusEvent) =>
+      relinquishPanelFocus(event.target);
+    const handlePointerDown = (event: PointerEvent) =>
+      relinquishPanelFocus(event.target);
+    // When a focused waiting child is removed, browsers can move focus to
+    // body without another focus event. Listen for the next external intent
+    // so stale ownership cannot reclaim focus on completion.
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
 
   const reload = useCallback(async () => {
     const readingAt = ++accountsRevision.current;
@@ -85,13 +107,11 @@ export function OptionsPage({
   }, [focusRestorationPending, showAddPanel]);
 
   const handleConnected = useCallback(async () => {
-    const activeElement = document.activeElement;
-    // Only focus that is still inside the live panel authorizes restoration.
-    // `body` before removal can also be an intentional blur, so the later
-    // effect uses it only to decide whether an already-authorized recovery is
-    // still necessary after React removes the panel.
-    const shouldRestoreFocus =
-      addAccountPanel.current?.contains(activeElement) === true;
+    // The focused waiting control can be removed while the flow fetches and
+    // commits account data. Preserve ownership captured while that control was
+    // live; intentional focus moving out of the panel clears it.
+    const shouldRestoreFocus = panelFocusOwned.current;
+    panelFocusOwned.current = false;
     setConnectionStatus("connected");
     setShowAddPanel(false);
     if (shouldRestoreFocus) restoreOpeningFocus();
@@ -108,6 +128,7 @@ export function OptionsPage({
 
   const openAddPanel = (control: HTMLElement) => {
     openingControl.current = control;
+    panelFocusOwned.current = false;
     setConnectionStatus(null);
     setFocusRestorationPending(false);
     setShowAddPanel(true);
@@ -221,7 +242,11 @@ export function OptionsPage({
               locale={locale}
               controller={controller}
               panelRef={addAccountPanel}
+              onFocusOwnershipChange={(owned) => {
+                panelFocusOwned.current = owned;
+              }}
               onCancel={(shouldRestoreFocus) => {
+                panelFocusOwned.current = false;
                 setShowAddPanel(false);
                 if (shouldRestoreFocus) restoreOpeningFocus();
               }}
