@@ -9,7 +9,7 @@ type Props = {
   t: Translator;
   accounts: Account[];
   onChange: () => Promise<void>;
-  onReauthenticate: (account: Account) => void;
+  onReauthenticate: (account: Account, control: HTMLButtonElement) => void;
 };
 
 type AccountAction = "refresh" | "remove";
@@ -120,7 +120,9 @@ export function AccountsList({
               {account.invalidated ? (
                 <button
                   type="button"
-                  onClick={() => onReauthenticate(account)}
+                  onClick={(event) =>
+                    onReauthenticate(account, event.currentTarget)
+                  }
                   disabled={isBusy}
                   className="button button--primary"
                 >

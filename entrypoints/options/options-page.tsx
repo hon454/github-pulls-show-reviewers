@@ -30,7 +30,14 @@ export function OptionsPage({
   }, [locale.lang, t]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<"connected" | null>(
+    null,
+  );
+  const [focusRestorationPending, setFocusRestorationPending] = useState(false);
   const accountsRevision = useRef(0);
+  const addAccountButton = useRef<HTMLButtonElement | null>(null);
+  const openingControl = useRef<HTMLElement | null>(null);
+  const addAccountPanel = useRef<HTMLDivElement | null>(null);
   const appConfigResult = readGitHubAppConfig();
   const appConfig = appConfigResult.ok ? appConfigResult.config : null;
 
@@ -61,10 +68,32 @@ export function OptionsPage({
     };
   }, [reload]);
 
+  const restoreOpeningFocus = useCallback(() => {
+    setFocusRestorationPending(true);
+  }, []);
+
+  useEffect(() => {
+    if (showAddPanel || !focusRestorationPending) return;
+    if (
+      document.activeElement === document.body ||
+      !document.activeElement?.isConnected
+    ) {
+      const target = openingControl.current;
+      (target?.isConnected ? target : addAccountButton.current)?.focus();
+    }
+    setFocusRestorationPending(false);
+  }, [focusRestorationPending, showAddPanel]);
+
   const handleConnected = useCallback(async () => {
+    const activeElement = document.activeElement;
+    const shouldRestoreFocus =
+      activeElement === document.body ||
+      addAccountPanel.current?.contains(activeElement) === true;
+    setConnectionStatus("connected");
     setShowAddPanel(false);
+    if (shouldRestoreFocus) restoreOpeningFocus();
     await reload();
-  }, [reload]);
+  }, [reload, restoreOpeningFocus]);
 
   // Controller is owned by the parent so it survives AddAccountPanel's
   // simulated remount under StrictMode and so start() is only ever called
@@ -74,7 +103,10 @@ export function OptionsPage({
     onConnected: handleConnected,
   });
 
-  const openAddPanel = () => {
+  const openAddPanel = (control: HTMLElement) => {
+    openingControl.current = control;
+    setConnectionStatus(null);
+    setFocusRestorationPending(false);
     setShowAddPanel(true);
     const inFlight =
       controller.state.phase === "initiating" ||
@@ -156,12 +188,23 @@ export function OptionsPage({
             t={t}
             accounts={accounts}
             onChange={reload}
-            onReauthenticate={() => {
+            onReauthenticate={(_, control) => {
               if (appConfig) {
-                openAddPanel();
+                openAddPanel(control);
               }
             }}
           />
+          {connectionStatus === "connected" ? (
+            <p
+              className="inline-status"
+              data-testid="account-connected-status"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {t("options_account_connected")}
+            </p>
+          ) : null}
           {!appConfig ? (
             <div
               className="notice notice--error"
@@ -174,14 +217,19 @@ export function OptionsPage({
             <AddAccountPanel
               locale={locale}
               controller={controller}
-              onCancel={() => setShowAddPanel(false)}
+              panelRef={addAccountPanel}
+              onCancel={(shouldRestoreFocus) => {
+                setShowAddPanel(false);
+                if (shouldRestoreFocus) restoreOpeningFocus();
+              }}
             />
           ) : (
             <button
               type="button"
               className="button button--primary add-account-button"
-              onClick={openAddPanel}
+              onClick={(event) => openAddPanel(event.currentTarget)}
               data-testid="accounts-add"
+              ref={addAccountButton}
             >
               {t("options_add_account")}
             </button>

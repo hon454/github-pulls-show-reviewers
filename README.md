@@ -86,6 +86,7 @@ The options page lets you tune the display without changing the core reviewer-fo
 - Show or hide review-state badges.
 - Choose whether reviewer chip links search open PRs only or include closed PRs too.
 - Check account, repository access, installation coverage, and rate-limit diagnostics for private repositories.
+- During sign-in, localized clipboard feedback confirms copying or provides a manual-copy fallback. Closing the panel restores useful keyboard focus, and a successful connection remains announced in the accounts section. Changing the extension language only reformats this feedback; it does not restart sign-in.
 
 ![Display settings and repository diagnostics in the options page](./docs/chrome-web-store-assets/03-options-repository-check.png)
 

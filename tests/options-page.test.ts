@@ -389,7 +389,7 @@ describe("OptionsPage", () => {
     await act(async () => {
       matchedButton.click();
       await Promise.resolve();
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 20));
     });
 
     expect(resolveAccountCoverageForRepoMock).toHaveBeenCalledWith(
@@ -864,10 +864,15 @@ describe("OptionsPage", () => {
       document.querySelectorAll<HTMLButtonElement>("button"),
     ).find((b) => b.textContent?.trim() === "Cancel");
     expect(cancelButton).toBeDefined();
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-testid="add-account-panel"]'),
+    );
 
     await act(async () => {
+      cancelButton!.focus();
       cancelButton!.click();
       await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 20));
     });
 
     expect(
@@ -876,6 +881,9 @@ describe("OptionsPage", () => {
     expect(
       document.querySelector('[data-testid="accounts-add"]'),
     ).not.toBeNull();
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-testid="accounts-add"]'),
+    );
   });
 
   it("keeps the reopened panel when a canceled poll succeeds late", async () => {
@@ -1006,20 +1014,40 @@ describe("OptionsPage", () => {
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1100));
+      await new Promise((resolve) => setTimeout(resolve, 20));
     });
     expect(initiateDeviceFlow).toHaveBeenCalledTimes(1);
+    const addButton = document.querySelector<HTMLButtonElement>(
+      '[data-testid="accounts-add"]',
+    );
+    expect(addButton).not.toBeNull();
+    expect(document.activeElement).toBe(addButton);
     expect(
-      document.querySelector('[data-testid="accounts-add"]'),
-    ).not.toBeNull();
+      document.querySelector('[data-testid="account-connected-status"]')
+        ?.textContent,
+    ).toBe("Account connected.");
+    expect(
+      document.querySelector('[data-testid="add-account-panel"]'),
+    ).toBeNull();
 
     await act(async () => {
-      document
-        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
-        .click();
+      addButton!.click();
       await Promise.resolve();
     });
 
     expect(initiateDeviceFlow).toHaveBeenCalledTimes(2);
+    const languageSelect = document.querySelector<HTMLSelectElement>(
+      '[data-testid="language-select"]',
+    )!;
+    languageSelect.focus();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+    });
+    expect(document.activeElement).toBe(languageSelect);
+    expect(
+      document.querySelector('[data-testid="account-connected-status"]')
+        ?.textContent,
+    ).toBe("Account connected.");
   });
 
   it("does not start the device flow twice under React StrictMode", async () => {
