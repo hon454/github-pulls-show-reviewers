@@ -226,10 +226,10 @@ export function bootReviewerListPage(
       generation === rowGeneration &&
       currentRoute === route &&
       row.isConnected &&
-      row.contains(mount) &&
       extractPullNumber(row) === pullNumber;
     const isOperationCurrent = () =>
       isRowCurrent() &&
+      row.contains(mount) &&
       mountOperations.get(mount) === operation &&
       requestOwners.get(cacheKey) === requestOwner;
     rowLifecycle.recordFingerprint(row, pullNumber, route);
@@ -293,6 +293,7 @@ export function bootReviewerListPage(
     requestOwners.set(cacheKey, requestOwner);
     let request: InflightRequest | null = null;
     const consumers = new Map([[mount, isRowCurrent]]);
+    // Data belongs to live rows, even if their presentation mounts were removed.
     // A replacement row may still need the shared request after its owner left.
     const isRequestCurrent = () =>
       !controller.signal.aborted &&

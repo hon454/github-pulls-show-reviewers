@@ -513,6 +513,9 @@ Validate catalogs with the i18n unit tests and emitted metadata with
   and latest request identity after preference reads and before continuing data
   work. Removed or superseded rows cannot render late results or start queued
   requests; a live replacement row can still receive its shared request.
+  Request/cache validity follows the PR row and generation, not its presentation
+  mount. Replacing only native metadata preserves valid pending results for
+  cache-based mount recovery; detached mounts still cannot render those results.
   The four-slot FIFO scheduler, mutation batching/attribute filtering, and row
   fingerprints remain unchanged; extension-owned localized nodes are excluded
   from row mutations.

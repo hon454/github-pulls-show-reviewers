@@ -2769,6 +2769,92 @@ describe("reviewer asynchronous presentation ownership", () => {
     },
   );
 
+  it.each(
+    ["metadata", "summary", "queued"].flatMap((stage) =>
+      [false, true].map((removeRow) => ({ stage, removeRow })),
+    ),
+  )(
+    "keeps live-row data during $stage mount loss but discards actual row removal ($removeRow)",
+    async ({ stage, removeRow }) => {
+      const numbers =
+        stage === "queued" ? ["42", "43", "44", "45", "46"] : ["42"];
+      if (stage === "queued") installPullListFixture(numbers);
+      const target = numbers.at(-1)!;
+      const metadata = createDeferred<unknown>();
+      const completions = new Map<string, () => void>();
+      let active = 0;
+      let peak = 0;
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      runtimeSendMessageMock.mockImplementation(
+        (message: { type: string; pullNumber: string }) => {
+          if (message.type === "fetchPullReviewerMetadataBatch")
+            return stage === "metadata"
+              ? metadata.promise
+              : Promise.resolve({ ok: true, metadata: [] });
+          active++;
+          peak = Math.max(peak, active);
+          return new Promise((resolve) =>
+            completions.set(message.pullNumber, () => {
+              completions.delete(message.pullNumber);
+              active--;
+              resolve({ ok: true, summary: makeSummary("alice") });
+            }),
+          );
+        },
+      );
+      const cache = await import("../src/cache/reviewer-cache");
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      const onRowFailure = vi.fn();
+      bootReviewerListPage(makeCtx(), { onRowFailure });
+      await flushMicrotasks();
+      const started = () =>
+        getRuntimeMessages("fetchPullReviewerSummary").map((m) => m.pullNumber);
+      expect(started()).toEqual(
+        stage === "metadata" ? [] : numbers.slice(0, 4),
+      );
+      const row = document.querySelector(`#issue_${target}`)!;
+      const oldMount = row.querySelector("[data-ghpsr-root]")!;
+      if (removeRow) row.remove();
+      else {
+        const nativeMetadata = row.querySelector(
+          ".d-flex.mt-1.text-small.color-fg-muted",
+        )!;
+        const replacement = nativeMetadata.cloneNode(true) as Element;
+        replacement.querySelector("[data-ghpsr-reviewer-meta]")!.remove();
+        nativeMetadata.replaceWith(replacement);
+      }
+      // Settle immediately: no mount-repair or row reprocessing is required first.
+      if (stage === "metadata") metadata.resolve({ ok: true, metadata: [] });
+      else completions.get(stage === "queued" ? "42" : target)!();
+      await flushMicrotasks();
+      await flushMicrotasks();
+      for (const complete of [...completions.values()]) complete();
+      await flushMicrotasks();
+      await flushMicrotasks();
+      const entry = cache.getReviewerCacheEntry(
+        cache.buildReviewerCacheKey("cinev", "shotloom", target),
+      );
+      if (removeRow) {
+        expect(entry).toBeUndefined();
+        expect(started()).toEqual(
+          stage === "summary" ? numbers : numbers.slice(0, -1),
+        );
+      } else {
+        expect(row.isConnected).toBe(true);
+        expect(entry?.summary).toEqual(makeSummary("alice"));
+        expect(started()).toEqual(numbers);
+      }
+      expect(oldMount.querySelector("a.ghpsr-avatar")).toBeNull();
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        1,
+      );
+      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(peak).toBeLessThanOrEqual(4);
+      expect(active).toBe(0);
+    },
+  );
+
   it("skips removed queued consumers at the FIFO network boundary", async () => {
     installPullListFixture(["42", "43", "44", "45", "46"]);
     const completions = new Map<string, () => void>();
