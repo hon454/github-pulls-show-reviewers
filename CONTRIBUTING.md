@@ -141,6 +141,11 @@ When the workflow fails:
 2. Bump the affected dependency or transitive override.
 3. Run `pnpm verify:release` before pushing the fix.
 
+The current WXT `0.20.25` runner graph uses version-scoped pnpm overrides for
+patched `adm-zip`, `shell-quote`, `uuid`, `tmp`, `esbuild`, and Vite releases.
+Keep overrides narrow to the affected parent/package pair, and re-evaluate them
+when WXT or its runner graph changes; do not broaden them into global pins.
+
 If a finding is a known false positive, document the rationale in the
 fix commit instead of suppressing the workflow.
 
