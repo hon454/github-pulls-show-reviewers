@@ -47,6 +47,10 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - `src/background/`
   Credential-owning services, storage access policy, sender authorization,
   device-flow restoration and the sanitized UI snapshot/event bridge.
+  `repository-accounts.ts` owns shared repository discovery, with a pure
+  candidate/failure policy and trusted-session admission ledger. Reuse this
+  owner for metadata, summaries and matched diagnostics; keep HTTP outside the
+  registry/ledger queues and never reset budgets on presentation changes.
 - `src/runtime/`
   Schema-validated UI capabilities and the per-document snapshot client.
   UI code uses `AccountSummary`; full accounts and OAuth helpers stay in background.

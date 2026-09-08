@@ -1953,6 +1953,7 @@ describe("repository diagnostic structured evidence", () => {
           {
             kind: "http",
             httpStatus: status,
+            ...(status === 429 ? { rateLimited: true } : {}),
             endpoint: {
               name: "pulls-list",
               method: "GET",
@@ -2002,6 +2003,7 @@ describe("repository diagnostic structured evidence", () => {
       {
         kind: "http",
         httpStatus: 429,
+        rateLimited: true,
         endpoint: {
           name: "reviews",
           method: "GET",
@@ -2099,7 +2101,16 @@ describe("repository diagnostic structured evidence", () => {
     expect(result.outcome).toBe("unknown-error");
     expect(result.fullName).toBe("Octo/repo");
     expect(result.pullNumber).toBe("42");
-    expect(result.failures).toEqual([{ kind: "network" }]);
+    expect(result.failures).toEqual([
+      {
+        kind: "network",
+        endpoint: {
+          name: "pull",
+          method: "GET",
+          path: "/repos/Octo/repo/pulls/42",
+        },
+      },
+    ]);
   });
 
   it("does not fetch invalid input or invent reviewer evidence for a repository with no PRs", async () => {

@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { repositoryOwnerSchema, repositoryNameSchema } from "./ui-contract";
+import {
+  repositoryOwnerSchema,
+  repositoryNameSchema,
+  accountSummarySchema,
+  type AccountSummary,
+} from "./ui-contract";
 import { rateLimitSnapshotSchema } from "./diagnostics";
 
 import {
@@ -8,6 +13,7 @@ import {
   GitHubPullRequestEndpointsError,
   extractGitHubApiStatus,
   isRateLimitError,
+  extractRepositoryValidationFailures,
   type PullReviewerMetadata,
   type PullReviewerSummary,
 } from "../github/api";
@@ -35,6 +41,8 @@ export const fetchPullReviewerSummaryMessageSchema = z.strictObject({
   repo: repositoryNameSchema,
   pullNumber: z.string().regex(/^[1-9]\d*$/),
   accountId: z.string().nullable(),
+  discoveryId: z.string().optional(),
+  accountRevision: z.string().optional(),
   pullMetadata: pullReviewerMetadataMessageSchema.optional(),
 });
 
@@ -57,7 +65,9 @@ export const fetchPullReviewerMetadataBatchMessageSchema = z.strictObject({
   owner: repositoryOwnerSchema,
   repo: repositoryNameSchema,
   accountId: z.string().nullable(),
+  discoveryId: z.string().optional(),
   targetPullNumbers: z.array(nonEmptyStringSchema).optional(),
+  refresh: z.boolean().optional(),
 });
 
 export type FetchPullReviewerMetadataBatchMessage = z.infer<
@@ -72,7 +82,8 @@ export type ReviewerFetchRateLimitSnapshot = {
 };
 
 export type ReviewerFetchFailure = {
-  status: number;
+  status: number | null;
+  kind?: "http" | "schema" | "network" | "cancellation" | "unknown" | undefined;
   endpoint: string | null;
   rateLimited: boolean;
   rateLimit?: ReviewerFetchRateLimitSnapshot | undefined;
@@ -82,26 +93,36 @@ export type ReviewerFetchErrorEnvelope = {
   kind: "github-api" | "github-endpoints" | "schema" | "unknown";
   status: number | null;
   failures?: ReviewerFetchFailure[] | undefined;
+  discoveryOutcome?:
+    | "interrupted"
+    | "retired"
+    | "unavailable"
+    | "exhausted"
+    | undefined;
 };
 
 export type FetchPullReviewerSummaryResponse =
   | {
       ok: true;
       summary: PullReviewerSummary;
+      account?: AccountSummary | null | undefined;
     }
   | {
       ok: false;
       error: ReviewerFetchErrorEnvelope;
+      account?: AccountSummary | null | undefined;
     };
 
 export type FetchPullReviewerMetadataBatchResponse =
   | {
       ok: true;
       metadata: PullReviewerMetadata[];
+      account?: AccountSummary | null | undefined;
     }
   | {
       ok: false;
       error: ReviewerFetchErrorEnvelope;
+      account?: AccountSummary | null | undefined;
     };
 
 export const reviewerFetchErrorSchema = z.object({
@@ -110,12 +131,18 @@ export const reviewerFetchErrorSchema = z.object({
   failures: z
     .array(
       z.object({
-        status: z.number(),
+        status: z.number().nullable(),
+        kind: z
+          .enum(["http", "schema", "network", "cancellation", "unknown"])
+          .optional(),
         endpoint: z.string().nullable(),
         rateLimited: z.boolean(),
         rateLimit: rateLimitSnapshotSchema.optional(),
       }),
     )
+    .optional(),
+  discoveryOutcome: z
+    .enum(["interrupted", "retired", "unavailable", "exhausted"])
     .optional(),
 });
 const pullReviewerSummarySchema = z.object({
@@ -136,8 +163,16 @@ const pullReviewerSummarySchema = z.object({
 export const fetchPullReviewerSummaryResponseSchema = z.discriminatedUnion(
   "ok",
   [
-    z.object({ ok: z.literal(true), summary: pullReviewerSummarySchema }),
-    z.object({ ok: z.literal(false), error: reviewerFetchErrorSchema }),
+    z.object({
+      ok: z.literal(true),
+      summary: pullReviewerSummarySchema,
+      account: accountSummarySchema.nullable().optional(),
+    }),
+    z.object({
+      ok: z.literal(false),
+      error: reviewerFetchErrorSchema,
+      account: accountSummarySchema.nullable().optional(),
+    }),
   ],
 );
 export const fetchPullReviewerMetadataBatchResponseSchema =
@@ -145,12 +180,20 @@ export const fetchPullReviewerMetadataBatchResponseSchema =
     z.object({
       ok: z.literal(true),
       metadata: z.array(pullReviewerMetadataMessageSchema),
+      account: accountSummarySchema.nullable().optional(),
     }),
-    z.object({ ok: z.literal(false), error: reviewerFetchErrorSchema }),
+    z.object({
+      ok: z.literal(false),
+      error: reviewerFetchErrorSchema,
+      account: accountSummarySchema.nullable().optional(),
+    }),
   ]);
 
 export class ReviewerFetchRuntimeError extends Error {
-  constructor(public readonly envelope: ReviewerFetchErrorEnvelope) {
+  constructor(
+    public readonly envelope: ReviewerFetchErrorEnvelope,
+    public readonly account?: AccountSummary | null,
+  ) {
     super("Background reviewer fetch failed.");
     this.name = "ReviewerFetchRuntimeError";
   }
@@ -177,11 +220,23 @@ export function isFetchPullReviewerMetadataBatchMessage(
 export function serializeReviewerFetchError(
   error: unknown,
 ): ReviewerFetchErrorEnvelope {
+  if (error instanceof ReviewerFetchRuntimeError)
+    return reviewerFetchErrorSchema.parse(error.envelope);
   if (error instanceof GitHubPullRequestEndpointsError) {
     return {
       kind: "github-endpoints",
       status: extractGitHubApiStatus(error),
-      failures: error.failures.map(toReviewerFetchFailure),
+      failures: error.failures.flatMap(
+        (failure) =>
+          serializeReviewerFetchError(failure).failures ?? [
+            {
+              status: null,
+              endpoint: null,
+              rateLimited: false,
+              kind: "unknown" as const,
+            },
+          ],
+      ),
     };
   }
 
@@ -197,6 +252,7 @@ export function serializeReviewerFetchError(
     return {
       kind: "schema",
       status: null,
+      failures: decodedFailures(error),
     };
   }
 
@@ -204,12 +260,14 @@ export function serializeReviewerFetchError(
     return {
       kind: "unknown",
       status: extractGitHubApiStatus(error),
+      failures: decodedFailures(error),
     };
   }
 
   return {
     kind: "unknown",
     status: extractGitHubApiStatus(error),
+    failures: decodedFailures(error),
   };
 }
 
@@ -221,7 +279,7 @@ export function extractReviewerFetchFailures(
   }
 
   if (error instanceof GitHubPullRequestEndpointsError) {
-    return error.failures.map(toReviewerFetchFailure);
+    return serializeReviewerFetchError(error).failures ?? [];
   }
 
   if (error instanceof GitHubApiError) {
@@ -241,6 +299,7 @@ export function extractReviewerFetchFailures(
           endpoint?: unknown;
           rateLimited?: unknown;
           rateLimit?: unknown;
+          kind?: unknown;
         }>;
       }
     ).failures
@@ -248,11 +307,12 @@ export function extractReviewerFetchFailures(
         (
           failure,
         ): failure is {
-          status: number;
+          status: number | null;
           endpoint?: string | null;
           rateLimited?: boolean;
           rateLimit?: unknown;
-        } => typeof failure?.status === "number",
+          kind?: unknown;
+        } => typeof failure?.status === "number" || failure?.status === null,
       )
       .map((failure) => {
         const base: ReviewerFetchFailure = {
@@ -262,7 +322,14 @@ export function extractReviewerFetchFailures(
           rateLimited: failure.rateLimited === true,
         };
         const rateLimit = parseRateLimitSnapshot(failure.rateLimit);
-        return rateLimit == null ? base : { ...base, rateLimit };
+        const kind = z
+          .enum(["http", "schema", "network", "cancellation", "unknown"])
+          .safeParse(failure.kind);
+        return {
+          ...base,
+          ...(rateLimit == null ? {} : { rateLimit }),
+          ...(kind.success ? { kind: kind.data } : {}),
+        };
       });
   }
 
@@ -282,6 +349,16 @@ export function extractReviewerFetchFailures(
   }
 
   return [];
+}
+
+function decodedFailures(error: unknown): ReviewerFetchFailure[] {
+  return extractRepositoryValidationFailures(error).map((failure) => ({
+    kind: failure.kind,
+    status: failure.httpStatus ?? null,
+    endpoint: failure.endpoint?.path ?? null,
+    rateLimited: failure.rateLimited === true,
+    ...(failure.rateLimit ? { rateLimit: failure.rateLimit } : {}),
+  }));
 }
 
 function toReviewerFetchFailure(failure: GitHubApiError): ReviewerFetchFailure {

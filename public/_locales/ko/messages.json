@@ -551,7 +551,7 @@
     }
   },
   "diagnostics_permission": {
-    "message": "GitHub에서 $REPOSITORY$ 접근을 거부했습니다. GitHub App 설치와 Pull requests: Read 권한을 확인하세요.",
+    "message": "GitHub가 $REPOSITORY$ 접근을 거부했습니다. 이 계정의 저장소 권한과 GitHub App 설치의 Pull requests: Read 권한을 확인하세요.",
     "description": "Repository diagnostics permission. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -560,7 +560,7 @@
     }
   },
   "diagnostics_not_found": {
-    "message": "이 계정으로 GitHub에서 $REPOSITORY$를 찾지 못했습니다. 이름과 GitHub App 설치 범위를 확인하세요. 저장소가 삭제되었거나 접근이 제한되었을 수 있습니다.",
+    "message": "이 계정으로 $REPOSITORY$을(를) 찾지 못했습니다. 저장소 이름, 계정 권한, GitHub App 설치 접근 범위를 확인하세요. 저장소가 삭제되었거나 접근이 제한되었을 수 있습니다.",
     "description": "Repository diagnostics not found. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -746,8 +746,8 @@
     "description": "Expired GitHub session guidance."
   },
   "banner_app_uncovered": {
-    "message": "이 페이지에서 리뷰어를 보려면 @$OWNER$의 GitHub App 설치에 $REPOSITORY$ 저장소를 추가하세요.",
-    "description": "App installation coverage guidance; identifiers remain unchanged.",
+    "message": "$REPOSITORY$의 리뷰어 정보를 모두 불러오지 못했습니다. 계정의 저장소 권한과 @$OWNER$의 GitHub App 설치 접근 범위를 확인하세요.",
+    "description": "Account permissions and App installation access guidance; identifiers remain unchanged.",
     "placeholders": {
       "repository": {
         "content": "$1"
@@ -924,5 +924,17 @@
   "auth_error_restart": {
     "message": "이 로그인을 복원할 수 없습니다. 새 코드를 요청하여 로그인하세요.",
     "description": "Device flow session was lost or its interrupted result cannot be recovered; user can request a fresh code."
+  },
+  "diagnostics_pull_unavailable": {
+    "message": "저장소 접근에는 성공했지만 $REPOSITORY$의 PR #$PULL$에서 403/404가 반환되었습니다. 해당 PR을 확인하세요. 저장소 전체에 접근할 수 없다는 뜻은 아닙니다.",
+    "description": "Individual PR access failure after a successful repository probe. Preserve repository and PR identifiers.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      },
+      "pull": {
+        "content": "$2"
+      }
+    }
   }
 }

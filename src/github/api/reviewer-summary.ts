@@ -17,9 +17,10 @@ import {
 } from "./request";
 import {
   GitHubApiSchemaError,
+  GitHubApiError,
+  GitHubApiTransportError,
   GitHubPullRequestEndpointsError,
   type CompletedReview,
-  type GitHubApiError,
   type GitHubEndpointDescriptor,
   type PullReviewerMetadata,
   type PullReviewerSummary,
@@ -115,38 +116,69 @@ export async function fetchPullReviewerSummary(input: {
   );
   const pullUrl = `https://api.github.com${pullEndpoint.path}`;
 
-  const [pullResponse, reviewsFirstResponse] = await Promise.all([
-    fetchGitHubApiResponse(pullUrl, headers, input.signal),
-    fetchGitHubApiResponse(reviewsFirstPageUrl, headers, input.signal),
+  // Preserve failures from both endpoints, including transport/schema failures.
+  // Promise.all's first rejection must not hide a sibling's 401/rate limit.
+  const results = await Promise.allSettled([
+    readEndpoint(pullUrl, pullEndpoint, async (response) => {
+      const parsed = pullSchema.safeParse(await response.json());
+      if (!parsed.success) throw new GitHubApiSchemaError(pullEndpoint);
+      return parsed.data;
+    }),
+    readEndpoint(reviewsFirstPageUrl, reviewsEndpoint, (response) =>
+      collectReviewsAcrossPages({
+        firstResponse: response,
+        endpoint: reviewsEndpoint,
+        headers,
+        ...(input.signal == null ? {} : { signal: input.signal }),
+      }),
+    ),
   ]);
-
-  const failures = (
-    await Promise.all([
-      createGitHubApiErrorFromResponse(pullResponse, pullEndpoint),
-      createGitHubApiErrorFromResponse(reviewsFirstResponse, reviewsEndpoint),
-    ])
-  ).filter((failure): failure is GitHubApiError => failure != null);
-
-  if (failures.length > 0) {
-    throw new GitHubPullRequestEndpointsError(failures);
-  }
-
-  const pullParsed = pullSchema.safeParse(await pullResponse.json());
-  if (!pullParsed.success) {
-    throw new GitHubApiSchemaError(pullEndpoint, pullParsed.error.issues);
-  }
-
-  const reviews = await collectReviewsAcrossPages({
-    firstResponse: reviewsFirstResponse,
-    endpoint: reviewsEndpoint,
-    headers,
-    ...(input.signal == null ? {} : { signal: input.signal }),
-  });
-
-  const pullMetadata = toPullReviewerMetadata(
-    input.pullNumber,
-    pullParsed.data,
+  const failures = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason as unknown] : [],
   );
+  if (
+    failures.length === 1 &&
+    !(failures[0] instanceof GitHubApiError) &&
+    !(failures[0] instanceof GitHubPullRequestEndpointsError)
+  )
+    throw failures[0];
+  if (failures.length > 0) throw new GitHubPullRequestEndpointsError(failures);
+  if (results[0].status !== "fulfilled" || results[1].status !== "fulfilled")
+    throw new Error("missing_endpoint_result");
+  const pull = results[0].value;
+  const reviews = results[1].value;
+
+  async function readEndpoint<T>(
+    url: string,
+    endpoint: GitHubEndpointDescriptor,
+    parse: (response: Response) => Promise<T>,
+  ): Promise<T> {
+    try {
+      const response = await fetchGitHubApiResponse(url, headers, input.signal);
+      const error = await createGitHubApiErrorFromResponse(response, endpoint);
+      if (error) throw error;
+      return await parse(response);
+    } catch (error) {
+      if (
+        error instanceof GitHubApiError ||
+        error instanceof GitHubApiSchemaError ||
+        error instanceof GitHubPullRequestEndpointsError
+      )
+        throw error;
+      throw new GitHubApiTransportError(
+        isAbortError(error)
+          ? "cancellation"
+          : error instanceof SyntaxError
+            ? "schema"
+            : error instanceof TypeError
+              ? "network"
+              : "unknown",
+        endpoint,
+      );
+    }
+  }
+
+  const pullMetadata = toPullReviewerMetadata(input.pullNumber, pull);
   const latestReviewEvidence = collectLatestReviewEvidence(
     pullMetadata,
     reviews,

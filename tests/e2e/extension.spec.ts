@@ -566,7 +566,7 @@ test("renders app-uncovered banner with Configure access CTA when a signed-in ro
 
     const banner = page.locator("[data-ghpsr-banner]");
     await expect(banner).toContainText(
-      "Add hon454/github-pulls-show-reviewers to @hon454's GitHub App installation",
+      "GitHub could not load all reviewers for hon454/github-pulls-show-reviewers. Check your account permissions and @hon454's GitHub App installation access.",
     );
     const cta = banner.locator("a");
     await expect(cta).toHaveText("Configure access");

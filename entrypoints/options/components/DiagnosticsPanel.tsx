@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { diagnoseRepository } from "../../../src/runtime/diagnostics";
 import {
@@ -15,25 +15,33 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
   const diagnostic = buildRepositoryDiagnostic(state, t);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  const activeRun = useRef<AbortController | null>(null);
+  useEffect(() => () => activeRun.current?.abort(), []);
 
-  async function runDiagnostic(execute: () => Promise<void>) {
+  async function runDiagnostic(
+    execute: (signal: AbortSignal) => Promise<void>,
+  ) {
     if (busyRef.current) {
       return;
     }
 
     busyRef.current = true;
+    const controller = new AbortController();
+    activeRun.current = controller;
     setBusy(true);
     setDiagnostic({ kind: "running" });
     try {
-      await execute();
+      await execute(controller.signal);
     } catch {
-      setDiagnostic({
-        kind: "failed",
-        failures: [{ kind: "unknown" }],
-      });
+      if (!controller.signal.aborted)
+        setDiagnostic({
+          kind: "failed",
+          failures: [{ kind: "unknown" }],
+        });
     } finally {
       busyRef.current = false;
-      setBusy(false);
+      activeRun.current = null;
+      if (!controller.signal.aborted) setBusy(false);
     }
   }
 
@@ -44,8 +52,14 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
       setDiagnostic({ kind: "input-matched" });
       return;
     }
-    await runDiagnostic(async () => {
-      setDiagnostic(await diagnoseRepository(match[1], match[2], "matched"));
+    await runDiagnostic(async (signal) => {
+      const result = await diagnoseRepository(
+        match[1],
+        match[2],
+        "matched",
+        signal,
+      );
+      if (!signal.aborted) setDiagnostic(result);
     });
   }
 
@@ -55,7 +69,7 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
       setDiagnostic({ kind: "input-no-token" });
       return;
     }
-    await runDiagnostic(async () => {
+    await runDiagnostic(async (signal) => {
       const normalized = trimmed
         .replace(/^https:\/\/github\.com\//, "")
         .replace(/\/+$/, "");
@@ -72,7 +86,13 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
         });
         return;
       }
-      setDiagnostic(await diagnoseRepository(match[1], match[2], "no-token"));
+      const result = await diagnoseRepository(
+        match[1],
+        match[2],
+        "no-token",
+        signal,
+      );
+      if (!signal.aborted) setDiagnostic(result);
     });
   }
 

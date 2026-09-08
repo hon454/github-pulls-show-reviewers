@@ -60,6 +60,15 @@ To provide its reviewer visibility feature, the extension may access:
   delayed retries while the document remains present. Session storage clears on
   browser restart; saved accounts remain in local storage.
 - Reviewer responses are cached only for the current page session to avoid duplicate fetches while browsing the same pull request list.
+- Repository account discovery keeps a non-secret ledger in trusted
+  `browser.storage.session`: owning document/tab, repository, opaque generation
+  and discovery IDs, attempted account IDs/revisions and structured failure or
+  success state. It contains no tokens or repository inventory. Admissions
+  survive worker suspension to prevent repeated probes. Explicit new generations
+  replace old details; detected document loss removes its records. A small
+  high-water mark remains while the document is alive so delayed requests cannot
+  reset the attempt budget. Browser restart clears this session data. Successful
+  account choices are not stored as permanent repository/account associations.
 - The extension does not operate its own backend, database, analytics pipeline, or advertising system.
 
 ## Sharing

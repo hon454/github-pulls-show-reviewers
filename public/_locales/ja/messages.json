@@ -551,7 +551,7 @@
     }
   },
   "diagnostics_permission": {
-    "message": "GitHubが$REPOSITORY$へのアクセスを拒否しました。GitHub AppのインストールとPull requests: Read権限を確認してください。",
+    "message": "GitHub が $REPOSITORY$へのアクセスを拒否しました。このアカウントのリポジトリ権限と、GitHub App インストールの Pull requests: Read 権限を確認してください。",
     "description": "Repository diagnostics permission. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -560,7 +560,7 @@
     }
   },
   "diagnostics_not_found": {
-    "message": "このアカウントでは$REPOSITORY$が見つかりませんでした。名前とGitHub Appのアクセス範囲を確認してください。削除済みやアクセス制限の可能性もあります。",
+    "message": "このアカウントでは $REPOSITORY$が見つかりませんでした。名前、アカウントの権限、GitHub App インストールのアクセス範囲を確認してください。削除済み、またはアクセスが制限されている可能性があります。",
     "description": "Repository diagnostics not found. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -746,8 +746,8 @@
     "description": "Expired GitHub session guidance."
   },
   "banner_app_uncovered": {
-    "message": "このページでレビュアーを表示するには、@$OWNER$ の GitHub App インストールに $REPOSITORY$ を追加してください。",
-    "description": "App installation coverage guidance; identifiers remain unchanged.",
+    "message": "$REPOSITORY$のレビュアー情報をすべて取得できませんでした。アカウントのリポジトリ権限と、@$OWNER$の GitHub App インストールのアクセス範囲を確認してください。",
+    "description": "Account permissions and App installation access guidance; identifiers remain unchanged.",
     "placeholders": {
       "repository": {
         "content": "$1"
@@ -924,5 +924,17 @@
   "auth_error_restart": {
     "message": "このサインインを復元できませんでした。新しいコードを取得してサインインしてください。",
     "description": "Device flow session was lost or its interrupted result cannot be recovered; user can request a fresh code."
+  },
+  "diagnostics_pull_unavailable": {
+    "message": "リポジトリへのアクセスは成功しましたが、$REPOSITORY$の PR #$PULL$で 403/404 が返されました。その PR を確認してください。リポジトリ全体にアクセスできないことを意味するものではありません。",
+    "description": "Individual PR access failure after a successful repository probe. Preserve repository and PR identifiers.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      },
+      "pull": {
+        "content": "$2"
+      }
+    }
   }
 }

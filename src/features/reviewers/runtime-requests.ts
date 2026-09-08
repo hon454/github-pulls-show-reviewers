@@ -19,6 +19,8 @@ export async function fetchReviewerSummary(args: {
   pullNumber: string;
   pullMetadata?: PullReviewerMetadata;
   signal: AbortSignal;
+  discoveryId?: string;
+  onAccount?: (account: Account | null) => void;
 }): Promise<PullReviewerSummary> {
   const { account, owner, repo, pullNumber, pullMetadata, signal } = args;
 
@@ -34,6 +36,12 @@ export async function fetchReviewerSummary(args: {
     repo,
     pullNumber,
     accountId: account?.id ?? null,
+    ...(args.discoveryId
+      ? {
+          discoveryId: args.discoveryId,
+          ...(account ? { accountRevision: account.revision } : {}),
+        }
+      : {}),
     ...(pullMetadata == null ? {} : { pullMetadata }),
   }) as Promise<FetchPullReviewerSummaryResponse | undefined>;
 
@@ -62,9 +70,9 @@ export async function fetchReviewerSummary(args: {
 
   try {
     const response = await Promise.race([responsePromise, abortPromise]);
-    return unwrapReviewerFetchResponse(
-      fetchPullReviewerSummaryResponseSchema.parse(response),
-    );
+    const parsed = fetchPullReviewerSummaryResponseSchema.parse(response);
+    if (parsed.account !== undefined) args.onAccount?.(parsed.account);
+    return unwrapReviewerFetchResponse(parsed);
   } finally {
     abortListenerController.abort();
   }
@@ -75,7 +83,10 @@ export async function fetchReviewerMetadataBatch(args: {
   owner: string;
   repo: string;
   targetPullNumbers: string[];
+  refresh?: boolean;
   signal: AbortSignal;
+  discoveryId?: string;
+  onAccount?: (account: Account | null) => void;
 }): Promise<PullReviewerMetadata[]> {
   const { account, owner, repo, signal, targetPullNumbers } = args;
 
@@ -90,7 +101,9 @@ export async function fetchReviewerMetadataBatch(args: {
     owner,
     repo,
     accountId: account?.id ?? null,
+    ...(args.discoveryId ? { discoveryId: args.discoveryId } : {}),
     targetPullNumbers,
+    ...(args.refresh ? { refresh: true } : {}),
   }) as Promise<FetchPullReviewerMetadataBatchResponse | undefined>;
 
   const abortListenerController = new AbortController();
@@ -118,9 +131,9 @@ export async function fetchReviewerMetadataBatch(args: {
 
   try {
     const response = await Promise.race([responsePromise, abortPromise]);
-    return unwrapReviewerMetadataBatchResponse(
-      fetchPullReviewerMetadataBatchResponseSchema.parse(response),
-    );
+    const parsed = fetchPullReviewerMetadataBatchResponseSchema.parse(response);
+    if (parsed.account !== undefined) args.onAccount?.(parsed.account);
+    return unwrapReviewerMetadataBatchResponse(parsed);
   } finally {
     abortListenerController.abort();
   }
@@ -184,7 +197,7 @@ function unwrapReviewerFetchResponse(
   }
 
   if (response?.ok === false) {
-    throw new ReviewerFetchRuntimeError(response.error);
+    throw new ReviewerFetchRuntimeError(response.error, response.account);
   }
 
   throw new Error("Background reviewer fetch failed.");
@@ -198,7 +211,7 @@ function unwrapReviewerMetadataBatchResponse(
   }
 
   if (response?.ok === false) {
-    throw new ReviewerFetchRuntimeError(response.error);
+    throw new ReviewerFetchRuntimeError(response.error, response.account);
   }
 
   throw new Error("Background reviewer metadata fetch failed.");

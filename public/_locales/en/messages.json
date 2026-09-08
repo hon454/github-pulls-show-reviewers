@@ -551,7 +551,7 @@
     }
   },
   "diagnostics_permission": {
-    "message": "GitHub denied access to $REPOSITORY$. Check the GitHub App installation and its Pull requests: Read permission.",
+    "message": "GitHub denied access to $REPOSITORY$. Check this account's repository permissions and the GitHub App installation, including Pull requests: Read.",
     "description": "Repository diagnostics permission. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -560,7 +560,7 @@
     }
   },
   "diagnostics_not_found": {
-    "message": "GitHub could not find $REPOSITORY$ with this account. Verify its name and GitHub App installation access; the repository may be deleted or restricted.",
+    "message": "GitHub could not find $REPOSITORY$ with this account. Verify its name, this account's permissions and GitHub App installation access; the repository may be deleted or restricted.",
     "description": "Repository diagnostics not found. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -746,8 +746,8 @@
     "description": "Expired GitHub session guidance."
   },
   "banner_app_uncovered": {
-    "message": "Add $REPOSITORY$ to @$OWNER$'s GitHub App installation to see reviewers on this page.",
-    "description": "App installation coverage guidance; identifiers remain unchanged.",
+    "message": "GitHub could not load all reviewers for $REPOSITORY$. Check your account permissions and @$OWNER$'s GitHub App installation access.",
+    "description": "Account permissions and App installation access guidance; identifiers remain unchanged.",
     "placeholders": {
       "repository": {
         "content": "$1"
@@ -924,5 +924,17 @@
   "auth_error_restart": {
     "message": "This sign-in could not be restored. Request a new code to sign in.",
     "description": "Device flow session was lost or its interrupted result cannot be recovered; user can request a fresh code."
+  },
+  "diagnostics_pull_unavailable": {
+    "message": "GitHub returned 403/404 for PR #$PULL$ in $REPOSITORY$, after repository access succeeded. Check that PR's availability; this does not mean the whole repository is inaccessible.",
+    "description": "Individual PR access failure after a successful repository probe. Preserve repository and PR identifiers.",
+    "placeholders": {
+      "repository": {
+        "content": "$1"
+      },
+      "pull": {
+        "content": "$2"
+      }
+    }
   }
 }

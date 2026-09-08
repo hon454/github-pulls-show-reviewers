@@ -1,4 +1,5 @@
 import { disposeUIClient } from "../src/runtime/ui-client";
+import { DISCOVERY_DOCUMENT_PROBE } from "../src/runtime/repository-discovery";
 import {
   bootAccessBanner,
   type AccessBannerHandle,
@@ -20,6 +21,20 @@ export default defineContentScript({
   matches: ["https://github.com/*/*"],
   runAt: "document_idle",
   main(ctx) {
+    const documentProbe: Parameters<
+      typeof browser.runtime.onMessage.addListener
+    >[0] = (message, sender, reply) => {
+      if (
+        sender.id === browser.runtime.id &&
+        message?.type === DISCOVERY_DOCUMENT_PROBE
+      )
+        reply({ alive: !ctx.isInvalid });
+      return undefined;
+    };
+    browser.runtime.onMessage?.addListener(documentProbe);
+    ctx.onInvalidated(() =>
+      browser.runtime.onMessage?.removeListener(documentProbe),
+    );
     let aggregator: AccessBannerHandle | null = null;
     let reviewerListBooted = false;
     let bannerPathname: string | null = null;

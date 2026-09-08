@@ -13,14 +13,13 @@ import {
 import type { Root } from "react-dom/client";
 let bridgeHarness: ReturnType<typeof createUIBridgeHarness>;
 let flowClient: ReturnType<ReturnType<typeof createUIBridgeHarness>["client"]>;
-let commitSpy: MockInstance<
-  typeof accountMutations.upsertAccountByLogin
->;
+let commitSpy: MockInstance<typeof accountMutations.upsertAccountByLogin>;
 
 import type * as GitHubApiModule from "../src/github/api";
 import type { RepositoryValidationResult } from "../src/github/api";
 import type { Account } from "../src/storage/accounts";
 import type * as AccountsModule from "../src/storage/accounts";
+import type * as DiagnosticsModule from "../src/runtime/diagnostics";
 
 type AccountsModuleType = typeof AccountsModule;
 type GitHubApiModuleType = typeof GitHubApiModule;
@@ -133,6 +132,45 @@ vi.mock("../src/github/auth", () => ({
 const validateGitHubRepositoryAccessMock = vi.fn(async () =>
   validationResult({ message: "Repository is accessible." }),
 );
+
+// These options presentation fixtures own their deferred validation facts.
+// Production diagnostic discovery and cancellation are verified through the
+// real bridge/service in repository-fallback DOM and repository-accounts tests.
+vi.mock("../src/runtime/diagnostics", async (importActual) => {
+  const actual = await importActual<typeof DiagnosticsModule>();
+  return {
+    ...actual,
+    diagnoseRepository: async (
+      owner: string,
+      repo: string,
+      mode: "matched" | "no-token",
+    ) => {
+      const repository = `${owner}/${repo}`;
+      if (mode === "no-token")
+        return actual.repositoryDiagnosticSchema.parse({
+          kind: "no-token",
+          repository,
+          result: await validateGitHubRepositoryAccessMock(),
+        });
+      const resolution = await resolveAccountCoverageForRepoMock(owner, repo);
+      if (resolution.status === "uncovered")
+        return { kind: "uncovered", repository };
+      // Keep the original fixture's API argument assertion; production UI never
+      // obtains this full synthetic account.
+      const validate = validateGitHubRepositoryAccessMock as unknown as (
+        account: Account,
+        repository: string,
+      ) => Promise<RepositoryValidationResult>;
+      return actual.repositoryDiagnosticSchema.parse({
+        kind: "matched",
+        repository,
+        coverageStatus: resolution.status,
+        account: { login: resolution.account.login },
+        result: await validate(resolution.account, repository),
+      });
+    },
+  };
+});
 
 vi.mock("../src/github/api", async (importActual) => ({
   ...(await importActual<GitHubApiModuleType>()),

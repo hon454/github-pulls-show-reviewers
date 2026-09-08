@@ -1,5 +1,11 @@
 import { getUIClient } from "../../runtime/ui-client";
 import { getLocaleStore } from "../../i18n/browser";
+import {
+  beginRepositoryDiscovery,
+  retireRepositoryDiscovery,
+  type RepositoryDiscovery,
+} from "../../runtime/repository-discovery";
+import { ReviewerFetchRuntimeError } from "../../runtime/reviewer-fetch";
 
 import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
@@ -46,15 +52,15 @@ import {
   collectVisiblePullNumbers,
   createReviewerRowLifecycle,
 } from "./row-lifecycle";
-import {
-  fetchReviewerSummary,
-  isAbortError,
-  shouldRetryWithFallbackAccount,
-} from "./runtime-requests";
+import { fetchReviewerSummary, isAbortError } from "./runtime-requests";
 import { createAbortAwareRequestScheduler } from "./request-scheduler";
 import { buildReviewers } from "./view-model";
 
 export const REVIEWER_SUMMARY_CONCURRENCY_LIMIT = 4;
+// Survives controller remounts in this document. Only explicit page lifecycle
+// invalidation allocates the next generation; rows/locale/TTL cannot allocate it.
+const pageSession = crypto.randomUUID();
+let discoveryGeneration = 0;
 
 export type ReviewerBootOptions = {
   onOutcomes?: (snapshot: ReviewerOutcomeSnapshot) => void;
@@ -77,6 +83,16 @@ export function bootReviewerListPage(
   let generation = 0;
   let disposed = false;
   let hydrated = false;
+  let discovery: Promise<RepositoryDiscovery> | undefined;
+  let activeDiscoveryGeneration = ++discoveryGeneration;
+  function getDiscovery(route: NonNullable<typeof currentRoute>) {
+    discovery ??= beginRepositoryDiscovery({
+      ...route,
+      pageSession,
+      generation: activeDiscoveryGeneration,
+    });
+    return discovery;
+  }
   const mountOperations = new WeakMap<HTMLElement, object>();
   // Keep the last request identity after settlement to reject delayed renders.
   const requestOwners = new Map<string, object>();
@@ -173,8 +189,16 @@ export function bootReviewerListPage(
     onRowsChanged: () => outcomes.reconcile(collectVisiblePullNumbers()),
   });
 
-  function abortInflightRequests(): void {
+  function abortInflightRequests(reopenDiscovery = true): void {
     generation += 1;
+    if (reopenDiscovery) {
+      const previousDiscovery = discovery;
+      discovery = undefined;
+      activeDiscoveryGeneration = ++discoveryGeneration;
+      void previousDiscovery
+        ?.then((value) => retireRepositoryDiscovery(value.id))
+        .catch(() => undefined);
+    }
     for (const request of inflightRequests.values()) {
       request.controller.abort();
     }
@@ -329,6 +353,8 @@ export function bootReviewerListPage(
     const promise = (async () => {
       let account: Account | null = null;
       try {
+        const repositoryDiscovery = await getDiscovery(route);
+        if (!isRequestCurrent()) return;
         account = await accountResolver.resolveAccount(route.owner, route.repo);
         if (!isRequestCurrent()) {
           return;
@@ -338,6 +364,7 @@ export function bootReviewerListPage(
           account,
           targetPullNumbers: collectVisiblePullNumbers(),
           signal: controller.signal,
+          discoveryId: repositoryDiscovery.id,
         });
         if (!isRequestCurrent()) {
           return;
@@ -353,9 +380,11 @@ export function bootReviewerListPage(
           return;
         }
         const pullMetadata = metadataResult.metadata.get(pullNumber);
-        const cachedFallbackAccount =
-          account == null ? fallbackAccounts.read(route.owner) : undefined;
-        const summaryAccount = cachedFallbackAccount ?? account;
+        const summaryAccount =
+          metadataResult.account === undefined
+            ? account
+            : metadataResult.account;
+        let actualSummaryAccount = summaryAccount;
         if (!isRequestCurrent()) {
           return;
         }
@@ -369,13 +398,21 @@ export function bootReviewerListPage(
               repo: route.repo,
               pullNumber,
               signal: controller.signal,
+              discoveryId: repositoryDiscovery.id,
+              onAccount: (actual) => {
+                account = actual;
+                actualSummaryAccount = actual;
+              },
               ...(pullMetadata == null ? {} : { pullMetadata }),
             });
           }, controller.signal);
           if (!isRequestCurrent()) {
             return;
           }
-          setCachedReviewerSummary(cacheKey, summary);
+          setCachedReviewerSummary(cacheKey, summary, {
+            account: actualSummaryAccount,
+            discoveryId: repositoryDiscovery.id,
+          });
           outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
             status: "success",
           });
@@ -383,47 +420,12 @@ export function bootReviewerListPage(
           if (isAbortError(error) || !isRequestCurrent()) {
             return;
           }
-          let failureAccount = summaryAccount;
-          let failureError = error;
-          if (
-            account == null &&
-            summaryAccount == null &&
-            shouldRetryWithFallbackAccount(error)
-          ) {
-            const fallbackAccount = await fallbackAccounts.get(route.owner);
-            if (!isRequestCurrent()) {
-              return;
-            }
-            if (fallbackAccount != null) {
-              try {
-                const summary = await reviewerSummaryScheduler.run(() => {
-                  if (!isRequestCurrent()) controller.abort();
-                  return fetchReviewerSummary({
-                    account: fallbackAccount,
-                    owner: route.owner,
-                    repo: route.repo,
-                    pullNumber,
-                    signal: controller.signal,
-                    ...(pullMetadata == null ? {} : { pullMetadata }),
-                  });
-                }, controller.signal);
-                if (!isRequestCurrent()) {
-                  return;
-                }
-                setCachedReviewerSummary(cacheKey, summary);
-                outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
-                  status: "success",
-                });
-                return;
-              } catch (fallbackError) {
-                if (isAbortError(fallbackError) || !isRequestCurrent()) {
-                  return;
-                }
-                failureAccount = fallbackAccount;
-                failureError = fallbackError;
-              }
-            }
-          }
+          const failureAccount =
+            error instanceof ReviewerFetchRuntimeError &&
+            error.account !== undefined
+              ? error.account
+              : actualSummaryAccount;
+          const failureError = error;
           if (isOperationCurrent())
             clearReviewerMountWithoutCache(mount, cacheKey);
           outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
@@ -540,7 +542,12 @@ export function bootReviewerListPage(
     if (previous && previous.accountsRevision !== snapshot.accountsRevision) {
       clearReviewerCache();
       fallbackAccounts.clear();
-      abortInflightRequests();
+      // A terminal refresh can invalidate its account. Clear obsolete UI work
+      // without laundering the same 401 into a fresh search through B/C.
+      abortInflightRequests(
+        previous.discoveryRevision === undefined ||
+          previous.discoveryRevision !== snapshot.discoveryRevision,
+      );
       rowLifecycle.processRows();
     } else if (displayChanged) renderDisplay(next);
   });

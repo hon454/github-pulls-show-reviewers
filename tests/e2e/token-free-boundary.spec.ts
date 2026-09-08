@@ -8,6 +8,7 @@ import {
   type BrowserContext,
   type Page,
   type CDPSession,
+  type Worker,
 } from "@playwright/test";
 import { createPullListFixtureHtml } from "../helpers/pull-list-fixtures";
 
@@ -357,6 +358,9 @@ test("packaged sign-in, diagnostics, refresh and two-tab settings cross only a t
     await expect(options.getByTestId("diagnostics-status")).toContainText(
       "both passed with the saved token",
     );
+    const reviewsBeforeRefresh = provenance.filter((request) =>
+      request.path.endsWith("/reviews"),
+    ).length;
     await options
       .getByRole("button", { name: "Refresh installations", exact: true })
       .click();
@@ -366,6 +370,16 @@ test("packaged sign-in, diagnostics, refresh and two-tab settings cross only a t
         exact: true,
       }),
     ).toBeEnabled();
+    // The installations button settles before content receives its coverage
+    // notification. Observe that explicit refresh's row request before taking
+    // the render-only baseline, instead of racing it against language changes.
+    await expect
+      .poll(
+        () =>
+          provenance.filter((request) => request.path.endsWith("/reviews"))
+            .length,
+      )
+      .toBe(reviewsBeforeRefresh + 1);
     // Count only OAuth/API work; rerendered avatar requests are presentation.
     const beforePresentation = provenance.length;
     await second.getByTestId("prefs-show-reviewer-name").click();
@@ -731,3 +745,435 @@ for (const schemaVersion of [3, 4])
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+// Production package, synthetic background credentials and real browser sender
+// identities. Only labels are retained in request provenance, never headers.
+test("multi-account repository fallback", async ({ browserName }, testInfo) => {
+  expect(browserName).toBe("chromium");
+  const profile = await mkdtemp(path.join(os.tmpdir(), "ghpsr-fallback-176-"));
+  const context = await launch(profile);
+  const provenance: Array<{
+    account: string;
+    path: string;
+    serviceWorker: boolean;
+  }> = [];
+  let denial = 404;
+  try {
+    await installOptionsAudit(context);
+    await context.route("https://**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname === "github.com" && url.pathname === "/octo/repo/pulls")
+        return route.fulfill({ contentType: "text/html", body: fixture() });
+      if (url.hostname !== "api.github.com") return route.abort();
+      const authorization = await route.request().headerValue("authorization");
+      const account =
+        authorization === `Bearer ${ACCESS}-A`
+          ? "A"
+          : authorization === `Bearer ${ACCESS}-B`
+            ? "B"
+            : "anonymous";
+      provenance.push({
+        account,
+        path: url.pathname,
+        serviceWorker: route.request().serviceWorker() !== null,
+      });
+      if (url.pathname === "/repos/octo/repo/pulls") {
+        if (account === "A") return route.fulfill({ status: denial, json: {} });
+        return route.fulfill({
+          json: [
+            {
+              number: 42,
+              user: { login: "author" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ],
+        });
+      }
+      if (url.pathname === "/repos/octo/repo/pulls/42")
+        return route.fulfill({
+          json: {
+            number: 42,
+            user: { login: "author" },
+            requested_reviewers: [],
+            requested_teams: [],
+          },
+        });
+      if (url.pathname.endsWith("/reviews"))
+        return route.fulfill({
+          json: [
+            {
+              id: 1,
+              state: "APPROVED",
+              submitted_at: "2026-09-08T00:00:00Z",
+              user: { login: "reviewer-b", avatar_url: null },
+            },
+          ],
+        });
+      return route.abort();
+    });
+    const { worker, options } = await installed(context);
+    await options.reload();
+    await seedFallbackAccounts(worker);
+    await expect(options.getByTestId("account-card-fixture-A")).toBeVisible();
+    await expect(options.getByTestId("account-card-fixture-B")).toBeVisible();
+    const page = await context.newPage();
+    for (const status of [404, 403]) {
+      denial = status;
+      provenance.length = 0;
+      const content = await contentContext(
+        context,
+        page,
+        "https://github.com/octo/repo/pulls",
+      );
+      await expect(
+        page.locator('a.ghpsr-avatar[title*="@reviewer-b"]'),
+      ).toHaveCount(1);
+      await expect(page.locator("[data-ghpsr-banner]")).toHaveCount(0);
+      expect(
+        provenance
+          .filter((call) => call.path.endsWith("/pulls"))
+          .map((call) => call.account),
+      ).toEqual(["A", "B"]);
+      expect(
+        provenance
+          .filter((call) => call.path.endsWith("/reviews"))
+          .map((call) => call.account),
+      ).toEqual(["B"]);
+      expect(await evaluateContent(content, storageDenial)).toEqual(denied);
+      const ticket = await worker.evaluate(async () => {
+        const api = (globalThis as unknown as { chrome: NativeChrome }).chrome;
+        const data = (await api.storage.session.get("repository-discovery:v1"))[
+          "repository-discovery:v1"
+        ] as {
+          records: Record<
+            string,
+            {
+              id: string;
+              owner: { lane: string };
+              accountId: string;
+              attempts: Array<{ accountId: string }>;
+            }
+          >;
+        };
+        const records = Object.values(data.records).filter(
+          (entry) => entry.owner.lane === "content",
+        );
+        return {
+          count: records.length,
+          id: records[0]!.id,
+          account: records[0]!.accountId,
+          attempts: records[0]!.attempts.map((attempt) => attempt.accountId),
+          safe: !JSON.stringify(data).includes("SYNTHETIC_"),
+        };
+      });
+      expect(ticket).toMatchObject({
+        count: 1,
+        account: "B",
+        attempts: ["A", "B"],
+        safe: true,
+      });
+      const reply = await evaluateContent<{
+        account: string;
+        safe: boolean;
+        metadata: number;
+      }>(
+        content,
+        `(async () => {
+        const result = await chrome.runtime.sendMessage(${JSON.stringify({ type: "fetchPullReviewerMetadataBatch", requestId: "boundary-176", owner: "octo", repo: "repo", accountId: "A", discoveryId: ticket.id, targetPullNumbers: ["42"] })});
+        return { account: result.account?.id, metadata: result.metadata?.length, safe: !/SYNTHETIC_|"(?:token|accessToken|refreshToken|deviceCode|oldValue|newValue|headers|authorization)"/.test(JSON.stringify(result)) };
+      })()`,
+      );
+      expect(reply).toEqual({ account: "B", metadata: 1, safe: true });
+      const count = provenance.length;
+      for (const language of ["ko", "ja", "zh_CN", "zh_TW", "en"]) {
+        await options.getByTestId("language-select").selectOption(language);
+        await expect(page.locator(".ghpsr-root")).toHaveAttribute(
+          "lang",
+          language.replace("_", "-"),
+        );
+      }
+      expect(provenance).toHaveLength(count);
+      await content.session.detach();
+    }
+    await options.getByTestId("diagnostics-repo").fill("octo/repo");
+    await options.getByTestId("diagnostics-matched").click();
+    await expect(options.getByTestId("diagnostics-fields")).toContainText(
+      "@fixture-B",
+    );
+    await expect(options.getByTestId("diagnostics-status")).toContainText(
+      "both passed with the saved token",
+    );
+    const afterMatched = provenance.length;
+    await options.getByTestId("diagnostics-no-token").click();
+    await expect(options.getByTestId("diagnostics-status")).toContainText(
+      "both passed without a token",
+    );
+    expect(
+      provenance
+        .slice(afterMatched)
+        .every((call) => call.account === "anonymous"),
+    ).toBe(true);
+    expect(provenance.every((call) => call.serviceWorker)).toBe(true);
+    await assertAudit(options);
+    await testInfo.attach("fallback-176-provenance", {
+      body: JSON.stringify({
+        provenance,
+        authenticatedDenials: [404, 403],
+        actualResolvedAccount: "B",
+        contentStorageDenied: true,
+        secretBoundaryViolations: 0,
+        languageOnlyRequests: 0,
+      }),
+      contentType: "application/json",
+    });
+  } finally {
+    await context.close();
+    await rm(profile, { recursive: true, force: true });
+  }
+});
+
+async function seedFallbackAccounts(worker: Worker) {
+  await worker.evaluate(
+    async ({ access, refresh }) => {
+      const api = (globalThis as unknown as { chrome: NativeChrome }).chrome;
+      const now = Date.now();
+      const values: Record<string, unknown> = {
+        settings: { version: 4, accountIds: ["A", "B"] },
+      };
+      for (const id of ["A", "B"]) {
+        values[`account:profile:${id}`] = {
+          id,
+          login: `fixture-${id}`,
+          avatarUrl: null,
+          createdAt: now + (id === "A" ? 0 : 1),
+        };
+        values[`account:auth:${id}`] = {
+          token: `${access}-${id}`,
+          refreshToken: `${refresh}-${id}`,
+          expiresAt: now + 28_800_000,
+          refreshTokenExpiresAt: null,
+          invalidated: false,
+          invalidatedReason: null,
+          credentialGeneration: `fixture-generation-${id}`,
+          connectionAttemptId: `fixture-connection-${id}`,
+        };
+        values[`account:installations:${id}`] = {
+          installations: [
+            {
+              id: 10,
+              account: {
+                login: "octo",
+                type: "Organization",
+                avatarUrl: null,
+              },
+              repositorySelection: "all",
+              repoSnapshot: null,
+            },
+          ],
+          installationsRefreshedAt: now,
+        };
+      }
+      await api.storage.local.set(values);
+    },
+    { access: ACCESS, refresh: REFRESH },
+  );
+}
+
+test("repository discovery budgets survive actual worker suspension", async ({
+  browserName,
+}, testInfo) => {
+  expect(browserName).toBe("chromium");
+  test.setTimeout(60_000);
+  const profile = await mkdtemp(
+    path.join(os.tmpdir(), "ghpsr-discovery-worker-176-"),
+  );
+  const context = await launch(profile);
+  type Schedule = "denied" | "stopped" | "interrupted";
+  let schedule: Schedule = "denied";
+  const calls: string[] = [];
+  let release: (() => void) | undefined;
+  const evidence: unknown[] = [];
+  try {
+    await context.route("https://**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname === "github.com")
+        return route.fulfill({
+          contentType: "text/html",
+          body: createPullListFixtureHtml([], repository),
+        });
+      if (url.hostname !== "api.github.com") return route.abort();
+      const account =
+        (await route.request().headerValue("authorization")) ===
+        `Bearer ${ACCESS}-A`
+          ? "A"
+          : "B";
+      calls.push(account);
+      if (account === "A" && schedule === "interrupted")
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return route
+        .fulfill({
+          status: account === "A" ? (schedule === "stopped" ? 429 : 404) : 200,
+          json: account === "A" ? {} : [],
+        })
+        .catch(() => undefined);
+    });
+    const installedState = await installed(context);
+    await seedFallbackAccounts(installedState.worker);
+    await expect(
+      installedState.options.getByTestId("account-card-fixture-B"),
+    ).toBeVisible();
+    const cdp = await context.newCDPSession(installedState.options);
+    const versions = new Map<
+      string,
+      { versionId: string; scriptURL: string; runningStatus: string }
+    >();
+    let stoppedObserved = false;
+    cdp.on("ServiceWorker.workerVersionUpdated", ({ versions: updates }) => {
+      for (const version of updates) {
+        versions.set(version.versionId, version);
+        if (version.runningStatus === "stopped") stoppedObserved = true;
+      }
+    });
+    await cdp.send("ServiceWorker.enable");
+    for (const current of ["denied", "stopped", "interrupted"] as const) {
+      schedule = current;
+      calls.length = 0;
+      const page = await context.newPage();
+      const content = await contentContext(
+        context,
+        page,
+        "https://github.com/octo/repo/pulls",
+      );
+      const begin = {
+        type: "beginRepositoryDiscovery",
+        pageSession: `worker-${schedule}`,
+        generation: 1,
+        ...repository,
+      };
+      const ticket = await evaluateContent<{ data: { id: string } }>(
+        content,
+        `chrome.runtime.sendMessage(${JSON.stringify(begin)})`,
+      );
+      const request = {
+        type: "fetchPullReviewerMetadataBatch",
+        requestId: `probe-${schedule}`,
+        ...repository,
+        accountId: "A",
+        discoveryId: ticket.data.id,
+      };
+      const worker = context
+        .serviceWorkers()
+        .find((candidate) => candidate.url() === installedState.worker.url())!;
+      if (schedule === "denied")
+        await worker.evaluate(() => {
+          // Crash at a real durable boundary: complete the production denial
+          // write, but hold its acknowledgement before the next admission.
+          const scope = globalThis as unknown as {
+            chrome: NativeChrome;
+            deniedWritten?: boolean;
+          };
+          const set = scope.chrome.storage.session.set.bind(
+            scope.chrome.storage.session,
+          );
+          scope.chrome.storage.session.set = async (items) => {
+            await set(items);
+            const store = (items as Record<string, unknown>)[
+              "repository-discovery:v1"
+            ] as { records?: Record<string, { status: string }> } | undefined;
+            if (
+              Object.values(store?.records ?? {}).some(
+                (record) => record.status === "denied",
+              )
+            ) {
+              scope.deniedWritten = true;
+              await new Promise<void>(() => {});
+            }
+          };
+        });
+      const pending = content.session
+        .send("Runtime.evaluate", {
+          contextId: content.contextId,
+          expression: `chrome.runtime.sendMessage(${JSON.stringify(request)}).catch(() => null)`,
+          awaitPromise: true,
+          returnByValue: true,
+        })
+        .catch(() => null);
+      await expect.poll(() => calls.length).toBe(1);
+      if (schedule === "denied")
+        await expect
+          .poll(() =>
+            worker.evaluate(
+              () =>
+                (globalThis as unknown as { deniedWritten?: boolean })
+                  .deniedWritten,
+            ),
+          )
+          .toBe(true);
+      if (schedule === "stopped") await pending;
+      await expect
+        .poll(() =>
+          [...versions.values()].some(
+            (version) => version.scriptURL === worker.url(),
+          ),
+        )
+        .toBe(true);
+      const version = [...versions.values()].find(
+        (entry) => entry.scriptURL === worker.url(),
+      )!;
+      stoppedObserved = false;
+      await cdp.send("ServiceWorker.stopWorker", {
+        versionId: version.versionId,
+      });
+      await expect.poll(() => stoppedObserved).toBe(true);
+      await pending;
+      release?.();
+      release = undefined;
+      const same = await evaluateContent<{ data: { id: string } }>(
+        content,
+        `chrome.runtime.sendMessage(${JSON.stringify(begin)})`,
+      );
+      expect(same.data.id).toBe(ticket.data.id);
+      const replay = await evaluateContent<{
+        ok: boolean;
+        account?: { id: string };
+        error?: { status: number | null; discoveryOutcome?: string };
+      }>(
+        content,
+        `chrome.runtime.sendMessage(${JSON.stringify({ ...request, requestId: `restored-${schedule}` })})`,
+      );
+      if (schedule === "denied") {
+        expect(replay).toMatchObject({ ok: true, account: { id: "B" } });
+        expect(calls).toEqual(["A", "B"]);
+      } else {
+        expect(replay).toMatchObject({
+          ok: false,
+          error:
+            schedule === "stopped"
+              ? { status: 429 }
+              : { discoveryOutcome: "interrupted" },
+        });
+        expect(calls).toEqual(["A"]);
+      }
+      evidence.push({
+        schedule,
+        sameIdentity: true,
+        stoppedObserved,
+        calls: [...calls],
+        result: replay.ok ? "B-success" : replay.error,
+      });
+      await content.session.detach();
+      await page.close();
+    }
+    await testInfo.attach("actual-discovery-worker-recovery", {
+      body: JSON.stringify(evidence),
+      contentType: "application/json",
+    });
+  } finally {
+    release?.();
+    await context.close();
+    await rm(profile, { recursive: true, force: true });
+  }
+});

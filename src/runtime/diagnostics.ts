@@ -14,10 +14,11 @@ const endpointSchema = z.object({
   path: z.string(),
 });
 export const diagnosticFailureSchema = z.object({
-  kind: z.enum(["http", "schema", "network", "unknown"]),
+  kind: z.enum(["http", "schema", "network", "cancellation", "unknown"]),
   endpoint: endpointSchema.optional(),
   httpStatus: z.number().optional(),
   rateLimit: rateLimitSnapshotSchema.optional(),
+  rateLimited: z.boolean().optional(),
 });
 export type RepositoryDiagnosticFailure = z.infer<
   typeof diagnosticFailureSchema
@@ -82,9 +83,42 @@ export function diagnoseRepository(
   owner: string,
   repo: string,
   mode: "matched" | "no-token",
+  signal?: AbortSignal,
 ) {
-  return requestCapability(
-    { type: "diagnoseRepository", owner, repo, mode },
+  if (signal?.aborted)
+    return Promise.reject(
+      new DOMException("Diagnostic canceled", "AbortError"),
+    );
+  const runId = crypto.randomUUID();
+  const generation = ++diagnosticGeneration;
+  const work = requestCapability(
+    { type: "diagnoseRepository", owner, repo, mode, runId, generation },
     repositoryDiagnosticSchema,
   );
+  if (!signal) return work;
+  return new Promise<z.infer<typeof repositoryDiagnosticSchema>>(
+    (resolve, reject) => {
+      const abort = () => {
+        signal.removeEventListener("abort", abort);
+        void requestCapability(
+          { type: "cancelRepositoryDiagnostic", runId },
+          z.null(),
+        ).catch(() => undefined);
+        reject(new DOMException("Diagnostic canceled", "AbortError"));
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+      work.then(
+        (result) => {
+          signal.removeEventListener("abort", abort);
+          if (!signal.aborted) resolve(result);
+        },
+        (error) => {
+          signal.removeEventListener("abort", abort);
+          reject(error);
+        },
+      );
+    },
+  );
 }
+let diagnosticGeneration = 0;

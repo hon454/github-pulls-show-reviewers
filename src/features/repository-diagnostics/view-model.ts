@@ -174,6 +174,14 @@ function resultMessage(
   t: Translator,
 ): string {
   const repository = result.fullName ?? fallback;
+  if (
+    result.pullNumber &&
+    ["token-permission", "token-not-found"].includes(result.outcome)
+  )
+    return t("diagnostics_pull_unavailable", {
+      repository,
+      pull: result.pullNumber,
+    });
   switch (result.outcome) {
     case "accessible":
       return t(
@@ -272,6 +280,7 @@ function failureFields(
       case "network":
         message = t("diagnostics_network_failure", { endpoint });
         break;
+      case "cancellation":
       case "unknown":
         message = t("diagnostics_unknown_failure", { endpoint });
         break;

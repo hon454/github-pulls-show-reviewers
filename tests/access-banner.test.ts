@@ -250,7 +250,7 @@ describe("formatBannerMessage", () => {
     expect(
       formatBannerMessage({ current: "app-uncovered", repo: TEST_REPO }),
     ).toBe(
-      "Add cinev/shotloom to @cinev's GitHub App installation to see reviewers on this page.",
+      "GitHub could not load all reviewers for cinev/shotloom. Check your account permissions and @cinev's GitHub App installation access.",
     );
   });
 

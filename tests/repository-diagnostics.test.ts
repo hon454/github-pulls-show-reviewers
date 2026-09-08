@@ -249,3 +249,43 @@ it("keeps partial quota evidence and legacy primary evidence without inventing m
     );
   }
 });
+
+it.each(locales)(
+  "distinguishes a missing individual PR from repository denial in %s",
+  (locale) => {
+    const t = createTranslator(locale);
+    const diagnostic = buildMatchedAccountDiagnostic(
+      {
+        repository: "Octo/repo-name",
+        account: { login: "actual-account" },
+        coverageStatus: "covered",
+        result: {
+          ok: false,
+          authMode: "token",
+          outcome: "token-not-found",
+          fullName: "Octo/repo-name",
+          pullNumber: "42",
+          failures: [
+            {
+              kind: "http",
+              httpStatus: 404,
+              endpoint: {
+                name: "pull",
+                method: "GET",
+                path: "/repos/Octo/repo-name/pulls/42",
+              },
+            },
+          ],
+        },
+      },
+      t,
+    );
+    expect(diagnostic.message).toBe(
+      t("diagnostics_pull_unavailable", {
+        repository: "Octo/repo-name",
+        pull: "42",
+      }),
+    );
+    expect(diagnostic.fields[1].value).toBe("@actual-account");
+  },
+);

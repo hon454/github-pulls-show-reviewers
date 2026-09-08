@@ -84,6 +84,7 @@ export interface MessageArgs {
   diagnostics_no_token_rate: { repository: string };
   diagnostics_private_like: { repository: string };
   diagnostics_token_invalid: { repository: string };
+  diagnostics_pull_unavailable: { repository: string; pull: string };
   diagnostics_permission: { repository: string };
   diagnostics_not_found: { repository: string };
   diagnostics_unknown: { repository: string };

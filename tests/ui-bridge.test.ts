@@ -273,8 +273,22 @@ describe("real token-free background capability bridge", () => {
       throw new TypeError(`${SENTINELS.access}/${SENTINELS.refresh}`);
     });
     vi.stubGlobal("fetch", fetch);
+    const begin = async (generation: number) => {
+      const response = (await harness.send(
+        {
+          type: "beginRepositoryDiscovery",
+          owner: "octo",
+          repo: "repo",
+          pageSession: "bridge-test",
+          generation,
+        },
+        contentSender(),
+      )) as { ok: true; data: { id: string } };
+      return response.data.id;
+    };
     const request = {
       type: "fetchPullReviewerSummary",
+      discoveryId: await begin(0),
       requestId: "same",
       owner: "octo",
       repo: "repo",
@@ -299,11 +313,14 @@ describe("real token-free background capability bridge", () => {
       "fetch",
       vi.fn(async (url: string) =>
         json(
-          url.includes("/reviews") || url.includes("/events") ? [] : summary,
+          url.includes("/reviews") || url.includes("/events") ? [] : [summary],
         ),
       ),
     );
-    const success = await harness.send(request, contentSender());
+    const success = await harness.send(
+      { ...request, discoveryId: await begin(1) },
+      contentSender(),
+    );
     expect(success).toMatchObject({
       ok: true,
       summary: { requestedUsers: [{ login: "alice" }] },

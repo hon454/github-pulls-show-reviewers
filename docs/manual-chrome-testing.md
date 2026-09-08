@@ -195,6 +195,47 @@ Those tests verify that malformed or off-endpoint targets receive no second
 OAuth-authenticated request and leave both installation-list and
 selected-repository results truncated.
 
+### Multi-account repository fallback
+
+Use an isolated profile with a fresh local build, synthetic accounts and mocked
+GitHub HTTP. Do not use signed-in GitHub credentials or consume real API quota.
+`pnpm test:e2e:build`, `pnpm verify:locales`, and
+`pnpm exec playwright test --project=default --grep 'multi-account repository fallback'`
+exercise the production packaged service and content boundary. Automated
+Playwright checks and native UI observations must be recorded separately.
+
+1. Seed active A before B, both with the same organization `all` installation.
+   Return 403 or 404 for A's pull-list metadata and valid metadata/reviews for B.
+   Open the PR fixture and verify reviewer chips appear without an intermediate
+   access banner. Check safe request provenance: one A probe, one B probe and B
+   reviews. No real credential belongs in the fixture or evidence.
+2. In options, run matched diagnostics for that repository. It should identify
+   B. Repeat with an empty successful pull list and confirm the no-pulls result
+   is understandable. A missing individual PR must not imply the repository is
+   inaccessible. The explicit no-token button must send anonymous HTTP only.
+3. Change all five languages and the three display settings during a deferred
+   discovery and after success/exhaustion. Existing chips, running/result copy
+   and guidance rerender while candidate admissions and request counts stay put.
+4. Repeat with authenticated 429, exhausted/secondary 403, unresolved 401,
+   mixed 404+429/401, network/schema/server failure and cancellation. Confirm no
+   next candidate is sent. Same-account 401 recovery may precede a later 404
+   and B success; token rotation itself must not open another wave.
+5. Preserve the document and session storage while terminating the actual MV3
+   worker. Confirm recorded denial can resume with an unattempted candidate,
+   stop/exhaustion cannot restart, and an admitted unknown dispatch requires an
+   explicit new generation. A normal port disconnect is insufficient to retire
+   the record. Replacing the document/closing its tab removes obsolete records
+   and cancels active work without accepting late results.
+6. Check more than four rows, queued row removal, stale-chip recovery and a
+   remaining PR failure after other rows succeed. The FIFO cap stays four and
+   the aggregate banner reflects only current final outcomes. Navigation,
+   explicit refresh and account access changes may revalidate; ordinary row
+   mutations, TTL expiry and locale changes must not reset failed admissions.
+
+Record source SHA, package hashes, profile/browser/OS, mocked schedules, request
+provenance and screenshots. These checks establish fixture behavior, not a live
+GitHub permission test.
+
 ### App-uncovered banner
 
 1. Sign in but do not install the App on `work-org`.

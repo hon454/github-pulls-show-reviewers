@@ -58,10 +58,11 @@ export type RepositoryValidationOutcome =
   | "unknown-error";
 
 export type RepositoryValidationEndpointFailure = {
-  kind: "http" | "schema" | "network" | "unknown";
+  kind: "http" | "schema" | "network" | "cancellation" | "unknown";
   endpoint?: GitHubEndpointDescriptor;
   httpStatus?: number;
   rateLimit?: GitHubRateLimitSnapshot;
+  rateLimited?: boolean;
 };
 
 export type RepositoryValidationFailureEvidence = {
@@ -121,9 +122,20 @@ export class GitHubApiError extends Error {
 }
 
 export class GitHubPullRequestEndpointsError extends Error {
-  constructor(public readonly failures: GitHubApiError[]) {
+  constructor(public readonly failures: unknown[]) {
     super("GitHub pull request endpoint diagnostics failed.");
     this.name = "GitHubPullRequestEndpointsError";
+  }
+}
+
+export class GitHubApiTransportError extends Error {
+  constructor(
+    public readonly kind: "network" | "schema" | "cancellation" | "unknown",
+    public readonly endpoint: GitHubEndpointDescriptor,
+  ) {
+    super(`GitHub endpoint ${kind} failure.`);
+    this.name =
+      kind === "cancellation" ? "AbortError" : "GitHubApiTransportError";
   }
 }
 
@@ -145,7 +157,7 @@ export function extractGitHubApiStatus(error: unknown): number | null {
   }
   if (error instanceof GitHubPullRequestEndpointsError) {
     const first = error.failures[0];
-    return first?.status ?? null;
+    return extractGitHubApiStatus(first);
   }
   if (error && typeof error === "object" && "status" in error) {
     const value = (error as { status: unknown }).status;

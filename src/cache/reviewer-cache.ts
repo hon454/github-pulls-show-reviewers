@@ -1,10 +1,13 @@
 import type { PullReviewerSummary } from "../github/api";
+import type { AccountSummary } from "../runtime/ui-contract";
 
 export type CacheKey = `${string}/${string}#${string}`;
 export type ReviewerCacheEntry = {
   summary: PullReviewerSummary;
   fetchedAt: number;
   stale: boolean;
+  account?: Pick<AccountSummary, "id" | "revision"> | null | undefined;
+  discoveryId?: string | undefined;
 };
 
 const DEFAULT_MAX_ENTRIES = 500;
@@ -45,7 +48,11 @@ export function isReviewerCacheEntryFresh(
 export function setCachedReviewerSummary(
   key: CacheKey,
   value: PullReviewerSummary,
-  options: { fetchedAt?: number } = {},
+  options: {
+    fetchedAt?: number;
+    account?: Pick<AccountSummary, "id" | "revision"> | null;
+    discoveryId?: string;
+  } = {},
 ): void {
   if (reviewerCache.has(key)) {
     reviewerCache.delete(key);
@@ -54,6 +61,15 @@ export function setCachedReviewerSummary(
     summary: value,
     fetchedAt: options.fetchedAt ?? Date.now(),
     stale: false,
+    ...(options.account === undefined
+      ? {}
+      : {
+          account: options.account && {
+            id: options.account.id,
+            revision: options.account.revision,
+          },
+        }),
+    ...(options.discoveryId ? { discoveryId: options.discoveryId } : {}),
   });
   while (reviewerCache.size > maxEntries) {
     const oldest = reviewerCache.keys().next().value;
