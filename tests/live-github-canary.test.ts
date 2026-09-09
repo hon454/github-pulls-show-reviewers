@@ -9,6 +9,7 @@ import {
   createCanaryResponseObserver,
   deriveCanaryExpectedOutcome,
   evaluateLiveCanary,
+  isClosedPullListFilter,
   isDifferentPullListPage,
   isTerminalCanaryDomSnapshot,
   sameCanaryPullNumberSet,
@@ -42,6 +43,19 @@ describe("live canary host-row oracle", () => {
         initial,
       ),
     ).toBe(true);
+  });
+
+  it("requires a Closed filter instead of accepting an Open fallback", () => {
+    expect(
+      isClosedPullListFilter(
+        new URL("https://github.com/octo/repo/pulls?q=is%3Apr+is%3Aclosed"),
+      ),
+    ).toBe(true);
+    expect(
+      isClosedPullListFilter(
+        new URL("https://github.com/octo/repo/pulls?q=is%3Apr+is%3Aopen"),
+      ),
+    ).toBe(false);
   });
 
   it("compares host pull-number sets without treating order as a change", () => {

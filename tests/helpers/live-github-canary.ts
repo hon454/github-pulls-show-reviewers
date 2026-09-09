@@ -1331,6 +1331,12 @@ export function isDifferentPullListPage(
   return candidatePage != null && candidatePage !== currentPage;
 }
 
+export function isClosedPullListFilter(candidateUrl: URL): boolean {
+  return /(?:^|\s)is:closed(?:\s|$)/i.test(
+    candidateUrl.searchParams.get("q") ?? "",
+  );
+}
+
 export function sameCanaryPullNumberSet(
   left: readonly string[],
   right: readonly string[],

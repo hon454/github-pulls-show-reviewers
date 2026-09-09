@@ -91,7 +91,7 @@ repository:
 1. A opens the all-state pull list.
 2. B reads and clicks GitHub's actual same-repository pagination link.
 3. C uses browser Back to return to A.
-4. D reads and clicks an actual same-repository Open or Closed filter link.
+4. D reads and clicks GitHub's actual same-repository Closed filter link.
 
 The test does not synthesize `history.pushState` or extension events. It reads
 the native locator and href before each click, verifies the current PR-number

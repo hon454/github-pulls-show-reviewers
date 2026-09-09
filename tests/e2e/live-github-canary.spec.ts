@@ -20,6 +20,7 @@ import {
   createCanaryDiagnostics,
   createCanaryResponseObserver,
   evaluateLiveCanary,
+  isClosedPullListFilter,
   isDifferentPullListPage,
   isTerminalCanaryDomSnapshot,
   sameCanaryPullNumberSet,
@@ -206,14 +207,14 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     phase = "navigation:D";
     navigation = {
       stage: "D",
-      operation: "native-open-closed-filter-click",
+      operation: "native-closed-filter-click",
       previousUrl,
       documentMaintained: null,
     };
-    const filter = await findNativePullListLink(page, repository, (url) =>
-      /(?:^|\s)is:(?:open|closed)(?:\s|$)/i.test(
-        url.searchParams.get("q") ?? "",
-      ),
+    const filter = await findNativePullListLink(
+      page,
+      repository,
+      isClosedPullListFilter,
       "required-filter-link-unavailable",
     );
     await observeMainDocumentResponse(
@@ -237,7 +238,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       apiObserver,
       repository,
       stage: "D",
-      operation: "native-open-closed-filter-click",
+      operation: "native-closed-filter-click",
       targetUrl,
       previousUrl,
       responseStatus: documentResponse.status,
@@ -275,7 +276,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
         verdict: finalVerdict,
         navigation: {
           stage: "D",
-          operation: "native-open-closed-filter-click",
+          operation: "native-closed-filter-click",
           previousUrl,
           documentMaintained: filterDocumentMaintained,
         },
