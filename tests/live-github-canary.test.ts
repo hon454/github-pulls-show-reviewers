@@ -108,6 +108,50 @@ describe("live canary host-row oracle", () => {
         "public-api-request-missing",
       ]),
     );
+
+    document.body.innerHTML = `
+      <main>
+        <div class="js-navigation-container">
+          <div class="new-row"><a href="/octo/repo/pull/42">PR</a></div>
+        </div>
+      </main>`;
+    const unmatchedDom = collectDom();
+    expect(unmatchedDom).toMatchObject({
+      pullListContainerFound: true,
+      hostPullNumbers: [],
+      unmatchedPullListLinkCount: 1,
+    });
+    expect(
+      failureCodes(unmatchedDom, {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("host-pull-row-unmatched");
+
+    document.body.innerHTML = `
+      <main>
+        <div class="js-navigation-container">
+          <div id="issue_42"><a href="/octo/repo/pull/42">PR</a></div>
+          <span data-ghpsr-root></span>
+        </div>
+      </main>`;
+    const orphanDom = collectDom();
+    expect(orphanDom).toMatchObject({
+      hostPullNumbers: ["42"],
+      orphanMountCount: 1,
+    });
+    expect(
+      failureCodes(orphanDom, {
+        apiRequestCount: 1,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 1,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("orphan-mount-present");
   });
 });
 
@@ -785,6 +829,7 @@ function positiveDom(): CanaryDomSnapshot {
   return {
     mainFound: true,
     pullListContainerFound: true,
+    unmatchedPullListLinkCount: 0,
     orphanMountCount: 0,
     challengeDetected: false,
     ignoredPullLinkCount: 0,

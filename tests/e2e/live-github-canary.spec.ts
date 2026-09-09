@@ -92,7 +92,9 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       responseStatus,
       documentMaintained: null,
     });
+    const initialDom = latestDom;
 
+    responseStatus = null;
     previousUrl = page.url();
     const initialDocument = await page.evaluateHandle(() => document);
     phase = "navigation:B";
@@ -128,8 +130,10 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       documentMaintained: pageTwoDocumentMaintained,
     });
     expect(page.url()).not.toBe(previousUrl);
-    expect(pageTwoDom.hostPullNumbers).not.toEqual(latestDom.hostPullNumbers);
+    expect(pageTwoDom.hostPullNumbers).not.toEqual(initialDom.hostPullNumbers);
+    latestDom = pageTwoDom;
 
+    responseStatus = null;
     previousUrl = page.url();
     const pageTwoDocument = await page.evaluateHandle(() => document);
     phase = "navigation:C";
@@ -159,8 +163,10 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       responseStatus: null,
       documentMaintained: restoredDocumentMaintained,
     });
-    expect(restoredDom.hostPullNumbers).toEqual(latestDom.hostPullNumbers);
+    expect(restoredDom.hostPullNumbers).toEqual(initialDom.hostPullNumbers);
+    latestDom = restoredDom;
 
+    responseStatus = null;
     previousUrl = page.url();
     const restoredDocument = await page.evaluateHandle(() => document);
     phase = "navigation:D";
@@ -195,6 +201,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       responseStatus: null,
       documentMaintained: filterDocumentMaintained,
     });
+    latestDom = filteredDom;
     expect(page.url()).not.toBe(previousUrl);
     expect(filteredDom.hostPullNumbers).not.toEqual(
       restoredDom.hostPullNumbers,
@@ -406,6 +413,7 @@ function emptyDomSnapshot(): CanaryDomSnapshot {
   return {
     mainFound: false,
     pullListContainerFound: false,
+    unmatchedPullListLinkCount: 0,
     orphanMountCount: 0,
     challengeDetected: false,
     ignoredPullLinkCount: 0,

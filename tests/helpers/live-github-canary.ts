@@ -558,6 +558,7 @@ export type CanaryDomRow = {
 export type CanaryDomSnapshot = {
   mainFound: boolean;
   pullListContainerFound: boolean;
+  unmatchedPullListLinkCount: number;
   orphanMountCount: number;
   challengeDetected: boolean;
   ignoredPullLinkCount: number;
@@ -705,6 +706,7 @@ export function collectLiveCanaryDomSnapshot(input: {
     return {
       mainFound: false,
       pullListContainerFound: false,
+      unmatchedPullListLinkCount: 0,
       orphanMountCount: 0,
       challengeDetected,
       ignoredPullLinkCount: 0,
@@ -719,13 +721,14 @@ export function collectLiveCanaryDomSnapshot(input: {
   // present list container with no PR links is a normal empty result; a bare
   // main region with neither rows nor the list container is selector/host
   // evidence failure, not a silently accepted empty list.
-  const pullListContainerFound =
-    main.querySelector(
-      ".js-navigation-container, [data-testid='issues-list']",
-    ) != null;
+  const pullListContainer = main.querySelector(
+    ".js-navigation-container, [data-testid='issues-list']",
+  );
+  const pullListContainerFound = pullListContainer != null;
 
   const hostRows = new Map<string, { row: Element; links: Set<Element> }>();
   let ignoredPullLinkCount = 0;
+  let unmatchedPullListLinkCount = 0;
   main.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((link) => {
     const pullNumber = parsePullNumber(link.getAttribute("href"));
     if (pullNumber == null) return;
@@ -734,6 +737,7 @@ export function collectLiveCanaryDomSnapshot(input: {
       // Exact PR links in prose, advertising, or other main-page content are
       // intentionally outside the pull-list denominator.
       ignoredPullLinkCount += 1;
+      if (pullListContainer?.contains(link)) unmatchedPullListLinkCount += 1;
       return;
     }
     const existing = hostRows.get(pullNumber) ?? { row, links: new Set() };
@@ -797,6 +801,7 @@ export function collectLiveCanaryDomSnapshot(input: {
   return {
     mainFound: true,
     pullListContainerFound,
+    unmatchedPullListLinkCount,
     orphanMountCount,
     challengeDetected,
     ignoredPullLinkCount,
@@ -1099,8 +1104,13 @@ export function evaluateLiveCanary(input: {
   if (input.dom.challengeDetected) fail("environment", "github-challenge");
   if (input.dom.activeFailureBannerCount > 0)
     fail("extension", "failure-banner-present");
-  if (hasVerifiedEmptyList && input.dom.orphanMountCount > 0)
-    fail("extension", "empty-list-mount");
+  if (input.dom.unmatchedPullListLinkCount > 0)
+    fail("environment", "host-pull-row-unmatched");
+  if (input.dom.orphanMountCount > 0)
+    fail(
+      "extension",
+      hasVerifiedEmptyList ? "empty-list-mount" : "orphan-mount-present",
+    );
   if (input.dom.hostPullNumbers.length === 0 && !hasVerifiedEmptyList)
     fail("environment", "host-pull-rows-missing");
   if (input.api.apiRequestCount === 0 && !hasVerifiedEmptyList)
@@ -1265,6 +1275,7 @@ export function createCanaryDiagnostics(input: {
     host: {
       mainFound: input.dom.mainFound,
       pullListContainerFound: input.dom.pullListContainerFound,
+      unmatchedPullListLinkCount: input.dom.unmatchedPullListLinkCount,
       challengeDetected: input.dom.challengeDetected,
       independentRowCount: input.dom.hostPullNumbers.length,
       productionRowCount: new Set(input.dom.productionPullNumbers).size,

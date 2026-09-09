@@ -134,6 +134,87 @@ test("packaged canary oracle rejects list success with failed review detail", as
   });
 });
 
+test("packaged canary rejects a selector-drift zero-row list with an unmatched PR link", async () => {
+  await withExtension(async (context) => {
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routePullListHtml(
+      context,
+      `<main><div class="js-navigation-container"><div class="new-row"><a href="/${repository.owner}/${repository.repo}/pull/42">PR</a></div></div></main>`,
+    );
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await observer.settle();
+    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+      repository,
+      productionRowSelector: githubSelectors.row,
+    });
+    const verdict = evaluateLiveCanary({
+      repository,
+      dom,
+      api: observer.snapshot(),
+    });
+
+    expect(dom).toMatchObject({
+      pullListContainerFound: true,
+      hostPullNumbers: [],
+      unmatchedPullListLinkCount: 1,
+    });
+    expect(verdict.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "host-pull-row-unmatched" }),
+      ]),
+    );
+    expect(verdict.ok).toBe(false);
+  });
+});
+
+test("packaged canary rejects an orphan mount beside an otherwise settled current row", async () => {
+  await withExtension(async (context) => {
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routePullListHtml(
+      context,
+      `${createPullListFixtureHtml(["42"], repository).replace("</div>\n        </main>", "</div><span data-ghpsr-root></span>\n        </main>")}`,
+    );
+    await routeMetadata(context, [metadata(42, ["alice"])]);
+    await routeReviews(context, { "42": [] });
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await expect
+      .poll(async () => {
+        const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
+          repository,
+          productionRowSelector: githubSelectors.row,
+        });
+        return snapshot.rows[0]?.loadingMountCount ?? 1;
+      })
+      .toBe(0);
+    await observer.settle();
+    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+      repository,
+      productionRowSelector: githubSelectors.row,
+    });
+    const verdict = evaluateLiveCanary({
+      repository,
+      dom,
+      api: observer.snapshot(),
+    });
+
+    expect(dom.orphanMountCount).toBe(1);
+    expect(verdict.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "orphan-mount-present" }),
+      ]),
+    );
+    expect(verdict.ok).toBe(false);
+  });
+});
+
 test("packaged canary recovers one mount per current row across pagination, back, forward, and filter navigation", async () => {
   await withExtension(async (context) => {
     const initialUrl = `${pullListUrl}?q=is%3Apr`;
@@ -257,6 +338,15 @@ async function routePullList(
       contentType: "text/html",
       body: createPullListFixtureHtml(pullNumbers, repository),
     });
+  });
+}
+
+async function routePullListHtml(
+  context: BrowserContext,
+  body: string,
+): Promise<void> {
+  await context.route(pullListUrl, async (route) => {
+    await route.fulfill({ status: 200, contentType: "text/html", body });
   });
 }
 

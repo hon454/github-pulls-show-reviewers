@@ -103,8 +103,12 @@ limit, or insufficient sample fails the required sequence rather than skipping
 it.
 
 A host-confirmed empty list is valid only when its independent list container
-is present and it has zero rows and zero mounts. A missing list container with
-zero discovered rows remains a selector/host failure, not an empty result.
+is present and it has zero rows, zero mounts, and no unmatched exact PR link
+inside that container. A missing list container or an unmatched list PR link
+with zero discovered rows remains a selector/host failure, not an empty result.
+An orphan reviewer mount is a failure in every stage, including non-empty
+lists, so a late prior-generation result cannot be hidden outside the current
+row denominator.
 
 `.github/workflows/live-github-dom-canary.yml` runs the live project daily at
 06:17 UTC and can also be started with `workflow_dispatch`. The workflow has
