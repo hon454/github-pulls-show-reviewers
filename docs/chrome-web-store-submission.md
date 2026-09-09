@@ -226,11 +226,12 @@ reviewed source and reuses its verified artifact without another CWS submission.
 Expected package path after `pnpm zip:release`:
 
 ```text
-.output/github-pulls-show-reviewers-1.17.2-chrome.zip
+.output/github-pulls-show-reviewers-1.18.0-chrome.zip
 ```
 
-See the [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) for local
-package, capture and validation evidence. This target
+See the [v1.18.0 release notes](./releases/v1.18.0.md) for this version's scope.
+Its source-bound capture and local package-validation evidence belongs in the
+release-preparation PR and handoff. This target
 does not attest an uploaded draft, saved listings or publication.
 
 ## Localization boundary

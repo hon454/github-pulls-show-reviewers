@@ -27,9 +27,10 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
-The [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) records the
-version-bound recapture, individual visual checks and production-package rerun;
-it is local preparation, not a CWS receipt or saved-listing attestation.
+The [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) remains
+historical local preparation, not a CWS receipt or saved-listing attestation.
+Each later release must bind a fresh capture manifest and production-package
+verification to its own exact source before any Store action.
 
 Use the five source-controlled descriptions and ordered screenshot inventories:
 [English](./chrome-web-store-locales/en.md),
