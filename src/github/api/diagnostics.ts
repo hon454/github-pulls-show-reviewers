@@ -1,3 +1,4 @@
+import { ReviewerTimeoutError } from "../../shared/reviewer-deadline";
 import { pullListSchema, rateLimitSchema } from "./schemas";
 import {
   createGitHubApiError,
@@ -491,6 +492,14 @@ export function extractRepositoryValidationFailures(
         ...(hasRateLimitEvidence(error.rateLimit)
           ? { rateLimit: error.rateLimit }
           : {}),
+      },
+    ];
+  }
+  if (error instanceof ReviewerTimeoutError) {
+    return [
+      {
+        kind: "timeout",
+        ...(fallbackEndpoint ? { endpoint: fallbackEndpoint } : {}),
       },
     ];
   }

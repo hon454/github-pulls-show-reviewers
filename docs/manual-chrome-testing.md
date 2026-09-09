@@ -373,6 +373,40 @@ credentials into logs or test reports.
 5. Confirm the changed reviewer or team state appears without a full browser
    page reload.
 
+### Stalled reviewer requests
+
+Use the packaged deterministic fixture, without real accounts or intentionally
+exhausting GitHub limits:
+
+```bash
+pnpm test:e2e:build
+pnpm exec playwright test --project=default tests/e2e/reviewer-deadlines.spec.ts --workers=1
+```
+
+The fixture uses the production deadlines. It first loads eight completed
+reviewer chips, then holds the first four revalidation responses. Changing
+language/display must retain those chips and the four active requests. After
+30 seconds the failed operations release their slots, the next four progress,
+and the page shows one unavailable/reload banner. A subsequent fixture
+navigation succeeds; releasing the old responses must not overwrite its chips.
+A separate held shared metadata request must clear all eight loading states
+after 30 seconds with one metadata HTTP call and no per-row fallback calls.
+The optional-events fixture returns a confirmed re-request on the first page,
+then holds the second page through the production 10-second limit. The confirmed
+request keeps its badge; the other requested reviewer remains unverified with
+no failure banner. A display change and late second-page reply must neither
+replace that evidence nor trigger another request.
+
+For headers followed by stalled bodies, later pages, refresh waiting, lost
+worker replies and exact completion/cancellation races, run the fake-clock
+regressions in `reviewer-http-deadlines`, `reviewer-runtime-requests`,
+`repository-accounts`, `auth-generation` and `access-banner-recovery` tests.
+They check the 35-second dispatched-message safeguard, external cancellation,
+shared refresh/commit ownership, stale cache/DOM protection and render-only
+locale changes. Injected test clocks do not change production constants. Record
+the tested SHA, build, Node/pnpm/Chromium versions, commands and result artifacts;
+fixture coverage is not live GitHub or store-release verification.
+
 ## 5. Rebuild and reload during iteration
 
 The official Chrome docs note that manifest changes, service worker changes, and content script changes require an extension reload, and content script changes also require reloading the host page.

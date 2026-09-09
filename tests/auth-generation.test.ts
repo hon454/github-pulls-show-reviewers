@@ -474,3 +474,88 @@ describe("deferred authenticated service schedules", () => {
     expect(http.requests.filter((r) => r.kind === "refresh").length).toBe(1);
   });
 });
+
+describe("reviewer deadline and shared auth ownership", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("detaches a timed-out reviewer from shared refresh without retry or invalidation", async () => {
+    vi.useFakeTimers();
+    const account = await accountMutations.upsertAccountByLogin(connectInput());
+    const reviewer = createReviewerFetchService({
+      refreshCoordinator: coordinator,
+    }).handleFetchMessage(message("deadline"));
+    (await http.next()).response.resolve(json({}, 401));
+    const refresh = await http.next();
+    const other = coordinator.refreshAccountToken(
+      account.id,
+      credentialGeneration(account),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await reviewer).toMatchObject({
+      ok: false,
+      error: { status: null, failures: [{ kind: "timeout" }] },
+    });
+    expect(http.requests).toHaveLength(2);
+    refresh.response.resolve(rotated("1"));
+    expect(await other).toMatchObject({ ok: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(http.requests).toHaveLength(2);
+    expect(await accountMutations.getAccountById(account.id)).toMatchObject({
+      invalidated: false,
+      token: "fixture-access-1",
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not cancel an already admitted auth commit when its reviewer expires", async () => {
+    vi.useFakeTimers();
+    await accountMutations.upsertAccountByLogin(connectInput());
+    const reviewer = createReviewerFetchService({
+      refreshCoordinator: coordinator,
+    }).handleFetchMessage(message("commit-deadline"));
+    (await http.next()).response.resolve(json({}, 401));
+    const refresh = await http.next();
+    const barrier = storage.pauseSet();
+    refresh.response.resolve(rotated("1"));
+    await barrier.entered.promise;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await reviewer).toMatchObject({
+      ok: false,
+      error: { failures: [{ kind: "timeout" }] },
+    });
+    barrier.release.resolve();
+    expect(await accountMutations.getAccountById("acc-1")).toMatchObject({
+      invalidated: false,
+      token: "fixture-access-1",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(http.requests).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("shares one original deadline across same-account recovery and retry", async () => {
+    vi.useFakeTimers();
+    await accountMutations.upsertAccountByLogin(connectInput());
+    const reviewer = createReviewerFetchService({
+      refreshCoordinator: coordinator,
+    }).handleFetchMessage(message("retry-deadline"));
+    const first = await http.next();
+    await vi.advanceTimersByTimeAsync(20_000);
+    first.response.resolve(json({}, 401));
+    (await http.next()).response.resolve(rotated("1"));
+    const retry = await http.next();
+    expect(retry.credential).toBe("1");
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await reviewer).toMatchObject({
+      ok: false,
+      error: { failures: [{ kind: "timeout" }] },
+    });
+    retry.response.resolve(json({}, 401));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await accountMutations.getAccountById("acc-1")).toMatchObject({
+      invalidated: false,
+    });
+    expect(http.requests).toHaveLength(3);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

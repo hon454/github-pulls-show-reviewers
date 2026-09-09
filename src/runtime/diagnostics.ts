@@ -14,7 +14,14 @@ const endpointSchema = z.object({
   path: z.string(),
 });
 export const diagnosticFailureSchema = z.object({
-  kind: z.enum(["http", "schema", "network", "cancellation", "unknown"]),
+  kind: z.enum([
+    "http",
+    "schema",
+    "network",
+    "cancellation",
+    "timeout",
+    "unknown",
+  ]),
   endpoint: endpointSchema.optional(),
   httpStatus: z.number().optional(),
   rateLimit: rateLimitSnapshotSchema.optional(),

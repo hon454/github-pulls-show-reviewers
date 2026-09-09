@@ -68,3 +68,22 @@ it("validates fallback account replies at the UI boundary", async () => {
   sendMessage.mockResolvedValueOnce({ ok: true, data: { token: "synthetic" } });
   await expect(resolveFallbackAccount("owner", "repo")).rejects.toThrow();
 });
+
+it("preserves safe timeout facts through diagnostic parsing without inventing HTTP status", async () => {
+  const { diagnosticFailureSchema, repositoryDiagnosticSchema } =
+    await import("../src/runtime/diagnostics");
+  const { extractRepositoryValidationFailures } =
+    await import("../src/github/api");
+  const { ReviewerTimeoutError } =
+    await import("../src/shared/reviewer-deadline");
+  const failures = extractRepositoryValidationFailures(
+    new ReviewerTimeoutError(),
+  );
+  expect(failures).toEqual([{ kind: "timeout" }]);
+  expect(diagnosticFailureSchema.parse(failures[0])).toEqual({
+    kind: "timeout",
+  });
+  expect(
+    repositoryDiagnosticSchema.parse({ kind: "failed", failures }),
+  ).toEqual({ kind: "failed", failures });
+});

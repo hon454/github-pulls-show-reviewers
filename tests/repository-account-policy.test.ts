@@ -319,3 +319,11 @@ describe("authenticated failure policy", () => {
     expect(JSON.stringify(facts)).toBe(before);
   });
 });
+
+it("timeout never admits another account or initiates authentication recovery", () => {
+  for (const other of [401, 403, 404, 429, 500]) {
+    expect(
+      classify([failure(other), failure(null, { kind: "timeout" })]),
+    ).toEqual({ kind: "stop", reason: "non-access-failure" });
+  }
+});

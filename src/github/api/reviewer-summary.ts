@@ -1,4 +1,10 @@
 import {
+  REVIEWER_DEADLINES,
+  ReviewerTimeoutError,
+  throwIfReviewerAborted,
+  createReviewerDeadline,
+} from "../../shared/reviewer-deadline";
+import {
   normalizeAvatarUrl,
   pullReviewerMetadataListSchema,
   pullSchema,
@@ -15,6 +21,7 @@ import {
   createGitHubApiErrorFromResponse,
   createGitHubHeaders,
   fetchGitHubApiResponse,
+  readGitHubResponseJson,
 } from "./request";
 import {
   GitHubApiSchemaError,
@@ -82,6 +89,7 @@ export async function fetchPullReviewerSummary(input: {
     const failure = await createGitHubApiErrorFromResponse(
       reviewsFirstResponse,
       reviewsEndpoint,
+      input.signal,
     );
     if (failure != null) {
       throw new GitHubPullRequestEndpointsError([failure]);
@@ -127,7 +135,9 @@ export async function fetchPullReviewerSummary(input: {
   // Promise.all's first rejection must not hide a sibling's 401/rate limit.
   const results = await Promise.allSettled([
     readEndpoint(pullUrl, pullEndpoint, async (response) => {
-      const parsed = pullSchema.safeParse(await response.json());
+      const parsed = pullSchema.safeParse(
+        await readGitHubResponseJson(response, input.signal),
+      );
       if (!parsed.success) throw new GitHubApiSchemaError(pullEndpoint);
       return parsed.data;
     }),
@@ -162,11 +172,16 @@ export async function fetchPullReviewerSummary(input: {
   ): Promise<T> {
     try {
       const response = await fetchGitHubApiResponse(url, headers, input.signal);
-      const error = await createGitHubApiErrorFromResponse(response, endpoint);
+      const error = await createGitHubApiErrorFromResponse(
+        response,
+        endpoint,
+        input.signal,
+      );
       if (error) throw error;
       return await parse(response);
     } catch (error) {
       if (
+        error instanceof ReviewerTimeoutError ||
         error instanceof GitHubApiError ||
         error instanceof GitHubApiSchemaError ||
         error instanceof GitHubPullRequestEndpointsError
@@ -223,7 +238,11 @@ export async function fetchPullReviewerMetadataBatch(input: {
     input.signal,
   );
 
-  const failure = await createGitHubApiErrorFromResponse(response, endpoint);
+  const failure = await createGitHubApiErrorFromResponse(
+    response,
+    endpoint,
+    input.signal,
+  );
   if (failure != null) {
     throw failure;
   }
@@ -365,22 +384,28 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
     params.pullNumber,
   );
   const firstPageUrl = `https://api.github.com${endpoint.path}?per_page=100`;
+  const deadline = createReviewerDeadline(
+    REVIEWER_DEADLINES.events,
+    params.signal,
+  );
 
   try {
     const firstResponse = await fetchGitHubApiResponse(
       firstPageUrl,
       params.headers,
-      params.signal,
+      deadline.signal,
     );
 
     const failure = await createGitHubApiErrorFromResponse(
       firstResponse,
       endpoint,
+      deadline.signal,
     );
     if (failure != null) {
       throw new GitHubPullRequestEndpointsError([failure]);
     }
 
+    // The collector retains earlier pages when a later request/body expires.
     const result =
       await collectGitHubApiPagesDetailed<GitHubReviewRequestEvent>({
         firstResponse,
@@ -390,9 +415,11 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
         pageBudget: REVIEW_REQUEST_EVENT_PAGE_BUDGET,
         mapNextPageError: (error) =>
           new GitHubPullRequestEndpointsError([error]),
-        ...(params.signal == null ? {} : { signal: params.signal }),
+        signal: deadline.signal,
       });
 
+    // Only optional expiration may degrade; the mandatory owner still wins.
+    throwIfReviewerAborted(params.signal);
     if (result.status === "unavailable" && isAbortError(result.error)) {
       throw result.error;
     }
@@ -410,6 +437,7 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
       ),
     };
   } catch (error) {
+    throwIfReviewerAborted(params.signal);
     if (isAbortError(error)) {
       throw error;
     }
@@ -420,6 +448,8 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
       status: "unavailable",
       latestValidRequestByLogin: new Map(),
     };
+  } finally {
+    deadline.dispose();
   }
 }
 

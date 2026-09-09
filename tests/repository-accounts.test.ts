@@ -1032,3 +1032,271 @@ it.each([429, 401, 500, "network", "schema"])(
     expect(http.calls.some((call) => call.account === "B")).toBe(false);
   },
 );
+
+describe("shared repository metadata deadline", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("keeps the original 30s across subscribers and stops admission without invalidation", async () => {
+    vi.useFakeTimers();
+    await add("A");
+    await add("B");
+    const gate = deferred<Response>();
+    const entered = deferred<void>();
+    const http = mockHttp(() => {
+      entered.resolve();
+      return gate.promise;
+    });
+    const discovery = await begin();
+    const firstSignal = new AbortController();
+    const first = service
+      .metadata(owner, discovery, firstSignal.signal)
+      .catch((error: unknown) => error);
+    await entered.promise;
+    await vi.advanceTimersByTimeAsync(20_000);
+    const second = service
+      .metadata(owner, discovery, signal())
+      .catch((error: unknown) => error);
+    firstSignal.abort();
+    expect(await first).toMatchObject({ name: "AbortError" });
+    expect(http.calls[0].signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await second).toMatchObject({
+      envelope: {
+        status: null,
+        failures: [{ kind: "timeout" }],
+        discoveryOutcome: "unavailable",
+      },
+    });
+    expect(http.calls[0].signal?.aborted).toBe(true);
+    const record = await service.ledger.read(owner, discovery.id);
+    expect(record.status).toBe("stopped");
+    expect(record.attempts.map((attempt) => attempt.accountId)).toEqual(["A"]);
+    for (const id of ["A", "B"])
+      expect((await accountMutations.getAccountById(id))?.invalidated).toBe(
+        false,
+      );
+    gate.resolve(json(pulls()));
+    await vi.advanceTimersByTimeAsync(0);
+    const again = await failure(service.metadata(owner, discovery, signal()));
+    expect(again.envelope.failures?.[0].kind).toBe("timeout");
+    expect(http.calls.map((call) => call.account)).toEqual(["A"]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("terminates every shared metadata subscriber without duplicate HTTP", async () => {
+    vi.useFakeTimers();
+    const entered = deferred<void>();
+    const http = mockHttp(() => {
+      entered.resolve();
+      return new Promise(() => {});
+    });
+    const discovery = await begin();
+    const consumers = Array.from({ length: 8 }, () =>
+      service
+        .metadata(owner, discovery, signal())
+        .catch((error: unknown) => error),
+    );
+    await entered.promise;
+    await vi.advanceTimersByTimeAsync(30_000);
+    for (const result of await Promise.all(consumers))
+      expect(result).toMatchObject({
+        envelope: { failures: [{ kind: "timeout" }] },
+      });
+    expect(http.calls).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("lets another consumer finish just before timeout after one cancels", async () => {
+    vi.useFakeTimers();
+    const gate = deferred<Response>();
+    const entered = deferred<void>();
+    const http = mockHttp(() => {
+      entered.resolve();
+      return gate.promise;
+    });
+    const discovery = await begin();
+    const controller = new AbortController();
+    const first = service
+      .metadata(owner, discovery, controller.signal)
+      .catch((error: unknown) => error);
+    const second = service.metadata(owner, discovery, signal());
+    await entered.promise;
+    await vi.advanceTimersByTimeAsync(20_000);
+    controller.abort();
+    expect(await first).toMatchObject({ name: "AbortError" });
+    await vi.advanceTimersByTimeAsync(9_999);
+    gate.resolve(json(pulls()));
+    expect((await second).metadata?.[0].number).toBe("42");
+    await vi.advanceTimersByTimeAsync(1);
+    expect(http.calls[0].signal?.aborted).toBe(false);
+    expect(http.calls).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels HTTP on last detach and prevents late metadata in a new generation", async () => {
+    vi.useFakeTimers();
+    const gate = deferred<Response>();
+    const entered = deferred<void>();
+    let count = 0;
+    const http = mockHttp(() => {
+      if (++count === 1) {
+        entered.resolve();
+        return gate.promise;
+      }
+      return json(pulls([43]));
+    });
+    const discovery = await begin();
+    const controller = new AbortController();
+    const first = service
+      .metadata(owner, discovery, controller.signal)
+      .catch((error: unknown) => error);
+    await entered.promise;
+    controller.abort();
+    expect(await first).toMatchObject({ name: "AbortError" });
+    expect(http.calls[0].signal?.aborted).toBe(true);
+    await service.retire(owner, discovery.id);
+    const next = await begin(1);
+    expect(
+      (await service.metadata(owner, next, signal())).metadata?.[0].number,
+    ).toBe("43");
+    gate.resolve(json(pulls([42])));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(
+      (await service.metadata(owner, next, signal())).metadata?.[0].number,
+    ).toBe("43");
+    expect(http.calls).toHaveLength(3); // Existing metadata freshness expires at 10s; no old-generation write.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+it("expires a production summary's refresh waiter without retiring successful discovery or invalidating accounts", async () => {
+  vi.useFakeTimers();
+  try {
+    await add("A");
+    await add("B");
+    const gate = deferred<{ ok: true; generation: string }>();
+    const entered = deferred<void>();
+    vi.spyOn(coordinator, "refreshAccountToken").mockImplementation(() => {
+      entered.resolve();
+      return gate.promise;
+    });
+    const invalidate = vi.spyOn(coordinator, "invalidateAccountToken");
+    const http = mockHttp((_account, path) =>
+      json(
+        path.endsWith("/pulls") ? pulls() : {},
+        path.endsWith("/pulls") ? 200 : 401,
+      ),
+    );
+    const discovery = await begin();
+    await service.metadata(owner, discovery, signal());
+    const work = service
+      .summary(owner, discovery, { pullNumber: "42", signal: signal() })
+      .catch((error: unknown) => error);
+    await entered.promise;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await work).toMatchObject({
+      envelope: { status: null, failures: [{ kind: "timeout" }] },
+    });
+    expect((await service.ledger.read(owner, discovery.id)).status).toBe(
+      "success",
+    );
+    gate.resolve({ ok: true, generation: "late" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(http.calls.map((call) => call.account)).toEqual(["A", "A"]);
+    expect((await accountMutations.getAccountById("A"))?.invalidated).toBe(
+      false,
+    );
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+describe("absolute deadlines while timer callbacks are delayed", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each(["headers", "body"])(
+    "does not admit another account after an expired metadata %s failure",
+    async (boundary) => {
+      vi.useFakeTimers();
+      await add("A");
+      await add("B");
+      const headerGate = deferred<Response>();
+      const bodyGate = deferred<unknown>();
+      const entered = deferred<void>();
+      const http = mockHttp((account) => {
+        if (account !== "A") return json(pulls());
+        if (boundary === "headers") {
+          entered.resolve();
+          return headerGate.promise;
+        }
+        const response = json({}, 403);
+        vi.spyOn(response, "json").mockImplementation(() => {
+          entered.resolve();
+          return bodyGate.promise;
+        });
+        return response;
+      });
+      const discovery = await begin();
+      let now = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      const work = service
+        .metadata(owner, discovery, signal())
+        .catch((error: unknown) => error);
+      await entered.promise;
+      // Do not advance fake timers: only the absolute clock has expired.
+      now = 30_001;
+      headerGate.resolve(json({}, 403));
+      bodyGate.resolve({ message: "fixture denied" });
+      expect(await work).toMatchObject({
+        envelope: { failures: [{ kind: "timeout" }] },
+      });
+      expect(http.calls.map((call) => call.account)).toEqual(["A"]);
+      expect(
+        (await service.ledger.read(owner, discovery.id)).attempts.map(
+          (attempt) => attempt.accountId,
+        ),
+      ).toEqual(["A"]);
+      expect(http.calls[0].signal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("does not start token refresh from a late summary 401 while its timer is delayed", async () => {
+    vi.useFakeTimers();
+    await add("A");
+    const responseGate = deferred<Response>();
+    const entered = deferred<void>();
+    const http = mockHttp((_account, path) => {
+      if (path.endsWith("/pulls")) return json(pulls());
+      entered.resolve();
+      return responseGate.promise;
+    });
+    const refresh = vi
+      .spyOn(coordinator, "refreshAccountToken")
+      .mockResolvedValue({ ok: false, terminal: false });
+    const invalidate = vi.spyOn(coordinator, "invalidateAccountToken");
+    const discovery = await begin();
+    await service.metadata(owner, discovery, signal());
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const work = service
+      .summary(owner, discovery, { pullNumber: "42", signal: signal() })
+      .catch((error: unknown) => error);
+    await entered.promise;
+    now = 30_001;
+    responseGate.resolve(json({}, 401));
+    expect(await work).toMatchObject({
+      envelope: { failures: [{ kind: "timeout" }] },
+    });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(http.calls).toHaveLength(2);
+    expect(http.calls[1].signal?.aborted).toBe(true);
+    expect(
+      (await service.ledger.read(owner, discovery.id)).authenticationFailure,
+    ).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

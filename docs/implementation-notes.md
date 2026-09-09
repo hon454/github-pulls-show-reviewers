@@ -29,6 +29,35 @@
   endpoint result, and any rate-limit headers GitHub returned for the diagnostic
   request. Rate-limit snapshots are diagnostic output only and are not persisted.
 
+## Reviewer request deadlines
+
+`src/shared/reviewer-deadline.ts` owns the fixed defaults and injectable
+clock/timers. Deadlines cover response headers, JSON bodies, all pages and
+same-account refresh waits. A new page, retry, subscriber or presentation change
+does not restart an existing deadline.
+
+| Operation                            | Deadline         | Start                                                             |
+| ------------------------------------ | ---------------- | ----------------------------------------------------------------- |
+| Shared repository metadata/discovery | 30 seconds       | Background shared operation creation                              |
+| Reviewer summary                     | 30 seconds       | Background service accepts the operation                          |
+| Optional issue-events evidence       | 10 seconds total | First events request; also bounded by the parent's remaining time |
+| Content reviewer RPC safeguard       | 35 seconds       | Actual `sendMessage` dispatch, excluding four-slot FIFO waiting   |
+
+Expiration aborts the operation's HTTP controller and detaches its waiter even
+when the transport ignores cancellation. Safe failures carry `kind: "timeout"`
+with null HTTP status; external cancellation remains cancellation. Mandatory
+metadata/review timeouts use the existing page-level unavailable/reload guidance,
+release active slots and preserve stale reviewer chips. No automatic retry,
+reload, account invalidation, extra fallback or discovery-budget reset follows
+from a timeout. Recovery still requires a normal GitHub update or manual reload.
+
+Optional events expiration degrades only the event evidence to unavailable;
+the basic summary uses the unverified re-request policy unless partial evidence
+already confirms a later request. A mandatory parent timeout remains a failure,
+even if it occurs while reading optional evidence. See
+[ADR 0008](./adr/0008-background-credentials-and-ui-capabilities.md#reviewer-deadlines-and-cancellation-ownership)
+for shared-consumer and token-refresh ownership.
+
 ## Module boundaries
 
 - `src/github/api.ts` remains the stable import facade for GitHub API callers.

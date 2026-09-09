@@ -1,3 +1,7 @@
+import {
+  throwIfReviewerAborted,
+  waitForReviewerSignal,
+} from "../shared/reviewer-deadline";
 import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import {
   accountMutations,
@@ -80,30 +84,7 @@ export function abortError(): Error {
   return new DOMException("The operation was aborted.", "AbortError");
 }
 
-/** Detach immediately even when a transport/mock ignores AbortSignal. */
-export function waitWithSignal<T>(
-  promise: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const abort = () => {
-      signal.removeEventListener("abort", abort);
-      reject(abortError());
-    };
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) abort();
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", abort);
-        if (!signal.aborted) resolve(value);
-      },
-      (error) => {
-        signal.removeEventListener("abort", abort);
-        reject(error);
-      },
-    );
-  });
-}
+export const waitWithSignal = waitForReviewerSignal;
 
 /** The existing #166 coordinator is the sole refresh/invalidation owner. */
 export function createAccountRequest(coordinator: RefreshCoordinator) {
@@ -120,7 +101,7 @@ export function createAccountRequest(coordinator: RefreshCoordinator) {
     execute: (token: string | null, signal: AbortSignal) => Promise<T>;
   }): Promise<{ value: T; account: Account | null }> {
     const checkAbort = () => {
-      if (input.signal.aborted) throw abortError();
+      throwIfReviewerAborted(input.signal);
     };
     checkAbort();
     const account =
@@ -162,7 +143,9 @@ export function createAccountRequest(coordinator: RefreshCoordinator) {
     }
     async function execute(used: Account | null) {
       try {
+        checkAbort();
         await input.onFailure?.(undefined, used);
+        checkAbort();
         const value = await waitWithSignal(
           input.execute(used?.token ?? null, input.signal),
           input.signal,
@@ -170,6 +153,7 @@ export function createAccountRequest(coordinator: RefreshCoordinator) {
         await verifyIdentity();
         return { value, account: used };
       } catch (error) {
+        checkAbort();
         await input.onFailure?.(error, used);
         await verifyIdentity();
         throw error;
@@ -218,6 +202,7 @@ export function createAccountRequest(coordinator: RefreshCoordinator) {
       try {
         return await execute(refreshed);
       } catch (retryError) {
+        checkAbort();
         const retryDecision = classifyAuthenticatedFailure(retryError);
         if (
           retryDecision.kind === "stop" &&
