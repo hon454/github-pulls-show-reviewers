@@ -226,6 +226,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -267,6 +268,55 @@ async function bootBackground(): Promise<MessageListener> {
 }
 
 describe("background runtime.onMessage handler", () => {
+  it("keeps listeners registered when startup storage and alarm setup fail", async () => {
+    vi.mocked(browser.storage.local.setAccessLevel).mockRejectedValueOnce(
+      new Error("storage unavailable"),
+    );
+    alarmsCreateMock.mockRejectedValueOnce(new Error("alarms unavailable"));
+    const { default: background } = await import("../entrypoints/background");
+    background.main!();
+    await flushMicrotasks();
+    expect(capturedMessageListener).not.toBeNull();
+    expect(capturedAlarmListener).not.toBeNull();
+    expect(browser.runtime.onInstalled.addListener).toHaveBeenCalledTimes(1);
+    expect(browser.action.onClicked.addListener).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens options on first install and toolbar click, but not update", async () => {
+    await bootBackground();
+    const installed = vi.mocked(browser.runtime.onInstalled.addListener).mock
+      .calls[0][0];
+    const clicked = vi.mocked(browser.action.onClicked.addListener).mock
+      .calls[0][0];
+    installed({ reason: "update" });
+    expect(openOptionsPageMock).not.toHaveBeenCalled();
+    installed({ reason: "install" });
+    clicked({} as never);
+    await flushMicrotasks();
+    expect(openOptionsPageMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("handles failed options navigation from install and toolbar click", async () => {
+    await bootBackground();
+    const error = new Error("options unavailable");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    openOptionsPageMock
+      .mockRejectedValueOnce(error)
+      .mockRejectedValueOnce(error);
+    vi.mocked(browser.runtime.onInstalled.addListener).mock.calls[0][0]({
+      reason: "install",
+    });
+    vi.mocked(browser.action.onClicked.addListener).mock.calls[0][0](
+      {} as never,
+    );
+    await flushMicrotasks();
+    expect(logged).toHaveBeenCalledTimes(2);
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringContaining("Failed to open options page"),
+      error,
+    );
+  });
+
   it("rejects the retired raw refresh capability even within this extension", async () => {
     const listener = await bootBackground();
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { accountMutations } from "../src/storage/accounts";
+import { createDeviceFlowService } from "../src/background/device-flow";
 import {
   capabilityResponseSchema,
   deviceFlowProgressSchema,
@@ -91,6 +92,33 @@ function poll(flowId: string, attemptId = "attempt-a", owner = "options-1") {
 const tick = (seconds: number) => vi.setSystemTime(Date.now() + seconds * 1000);
 
 describe("background OAuth device-flow ownership, restoration and cancellation", () => {
+  it("retires one document's flow and erases its codes without cancelling another document", async () => {
+    const service = createDeviceFlowService({
+      ensureReady: async () => {},
+      getClientId: () => "test-client",
+      isOwnerAlive: async () => true,
+    });
+    await service.start("retired-document", "retired-attempt");
+    const retained = await service.start("live-document", "live-attempt");
+    await service.retireOwner("retired-document");
+    const records = harness.session.snapshot()[SESSION_KEY] as Array<
+      Record<string, unknown>
+    >;
+    const retired = records.find(
+      (record) => record.owner === "retired-document",
+    );
+    expect(retired).toMatchObject({ phase: "cancelled" });
+    expect(retired).not.toHaveProperty("deviceCode");
+    expect(retired).not.toHaveProperty("userCode");
+    expect(
+      records.find((record) => record.owner === "live-document"),
+    ).toMatchObject({ phase: "waiting" });
+    expect(await service.start("live-document", "live-attempt")).toEqual(
+      retained,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it.each(["polling", "committing"])(
     "failed session persistence for %s returns restart-required and admits no untracked work",
     async (phase) => {

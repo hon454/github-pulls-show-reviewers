@@ -27,7 +27,7 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
-The [v1.17.1 readiness handoff](./releases/v1.17.1-readiness.md) records the
+The [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) records the
 version-bound recapture, individual visual checks and production-package rerun;
 it is local preparation, not a CWS receipt or saved-listing attestation.
 

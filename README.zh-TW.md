@@ -12,7 +12,7 @@
 
 ![GitHub PR 清單內的審查者標籤與審查狀態徽章](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.17.1 版本說明](./docs/releases/v1.17.1.md)（英文）：改善主要按鈕的可讀性、各語言的複製回饋及登入焦點復原。
+[v1.17.2 版本說明](./docs/releases/v1.17.2.md)（英文）：開發工具安全性更新；開發相依套件仍有一項安全性稽核問題待解決。
 
 ## 主要功能
 

@@ -12,7 +12,7 @@
 
 ![리뷰어 칩과 리뷰 상태 배지가 표시된 GitHub PR 목록](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.17.1 릴리스 노트](./docs/releases/v1.17.1.md)(영어): 주요 버튼 가독성, 지역화된 복사 피드백과 로그인 포커스 복구 개선.
+[v1.17.2 릴리스 노트](./docs/releases/v1.17.2.md)(영어): 개발 도구 보안 업데이트. 개발 의존성의 보안 감사 지적 사항 1건은 남아 있습니다.
 
 ## 주요 기능
 
