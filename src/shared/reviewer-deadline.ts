@@ -28,6 +28,15 @@ export class ReviewerTimeoutError extends Error {
   }
 }
 
+// Keep the original operation clock with its signal, without adding timers or
+// exposing deadline configuration through runtime messages. Continuations must
+// observe elapsed time even before a busy event loop dispatches the timer.
+const deadlineChecks = new WeakMap<AbortSignal, () => void>();
+
+function checkReviewerDeadline(signal?: AbortSignal): void {
+  if (signal && !signal.aborted) deadlineChecks.get(signal)?.();
+}
+
 export function reviewerAbortReason(signal: AbortSignal): Error {
   return signal.reason instanceof ReviewerTimeoutError
     ? signal.reason
@@ -35,6 +44,7 @@ export function reviewerAbortReason(signal: AbortSignal): Error {
 }
 
 export function throwIfReviewerAborted(signal?: AbortSignal): void {
+  checkReviewerDeadline(signal);
   if (signal?.aborted) throw reviewerAbortReason(signal);
 }
 
@@ -54,11 +64,20 @@ export function waitForReviewerSignal<T>(
     };
     const abort = () => finish(() => reject(reviewerAbortReason(signal)));
     signal.addEventListener("abort", abort, { once: true });
+    checkReviewerDeadline(signal);
     if (signal.aborted) abort();
     // Always observe the late promise, including when already canceled.
     work.then(
-      (value) => finish(() => resolve(value)),
-      (error: unknown) => finish(() => reject(error)),
+      (value) => {
+        if (settled) return;
+        checkReviewerDeadline(signal);
+        finish(() => resolve(value));
+      },
+      (error: unknown) => {
+        if (settled) return;
+        checkReviewerDeadline(signal);
+        finish(() => reject(error));
+      },
     );
   });
 }
@@ -75,6 +94,11 @@ export function createReviewerDeadline(
   const cancel = () => controller.abort(reviewerAbortReason(parent!));
   parent?.addEventListener("abort", cancel, { once: true });
   if (parent?.aborted) cancel();
+  deadlineChecks.set(controller.signal, () => {
+    // Mandatory parent expiry wins over optional child fallback.
+    checkReviewerDeadline(parent);
+    if (timer.now() >= expiresAt && !controller.signal.aborted) expire();
+  });
   const timeout = timer.setTimeout(
     expire,
     Math.max(0, expiresAt - timer.now()),
@@ -84,18 +108,19 @@ export function createReviewerDeadline(
     controller,
     signal: controller.signal,
     async wait<T>(work: Promise<T>): Promise<T> {
-      if (timer.now() >= expiresAt && !controller.signal.aborted) expire();
-      const result = await waitForReviewerSignal(work, controller.signal);
-      // Timers can be delayed by a busy event loop. A late success cannot win.
-      if (timer.now() >= expiresAt && !controller.signal.aborted) expire();
-      throwIfReviewerAborted(controller.signal);
-      return result;
+      try {
+        return await waitForReviewerSignal(work, controller.signal);
+      } finally {
+        // A delayed timer cannot let either a late success or failure win.
+        throwIfReviewerAborted(controller.signal);
+      }
     },
     dispose() {
       if (disposed) return;
       disposed = true;
       timer.clearTimeout(timeout);
       parent?.removeEventListener("abort", cancel);
+      deadlineChecks.delete(controller.signal);
     },
   };
 }
@@ -103,13 +128,13 @@ export function createReviewerDeadline(
 export async function withReviewerDeadline<T>(
   duration: number,
   parent: AbortSignal | undefined,
-  run: (signal: AbortSignal) => Promise<T>,
+  run: (signal: AbortSignal, controller: AbortController) => Promise<T>,
   timer?: ReviewerClock,
 ): Promise<T> {
   const deadline = createReviewerDeadline(duration, parent, timer);
   try {
     throwIfReviewerAborted(deadline.signal);
-    return await deadline.wait(run(deadline.signal));
+    return await deadline.wait(run(deadline.signal, deadline.controller));
   } finally {
     deadline.dispose();
   }

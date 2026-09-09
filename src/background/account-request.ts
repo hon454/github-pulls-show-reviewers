@@ -202,6 +202,7 @@ export function createAccountRequest(coordinator: RefreshCoordinator) {
       try {
         return await execute(refreshed);
       } catch (retryError) {
+        checkAbort();
         const retryDecision = classifyAuthenticatedFailure(retryError);
         if (
           retryDecision.kind === "stop" &&

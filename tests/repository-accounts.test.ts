@@ -1212,3 +1212,91 @@ it("expires a production summary's refresh waiter without retiring successful di
     vi.useRealTimers();
   }
 });
+
+describe("absolute deadlines while timer callbacks are delayed", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it.each(["headers", "body"])(
+    "does not admit another account after an expired metadata %s failure",
+    async (boundary) => {
+      vi.useFakeTimers();
+      await add("A");
+      await add("B");
+      const headerGate = deferred<Response>();
+      const bodyGate = deferred<unknown>();
+      const entered = deferred<void>();
+      const http = mockHttp((account) => {
+        if (account !== "A") return json(pulls());
+        if (boundary === "headers") {
+          entered.resolve();
+          return headerGate.promise;
+        }
+        const response = json({}, 403);
+        vi.spyOn(response, "json").mockImplementation(() => {
+          entered.resolve();
+          return bodyGate.promise;
+        });
+        return response;
+      });
+      const discovery = await begin();
+      let now = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      const work = service
+        .metadata(owner, discovery, signal())
+        .catch((error: unknown) => error);
+      await entered.promise;
+      // Do not advance fake timers: only the absolute clock has expired.
+      now = 30_001;
+      headerGate.resolve(json({}, 403));
+      bodyGate.resolve({ message: "fixture denied" });
+      expect(await work).toMatchObject({
+        envelope: { failures: [{ kind: "timeout" }] },
+      });
+      expect(http.calls.map((call) => call.account)).toEqual(["A"]);
+      expect(
+        (await service.ledger.read(owner, discovery.id)).attempts.map(
+          (attempt) => attempt.accountId,
+        ),
+      ).toEqual(["A"]);
+      expect(http.calls[0].signal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("does not start token refresh from a late summary 401 while its timer is delayed", async () => {
+    vi.useFakeTimers();
+    await add("A");
+    const responseGate = deferred<Response>();
+    const entered = deferred<void>();
+    const http = mockHttp((_account, path) => {
+      if (path.endsWith("/pulls")) return json(pulls());
+      entered.resolve();
+      return responseGate.promise;
+    });
+    const refresh = vi
+      .spyOn(coordinator, "refreshAccountToken")
+      .mockResolvedValue({ ok: false, terminal: false });
+    const invalidate = vi.spyOn(coordinator, "invalidateAccountToken");
+    const discovery = await begin();
+    await service.metadata(owner, discovery, signal());
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const work = service
+      .summary(owner, discovery, { pullNumber: "42", signal: signal() })
+      .catch((error: unknown) => error);
+    await entered.promise;
+    now = 30_001;
+    responseGate.resolve(json({}, 401));
+    expect(await work).toMatchObject({
+      envelope: { failures: [{ kind: "timeout" }] },
+    });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(http.calls).toHaveLength(2);
+    expect(http.calls[1].signal?.aborted).toBe(true);
+    expect(
+      (await service.ledger.read(owner, discovery.id)).authenticationFailure,
+    ).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

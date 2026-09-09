@@ -41,6 +41,33 @@ describe("reviewer deadline ownership", () => {
     expect(REVIEWER_DEADLINES.summary).toBe(30_000);
   });
 
+  it.each([29_999, 30_000, 30_001])(
+    "checks expiry on rejection at %sms even when the timer callback is delayed",
+    async (rejectedAt) => {
+      let now = 0;
+      const deadline = createReviewerDeadline(30_000, undefined, {
+        now: () => now,
+        setTimeout: vi.fn(),
+        clearTimeout: vi.fn(),
+      });
+      const pending = deferred<string>();
+      const result = deadline
+        .wait(pending.promise)
+        .catch((error: unknown) => error);
+      const failure = new TypeError("offline");
+      now = rejectedAt;
+      pending.reject(failure);
+      if (rejectedAt < 30_000) {
+        expect(await result).toBe(failure);
+        expect(deadline.signal.aborted).toBe(false);
+      } else {
+        expect(await result).toBeInstanceOf(ReviewerTimeoutError);
+        expect(deadline.signal.aborted).toBe(true);
+      }
+      deadline.dispose();
+    },
+  );
+
   it.each(["success", "failure", "cancel", "timeout"])(
     "cleans timers and listeners once on %s despite late settlements",
     async (outcome) => {
@@ -101,4 +128,45 @@ describe("reviewer deadline ownership", () => {
     expect(run).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
+});
+
+it("preserves an earlier user cancellation when a rejection settles after the deadline", async () => {
+  let now = 0;
+  const parent = new AbortController();
+  const deadline = createReviewerDeadline(30_000, parent.signal, {
+    now: () => now,
+    setTimeout: vi.fn(),
+    clearTimeout: vi.fn(),
+  });
+  const pending = deferred<string>();
+  const result = deadline
+    .wait(pending.promise)
+    .catch((error: unknown) => error);
+  now = 29_999;
+  parent.abort();
+  now = 30_001;
+  pending.reject(new TypeError("late failure"));
+  expect(await result).toMatchObject({ name: "AbortError" });
+  expect(deadline.signal.reason).not.toBeInstanceOf(ReviewerTimeoutError);
+  deadline.dispose();
+});
+
+it("checks a parent's absolute deadline before accepting optional fallback with delayed timers", async () => {
+  let now = 0;
+  const injected = {
+    now: () => now,
+    setTimeout: vi.fn(),
+    clearTimeout: vi.fn(),
+  };
+  const parent = createReviewerDeadline(30_000, undefined, injected);
+  now = 25_000;
+  const child = createReviewerDeadline(10_000, parent.signal, injected);
+  const pending = deferred<string>();
+  const result = child.wait(pending.promise).catch((error: unknown) => error);
+  now = 30_001;
+  pending.resolve("optional fallback");
+  expect(await result).toBeInstanceOf(ReviewerTimeoutError);
+  expect(child.signal.reason).toBe(parent.signal.reason);
+  child.dispose();
+  parent.dispose();
 });

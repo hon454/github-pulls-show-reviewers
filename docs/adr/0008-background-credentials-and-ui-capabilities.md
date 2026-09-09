@@ -90,6 +90,12 @@ retention handle mandatory failures. Optional timeout can return unavailable
 event evidence, preserving partial evidence for confirmed/unverified decisions;
 an expired mandatory parent is never converted to successful optional fallback.
 
+The owned signal also retains the original absolute deadline. Promise success
+and failure continuations, as well as checks before pages, refresh and account
+admission, consult that clock even when the timer callback is delayed. Summary
+account-generation cancellation uses the same operation controller. A late
+403/401 cannot start fallback or refresh before an outer timeout is reported.
+
 Each content request ID still owns only its subscription. Cancellation or a
 35-second watchdog sends the existing cancel message best effort. One consumer
 cannot abort shared metadata while another remains; the last detach aborts that

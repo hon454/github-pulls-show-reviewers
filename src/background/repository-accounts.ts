@@ -436,7 +436,11 @@ export function createRepositoryAccountService(input: {
     anonymousFailure?: unknown,
     refresh = false,
   ): Promise<Access> {
-    if (signal.aborted) return Promise.reject(reviewerAbortReason(signal));
+    try {
+      throwIfReviewerAborted(signal);
+    } catch (error) {
+      return Promise.reject(error);
+    }
     const operationKey = key(owner, discovery.id);
     let operation = operations.get(operationKey);
     if (!operation) {
@@ -696,7 +700,7 @@ export function createRepositoryAccountService(input: {
       return withReviewerDeadline(
         REVIEWER_DEADLINES.summary,
         request.signal,
-        async (signal) => {
+        async (signal, controller) => {
           request = { ...request, signal };
           const resolved = await access(
             owner,
@@ -715,11 +719,8 @@ export function createRepositoryAccountService(input: {
           const pullMetadata = request.validatePull
             ? undefined
             : (cached ?? supplied);
-          const controller = new AbortController();
-          const cancel = () =>
-            controller.abort(reviewerAbortReason(request.signal));
-          request.signal.addEventListener("abort", cancel, { once: true });
-          if (request.signal.aborted) cancel();
+          // Account-generation cancellation uses the accepted operation's
+          // controller, retaining its original absolute deadline on every wait.
           const operationKey = key(owner, discovery.id);
           const row = {
             controller,
@@ -764,6 +765,7 @@ export function createRepositoryAccountService(input: {
                       : null,
                   };
                 } catch (error) {
+                  throwIfReviewerAborted(controller.signal);
                   if (
                     resolved.account === null &&
                     !controller.signal.aborted &&
@@ -837,7 +839,6 @@ export function createRepositoryAccountService(input: {
               controller.signal,
             );
           } finally {
-            request.signal.removeEventListener("abort", cancel);
             pending.delete(row);
             if (pending.size === 0) rows.delete(operationKey);
           }

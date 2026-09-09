@@ -322,3 +322,40 @@ describe("optional events inherit the mandatory operation lifetime", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+it.each(["headers", "body"])(
+  "does not fetch the next page after a late %s completion while the timer is delayed",
+  async (boundary) => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const headerGate = deferred<Response>();
+    const bodyGate = deferred<unknown>();
+    const entered = deferred<void>();
+    const response = json([]);
+    response.headers.set(
+      "Link",
+      '<https://api.github.com/repos/acme/widgets/pulls/42/reviews?page=2>; rel="next"',
+    );
+    if (boundary === "body")
+      vi.spyOn(response, "json").mockImplementation(() => {
+        entered.resolve();
+        return bodyGate.promise;
+      });
+    const fetch = vi.fn(() => {
+      if (boundary === "headers") {
+        entered.resolve();
+        return headerGate.promise;
+      }
+      return Promise.resolve(response);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const work = service.handleFetchMessage(summaryMessage);
+    await entered.promise;
+    now = 30_001;
+    headerGate.resolve(response);
+    bodyGate.resolve([]);
+    expect(await work).toMatchObject(timeout);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  },
+);
