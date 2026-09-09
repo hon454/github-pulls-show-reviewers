@@ -55,9 +55,9 @@ describe("live canary host-row oracle", () => {
     expect(collectDom().challengeDetected).toBe(true);
   });
 
-  it("accepts a host-confirmed empty list but rejects selectorless zero rows", () => {
+  it("requires a visible host empty-state signal for a zero-row list", () => {
     document.body.innerHTML =
-      '<main><div class="js-navigation-container"></div></main>';
+      '<main><div class="js-navigation-container"><div data-testid="empty-state">No pull requests</div></div></main>';
     const emptyDom = collectDom();
     const emptyVerdict = evaluateLiveCanary({
       repository,
@@ -73,14 +73,45 @@ describe("live canary host-row oracle", () => {
 
     expect(emptyDom).toMatchObject({
       pullListContainerFound: true,
+      hostEmptySignalFound: true,
+      hostListLoading: false,
       hostPullNumbers: [],
       rows: [],
     });
     expect(emptyVerdict.ok).toBe(true);
 
+    document.body.innerHTML =
+      '<main><div class="js-navigation-container">Loading…</div></main>';
+    expect(
+      failureCodes(collectDom(), {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("host-pull-rows-missing");
+
+    document.body.innerHTML =
+      '<main><div class="js-navigation-container" aria-busy="true">Loading…</div></main>';
+    const loadingDom = collectDom();
+    expect(loadingDom.hostListLoading).toBe(true);
+    expect(
+      failureCodes(loadingDom, {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("host-pull-list-loading");
+
     document.body.innerHTML = `
       <main>
-        <div class="js-navigation-container"><span data-ghpsr-root></span></div>
+        <div class="js-navigation-container">
+          <div data-testid="empty-state">No pull requests</div>
+          <span data-ghpsr-root></span>
+        </div>
       </main>`;
     expect(
       failureCodes(collectDom(), {
@@ -579,6 +610,58 @@ describe("live canary verdict", () => {
     );
   });
 
+  it("records when a failure diagnostic could not capture the current DOM", () => {
+    const api = positiveApi();
+    const diagnostics = createCanaryDiagnostics({
+      phase: "navigation:D",
+      repository,
+      targetUrl: "https://github.com/octo/repo/pulls?q=is%3Apr",
+      currentUrl: "https://github.com/octo/repo/pulls?q=is%3Apr+is%3Aclosed",
+      responseStatus: null,
+      dom: {
+        ...positiveDom(),
+        mainFound: false,
+        pullListContainerFound: false,
+        hostPullNumbers: [],
+        productionPullNumbers: [],
+        rows: [],
+      },
+      api,
+      verdict: {
+        ok: false,
+        failures: [
+          {
+            owner: "observation",
+            code: "current-dom-capture-failed",
+            pullNumber: null,
+          },
+        ],
+        terminal: {
+          loading: 0,
+          empty: 0,
+          success: 0,
+          failure: 0,
+          unverifiable: 0,
+        },
+        samples: [],
+      },
+      domCapture: { source: "unavailable" },
+    });
+
+    expect(diagnostics).toMatchObject({
+      phase: "navigation:D",
+      domCapture: { source: "unavailable" },
+      host: { pullNumbers: [] },
+      failures: [
+        {
+          owner: "observation",
+          code: "current-dom-capture-failed",
+          pullNumber: null,
+        },
+      ],
+    });
+  });
+
   it("fails a mounted row whose loading state never settles", () => {
     const dom = positiveDom();
     dom.rows[0].loadingMountCount = 1;
@@ -829,6 +912,8 @@ function positiveDom(): CanaryDomSnapshot {
   return {
     mainFound: true,
     pullListContainerFound: true,
+    hostEmptySignalFound: false,
+    hostListLoading: false,
     unmatchedPullListLinkCount: 0,
     orphanMountCount: 0,
     challengeDetected: false,

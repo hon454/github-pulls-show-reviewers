@@ -171,6 +171,78 @@ test("packaged canary rejects a selector-drift zero-row list with an unmatched P
   });
 });
 
+test("packaged canary accepts a host-confirmed zero-row list", async () => {
+  await withExtension(async (context) => {
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routePullListHtml(
+      context,
+      '<main><div class="js-navigation-container"><div data-testid="empty-state">No pull requests</div></div></main>',
+    );
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await observer.settle();
+    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+      repository,
+      productionRowSelector: githubSelectors.row,
+    });
+    const verdict = evaluateLiveCanary({
+      repository,
+      dom,
+      api: observer.snapshot(),
+    });
+
+    expect(dom).toMatchObject({
+      pullListContainerFound: true,
+      hostEmptySignalFound: true,
+      hostPullNumbers: [],
+      unmatchedPullListLinkCount: 0,
+      orphanMountCount: 0,
+    });
+    expect(verdict.ok).toBe(true);
+  });
+});
+
+test("packaged canary rejects a generic or busy zero-row list", async () => {
+  await withExtension(async (context) => {
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routePullListHtml(
+      context,
+      '<main><div class="js-navigation-container" aria-busy="true">Loading…</div></main>',
+    );
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await observer.settle();
+    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+      repository,
+      productionRowSelector: githubSelectors.row,
+    });
+    const verdict = evaluateLiveCanary({
+      repository,
+      dom,
+      api: observer.snapshot(),
+    });
+
+    expect(dom).toMatchObject({
+      pullListContainerFound: true,
+      hostEmptySignalFound: false,
+      hostListLoading: true,
+      hostPullNumbers: [],
+    });
+    expect(verdict.failures).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "host-pull-list-loading" }),
+      ]),
+    );
+    expect(verdict.ok).toBe(false);
+  });
+});
+
 test("packaged canary rejects an orphan mount beside an otherwise settled current row", async () => {
   await withExtension(async (context) => {
     const observer = createCanaryResponseObserver({ repository });
@@ -212,6 +284,153 @@ test("packaged canary rejects an orphan mount beside an otherwise settled curren
       ]),
     );
     expect(verdict.ok).toBe(false);
+  });
+});
+
+test("packaged canary drops eight slow FIFO rows after same-document navigation", async () => {
+  await withExtension(async (context) => {
+    const oldNumbers = Array.from({ length: 8 }, (_, index) =>
+      String(index + 1),
+    );
+    const nextNumbers = Array.from({ length: 8 }, (_, index) =>
+      String(index + 21),
+    );
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routePullList(context, oldNumbers);
+    await routeMetadata(
+      context,
+      [...oldNumbers, ...nextNumbers].map((number) =>
+        metadata(Number(number), [`reviewer-${number}`]),
+      ),
+    );
+
+    const slowReleases: Array<() => void> = [];
+    const startedReviews: string[] = [];
+    await context.route(
+      new RegExp(`^${apiBase}/pulls/(\\d+)/reviews`),
+      async (route) => {
+        const pullNumber = /\/pulls\/(\d+)\/reviews/.exec(
+          route.request().url(),
+        )?.[1];
+        if (pullNumber == null) throw new Error("missing fixture pull number");
+        startedReviews.push(pullNumber);
+        if (oldNumbers.includes(pullNumber))
+          await new Promise<void>((resolve) => slowReleases.push(resolve));
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      },
+    );
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await expect.poll(() => startedReviews).toEqual(oldNumbers.slice(0, 4));
+
+    await page.evaluate(
+      ({ html }) => {
+        const nextDocument = new DOMParser().parseFromString(html, "text/html");
+        const nextContainer = nextDocument.querySelector(
+          ".js-navigation-container",
+        );
+        const currentContainer = document.querySelector(
+          ".js-navigation-container",
+        );
+        if (nextContainer == null || currentContainer == null)
+          throw new Error("fixture navigation container missing");
+        window.history.pushState({}, "", `?page=2&q=is%3Apr`);
+        currentContainer.replaceWith(nextContainer);
+        document.dispatchEvent(new Event("turbo:render", { bubbles: true }));
+      },
+      {
+        html: createPullListFixtureHtml(nextNumbers, repository),
+      },
+    );
+    await page.waitForTimeout(50);
+    for (const release of slowReleases.splice(0)) release();
+
+    await expect.poll(() => startedReviews.filter((number) =>
+      nextNumbers.includes(number),
+    ).length).toBe(8);
+    expect(startedReviews.filter((number) => oldNumbers.includes(number))).toEqual(
+      oldNumbers.slice(0, 4),
+    );
+    await expectCurrentCanary(page, observer, nextNumbers);
+    expect(
+      await page.locator('a.ghpsr-avatar[title*="@reviewer-"]').count(),
+    ).toBe(8);
+  });
+});
+
+test("packaged canary does not dispatch a queued review after its row is removed", async () => {
+  await withExtension(async (context) => {
+    const pullNumbers = ["42", "43", "44", "45", "46"];
+    const startedReviews: string[] = [];
+    const slowReleases: Array<() => void> = [];
+    await routePullList(context, pullNumbers);
+    await routeMetadata(
+      context,
+      pullNumbers.map((number) => metadata(Number(number), [`reviewer-${number}`])),
+    );
+    await context.route(
+      new RegExp(`^${apiBase}/pulls/(\\d+)/reviews`),
+      async (route) => {
+        const pullNumber = /\/pulls\/(\d+)\/reviews/.exec(
+          route.request().url(),
+        )?.[1];
+        if (pullNumber == null) throw new Error("missing fixture pull number");
+        startedReviews.push(pullNumber);
+        if (pullNumber !== "46")
+          await new Promise<void>((resolve) => slowReleases.push(resolve));
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      },
+    );
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await expect.poll(() => startedReviews).toEqual(pullNumbers.slice(0, 4));
+    await page.locator("#issue_46").evaluate((row) => row.remove());
+    for (const release of slowReleases.splice(0)) release();
+
+    await expect(page.locator("[data-ghpsr-root] a.ghpsr-avatar")).toHaveCount(4);
+    expect(startedReviews).toEqual(pullNumbers.slice(0, 4));
+  });
+});
+
+test("packaged canary keeps a current duplicate consumer on one shared review request", async () => {
+  await withExtension(async (context) => {
+    let releaseReview: (() => void) | undefined;
+    let reviewRequests = 0;
+    await routePullList(context, ["42", "42"]);
+    await routeMetadata(context, [metadata(42, ["alice"])]);
+    await context.route(`${apiBase}/pulls/42/reviews**`, async (route) => {
+      reviewRequests += 1;
+      await new Promise<void>((resolve) => {
+        releaseReview = resolve;
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: "[]",
+      });
+    });
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await expect.poll(() => reviewRequests).toBe(1);
+    await page.locator("#issue_42").first().evaluate((row) => row.remove());
+    releaseReview?.();
+
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(1);
+    await expect(page.locator("[data-ghpsr-root]")).toHaveCount(1);
+    expect(reviewRequests).toBe(1);
   });
 });
 

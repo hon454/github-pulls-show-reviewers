@@ -19,6 +19,7 @@ import {
   createCanaryResponseObserver,
   evaluateLiveCanary,
   type CanaryDomSnapshot,
+  type CanaryDomCapture,
   type CanaryNavigationObservation,
   type CanaryRepository,
   type CanaryResponseObserver,
@@ -56,7 +57,6 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
   const page = await context.newPage();
   let phase = "service-worker";
   let responseStatus: number | null = null;
-  let latestDom: CanaryDomSnapshot | null = null;
   let previousUrl: string | null = null;
   let navigation: CanaryNavigationObservation | undefined;
 
@@ -80,7 +80,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     responseStatus = response?.status() ?? null;
     expect(responseStatus).toBe(200);
     await expect(page).toHaveURL(new RegExp(`^${escapeRegExp(targetUrl)}`));
-    latestDom = await assertNavigationStage({
+    const initialDom = await assertNavigationStage({
       page,
       testInfo,
       apiObserver,
@@ -92,8 +92,6 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       responseStatus,
       documentMaintained: null,
     });
-    const initialDom = latestDom;
-
     responseStatus = null;
     previousUrl = page.url();
     const initialDocument = await page.evaluateHandle(() => document);
@@ -131,8 +129,6 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     });
     expect(page.url()).not.toBe(previousUrl);
     expect(pageTwoDom.hostPullNumbers).not.toEqual(initialDom.hostPullNumbers);
-    latestDom = pageTwoDom;
-
     responseStatus = null;
     previousUrl = page.url();
     const pageTwoDocument = await page.evaluateHandle(() => document);
@@ -164,8 +160,6 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       documentMaintained: restoredDocumentMaintained,
     });
     expect(restoredDom.hostPullNumbers).toEqual(initialDom.hostPullNumbers);
-    latestDom = restoredDom;
-
     responseStatus = null;
     previousUrl = page.url();
     const restoredDocument = await page.evaluateHandle(() => document);
@@ -201,7 +195,6 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       responseStatus: null,
       documentMaintained: filterDocumentMaintained,
     });
-    latestDom = filteredDom;
     expect(page.url()).not.toBe(previousUrl);
     expect(filteredDom.hostPullNumbers).not.toEqual(
       restoredDom.hostPullNumbers,
@@ -236,12 +229,34 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     expect(finalVerdict.ok).toBe(true);
   } catch (error) {
     await apiObserver.settle();
-    const capturedDom = await readDomSnapshot(page, repository).catch(
-      () => null,
+    const capture = await readDomSnapshot(page, repository).then(
+      (dom) => ({
+        dom,
+        provenance: { source: "current-document" } satisfies CanaryDomCapture,
+      }),
+      () => ({
+        dom: emptyDomSnapshot(),
+        provenance: { source: "unavailable" } satisfies CanaryDomCapture,
+      }),
     );
-    const dom = capturedDom ?? latestDom ?? emptyDomSnapshot();
+    const dom = capture.dom;
     const api = apiObserver.snapshot();
-    const verdict = evaluateLiveCanary({ repository, dom, api });
+    const evaluatedVerdict = evaluateLiveCanary({ repository, dom, api });
+    const verdict =
+      capture.provenance.source === "current-document"
+        ? evaluatedVerdict
+        : {
+            ...evaluatedVerdict,
+            ok: false,
+            failures: [
+              ...evaluatedVerdict.failures,
+              {
+                owner: "observation" as const,
+                code: "current-dom-capture-failed",
+                pullNumber: null,
+              },
+            ],
+          };
     const diagnostics = createCanaryDiagnostics({
       phase,
       repository,
@@ -251,6 +266,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       dom,
       api,
       verdict,
+      domCapture: capture.provenance,
       ...(navigation == null ? {} : { navigation }),
     });
     const failedStage = /^navigation:([ABCD])$/.exec(phase)?.[1];
@@ -413,6 +429,8 @@ function emptyDomSnapshot(): CanaryDomSnapshot {
   return {
     mainFound: false,
     pullListContainerFound: false,
+    hostEmptySignalFound: false,
+    hostListLoading: false,
     unmatchedPullListLinkCount: 0,
     orphanMountCount: 0,
     challengeDetected: false,

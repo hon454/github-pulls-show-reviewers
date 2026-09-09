@@ -558,6 +558,8 @@ export type CanaryDomRow = {
 export type CanaryDomSnapshot = {
   mainFound: boolean;
   pullListContainerFound: boolean;
+  hostEmptySignalFound: boolean;
+  hostListLoading: boolean;
   unmatchedPullListLinkCount: number;
   orphanMountCount: number;
   challengeDetected: boolean;
@@ -706,6 +708,8 @@ export function collectLiveCanaryDomSnapshot(input: {
     return {
       mainFound: false,
       pullListContainerFound: false,
+      hostEmptySignalFound: false,
+      hostListLoading: false,
       unmatchedPullListLinkCount: 0,
       orphanMountCount: 0,
       challengeDetected,
@@ -725,6 +729,21 @@ export function collectLiveCanaryDomSnapshot(input: {
     ".js-navigation-container, [data-testid='issues-list']",
   );
   const pullListContainerFound = pullListContainer != null;
+  const hostListLoading =
+    pullListContainer?.matches("[aria-busy='true'], [data-loading='true']") ===
+      true ||
+    pullListContainer?.querySelector(
+      "[aria-busy='true'], [data-loading='true']",
+    ) != null;
+  const hostEmptySignalFound =
+    !hostListLoading &&
+    [...(pullListContainer?.querySelectorAll(
+      "[data-testid='empty-state'], .blankslate, [class*='Blankslate']",
+    ) ?? [])].some(
+      (element) =>
+        !element.hasAttribute("hidden") &&
+        element.getAttribute("aria-hidden") !== "true",
+    );
 
   const hostRows = new Map<string, { row: Element; links: Set<Element> }>();
   let ignoredPullLinkCount = 0;
@@ -801,6 +820,8 @@ export function collectLiveCanaryDomSnapshot(input: {
   return {
     mainFound: true,
     pullListContainerFound,
+    hostEmptySignalFound,
+    hostListLoading,
     unmatchedPullListLinkCount,
     orphanMountCount,
     challengeDetected,
@@ -1095,10 +1116,15 @@ export function evaluateLiveCanary(input: {
       failures.push({ owner, code, pullNumber });
   };
 
-  const hasVerifiedEmptyList =
+  const hasConfirmedEmptyHost =
     input.dom.mainFound &&
     input.dom.pullListContainerFound &&
-    input.dom.hostPullNumbers.length === 0;
+    input.dom.hostEmptySignalFound &&
+    !input.dom.hostListLoading &&
+    input.dom.hostPullNumbers.length === 0 &&
+    input.dom.unmatchedPullListLinkCount === 0;
+  const hasVerifiedEmptyList =
+    hasConfirmedEmptyHost && input.dom.orphanMountCount === 0;
 
   if (!input.dom.mainFound) fail("environment", "main-region-missing");
   if (input.dom.challengeDetected) fail("environment", "github-challenge");
@@ -1109,10 +1135,15 @@ export function evaluateLiveCanary(input: {
   if (input.dom.orphanMountCount > 0)
     fail(
       "extension",
-      hasVerifiedEmptyList ? "empty-list-mount" : "orphan-mount-present",
+      hasConfirmedEmptyHost ? "empty-list-mount" : "orphan-mount-present",
     );
   if (input.dom.hostPullNumbers.length === 0 && !hasVerifiedEmptyList)
-    fail("environment", "host-pull-rows-missing");
+    fail(
+      "environment",
+      input.dom.hostListLoading
+        ? "host-pull-list-loading"
+        : "host-pull-rows-missing",
+    );
   if (input.api.apiRequestCount === 0 && !hasVerifiedEmptyList)
     fail("extension", "public-api-request-missing");
   if (input.api.apiRequestsWithAuthorization > 0)
@@ -1254,6 +1285,10 @@ export type CanaryNavigationObservation = {
   documentMaintained: boolean | null;
 };
 
+export type CanaryDomCapture = {
+  source: "current-document" | "unavailable";
+};
+
 export function createCanaryDiagnostics(input: {
   phase: string;
   repository: CanaryRepository;
@@ -1264,6 +1299,7 @@ export function createCanaryDiagnostics(input: {
   api: CanaryApiEvidence;
   verdict: CanaryVerdict;
   navigation?: CanaryNavigationObservation;
+  domCapture?: CanaryDomCapture;
 }): object {
   return {
     phase: input.phase,
@@ -1271,10 +1307,13 @@ export function createCanaryDiagnostics(input: {
     targetUrl: input.targetUrl,
     currentUrl: input.currentUrl,
     responseStatus: input.responseStatus,
+    domCapture: input.domCapture ?? { source: "current-document" },
     ...(input.navigation == null ? {} : { navigation: input.navigation }),
     host: {
       mainFound: input.dom.mainFound,
       pullListContainerFound: input.dom.pullListContainerFound,
+      emptySignalFound: input.dom.hostEmptySignalFound,
+      listLoading: input.dom.hostListLoading,
       unmatchedPullListLinkCount: input.dom.unmatchedPullListLinkCount,
       challengeDetected: input.dom.challengeDetected,
       independentRowCount: input.dom.hostPullNumbers.length,

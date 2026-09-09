@@ -103,9 +103,11 @@ limit, or insufficient sample fails the required sequence rather than skipping
 it.
 
 A host-confirmed empty list is valid only when its independent list container
-is present and it has zero rows, zero mounts, and no unmatched exact PR link
-inside that container. A missing list container or an unmatched list PR link
-with zero discovered rows remains a selector/host failure, not an empty result.
+has a visible GitHub empty-state signal (`data-testid="empty-state"`, a
+`blankslate` element, or a Primer Blankslate element), and it has zero rows,
+zero mounts, and no unmatched exact PR link inside that container. A generic or
+busy/loading container, missing list container, or unmatched list PR link with
+zero discovered rows remains a selector/host failure, not an empty result.
 An orphan reviewer mount is a failure in every stage, including non-empty
 lists, so a late prior-generation result cannot be hidden outside the current
 row denominator.
@@ -142,7 +144,8 @@ pnpm test:e2e:live
 navigation stage additionally persists and attaches
 `canary-navigation-A.json` through `canary-navigation-D.json`, so a failing
 stage does not overwrite the previous successful evidence. Every navigation
-record includes its stage/operation, previous and current public URLs,
+record includes its stage/operation, previous and current public URLs, whether
+its DOM was captured from the current document (or was unavailable),
 document-maintained observation, host PR-number set, mount/loading/terminal
 counts, bounded expected/actual samples, and observed endpoint quota. The test
 reads each persisted JSON back before accepting its stage. The diagnostics
