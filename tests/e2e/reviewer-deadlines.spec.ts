@@ -234,3 +234,151 @@ test("packaged shared metadata timeout clears all loading rows without row fallb
     });
   }, testInfo);
 });
+
+test("packaged optional timeout preserves confirmed partial evidence and renders remaining requests unverified", async ({
+  browserName,
+}, testInfo) => {
+  expect(browserName).toBe("chromium");
+  test.setTimeout(40_000);
+  await withExtension(async (context) => {
+    const requested = [{ login: "alice" }, { login: "bob" }];
+    const counts = { metadata: 0, reviews: 0, events: 0 };
+    let eventsStartedAt = 0;
+    let releaseLatePage!: () => void;
+    await context.route("https://**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.hostname === "github.com" && url.pathname.endsWith("/pulls")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/html",
+          body: createPullListFixtureHtml(["42"]),
+        });
+      } else if (
+        url.hostname === "api.github.com" &&
+        url.pathname.endsWith("/pulls")
+      ) {
+        counts.metadata++;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            {
+              ...metadata[0],
+              requested_reviewers: requested,
+            },
+          ]),
+        });
+      } else if (
+        url.hostname === "api.github.com" &&
+        url.pathname.endsWith("/reviews")
+      ) {
+        counts.reviews++;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(
+            requested.flatMap(({ login }) => reviews(login)),
+          ),
+        });
+      } else if (
+        url.hostname === "api.github.com" &&
+        url.pathname.endsWith("/events")
+      ) {
+        counts.events++;
+        if (url.searchParams.get("page") === "2") {
+          await new Promise<void>((resolve) => {
+            releaseLatePage = resolve;
+          });
+          await route
+            .fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: JSON.stringify([
+                {
+                  event: "review_requested",
+                  created_at: "2026-09-03T00:00:00Z",
+                  requested_reviewer: { login: "bob" },
+                },
+              ]),
+            })
+            .catch(() => undefined);
+          return;
+        }
+        eventsStartedAt = Date.now();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          headers: {
+            Link: `<${url.origin}${url.pathname}?page=2>; rel="next"`,
+          },
+          body: JSON.stringify([
+            {
+              event: "review_requested",
+              created_at: "2026-09-02T00:00:00Z",
+              requested_reviewer: { login: "alice" },
+            },
+          ]),
+        });
+      } else await route.abort();
+    });
+    const worker =
+      context.serviceWorkers()[0] ??
+      (await context.waitForEvent("serviceworker"));
+    const optionsUrl = `chrome-extension://${new URL(worker.url()).host}/options.html`;
+    await expect
+      .poll(() =>
+        context
+          .pages()
+          .find((page) => page.url() === optionsUrl)
+          ?.url(),
+      )
+      .toBe(optionsUrl);
+    const options = context.pages().find((page) => page.url() === optionsUrl)!;
+    await options.getByTestId("language-select").selectOption("en");
+    const page = await context.newPage();
+    await page.goto(pageUrl);
+    await expect.poll(() => counts.events).toBe(2);
+    await expect(page.locator(".ghpsr-status")).toHaveCount(1);
+    await options.getByTestId("prefs-show-reviewer-name").check();
+    const alice = page.locator('a[title*="@alice"]');
+    const bob = page.locator('a[title*="@bob"]');
+    await expect(bob).toHaveAttribute(
+      "title",
+      /previous review: approved.*re-request timing unavailable/,
+      { timeout: 15_000 },
+    );
+    const elapsedMs = Date.now() - eventsStartedAt;
+    expect(elapsedMs).toBeGreaterThanOrEqual(9_000);
+    await expect(alice).toHaveAttribute(
+      "title",
+      /approved \(still requested\)/,
+    );
+    await expect(alice.locator(".ghpsr-badge--refresh")).toHaveCount(1);
+    await expect(bob.locator(".ghpsr-badge--refresh")).toHaveCount(0);
+    await expect(bob.locator(".ghpsr-avatar--border-requested")).toHaveCount(1);
+    await expect(bob).toHaveAttribute("href", /review-requested%3Abob/);
+    await expect(page.locator(".ghpsr-status")).toHaveCount(0);
+    await expect(page.locator("[data-ghpsr-banner]")).toHaveCount(0);
+    releaseLatePage();
+    await options.getByTestId("prefs-show-reviewer-name").uncheck();
+    await expect(bob).toHaveClass(/ghpsr-avatar--border-requested/);
+    await expect(bob).toHaveAttribute("title", /re-request timing unavailable/);
+    await expect(bob.locator(".ghpsr-badge--refresh")).toHaveCount(0);
+    await expect(alice.locator(".ghpsr-badge--refresh")).toHaveCount(1);
+    expect(counts).toEqual({ metadata: 1, reviews: 1, events: 2 });
+    await page.screenshot({
+      path: testInfo.outputPath("optional-partial-evidence.png"),
+      fullPage: true,
+    });
+    await testInfo.attach("optional-timeout-outcomes", {
+      body: JSON.stringify({
+        counts,
+        elapsedMs,
+        confirmed: ["alice"],
+        unverified: ["bob"],
+        lateEvidenceIgnored: true,
+      }),
+      contentType: "application/json",
+    });
+  }, testInfo);
+});

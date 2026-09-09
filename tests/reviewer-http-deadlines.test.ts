@@ -227,7 +227,7 @@ describe("optional events inherit the mandatory operation lifetime", () => {
     },
   ];
 
-  it.each(["fetch", "body", "second-page"])(
+  it.each(["fetch", "body", "error-body", "second-page"])(
     "limits optional %s to a total 10s without failing completed reviews",
     async (stage) => {
       const eventSignal: AbortSignal[] = [];
@@ -244,7 +244,7 @@ describe("optional events inherit the mandatory operation lifetime", () => {
           if (stage === "fetch") return first.promise;
           if (stage === "second-page")
             return events === 1 ? first.promise : never();
-          const response = json([]);
+          const response = json([], stage === "error-body" ? 403 : 200);
           vi.spyOn(response, "json").mockReturnValue(body.promise);
           return Promise.resolve(response);
         }),
@@ -264,6 +264,8 @@ describe("optional events inherit the mandatory operation lifetime", () => {
         ok: true,
         summary: {
           status: "ok",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          reviewRequestEvidence: [{ login: "alice", status: "unverified" }],
           completedReviews: [{ login: "alice", state: "APPROVED" }],
         },
       });
@@ -272,6 +274,159 @@ describe("optional events inherit the mandatory operation lifetime", () => {
       first.resolve(json([]));
       body.resolve([]);
       await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each(["fetch", "body", "error-body"])(
+    "keeps confirmed partial evidence and unverified users when the second-page %s expires",
+    async (stage) => {
+      const first = deferred<Response>();
+      const lateHeaders = deferred<Response>();
+      const lateBody = deferred<unknown>();
+      const signals: AbortSignal[] = [];
+      let eventCalls = 0;
+      const users = ["alice", "bob", "carol"].map((login) => ({
+        login,
+        avatarUrl: null,
+      }));
+      const reviewRows = users.map(({ login }) => ({
+        ...completed[0],
+        user: { login },
+      }));
+      const fetch = vi.fn((_url: string, init: RequestInit) => {
+        if (_url.includes("/reviews")) return Promise.resolve(json(reviewRows));
+        signals.push(init.signal!);
+        eventCalls++;
+        if (eventCalls === 1) return first.promise;
+        if (stage === "fetch") return lateHeaders.promise;
+        const response = json([], stage === "error-body" ? 403 : 200);
+        vi.spyOn(response, "json").mockReturnValue(lateBody.promise);
+        return Promise.resolve(response);
+      });
+      vi.stubGlobal("fetch", fetch);
+      const work = service.handleFetchMessage({
+        ...ambiguous,
+        pullMetadata: { ...metadata, requestedUsers: users },
+      });
+      await vi.advanceTimersByTimeAsync(7_000);
+      const response = json([
+        {
+          event: "review_requested",
+          created_at: "2026-09-02T00:00:00Z",
+          requested_reviewer: { login: "alice" },
+        },
+        {
+          event: "review_requested",
+          created_at: "2026-08-31T00:00:00Z",
+          requested_reviewer: { login: "bob" },
+        },
+      ]);
+      response.headers.set(
+        "Link",
+        '<https://api.github.com/repos/acme/widgets/issues/42/events?page=2>; rel="next"',
+      );
+      first.resolve(response);
+      await vi.advanceTimersByTimeAsync(2_999);
+      expect(eventCalls).toBe(2);
+      expect(signals[0]).toBe(signals[1]);
+      expect(signals[0].aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await work;
+      expect(result).toMatchObject({
+        ok: true,
+        summary: {
+          requestedUsers: users,
+          completedReviews: users.map(({ login }) => ({
+            login,
+            state: "APPROVED",
+          })),
+          reviewRequestEvidence: [
+            { login: "alice", status: "confirmed" },
+            { login: "bob", status: "unverified" },
+            { login: "carol", status: "unverified" },
+          ],
+        },
+      });
+      expect(signals[0].aborted).toBe(true);
+      const lateEvents = [
+        {
+          event: "review_requested",
+          created_at: "2026-09-03T00:00:00Z",
+          requested_reviewer: { login: "bob" },
+        },
+      ];
+      lateHeaders.resolve(json(lateEvents));
+      lateBody.resolve(lateEvents);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await work).toEqual(result);
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each([
+    { eventsStart: 0, outcome: "resolve" },
+    { eventsStart: 0, outcome: "reject" },
+    { eventsStart: 25_000, outcome: "resolve" },
+    { eventsStart: 25_000, outcome: "reject" },
+  ])(
+    "checks absolute parent/child time for late $outcome with events starting at $eventsStart",
+    async ({ eventsStart, outcome }) => {
+      let now = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      const reviewsStarted = deferred<void>();
+      const reviewGate = deferred<Response>();
+      const secondPageStarted = deferred<void>();
+      const pageGate = deferred<Response>();
+      let eventCalls = 0;
+      let eventSignal!: AbortSignal;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((_url: string, init: RequestInit) => {
+          if (_url.includes("/reviews")) {
+            reviewsStarted.resolve();
+            return reviewGate.promise;
+          }
+          eventSignal = init.signal!;
+          if (++eventCalls === 2) {
+            secondPageStarted.resolve();
+            return pageGate.promise;
+          }
+          const response = json([
+            {
+              event: "review_requested",
+              created_at: "2026-09-02T00:00:00Z",
+              requested_reviewer: { login: "alice" },
+            },
+          ]);
+          response.headers.set(
+            "Link",
+            '<https://api.github.com/repos/acme/widgets/issues/42/events?page=2>; rel="next"',
+          );
+          return Promise.resolve(response);
+        }),
+      );
+      const work = service.handleFetchMessage(ambiguous);
+      await reviewsStarted.promise;
+      now = eventsStart;
+      reviewGate.resolve(json(completed));
+      await secondPageStarted.promise;
+      now = eventsStart === 0 ? 10_001 : 30_001;
+      if (outcome === "resolve") pageGate.resolve(json([]));
+      else pageGate.reject(new TypeError("late network failure"));
+      if (eventsStart === 0) {
+        expect(await work).toMatchObject({
+          ok: true,
+          summary: {
+            reviewRequestEvidence: [{ login: "alice", status: "confirmed" }],
+          },
+        });
+      } else {
+        expect(await work).toMatchObject(timeout);
+      }
+      expect(eventSignal.aborted).toBe(true);
+      expect(eventCalls).toBe(2);
       expect(vi.getTimerCount()).toBe(0);
     },
   );

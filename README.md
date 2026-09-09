@@ -44,8 +44,10 @@
   30 seconds, with a 35-second message safeguard for missing background replies.
   Waiting for one of the four request slots does not count toward the deadline.
   Optional review-request event evidence has a total 10-second limit within the
-  parent deadline. Timeouts use the same reload prompt and preserve loaded chips;
-  language and display changes do not restart deadlines.
+  parent deadline. If optional evidence times out, confirmed requests remain
+  confirmed and other ambiguous requests stay unverified. Mandatory timeouts use
+  the same reload prompt and preserve loaded chips; language and display changes
+  do not restart deadlines.
 - Clears obsolete access guidance after connecting an account or updating its
   installation coverage when every visible reviewer load succeeds. A successful
   row never hides another row's failure or pending request; guidance can downgrade

@@ -38,9 +38,17 @@ function checkReviewerDeadline(signal?: AbortSignal): void {
 }
 
 export function reviewerAbortReason(signal: AbortSignal): Error {
-  return signal.reason instanceof ReviewerTimeoutError
-    ? signal.reason
-    : new DOMException("The operation was aborted.", "AbortError");
+  const reason: unknown = signal.reason;
+  if (
+    reason instanceof ReviewerTimeoutError ||
+    (reason instanceof Error && reason.name === "AbortError") ||
+    (typeof DOMException !== "undefined" &&
+      reason instanceof DOMException &&
+      reason.name === "AbortError")
+  ) {
+    return reason;
+  }
+  return new DOMException("The operation was aborted.", "AbortError");
 }
 
 export function throwIfReviewerAborted(signal?: AbortSignal): void {

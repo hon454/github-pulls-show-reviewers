@@ -242,7 +242,8 @@ function inspectNextPageUrl(
     }
   }
 
-  return hasMalformedRelation || /\brel\s*=\s*"?[^",;]*\bnext\b/i.test(linkHeader)
+  return hasMalformedRelation ||
+    /\brel\s*=\s*"?[^",;]*\bnext\b/i.test(linkHeader)
     ? { status: "invalid" }
     : { status: "none" };
 }

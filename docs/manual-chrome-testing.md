@@ -391,6 +391,11 @@ and the page shows one unavailable/reload banner. A subsequent fixture
 navigation succeeds; releasing the old responses must not overwrite its chips.
 A separate held shared metadata request must clear all eight loading states
 after 30 seconds with one metadata HTTP call and no per-row fallback calls.
+The optional-events fixture returns a confirmed re-request on the first page,
+then holds the second page through the production 10-second limit. The confirmed
+request keeps its badge; the other requested reviewer remains unverified with
+no failure banner. A display change and late second-page reply must neither
+replace that evidence nor trigger another request.
 
 For headers followed by stalled bodies, later pages, refresh waiting, lost
 worker replies and exact completion/cancellation races, run the fake-clock

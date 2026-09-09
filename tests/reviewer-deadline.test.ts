@@ -128,6 +128,29 @@ describe("reviewer deadline ownership", () => {
     expect(run).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it.each([
+    new DOMException("page navigation", "AbortError"),
+    Object.assign(new Error("page navigation"), { name: "AbortError" }),
+  ])(
+    "preserves an external AbortError through parent and child waits",
+    async (reason) => {
+      vi.useFakeTimers();
+      const external = new AbortController();
+      const parent = createReviewerDeadline(30_000, external.signal);
+      const child = createReviewerDeadline(10_000, parent.signal);
+      const work = child
+        .wait(new Promise(() => {}))
+        .catch((error: unknown) => error);
+      external.abort(reason);
+      expect(await work).toBe(reason);
+      expect(parent.signal.reason).toBe(reason);
+      expect(child.signal.reason).toBe(reason);
+      child.dispose();
+      parent.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
 });
 
 it("preserves an earlier user cancellation when a rejection settles after the deadline", async () => {
