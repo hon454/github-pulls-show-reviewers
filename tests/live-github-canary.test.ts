@@ -328,6 +328,25 @@ describe("independent reviewer expectation oracle", () => {
     });
   });
 
+  it("compares valid timezone-offset timestamps independently of their spelling", () => {
+    const outcome = deriveCanaryExpectedOutcome(
+      pullEvidence({
+        requestedUsers: ["alice"],
+        reviews: [review("alice", "APPROVED", "2026-08-31T16:00:00Z", 0)],
+        eventCompleteness: "complete",
+        events: [requestEvent("alice", "2026-09-01T02:00:00+09:00", 0)],
+      }),
+      repository,
+    );
+
+    expect(outcome.reviewers[0]).toMatchObject({
+      requestEvidence: "confirmed",
+      ring: "requested",
+      badge: "refresh",
+      qualifier: "review-requested:alice",
+    });
+  });
+
   it.each([
     ["unavailable history", "unavailable", [], "2026-09-01T00:00:00Z"],
     ["no event", "complete", [], "2026-09-01T00:00:00Z"],

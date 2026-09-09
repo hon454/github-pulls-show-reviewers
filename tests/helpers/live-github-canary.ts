@@ -959,20 +959,52 @@ function compareRequestToReview(
 function parseTimestamp(value: string | null): number | null {
   if (value == null) return null;
   const match =
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/.exec(value);
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(
+      value,
+    );
   if (match == null) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] == null ? 0 : Number(match[8]);
+  const offsetMinute = match[9] == null ? 0 : Number(match[9]);
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    isLeapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ][month - 1];
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    daysInMonth == null ||
+    day > daysInMonth ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    return null;
+  }
+
   const parsed = Date.parse(value);
-  if (Number.isNaN(parsed)) return null;
-  const date = new Date(parsed);
-  const parts = match.slice(1, 7).map(Number);
-  return date.getUTCFullYear() === parts[0] &&
-    date.getUTCMonth() + 1 === parts[1] &&
-    date.getUTCDate() === parts[2] &&
-    date.getUTCHours() === parts[3] &&
-    date.getUTCMinutes() === parts[4] &&
-    date.getUTCSeconds() === parts[5]
-    ? parsed
-    : null;
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function stateToClass(
