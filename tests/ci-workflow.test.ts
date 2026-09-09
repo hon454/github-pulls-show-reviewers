@@ -61,6 +61,8 @@ describe("live GitHub DOM canary workflow", () => {
     expect(workflow).toContain("if: failure()");
     expect(workflow).toContain("actions/upload-artifact@v7");
     expect(workflow).toContain("path: test-results");
+    expect(workflow).toContain("retention-days: 14");
+    expect(workflow).not.toContain("continue-on-error");
   });
 });
 

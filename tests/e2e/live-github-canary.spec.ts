@@ -3,81 +3,57 @@ import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 
-import { chromium, expect, test, type Page } from "@playwright/test";
+import {
+  chromium,
+  expect,
+  test,
+  type Page,
+  type TestInfo,
+} from "@playwright/test";
 
 import { githubSelectors } from "../../src/github/selectors";
+import {
+  collectLiveCanaryDomSnapshot,
+  createCanaryDiagnostics,
+  createCanaryResponseObserver,
+  evaluateLiveCanary,
+  type CanaryDomSnapshot,
+  type CanaryRepository,
+} from "../helpers/live-github-canary";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "../..");
 const extensionPath = path.join(projectRoot, ".output/chrome-mv3");
 const liveRepository = process.env.LIVE_GITHUB_REPOSITORY ?? "cli/cli";
 
-type CanarySnapshot = {
-  rowCount: number;
-  pullNumbers: string[];
-  mountCount: number;
-};
-
-type ApiResponseObservation = {
-  path: string;
-  status: number;
-  rateLimit: {
-    limit: string | null;
-    remaining: string | null;
-    reset: string | null;
-    resource: string | null;
-  };
-};
-
-test("discovers live GitHub PR rows and creates reviewer mounts", async ({
+test("verifies rendered reviewer outcomes on live GitHub", async ({
   browserName,
 }, testInfo) => {
   expect(browserName).toBe("chromium");
   expect(liveRepository).toMatch(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
-
+  const [owner, repo] = liveRepository.split("/");
+  const repository: CanaryRepository = { owner, repo };
+  const targetUrl = `https://github.com/${liveRepository}/pulls?q=is%3Apr`;
   const userDataDir = await mkdtemp(
     path.join(os.tmpdir(), "ghpsr-live-canary-"),
   );
   const context = await chromium.launchPersistentContext(userDataDir, {
     channel: "chromium",
+    locale: "en-US",
     args: [
       `--disable-extensions-except=${extensionPath}`,
       `--load-extension=${extensionPath}`,
     ],
   });
-  let apiRequestCount = 0;
-  let apiRequestsWithAuthorization = 0;
-  const apiResponses: ApiResponseObservation[] = [];
-  context.on("request", (request) => {
-    if (parseGitHubApiUrl(request.url()) == null) {
-      return;
-    }
-    apiRequestCount += 1;
-    if (request.headers().authorization != null) {
-      apiRequestsWithAuthorization += 1;
-    }
-  });
-  context.on("response", (response) => {
-    const url = parseGitHubApiUrl(response.url());
-    if (url == null) {
-      return;
-    }
-    apiResponses.push({
-      path: `${url.pathname}${url.search}`,
-      status: response.status(),
-      rateLimit: {
-        limit: response.headers()["x-ratelimit-limit"] ?? null,
-        remaining: response.headers()["x-ratelimit-remaining"] ?? null,
-        reset: response.headers()["x-ratelimit-reset"] ?? null,
-        resource: response.headers()["x-ratelimit-resource"] ?? null,
-      },
-    });
-  });
+  const apiObserver = createCanaryResponseObserver({ repository });
+  context.on("request", (request) => apiObserver.observeRequest(request));
+  context.on("response", (response) => apiObserver.observeResponse(response));
 
   const page = await context.newPage();
-  const targetUrl = `https://github.com/${liveRepository}/pulls?q=is%3Apr`;
+  let phase = "service-worker";
   let responseStatus: number | null = null;
-  let latestSnapshot: CanarySnapshot | null = null;
+  let latestDom: CanaryDomSnapshot | null = null;
+  let diagnosticsAttached = false;
 
   try {
     const serviceWorker =
@@ -85,6 +61,7 @@ test("discovers live GitHub PR rows and creates reviewer mounts", async ({
       (await context.waitForEvent("serviceworker"));
     expect(serviceWorker.url()).toContain("chrome-extension://");
 
+    phase = "navigation";
     const response = await page.goto(targetUrl, {
       waitUntil: "domcontentloaded",
       timeout: 60_000,
@@ -93,71 +70,80 @@ test("discovers live GitHub PR rows and creates reviewer mounts", async ({
     expect(responseStatus).toBe(200);
     await expect(page).toHaveURL(new RegExp(`^${escapeRegExp(targetUrl)}`));
 
+    phase = "host-row-discovery";
     await expect
       .poll(
         async () => {
-          latestSnapshot = await readCanarySnapshot(page);
-          return latestSnapshot.rowCount;
+          latestDom = await readDomSnapshot(page, repository);
+          return latestDom.hostPullNumbers.length;
         },
         {
-          message: `expected live PR rows at ${targetUrl}`,
+          message: `expected independent live PR-link rows at ${targetUrl}`,
           timeout: 30_000,
         },
       )
       .toBeGreaterThan(0);
-    latestSnapshot = await readCanarySnapshot(page);
-    const discoveredRowCount = latestSnapshot.rowCount;
-    expect(discoveredRowCount).toBeGreaterThan(0);
 
+    phase = "reviewer-terminal-state";
     await expect
       .poll(
         async () => {
-          latestSnapshot = await readCanarySnapshot(page);
-          return latestSnapshot.pullNumbers.length;
-        },
-        {
-          message: "expected every live PR row to expose a pull number",
-          timeout: 15_000,
-        },
-      )
-      .toBe(discoveredRowCount);
-
-    await expect
-      .poll(
-        async () => {
-          latestSnapshot = await readCanarySnapshot(page);
-          return latestSnapshot.mountCount;
+          latestDom = await readDomSnapshot(page, repository);
+          return latestDom.rows.every(
+            (row) => row.mountCount === 1 && row.loadingMountCount === 0,
+          );
         },
         {
           message:
-            "expected the extension to create a reviewer mount per PR row",
-          timeout: 15_000,
+            "expected one non-loading reviewer mount for every independent host row",
+          timeout: 30_000,
         },
       )
-      .toBe(discoveredRowCount);
+      .toBe(true);
 
-    const verifiedSnapshot = await readCanarySnapshot(page);
-    latestSnapshot = verifiedSnapshot;
-    expect(new Set(verifiedSnapshot.pullNumbers).size).toBe(
-      verifiedSnapshot.pullNumbers.length,
-    );
-    await expect
-      .poll(
-        () =>
-          apiResponses.filter(
-            (observation) =>
-              observation.status >= 200 && observation.status < 300,
-          ).length,
-        {
-          message:
-            "expected the extension background to complete a public GitHub API request",
-          timeout: 15_000,
-        },
-      )
-      .toBeGreaterThan(0);
-    expect(apiRequestCount).toBeGreaterThan(0);
-    expect(apiRequestsWithAuthorization).toBe(0);
+    phase = "response-body-settlement";
+    await apiObserver.settle();
+    latestDom = await readDomSnapshot(page, repository);
+    const api = apiObserver.snapshot();
+    const verdict = evaluateLiveCanary({ repository, dom: latestDom, api });
+    const diagnostics = createCanaryDiagnostics({
+      phase: "assertion",
+      repository,
+      targetUrl,
+      currentUrl: page.url(),
+      responseStatus,
+      dom: latestDom,
+      api,
+      verdict,
+    });
+    await attachDiagnostics(testInfo, diagnostics);
+    diagnosticsAttached = true;
+    expect(
+      verdict.ok,
+      `live reviewer verdict failed: ${JSON.stringify(verdict.failures)}`,
+    ).toBe(true);
   } catch (error) {
+    await apiObserver.settle();
+    latestDom ??= await readDomSnapshot(page, repository).catch(() => null);
+    const dom = latestDom ?? emptyDomSnapshot();
+    const api = apiObserver.snapshot();
+    const verdict = evaluateLiveCanary({ repository, dom, api });
+    if (!diagnosticsAttached) {
+      await attachDiagnostics(
+        testInfo,
+        createCanaryDiagnostics({
+          phase,
+          repository,
+          targetUrl,
+          currentUrl: page.url(),
+          responseStatus,
+          dom,
+          api,
+          verdict,
+        }),
+      );
+    }
+
     const screenshotPath = testInfo.outputPath("github-pr-list.png");
     const screenshotCaptured = await page
       .screenshot({ path: screenshotPath, fullPage: true })
@@ -171,24 +157,6 @@ test("discovers live GitHub PR rows and creates reviewer mounts", async ({
         contentType: "image/png",
       });
     }
-    await testInfo.attach("canary-diagnostics.json", {
-      body: Buffer.from(
-        JSON.stringify(
-          {
-            targetUrl,
-            currentUrl: page.url(),
-            responseStatus,
-            snapshot: latestSnapshot,
-            apiRequestCount,
-            apiRequestsWithAuthorization,
-            apiResponses,
-          },
-          null,
-          2,
-        ),
-      ),
-      contentType: "application/json",
-    });
     const pageHtml = await page.content().catch((contentError: unknown) => {
       return `Unable to capture page DOM: ${String(contentError)}`;
     });
@@ -198,61 +166,42 @@ test("discovers live GitHub PR rows and creates reviewer mounts", async ({
     });
     throw error;
   } finally {
+    await apiObserver.settle();
     await context.close();
   }
 });
 
-async function readCanarySnapshot(page: Page): Promise<CanarySnapshot> {
-  return page.locator(githubSelectors.row).evaluateAll(
-    (rows, selectors) => {
-      const pullNumbers: string[] = [];
-      let mountCount = 0;
+function readDomSnapshot(
+  page: Page,
+  repository: CanaryRepository,
+): Promise<CanaryDomSnapshot> {
+  return page.evaluate(collectLiveCanaryDomSnapshot, {
+    repository,
+    productionRowSelector: githubSelectors.row,
+  });
+}
 
-      for (const row of rows) {
-        const rowId = row.getAttribute("id");
-        const idMatch = rowId?.match(/issue_(\d+)/);
-        let pullNumber = idMatch?.[1] ?? null;
-        if (pullNumber == null) {
-          for (const selector of selectors.pullLinkSelectors) {
-            const href = row
-              .querySelector<HTMLAnchorElement>(selector)
-              ?.getAttribute("href");
-            const hrefMatch = href?.match(/\/pull\/(\d+)/);
-            if (hrefMatch != null) {
-              pullNumber = hrefMatch[1];
-              break;
-            }
-          }
-        }
-        if (pullNumber != null) {
-          pullNumbers.push(pullNumber);
-        }
-        if (row.querySelector("[data-ghpsr-root]") != null) {
-          mountCount += 1;
-        }
-      }
+function emptyDomSnapshot(): CanaryDomSnapshot {
+  return {
+    mainFound: false,
+    challengeDetected: false,
+    ignoredPullLinkCount: 0,
+    hostPullNumbers: [],
+    productionPullNumbers: [],
+    rows: [],
+  };
+}
 
-      return {
-        rowCount: rows.length,
-        pullNumbers,
-        mountCount,
-      };
-    },
-    { pullLinkSelectors: githubSelectors.pullLinkSelectors },
-  );
+function attachDiagnostics(
+  testInfo: TestInfo,
+  diagnostics: object,
+): Promise<void> {
+  return testInfo.attach("canary-diagnostics.json", {
+    body: Buffer.from(JSON.stringify(diagnostics, null, 2)),
+    contentType: "application/json",
+  });
 }
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function parseGitHubApiUrl(value: string): URL | null {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && url.hostname === "api.github.com"
-      ? url
-      : null;
-  } catch {
-    return null;
-  }
 }
