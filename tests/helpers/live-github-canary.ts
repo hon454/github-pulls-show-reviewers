@@ -1331,6 +1331,18 @@ export function isDifferentPullListPage(
   return candidatePage != null && candidatePage !== currentPage;
 }
 
+export function sameCanaryPullNumberSet(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return (
+    leftSet.size === rightSet.size &&
+    [...leftSet].every((pullNumber) => rightSet.has(pullNumber))
+  );
+}
+
 export type CanaryDomCapture = {
   source: "current-document" | "unavailable";
 };

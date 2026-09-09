@@ -11,6 +11,7 @@ import {
   evaluateLiveCanary,
   isDifferentPullListPage,
   isTerminalCanaryDomSnapshot,
+  sameCanaryPullNumberSet,
   type CanaryApiEvidence,
   type CanaryDomSnapshot,
   type CanaryPullEvidence,
@@ -41,6 +42,15 @@ describe("live canary host-row oracle", () => {
         initial,
       ),
     ).toBe(true);
+  });
+
+  it("compares host pull-number sets without treating order as a change", () => {
+    expect(sameCanaryPullNumberSet(["42", "43"], ["43", "42"])).toBe(
+      true,
+    );
+    expect(sameCanaryPullNumberSet(["42", "43"], ["42", "44"])).toBe(
+      false,
+    );
   });
 
   it("uses deduplicated main-list PR links instead of the production selector", () => {

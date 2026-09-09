@@ -22,6 +22,7 @@ import {
   evaluateLiveCanary,
   isDifferentPullListPage,
   isTerminalCanaryDomSnapshot,
+  sameCanaryPullNumberSet,
   type CanaryDomSnapshot,
   type CanaryDomCapture,
   type CanaryFailure,
@@ -146,7 +147,10 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       "navigation-url-unchanged",
     );
     requireNavigationEvidence(
-      !samePullNumbers(pageTwoDom.hostPullNumbers, initialDom.hostPullNumbers),
+      !sameCanaryPullNumberSet(
+        pageTwoDom.hostPullNumbers,
+        initialDom.hostPullNumbers,
+      ),
       "navigation-pull-set-unchanged",
     );
     documentResponse = { status: null };
@@ -187,7 +191,10 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       documentMaintained: restoredDocumentMaintained,
     });
     requireNavigationEvidence(
-      samePullNumbers(restoredDom.hostPullNumbers, initialDom.hostPullNumbers),
+      sameCanaryPullNumberSet(
+        restoredDom.hostPullNumbers,
+        initialDom.hostPullNumbers,
+      ),
       "back-restore-set-mismatch",
     );
     documentResponse = { status: null };
@@ -238,7 +245,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       "navigation-url-unchanged",
     );
     requireNavigationEvidence(
-      !samePullNumbers(
+      !sameCanaryPullNumberSet(
         filteredDom.hostPullNumbers,
         restoredDom.hostPullNumbers,
       ),
@@ -475,10 +482,6 @@ function requireNavigationEvidence(
   code: Exclude<NavigationFailureCode, "navigation-stage-failed">,
 ): void {
   if (!condition) throw new NavigationEvidenceError(code);
-}
-
-function samePullNumbers(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function navigationFailureFor(error: unknown, phase: string): CanaryFailure | undefined {
