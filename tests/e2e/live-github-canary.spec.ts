@@ -16,6 +16,7 @@ import {
 import { githubSelectors } from "../../src/github/selectors";
 import {
   collectLiveCanaryDomSnapshot,
+  appendCanaryFailure,
   createCanaryDiagnostics,
   createCanaryResponseObserver,
   evaluateLiveCanary,
@@ -23,6 +24,7 @@ import {
   isTerminalCanaryDomSnapshot,
   type CanaryDomSnapshot,
   type CanaryDomCapture,
+  type CanaryFailure,
   type CanaryNavigationObservation,
   type CanaryRepository,
   type CanaryResponseObserver,
@@ -110,6 +112,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       page,
       repository,
       (url) => isDifferentPullListPage(url, paginationCurrentUrl),
+      "required-pagination-link-unavailable",
     );
     await observeMainDocumentResponse(
       page,
@@ -138,8 +141,14 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       responseStatus: documentResponse.status,
       documentMaintained: pageTwoDocumentMaintained,
     });
-    expect(page.url()).not.toBe(previousUrl);
-    expect(pageTwoDom.hostPullNumbers).not.toEqual(initialDom.hostPullNumbers);
+    requireNavigationEvidence(
+      page.url() !== previousUrl,
+      "navigation-url-unchanged",
+    );
+    requireNavigationEvidence(
+      !samePullNumbers(pageTwoDom.hostPullNumbers, initialDom.hostPullNumbers),
+      "navigation-pull-set-unchanged",
+    );
     documentResponse = { status: null };
     previousUrl = page.url();
     const pageTwoDocument = await page.evaluateHandle(() => document);
@@ -177,7 +186,10 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       responseStatus: documentResponse.status,
       documentMaintained: restoredDocumentMaintained,
     });
-    expect(restoredDom.hostPullNumbers).toEqual(initialDom.hostPullNumbers);
+    requireNavigationEvidence(
+      samePullNumbers(restoredDom.hostPullNumbers, initialDom.hostPullNumbers),
+      "back-restore-set-mismatch",
+    );
     documentResponse = { status: null };
     previousUrl = page.url();
     const restoredDocument = await page.evaluateHandle(() => document);
@@ -192,6 +204,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       /(?:^|\s)is:(?:open|closed)(?:\s|$)/i.test(
         url.searchParams.get("q") ?? "",
       ),
+      "required-filter-link-unavailable",
     );
     await observeMainDocumentResponse(
       page,
@@ -220,9 +233,16 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       responseStatus: documentResponse.status,
       documentMaintained: filterDocumentMaintained,
     });
-    expect(page.url()).not.toBe(previousUrl);
-    expect(filteredDom.hostPullNumbers).not.toEqual(
-      restoredDom.hostPullNumbers,
+    requireNavigationEvidence(
+      page.url() !== previousUrl,
+      "navigation-url-unchanged",
+    );
+    requireNavigationEvidence(
+      !samePullNumbers(
+        filteredDom.hostPullNumbers,
+        restoredDom.hostPullNumbers,
+      ),
+      "navigation-pull-set-unchanged",
     );
 
     await apiObserver.settle();
@@ -267,7 +287,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     const dom = capture.dom;
     const api = apiObserver.snapshot();
     const evaluatedVerdict = evaluateLiveCanary({ repository, dom, api });
-    const verdict =
+    const captureVerdict =
       capture.provenance.source === "current-document"
         ? evaluatedVerdict
         : {
@@ -282,6 +302,10 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
               },
             ],
           };
+    const verdict = appendCanaryFailure(
+      captureVerdict,
+      navigationFailureFor(error, phase),
+    );
     const diagnostics = createCanaryDiagnostics({
       phase,
       repository,
@@ -406,6 +430,9 @@ async function findNativePullListLink(
   page: Page,
   repository: CanaryRepository,
   predicate: (url: URL) => boolean,
+  failureCode:
+    | "required-pagination-link-unavailable"
+    | "required-filter-link-unavailable",
 ): Promise<{ url: string; locator: Locator }> {
   const links = page.locator("main a[href]");
   const count = await links.count();
@@ -423,9 +450,45 @@ async function findNativePullListLink(
       continue;
     return { url: url.toString(), locator };
   }
-  throw new Error(
-    "required native same-repository pull-list link is unavailable",
-  );
+  throw new NavigationEvidenceError(failureCode);
+}
+
+type NavigationFailureCode =
+  | "required-pagination-link-unavailable"
+  | "required-filter-link-unavailable"
+  | "navigation-url-unchanged"
+  | "navigation-pull-set-unchanged"
+  | "back-restore-set-mismatch"
+  | "navigation-stage-failed";
+
+class NavigationEvidenceError extends Error {
+  readonly failure: CanaryFailure;
+
+  constructor(code: Exclude<NavigationFailureCode, "navigation-stage-failed">) {
+    super(code);
+    this.failure = { owner: "environment", code, pullNumber: null };
+  }
+}
+
+function requireNavigationEvidence(
+  condition: boolean,
+  code: Exclude<NavigationFailureCode, "navigation-stage-failed">,
+): void {
+  if (!condition) throw new NavigationEvidenceError(code);
+}
+
+function samePullNumbers(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function navigationFailureFor(error: unknown, phase: string): CanaryFailure | undefined {
+  if (error instanceof NavigationEvidenceError) return error.failure;
+  if (!/^navigation:[ABCD]$/.test(phase)) return undefined;
+  return {
+    owner: "observation",
+    code: "navigation-stage-failed",
+    pullNumber: null,
+  };
 }
 
 async function documentWasMaintained(

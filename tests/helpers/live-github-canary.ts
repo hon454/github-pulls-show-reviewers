@@ -1107,6 +1107,23 @@ export type CanaryVerdict = {
   samples: CanaryVerifiedSample[];
 };
 
+export function appendCanaryFailure(
+  verdict: CanaryVerdict,
+  failure: CanaryFailure | undefined,
+): CanaryVerdict {
+  if (
+    failure == null ||
+    verdict.failures.some(
+      (existing) =>
+        existing.owner === failure.owner &&
+        existing.code === failure.code &&
+        existing.pullNumber === failure.pullNumber,
+    )
+  )
+    return failure == null ? verdict : { ...verdict, ok: false };
+  return { ...verdict, ok: false, failures: [...verdict.failures, failure] };
+}
+
 export function evaluateLiveCanary(input: {
   repository: CanaryRepository;
   dom: CanaryDomSnapshot;

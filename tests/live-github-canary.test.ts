@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   collectLiveCanaryDomSnapshot,
+  appendCanaryFailure,
   createCanaryDiagnostics,
   createCanaryResponseObserver,
   deriveCanaryExpectedOutcome,
@@ -559,6 +560,38 @@ describe("independent reviewer expectation oracle", () => {
 });
 
 describe("live canary verdict", () => {
+  it("persists a typed navigation failure even when the current DOM is healthy", () => {
+    const verdict = appendCanaryFailure(
+      evaluateLiveCanary({ repository, dom: positiveDom(), api: positiveApi() }),
+      {
+        owner: "environment",
+        code: "required-pagination-link-unavailable",
+        pullNumber: null,
+      },
+    );
+    const diagnostics = createCanaryDiagnostics({
+      phase: "navigation:B",
+      repository,
+      targetUrl: "https://github.com/octo/repo/pulls?q=is%3Apr",
+      currentUrl: "https://github.com/octo/repo/pulls?q=is%3Apr",
+      responseStatus: null,
+      dom: positiveDom(),
+      api: positiveApi(),
+      verdict,
+    });
+
+    expect(verdict.ok).toBe(false);
+    expect(diagnostics).toMatchObject({
+      failures: [
+        {
+          owner: "environment",
+          code: "required-pagination-link-unavailable",
+          pullNumber: null,
+        },
+      ],
+    });
+  });
+
   it("accepts a rendered reviewer row and a verified empty row", () => {
     const verdict = evaluateLiveCanary({
       repository,

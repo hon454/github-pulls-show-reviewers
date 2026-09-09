@@ -118,6 +118,10 @@ that no matching document response was observed (for example, a same-document
 transition); it is not a successful HTTP result. The canary separately records
 the extension's observed public API endpoint statuses and rate-limit quota, and
 uses those records—not a navigation response—to verify reviewer outcomes.
+Required pagination/filter links, unchanged navigation URLs or PR sets, and a
+Back restore-set mismatch are also written as typed, sanitized navigation
+failures. Thus a healthy-looking current DOM cannot hide a failed required
+navigation invariant in the stage JSON.
 
 `.github/workflows/live-github-dom-canary.yml` runs the live project daily at
 06:17 UTC and can also be started with `workflow_dispatch`. The workflow has
