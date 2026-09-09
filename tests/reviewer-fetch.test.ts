@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { GitHubApiError, GitHubPullRequestEndpointsError } from "../src/github/api";
+import {
+  GitHubApiError,
+  GitHubPullRequestEndpointsError,
+} from "../src/github/api";
 import {
   extractReviewerFetchFailures,
+  fetchPullReviewerSummaryResponseSchema,
   serializeReviewerFetchError,
 } from "../src/runtime/reviewer-fetch";
 
@@ -17,14 +21,60 @@ const reviewsEndpoint = {
   path: "/repos/cinev/shotloom/pulls/42/reviews",
 };
 
+describe("fetchPullReviewerSummaryResponseSchema", () => {
+  const baseSummary = {
+    status: "ok" as const,
+    requestedUsers: [{ login: "alice", avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [
+      { login: "alice", avatarUrl: null, state: "APPROVED" as const },
+    ],
+  };
+
+  it("round-trips confirmed and unverified request evidence", () => {
+    const parsed = fetchPullReviewerSummaryResponseSchema.parse({
+      ok: true,
+      summary: {
+        ...baseSummary,
+        reviewRequestEvidence: [
+          { login: "alice", status: "unverified" },
+          { login: "bob", status: "confirmed" },
+        ],
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      summary: {
+        reviewRequestEvidence: [
+          { login: "alice", status: "unverified" },
+          { login: "bob", status: "confirmed" },
+        ],
+      },
+    });
+  });
+
+  it("accepts a legacy summary without request evidence", () => {
+    const parsed = fetchPullReviewerSummaryResponseSchema.parse({
+      ok: true,
+      summary: baseSummary,
+    });
+
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.summary.reviewRequestEvidence).toBeUndefined();
+    }
+  });
+});
+
 describe("serializeReviewerFetchError", () => {
   it("flags rateLimited=true and carries the rate-limit snapshot when GitHub headers are present", () => {
-    const error = new GitHubApiError(
-      403,
-      undefined,
-      pullEndpoint,
-      { limit: 60, remaining: 0, resource: "core", resetAt: 1 },
-    );
+    const error = new GitHubApiError(403, undefined, pullEndpoint, {
+      limit: 60,
+      remaining: 0,
+      resource: "core",
+      resetAt: 1,
+    });
 
     const envelope = serializeReviewerFetchError(error);
 
@@ -80,12 +130,12 @@ describe("serializeReviewerFetchError", () => {
   });
 
   it("omits the rate-limit snapshot when every header is null", () => {
-    const error = new GitHubApiError(
-      429,
-      undefined,
-      pullEndpoint,
-      { limit: null, remaining: null, resource: null, resetAt: null },
-    );
+    const error = new GitHubApiError(429, undefined, pullEndpoint, {
+      limit: null,
+      remaining: null,
+      resource: null,
+      resetAt: null,
+    });
 
     const envelope = serializeReviewerFetchError(error);
 
@@ -96,12 +146,12 @@ describe("serializeReviewerFetchError", () => {
 
 describe("extractReviewerFetchFailures", () => {
   it("computes rateLimited and carries the snapshot from a live GitHubApiError instance", () => {
-    const error = new GitHubApiError(
-      403,
-      undefined,
-      pullEndpoint,
-      { limit: 60, remaining: 0, resource: "core", resetAt: 1 },
-    );
+    const error = new GitHubApiError(403, undefined, pullEndpoint, {
+      limit: 60,
+      remaining: 0,
+      resource: "core",
+      resetAt: 1,
+    });
 
     expect(extractReviewerFetchFailures(error)).toEqual([
       {
@@ -118,14 +168,30 @@ describe("extractReviewerFetchFailures", () => {
       kind: "github-endpoints" as const,
       status: 403,
       failures: [
-        { status: 403, endpoint: "/repos/cinev/shotloom/pulls/42", rateLimited: true },
-        { status: 404, endpoint: "/repos/cinev/shotloom/pulls/42/reviews", rateLimited: false },
+        {
+          status: 403,
+          endpoint: "/repos/cinev/shotloom/pulls/42",
+          rateLimited: true,
+        },
+        {
+          status: 404,
+          endpoint: "/repos/cinev/shotloom/pulls/42/reviews",
+          rateLimited: false,
+        },
       ],
     };
 
     expect(extractReviewerFetchFailures(envelope)).toEqual([
-      { status: 403, endpoint: "/repos/cinev/shotloom/pulls/42", rateLimited: true },
-      { status: 404, endpoint: "/repos/cinev/shotloom/pulls/42/reviews", rateLimited: false },
+      {
+        status: 403,
+        endpoint: "/repos/cinev/shotloom/pulls/42",
+        rateLimited: true,
+      },
+      {
+        status: 404,
+        endpoint: "/repos/cinev/shotloom/pulls/42/reviews",
+        rateLimited: false,
+      },
     ]);
   });
 

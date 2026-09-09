@@ -557,7 +557,7 @@ describe("fetchPullReviewerSummary", () => {
     ]);
   });
 
-  it("drops a stale requested reviewer when the latest review request predates CHANGES_REQUESTED", async () => {
+  it("drops a stale requested reviewer when a complete lookup proves the request is not later", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -577,7 +577,7 @@ describe("fetchPullReviewerSummary", () => {
           JSON.stringify([
             {
               event: "review_requested",
-              created_at: "2026-05-06T12:43:42Z",
+              created_at: "2026-05-07T02:03:16Z",
               requested_reviewer: { login: "hon454", avatar_url: null },
             },
           ]),
@@ -610,6 +610,48 @@ describe("fetchPullReviewerSummary", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       "https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100",
     );
+  });
+
+  it("preserves an unverified request when a complete lookup has no request event", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-05-07T02:03:16Z",
+              user: { login: "alice", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+      pullMetadata: {
+        number: "42",
+        authorLogin: "author",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+      },
+    });
+
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: null },
+    ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "unverified" },
+    ]);
   });
 
   it("keeps a requested reviewer when the latest review request follows the latest non-comment review", async () => {
@@ -657,6 +699,9 @@ describe("fetchPullReviewerSummary", () => {
     ]);
     expect(summary.completedReviews).toEqual([
       { login: "alice", avatarUrl: null, state: "APPROVED" },
+    ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "confirmed" },
     ]);
   });
 
@@ -755,13 +800,16 @@ describe("fetchPullReviewerSummary", () => {
     expect(summary.requestedUsers).toEqual([
       { login: "alice", avatarUrl: null },
     ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "confirmed" },
+    ]);
     expect(fetchMock.mock.calls).toHaveLength(3);
     expect(fetchMock.mock.calls[2]?.[0]).toBe(
       "https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2",
     );
   });
 
-  it("falls back to completed review state when the confirming issue event is beyond the lookup bound", async () => {
+  it("preserves an unverified request when the confirming issue event is beyond the lookup bound", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -820,9 +868,14 @@ describe("fetchPullReviewerSummary", () => {
       },
     });
 
-    expect(summary.requestedUsers).toEqual([]);
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: null },
+    ]);
     expect(summary.completedReviews).toEqual([
       { login: "alice", avatarUrl: null, state: "APPROVED" },
+    ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "unverified" },
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
@@ -893,9 +946,14 @@ describe("fetchPullReviewerSummary", () => {
         },
       });
 
-      expect(summary.requestedUsers).toEqual([]);
+      expect(summary.requestedUsers).toEqual([
+        { login: "alice", avatarUrl: null },
+      ]);
       expect(summary.completedReviews).toEqual([
         { login: "alice", avatarUrl: null, state: "APPROVED" },
+      ]);
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "unverified" },
       ]);
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(fetchMock.mock.calls.map((call) => call[0])).not.toContain(
@@ -904,7 +962,7 @@ describe("fetchPullReviewerSummary", () => {
     },
   );
 
-  it("falls back to completed review state when an ambiguous issue-events lookup fails", async () => {
+  it("preserves an unverified request when an ambiguous issue-events lookup fails", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         new Response(
@@ -938,9 +996,157 @@ describe("fetchPullReviewerSummary", () => {
       },
     });
 
-    expect(summary.requestedUsers).toEqual([]);
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: null },
+    ]);
     expect(summary.completedReviews).toEqual([
       { login: "alice", avatarUrl: null, state: "CHANGES_REQUESTED" },
+    ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "unverified" },
+    ]);
+  });
+
+  it.each([
+    [
+      "429",
+      new Response(JSON.stringify({ message: "too many requests" }), {
+        status: 429,
+      }),
+    ],
+    ["network", new TypeError("network unavailable")],
+    ["invalid JSON", new Response("{not-json", { status: 200 })],
+  ])(
+    "preserves an unverified request after a %s event failure",
+    async (_case, eventResult) => {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-05-07T02:03:16Z",
+              user: { login: "alice", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+      if (eventResult instanceof Error) {
+        fetchMock.mockRejectedValueOnce(eventResult);
+      } else {
+        fetchMock.mockResolvedValueOnce(eventResult);
+      }
+
+      const summary = await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+        },
+      });
+
+      expect(summary.requestedUsers).toEqual([
+        { login: "alice", avatarUrl: null },
+      ]);
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "unverified" },
+      ]);
+    },
+  );
+
+  it("keeps per-user confirmed and unverified evidence from a partial lookup", async () => {
+    const pageTwo =
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?per_page=100&page=2";
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-05-07T02:00:00Z",
+              user: { login: "alice", avatar_url: null },
+            },
+            {
+              state: "CHANGES_REQUESTED",
+              submitted_at: "2026-05-07T04:00:00Z",
+              user: { login: "bob", avatar_url: null },
+            },
+            {
+              state: "DISMISSED",
+              submitted_at: null,
+              user: { login: "carol", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              event: "review_requested",
+              created_at: "2026-05-07T03:00:00Z",
+              requested_reviewer: { login: "alice", avatar_url: null },
+            },
+            {
+              event: "review_requested",
+              created_at: "2026-05-07T01:00:00Z",
+              requested_reviewer: { login: "bob", avatar_url: null },
+            },
+            {
+              event: "review_requested",
+              created_at: "not-a-date",
+              requested_reviewer: { login: "carol", avatar_url: null },
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: `<${pageTwo}>; rel="next"`,
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "page failed" }), {
+          status: 500,
+        }),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+      pullMetadata: {
+        number: "42",
+        authorLogin: "author",
+        requestedUsers: [
+          { login: "alice", avatarUrl: null },
+          { login: "bob", avatarUrl: null },
+          { login: "carol", avatarUrl: null },
+          { login: "dave", avatarUrl: null },
+        ],
+        requestedTeams: [],
+      },
+    });
+
+    expect(summary.requestedUsers.map(({ login }) => login)).toEqual([
+      "alice",
+      "bob",
+      "carol",
+      "dave",
+    ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "confirmed" },
+      { login: "bob", status: "unverified" },
+      { login: "carol", status: "unverified" },
     ]);
   });
 
@@ -979,7 +1185,7 @@ describe("fetchPullReviewerSummary", () => {
     ).rejects.toBe(abortError);
   });
 
-  it("warns and falls back when an ambiguous issue-events payload is malformed", async () => {
+  it("warns and preserves an unverified request when issue events are malformed", async () => {
     const warnMock = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     vi.spyOn(globalThis, "fetch")
@@ -1021,9 +1227,14 @@ describe("fetchPullReviewerSummary", () => {
       },
     });
 
-    expect(summary.requestedUsers).toEqual([]);
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: null },
+    ]);
     expect(summary.completedReviews).toEqual([
       { login: "alice", avatarUrl: null, state: "CHANGES_REQUESTED" },
+    ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "unverified" },
     ]);
     expect(warnMock).toHaveBeenCalledWith(
       expect.stringContaining("unexpected response shape"),

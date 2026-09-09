@@ -26,6 +26,7 @@ export type {
   PullReviewerMetadata,
   PullReviewerSummary,
   PullReviewerSummaryStatus,
+  ReviewRequestEvidence,
   RepositoryValidationAuthMode,
   RepositoryValidationOutcome,
   RepositoryValidationEndpointFailure,

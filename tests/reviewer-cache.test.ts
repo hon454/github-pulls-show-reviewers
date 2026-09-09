@@ -37,6 +37,18 @@ describe("reviewer cache", () => {
     expect(got?.requestedUsers[0].login).toBe("alice");
   });
 
+  it("preserves request evidence when a summary is redisplayed from cache", () => {
+    const key = buildReviewerCacheKey("cinev", "shotloom", "2");
+    setCachedReviewerSummary(key, {
+      ...summary("alice"),
+      reviewRequestEvidence: [{ login: "alice", status: "unverified" }],
+    });
+
+    expect(getCachedReviewerSummary(key)?.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "unverified" },
+    ]);
+  });
+
   it("evicts the least-recently-inserted entry when exceeding the bound", () => {
     __setReviewerCacheMaxEntriesForTesting(2);
     const a = buildReviewerCacheKey("org", "repo", "1");

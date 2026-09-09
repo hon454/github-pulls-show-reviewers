@@ -757,6 +757,15 @@
     "message": "審查已撤銷（仍要求審查）",
     "description": "Completed dismissed review while the reviewer is still requested."
   },
+  "reviewers_requested_previous_unverified": {
+    "message": "已要求審查 · 先前審查：$STATE$ · 無法確認再次要求審查的時間",
+    "description": "仍顯示先前已完成的審查，但無法確認再次要求審查時間的審查者。",
+    "placeholders": {
+      "state": {
+        "content": "$1"
+      }
+    }
+  },
   "banner_auth_expired": {
     "message": "GitHub 工作階段已過期。請重新登入以繼續載入審查者。",
     "description": "Expired GitHub session guidance."

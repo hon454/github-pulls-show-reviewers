@@ -21,6 +21,11 @@
 - Shows each reviewer's completed review state: `approved`, `changes requested`,
   `commented`, or `dismissed`. The latest non-comment review takes precedence over
   later comments; comments are used when no non-comment review exists.
+- When a requested reviewer also has a completed review, shows a refresh badge
+  only when bounded issue-event evidence confirms a later request. If that
+  evidence is incomplete or unavailable, keeps the requested color and search
+  link, retains the previous review in the tooltip and accessible name, and
+  hides the refresh badge.
 - Links reviewer chips to GitHub PR searches.
 - Reuses page-level reviewer metadata across visible rows, including searched
   or paginated pull request lists when GitHub's REST pagination exposes those

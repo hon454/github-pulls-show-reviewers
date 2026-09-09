@@ -757,6 +757,15 @@
     "message": "dismissed (still requested)",
     "description": "Completed dismissed review while the reviewer is still requested."
   },
+  "reviewers_requested_previous_unverified": {
+    "message": "requested · previous review: $STATE$ · re-request timing unavailable",
+    "description": "Requested reviewer whose previous completed review remains visible but whose re-request timing could not be verified.",
+    "placeholders": {
+      "state": {
+        "content": "$1"
+      }
+    }
+  },
   "banner_auth_expired": {
     "message": "Your GitHub session expired. Sign in again to keep loading reviewers.",
     "description": "Expired GitHub session guidance."

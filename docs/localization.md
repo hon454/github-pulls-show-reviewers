@@ -22,15 +22,15 @@ linguistic review, not a claim of external native-speaker certification. Indepen
 PR review is coordinated separately. Future additions must change the typed
 `MessageArgs` contract and all five catalogs in the same PR.
 
-| Namespace      | Keys per locale | Owner and context                                                                                                     |
-| -------------- | --------------: | --------------------------------------------------------------------------------------------------------------------- |
-| `extension_`   |               3 | Manifest name, description, toolbar title; Chrome owns selection                                                      |
-| `options_`     |              45 | Options shell, account empty/error/installations/actions, display controls, permission/configuration guidance         |
-| `language_`    |              11 | Selector autonyms, auto/help, save/live status and failure                                                            |
-| `auth_`        |              23 | Device initiation/code/copy/URL/expiry/cancel, waiting/connected/denied/expired and structured failures               |
-| `diagnostics_` |              56 | Input validation, matched account/coverage, all ten outcomes, endpoints and rate-limit evidence                       |
-| `reviewers_`   |              14 | Loading/section/team, title/ARIA patterns, requested plus four completed states and four still-requested combinations |
-| `banner_`      |              22 | Six access/failure kinds, configure/sign-in/reload/dismiss, usage and reset-time variants                             |
+| Namespace      | Keys per locale | Owner and context                                                                                                                                                        |
+| -------------- | --------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `extension_`   |               3 | Manifest name, description, toolbar title; Chrome owns selection                                                                                                         |
+| `options_`     |              45 | Options shell, account empty/error/installations/actions, display controls, permission/configuration guidance                                                            |
+| `language_`    |              11 | Selector autonyms, auto/help, save/live status and failure                                                                                                               |
+| `auth_`        |              23 | Device initiation/code/copy/URL/expiry/cancel, waiting/connected/denied/expired and structured failures                                                                  |
+| `diagnostics_` |              56 | Input validation, matched account/coverage, all ten outcomes, endpoints and rate-limit evidence                                                                          |
+| `reviewers_`   |              15 | Loading/section/team, title/ARIA patterns, requested plus four completed states, four confirmed still-requested combinations, and the unverified previous-review pattern |
+| `banner_`      |              22 | Six access/failure kinds, configure/sign-in/reload/dismiss, usage and reset-time variants                                                                                |
 
 Owners of each surface maintain its namespace and consumer tests. The locale QA
 owner maintains this glossary and checks cross-surface consistency. Store copy
@@ -60,26 +60,30 @@ native-speaker certification is claimed.
 
 These are context-specific display terms, not translations of API enum values.
 
-| Meaning                 | English                 | 한국어             | 日本語                   | 简体中文        | 繁體中文         |
-| ----------------------- | ----------------------- | ------------------ | ------------------------ | --------------- | ---------------- |
-| Review requested        | requested               | 리뷰 요청됨        | レビュー依頼中           | 已请求审阅      | 已要求審查       |
-| Approved                | approved                | 승인됨             | 承認済み                 | 已批准          | 已核准           |
-| Changes requested       | changes requested       | 변경 요청됨        | 変更要求済み             | 已请求更改      | 已要求變更       |
-| Commented               | commented               | 의견 남김          | コメント済み             | 已评论          | 已留言           |
-| Dismissed review        | dismissed               | 리뷰 무효화됨      | レビュー取り消し済み     | 审阅已撤销      | 審查已撤銷       |
-| Still requested         | still requested         | 리뷰 요청 유지 중  | 引き続きレビュー依頼中   | 仍请求审阅      | 仍要求審查       |
-| GitHub App installation | GitHub App installation | GitHub App 설치    | GitHub Appのインストール | GitHub App 安装 | GitHub App 安裝  |
-| Repository              | repository              | 저장소             | リポジトリ               | 仓库            | 儲存庫           |
-| Rate limit              | rate limit              | 요청 한도          | レート制限               | 速率限制        | 速率限制         |
-| Username (GitHub login) | username                | 사용자 이름        | ユーザー名               | 用户名          | 使用者名稱       |
-| Sign in                 | Sign in                 | 로그인             | ログイン                 | 登录            | 登入             |
-| Token                   | token                   | 토큰               | トークン                 | 令牌            | 權杖             |
-| Refresh installations   | Refresh installations   | 설치 정보 새로고침 | インストール情報を更新   | 刷新安装信息    | 重新整理安裝資訊 |
+| Meaning                       | English                       | 한국어                | 日本語                       | 简体中文             | 繁體中文                   |
+| ----------------------------- | ----------------------------- | --------------------- | ---------------------------- | -------------------- | -------------------------- |
+| Review requested              | requested                     | 리뷰 요청됨           | レビュー依頼中               | 已请求审阅           | 已要求審查                 |
+| Approved                      | approved                      | 승인됨                | 承認済み                     | 已批准               | 已核准                     |
+| Changes requested             | changes requested             | 변경 요청됨           | 変更要求済み                 | 已请求更改           | 已要求變更                 |
+| Commented                     | commented                     | 의견 남김             | コメント済み                 | 已评论               | 已留言                     |
+| Dismissed review              | dismissed                     | 리뷰 무효화됨         | レビュー取り消し済み         | 审阅已撤销           | 審查已撤銷                 |
+| Still requested               | still requested               | 리뷰 요청 유지 중     | 引き続きレビュー依頼中       | 仍请求审阅           | 仍要求審查                 |
+| Re-request timing unavailable | re-request timing unavailable | 재요청 시점 확인 불가 | 再依頼の時点を確認できません | 无法确认再次请求时间 | 無法確認再次要求審查的時間 |
+| GitHub App installation       | GitHub App installation       | GitHub App 설치       | GitHub Appのインストール     | GitHub App 安装      | GitHub App 安裝            |
+| Repository                    | repository                    | 저장소                | リポジトリ                   | 仓库                 | 儲存庫                     |
+| Rate limit                    | rate limit                    | 요청 한도             | レート制限                   | 速率限制             | 速率限制                   |
+| Username (GitHub login)       | username                      | 사용자 이름           | ユーザー名                   | 用户名               | 使用者名稱                 |
+| Sign in                       | Sign in                       | 로그인                | ログイン                     | 登录                 | 登入                       |
+| Token                         | token                         | 토큰                  | トークン                     | 令牌                 | 權杖                       |
+| Refresh installations         | Refresh installations         | 설치 정보 새로고침    | インストール情報を更新       | 刷新安装信息         | 重新整理安裝資訊           |
 
 `DISMISSED` means an existing review was dismissed, not that a PR was rejected
 or a notification was closed. `COMMENTED` does not override a prior non-comment
 completed review. A requested reviewer can retain completed evidence; the refresh
-badge needs a later `review_requested` event. Teams show requested teams, never
+badge needs a confirmed later `review_requested` event. When bounded event evidence
+is incomplete or unavailable, the localized title and accessible name say that the
+review is requested, retain the previous completed state, and report that re-request
+timing is unavailable. Teams show requested teams, never
 aggregate team approval. Unsubmitted `PENDING` reviews are excluded. Language
 changes must not change any of those rules.
 
@@ -146,8 +150,9 @@ client ID/slug; this is packaged UI QA, not a production-config ZIP receipt.
   HTTP 404/429 endpoint evidence. The three diagnostic requests and one failed
   installation refresh remain unchanged across language switches. Titles, HTML
   language, accessible selector names and translated error/live status checked.
-- Reviewers/banner: five locales × 360/1280px, requested team, completed + still
-  requested reviewer ARIA/title, unavailable banner/actions/dismissal, host text
+- Reviewers/banner: five locales × 360/1280px, requested team, confirmed and
+  unverified completed + still-requested reviewer ARIA/title/badge behavior,
+  unavailable banner/actions/dismissal, host text
   untouched. FIFO 42…49, peak four, metadata one/reviews eight/events seven;
   language switches and 800 extension append/remove pairs add no data requests. Avatar
   image requests are separate and are not claimed to be zero network activity.

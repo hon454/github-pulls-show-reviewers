@@ -3337,6 +3337,7 @@ describe("render-only reviewer display events", () => {
     requestedUsers: [{ login: "alice", avatarUrl: null }],
     requestedTeams: [],
     completedReviews: [{ login: "alice", avatarUrl: null, state: "APPROVED" }],
+    reviewRequestEvidence: [{ login: "alice", status: "confirmed" }],
   };
   const initialPreferences: PreferencesModule.Preferences = {
     version: 1,

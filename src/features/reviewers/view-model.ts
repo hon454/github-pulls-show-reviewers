@@ -13,6 +13,7 @@ export type ReviewerEntry =
       avatarUrl: string | null;
       state: ReviewState | null;
       isRequested: boolean;
+      reviewRequestStatus: "confirmed" | "unverified" | null;
       href: string;
     }
   | {
@@ -40,6 +41,13 @@ export function buildReviewers(
     requestedByLogin.set(user.login, user);
   }
 
+  const reviewRequestEvidenceByLogin = new Map(
+    summary.reviewRequestEvidence?.map((evidence) => [
+      evidence.login,
+      evidence.status,
+    ]) ?? [],
+  );
+
   const allLogins = new Set<string>([
     ...reviewedByLogin.keys(),
     ...requestedByLogin.keys(),
@@ -51,6 +59,10 @@ export function buildReviewers(
     const requested = requestedByLogin.get(login);
     const isRequested = requested != null;
     const state = reviewed?.state ?? null;
+    const reviewRequestStatus =
+      isRequested && state != null && state !== "COMMENTED"
+        ? (reviewRequestEvidenceByLogin.get(login) ?? "unverified")
+        : null;
     const avatarUrl = reviewed?.avatarUrl ?? requested?.avatarUrl ?? null;
     userEntries.push({
       kind: "user",
@@ -58,6 +70,7 @@ export function buildReviewers(
       avatarUrl,
       state,
       isRequested,
+      reviewRequestStatus,
       href: buildUserHref(route, login, isRequested, options),
     });
   }

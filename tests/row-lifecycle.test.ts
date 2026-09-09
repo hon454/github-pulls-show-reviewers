@@ -294,6 +294,7 @@ it("ignores localized mount lang, text, title and aria changes without fingerpri
           avatarUrl: null,
           state: "APPROVED",
           isRequested: true,
+          reviewRequestStatus: "confirmed",
           href: "https://github.com/org/repo/pulls",
         },
       ],

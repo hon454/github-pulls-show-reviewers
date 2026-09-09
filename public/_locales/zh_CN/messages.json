@@ -757,6 +757,15 @@
     "message": "审阅已撤销（仍请求审阅）",
     "description": "Completed dismissed review while the reviewer is still requested."
   },
+  "reviewers_requested_previous_unverified": {
+    "message": "已请求审阅 · 之前的审阅：$STATE$ · 无法确认再次请求时间",
+    "description": "仍显示之前已完成的审阅，但无法确认再次请求时间的审阅者。",
+    "placeholders": {
+      "state": {
+        "content": "$1"
+      }
+    }
+  },
   "banner_auth_expired": {
     "message": "GitHub 会话已过期。请重新登录以继续加载审阅者。",
     "description": "Expired GitHub session guidance."

@@ -4,6 +4,7 @@ import {
   type Translator,
 } from "../../i18n";
 import type { ReviewerEntry } from "./view-model";
+import type { ReviewState } from "../../github/api";
 import { STATE_ICONS } from "./state-icons";
 import { githubSelectors } from "../../github/selectors";
 
@@ -429,9 +430,10 @@ function resolveDisplay(
 ): ReviewerDisplay {
   if (entry.isRequested) {
     const hasEvidence =
-      entry.state === "APPROVED" ||
-      entry.state === "CHANGES_REQUESTED" ||
-      entry.state === "DISMISSED";
+      entry.reviewRequestStatus === "confirmed" &&
+      (entry.state === "APPROVED" ||
+        entry.state === "CHANGES_REQUESTED" ||
+        entry.state === "DISMISSED");
     return {
       ringTone: "requested",
       badgeIcon: hasEvidence ? "refresh" : null,
@@ -456,6 +458,17 @@ function resolveStateLabel(
   entry: Extract<ReviewerEntry, { kind: "user" }>,
   t: Translator,
 ): string {
+  if (
+    entry.isRequested &&
+    entry.reviewRequestStatus === "unverified" &&
+    entry.state != null &&
+    entry.state !== "COMMENTED"
+  ) {
+    return t("reviewers_requested_previous_unverified", {
+      state: resolveCompletedStateLabel(entry.state, t),
+    });
+  }
+
   switch (entry.state) {
     case "APPROVED":
       return entry.isRequested
@@ -475,6 +488,19 @@ function resolveStateLabel(
         : t("reviewers_dismissed");
     default:
       return t("reviewers_requested");
+  }
+}
+
+function resolveCompletedStateLabel(state: ReviewState, t: Translator): string {
+  switch (state) {
+    case "APPROVED":
+      return t("reviewers_approved");
+    case "CHANGES_REQUESTED":
+      return t("reviewers_changes_requested");
+    case "COMMENTED":
+      return t("reviewers_commented");
+    case "DISMISSED":
+      return t("reviewers_dismissed");
   }
 }
 

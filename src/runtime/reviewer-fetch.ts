@@ -159,6 +159,14 @@ const pullReviewerSummarySchema = z.object({
       ]),
     }),
   ),
+  reviewRequestEvidence: z
+    .array(
+      z.object({
+        login: z.string(),
+        status: z.enum(["confirmed", "unverified"]),
+      }),
+    )
+    .optional(),
 });
 export const fetchPullReviewerSummaryResponseSchema = z.discriminatedUnion(
   "ok",

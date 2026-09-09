@@ -66,46 +66,93 @@ export async function collectGitHubApiPages<T>(params: {
   hasEnough?: (collected: T[]) => boolean;
   mapNextPageError?: (error: GitHubApiError) => Error;
 }): Promise<T[]> {
+  const result = await collectGitHubApiPagesDetailed(params);
+  if (result.status === "unavailable") {
+    throw result.error;
+  }
+  return result.items;
+}
+
+export type GitHubApiPageCollection<T> =
+  | {
+      items: T[];
+      status: "complete" | "truncated";
+    }
+  | {
+      items: T[];
+      status: "unavailable";
+      error: unknown;
+    };
+
+export async function collectGitHubApiPagesDetailed<T>(params: {
+  firstResponse: Response;
+  endpoint: GitHubEndpointDescriptor;
+  headers: Headers;
+  schema: z.ZodType<T[]>;
+  signal?: AbortSignal;
+  pageBudget?: number;
+  hasEnough?: (collected: T[]) => boolean;
+  mapNextPageError?: (error: GitHubApiError) => Error;
+}): Promise<GitHubApiPageCollection<T>> {
   const collected: T[] = [];
   const expectedPathname = params.endpoint.path.split("?")[0];
+  const visitedPageUrls = new Set<string>();
+  if (params.firstResponse.url !== "") {
+    visitedPageUrls.add(params.firstResponse.url);
+  }
 
   let response = params.firstResponse;
   let pageCount = 0;
   while (true) {
-    const parsed = params.schema.safeParse(await response.json());
-    if (!parsed.success) {
-      throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
-    }
-    collected.push(...parsed.data);
-    pageCount += 1;
-
-    if (
-      params.hasEnough?.(collected) === true ||
-      (params.pageBudget != null && pageCount >= params.pageBudget)
-    ) {
-      return collected;
+    try {
+      const parsed = params.schema.safeParse(await response.json());
+      if (!parsed.success) {
+        throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
+      }
+      collected.push(...parsed.data);
+      pageCount += 1;
+    } catch (error) {
+      return { items: collected, status: "unavailable", error };
     }
 
-    const nextUrl = parseNextPageUrl(
+    if (params.hasEnough?.(collected) === true) {
+      return { items: collected, status: "complete" };
+    }
+
+    const nextPage = inspectNextPageUrl(
       response.headers.get("Link"),
       expectedPathname,
     );
-    if (nextUrl == null) {
-      return collected;
+    if (nextPage.status === "none") {
+      return { items: collected, status: "complete" };
     }
+    if (nextPage.status === "invalid") {
+      return { items: collected, status: "truncated" };
+    }
+    if (
+      (params.pageBudget != null && pageCount >= params.pageBudget) ||
+      visitedPageUrls.has(nextPage.url)
+    ) {
+      return { items: collected, status: "truncated" };
+    }
+    visitedPageUrls.add(nextPage.url);
 
-    response = await fetchGitHubApiResponse(
-      nextUrl,
-      params.headers,
-      params.signal,
-    );
+    try {
+      response = await fetchGitHubApiResponse(
+        nextPage.url,
+        params.headers,
+        params.signal,
+      );
 
-    const error = await createGitHubApiErrorFromResponse(
-      response,
-      params.endpoint,
-    );
-    if (error != null) {
-      throw params.mapNextPageError?.(error) ?? error;
+      const error = await createGitHubApiErrorFromResponse(
+        response,
+        params.endpoint,
+      );
+      if (error != null) {
+        throw params.mapNextPageError?.(error) ?? error;
+      }
+    } catch (error) {
+      return { items: collected, status: "unavailable", error };
     }
   }
 }
@@ -114,8 +161,21 @@ export function parseNextPageUrl(
   linkHeader: string | null,
   expectedPathname?: string,
 ): string | null {
+  const result = inspectNextPageUrl(linkHeader, expectedPathname);
+  return result.status === "valid" ? result.url : null;
+}
+
+type NextPageInspection =
+  | { status: "none" }
+  | { status: "invalid" }
+  | { status: "valid"; url: string };
+
+function inspectNextPageUrl(
+  linkHeader: string | null,
+  expectedPathname?: string,
+): NextPageInspection {
   if (linkHeader == null) {
-    return null;
+    return { status: "none" };
   }
 
   for (const segment of linkHeader.split(",")) {
@@ -129,13 +189,15 @@ export function parseNextPageUrl(
         expectedPathname != null &&
         !isExpectedGitHubApiUrl(match[1], expectedPathname)
       ) {
-        return null;
+        return { status: "invalid" };
       }
-      return match[1];
+      return { status: "valid", url: match[1] };
     }
   }
 
-  return null;
+  return /\brel\s*=\s*"?[^",;]*\bnext\b/i.test(linkHeader)
+    ? { status: "invalid" }
+    : { status: "none" };
 }
 
 function isExpectedGitHubApiUrl(
