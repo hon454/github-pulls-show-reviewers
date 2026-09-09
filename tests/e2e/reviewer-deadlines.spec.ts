@@ -339,7 +339,12 @@ test("packaged optional timeout preserves confirmed partial evidence and renders
     await page.goto(pageUrl);
     await expect.poll(() => counts.events).toBe(2);
     await expect(page.locator(".ghpsr-status")).toHaveCount(1);
-    await options.getByTestId("prefs-show-reviewer-name").check();
+    const showNames = options.getByTestId("prefs-show-reviewer-name");
+    // This controlled input reflects the acknowledged background snapshot.
+    await expect(showNames).not.toBeChecked();
+    await showNames.click();
+    await expect(showNames).toBeChecked();
+    await expect(showNames).toBeEnabled();
     const alice = page.locator('a[title*="@alice"]');
     const bob = page.locator('a[title*="@bob"]');
     await expect(bob).toHaveAttribute(
@@ -360,7 +365,8 @@ test("packaged optional timeout preserves confirmed partial evidence and renders
     await expect(page.locator(".ghpsr-status")).toHaveCount(0);
     await expect(page.locator("[data-ghpsr-banner]")).toHaveCount(0);
     releaseLatePage();
-    await options.getByTestId("prefs-show-reviewer-name").uncheck();
+    await showNames.click();
+    await expect(showNames).not.toBeChecked();
     await expect(bob).toHaveClass(/ghpsr-avatar--border-requested/);
     await expect(bob).toHaveAttribute("title", /re-request timing unavailable/);
     await expect(bob.locator(".ghpsr-badge--refresh")).toHaveCount(0);
