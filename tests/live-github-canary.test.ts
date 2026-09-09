@@ -173,6 +173,42 @@ describe("live canary response observer", () => {
     );
   });
 
+  it("does not treat a malformed Link relation as complete pagination", async () => {
+    const observer = createCanaryResponseObserver({ repository });
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+        Promise.resolve([]),
+        200,
+        {
+          link: '<https://api.github.com/repos/octo/repo/pulls/42/reviews?page=2>; rel: "next"',
+        },
+      ),
+    );
+    await observer.settle();
+
+    expect(observer.snapshot().pulls[0].reviews.completeness).toBe("truncated");
+  });
+
+  it("keeps an external AbortError body failure explicit", async () => {
+    const observer = createCanaryResponseObserver({ repository });
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/pulls/42/reviews",
+        Promise.reject(new DOMException("cancelled", "AbortError")),
+      ),
+    );
+    await observer.settle();
+
+    expect(observer.snapshot().endpoints[0]).toMatchObject({
+      body: "failed",
+      failure: "body-read",
+    });
+    expect(observer.snapshot().pulls[0].reviews.completeness).toBe(
+      "unavailable",
+    );
+  });
+
   it("never sends a request and never retains an authorization value or raw body", async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
@@ -309,6 +345,18 @@ describe("independent reviewer expectation oracle", () => {
         requestEvent("alice", "not-a-date", 1),
       ],
       "2026-09-01T00:00:00Z",
+    ],
+    [
+      "calendar-normalized invalid event date",
+      "complete",
+      [requestEvent("alice", "2026-02-30T00:00:00Z", 0)],
+      "2026-02-28T00:00:00Z",
+    ],
+    [
+      "calendar-normalized invalid review date",
+      "complete",
+      [requestEvent("alice", "2026-03-01T00:00:00Z", 0)],
+      "2026-02-30T00:00:00Z",
     ],
   ] as const)(
     "keeps requested unverified for %s",

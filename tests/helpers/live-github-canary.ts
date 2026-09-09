@@ -110,6 +110,7 @@ type ParsedEndpoint = {
 type PageEvidence<T> = {
   page: number;
   hasNext: boolean;
+  linkValid: boolean;
   items: T[];
 };
 
@@ -293,7 +294,7 @@ function recordBody(input: {
     return;
   }
 
-  const hasNext = hasNextPage(input.headers.link);
+  const pagination = readPagination(input.headers.link);
   if (endpoint.kind === "reviews") {
     const parsed = z.array(reviewSchema).safeParse(input.body);
     if (!parsed.success) throw new CanaryBodyError("schema");
@@ -312,7 +313,8 @@ function recordBody(input: {
     });
     pull.reviewPages.set(endpoint.page, {
       page: endpoint.page,
-      hasNext,
+      hasNext: pagination.hasNext,
+      linkValid: pagination.valid,
       items,
     });
     return;
@@ -333,7 +335,8 @@ function recordBody(input: {
   );
   pull.eventPages.set(endpoint.page, {
     page: endpoint.page,
-    hasNext,
+    hasNext: pagination.hasNext,
+    linkValid: pagination.valid,
     items,
   });
 }
@@ -360,7 +363,9 @@ function summarizePages<T>(
   const items = ordered.flatMap((page) => page.items);
   if (failed) return { completeness: "unavailable", items };
   if (ordered.length === 0) return { completeness: "unavailable", items };
-  const isContiguous = ordered.every((page, index) => page.page === index + 1);
+  const isContiguous = ordered.every(
+    (page, index) => page.page === index + 1 && page.linkValid,
+  );
   const last = ordered.at(-1)!;
   return {
     completeness: isContiguous && !last.hasNext ? "complete" : "truncated",
@@ -427,11 +432,21 @@ function readPage(url: URL): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
 }
 
-function hasNextPage(link: string | undefined): boolean {
-  return (
-    link?.split(",").some((value) => /rel="[^"]*next[^"]*"/.test(value)) ??
-    false
-  );
+function readPagination(link: string | undefined): {
+  hasNext: boolean;
+  valid: boolean;
+} {
+  if (link == null || link.trim() === "")
+    return { hasNext: false, valid: true };
+  let hasNext = false;
+  for (const segment of link.split(",")) {
+    const match = /<[^>]+>\s*;[^,]*\brel="([^"]+)"(?:\s*;[^,]*)?\s*$/.exec(
+      segment.trim(),
+    );
+    if (match == null) return { hasNext: false, valid: false };
+    if (match[1].split(/\s+/).includes("next")) hasNext = true;
+  }
+  return { hasNext, valid: true };
 }
 
 function lowerCaseHeaders(
@@ -927,8 +942,21 @@ function compareRequestToReview(
 
 function parseTimestamp(value: string | null): number | null {
   if (value == null) return null;
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/.exec(value);
+  if (match == null) return null;
   const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
+  if (Number.isNaN(parsed)) return null;
+  const date = new Date(parsed);
+  const parts = match.slice(1, 7).map(Number);
+  return date.getUTCFullYear() === parts[0] &&
+    date.getUTCMonth() + 1 === parts[1] &&
+    date.getUTCDate() === parts[2] &&
+    date.getUTCHours() === parts[3] &&
+    date.getUTCMinutes() === parts[4] &&
+    date.getUTCSeconds() === parts[5]
+    ? parsed
+    : null;
 }
 
 function stateToClass(
