@@ -17,6 +17,12 @@ export const FILTERED_PULL_LIST_PULL_NUMBERS = [
 export function createPullListFixtureHtml(
   pullNumbers: readonly string[],
   route = { owner: "hon454", repo: "github-pulls-show-reviewers" },
+  navigation: {
+    paginationHref?: string;
+    filterHref?: string;
+    hiddenFilterHref?: string;
+    disabledFilterHref?: string;
+  } = {},
 ): string {
   const rows = pullNumbers
     .map(
@@ -41,6 +47,26 @@ export function createPullListFixtureHtml(
         <main>
           <div class="js-navigation-container js-active-navigation-container">
             ${rows}
+            ${
+              navigation.paginationHref == null
+                ? ""
+                : `<a data-fixture-pagination href="${navigation.paginationHref}">Next page</a>`
+            }
+            ${
+              navigation.hiddenFilterHref == null
+                ? ""
+                : `<a hidden data-fixture-hidden-filter href="${navigation.hiddenFilterHref}">Hidden closed pull requests</a>`
+            }
+            ${
+              navigation.disabledFilterHref == null
+                ? ""
+                : `<a aria-disabled="true" data-fixture-disabled-filter href="${navigation.disabledFilterHref}">Disabled closed pull requests</a>`
+            }
+            ${
+              navigation.filterHref == null
+                ? ""
+                : `<a data-fixture-filter href="${navigation.filterHref}">Closed pull requests</a>`
+            }
           </div>
         </main>
       </body>

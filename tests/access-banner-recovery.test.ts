@@ -669,6 +669,56 @@ describe("real content access banner recovery", () => {
     },
   );
 
+  it("cancels eight slow FIFO rows on same-repository navigation without rendering or caching old results", async () => {
+    const oldNumbers = Array.from({ length: 8 }, (_, index) =>
+      String(index + 1),
+    );
+    const nextNumbers = Array.from({ length: 8 }, (_, index) =>
+      String(index + 21),
+    );
+    installRows(oldNumbers);
+    const old = new Map(oldNumbers.map((number) => [number, deferred()]));
+    summary = ({ pullNumber }) => old.get(pullNumber!)!.promise;
+    await boot();
+    expect(
+      messages("fetchPullReviewerSummary").map(({ pullNumber }) => pullNumber),
+    ).toEqual(["1", "2", "3", "4"]);
+
+    summary = async ({ pullNumber }) =>
+      success({
+        ...alice,
+        requestedUsers: [{ login: `current-${pullNumber}`, avatarUrl: null }],
+      });
+    installRows(nextNumbers);
+    refresh("/cinev/shotloom/pulls?q=is%3Apr&page=2");
+    await drain();
+    for (const pending of old.values()) pending.resolve(success());
+    await drain();
+    await drain();
+
+    const cache = await import("../src/cache/reviewer-cache");
+    for (const number of oldNumbers) {
+      expect(
+        cache.getReviewerCacheEntry(
+          cache.buildReviewerCacheKey("cinev", "shotloom", number),
+        ),
+      ).toBeUndefined();
+      expect(
+        document.querySelector(`#issue_${number} [data-ghpsr-root]`),
+      ).toBeNull();
+    }
+    expect(latest().generation).toBe(1);
+    expect(latest().rows.map(({ pullNumber }) => pullNumber)).toEqual(
+      nextNumbers,
+    );
+    expect(
+      document.querySelectorAll("a.ghpsr-avatar[title*='@current-']"),
+    ).toHaveLength(8);
+    expect(
+      messages("fetchPullReviewerSummary").map(({ pullNumber }) => pullNumber),
+    ).toEqual([...oldNumbers.slice(0, 4), ...nextNumbers]);
+  });
+
   it("ignores an old delayed account lookup and old metadata failure after recovery", async () => {
     const lookup = deferred<Account | null>();
     resolveAccount.mockImplementationOnce(() => lookup.promise);

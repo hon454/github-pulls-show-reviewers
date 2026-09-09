@@ -101,6 +101,27 @@ export type CanaryResponseObserver = {
   snapshot(): CanaryApiEvidence;
 };
 
+export async function captureSettledCanaryStage<T>(input: {
+  observer: CanaryResponseObserver;
+  readDom(): Promise<T>;
+}): Promise<{ dom: T; api: CanaryApiEvidence }> {
+  try {
+    const dom = await input.readDom();
+    await input.observer.settle();
+    return { dom, api: input.observer.snapshot() };
+  } catch (error) {
+    await input.observer.settle();
+    throw error;
+  }
+}
+
+export function canaryStageArtifactFileName(
+  stage: string,
+  failure = false,
+): string {
+  return `canary-navigation-${stage}${failure ? "-failure" : ""}.json`;
+}
+
 type ParsedEndpoint = {
   kind: CanaryEndpointKind;
   pullNumber: string | null;
@@ -557,6 +578,11 @@ export type CanaryDomRow = {
 
 export type CanaryDomSnapshot = {
   mainFound: boolean;
+  pullListContainerFound: boolean;
+  hostEmptySignalFound: boolean;
+  hostListLoading: boolean;
+  unmatchedPullListLinkCount: number;
+  orphanMountCount: number;
   challengeDetected: boolean;
   ignoredPullLinkCount: number;
   activeFailureBannerCount: number;
@@ -564,6 +590,26 @@ export type CanaryDomSnapshot = {
   productionPullNumbers: string[];
   rows: CanaryDomRow[];
 };
+
+/**
+ * A zero-row result is terminal only when GitHub has rendered a semantic empty
+ * state. A bare or busy list container can be a transient navigation frame.
+ */
+export function isTerminalCanaryDomSnapshot(dom: CanaryDomSnapshot): boolean {
+  if (dom.hostPullNumbers.length === 0) {
+    return (
+      dom.mainFound &&
+      dom.pullListContainerFound &&
+      dom.hostEmptySignalFound &&
+      !dom.hostListLoading &&
+      dom.unmatchedPullListLinkCount === 0 &&
+      dom.orphanMountCount === 0
+    );
+  }
+  return dom.rows.every(
+    (row) => row.mountCount === 1 && row.loadingMountCount === 0,
+  );
+}
 
 /**
  * Self-contained so Playwright can serialize it directly into the page. The
@@ -702,6 +748,11 @@ export function collectLiveCanaryDomSnapshot(input: {
   if (main == null) {
     return {
       mainFound: false,
+      pullListContainerFound: false,
+      hostEmptySignalFound: false,
+      hostListLoading: false,
+      unmatchedPullListLinkCount: 0,
+      orphanMountCount: 0,
       challengeDetected,
       ignoredPullLinkCount: 0,
       activeFailureBannerCount,
@@ -711,8 +762,33 @@ export function collectLiveCanaryDomSnapshot(input: {
     };
   }
 
+  // This is deliberately independent from the production row selector. A
+  // present list container with no PR links is a normal empty result; a bare
+  // main region with neither rows nor the list container is selector/host
+  // evidence failure, not a silently accepted empty list.
+  const pullListContainer = main.querySelector(
+    ".js-navigation-container, [data-testid='issues-list']",
+  );
+  const pullListContainerFound = pullListContainer != null;
+  const hostListLoading =
+    pullListContainer?.matches("[aria-busy='true'], [data-loading='true']") ===
+      true ||
+    pullListContainer?.querySelector(
+      "[aria-busy='true'], [data-loading='true']",
+    ) != null;
+  const hostEmptySignalFound =
+    !hostListLoading &&
+    [...(pullListContainer?.querySelectorAll(
+      "[data-testid='empty-state'], .blankslate, [class*='Blankslate']",
+    ) ?? [])].some(
+      (element) =>
+        !element.hasAttribute("hidden") &&
+        element.getAttribute("aria-hidden") !== "true",
+    );
+
   const hostRows = new Map<string, { row: Element; links: Set<Element> }>();
   let ignoredPullLinkCount = 0;
+  let unmatchedPullListLinkCount = 0;
   main.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((link) => {
     const pullNumber = parsePullNumber(link.getAttribute("href"));
     if (pullNumber == null) return;
@@ -721,6 +797,7 @@ export function collectLiveCanaryDomSnapshot(input: {
       // Exact PR links in prose, advertising, or other main-page content are
       // intentionally outside the pull-list denominator.
       ignoredPullLinkCount += 1;
+      if (pullListContainer?.contains(link)) unmatchedPullListLinkCount += 1;
       return;
     }
     const existing = hostRows.get(pullNumber) ?? { row, links: new Set() };
@@ -775,9 +852,19 @@ export function collectLiveCanaryDomSnapshot(input: {
       reviewers,
     };
   });
+  const orphanMountCount = [
+    ...main.querySelectorAll<HTMLElement>("[data-ghpsr-root]"),
+  ].filter(
+    (mount) => ![...hostRows.values()].some(({ row }) => row.contains(mount)),
+  ).length;
 
   return {
     mainFound: true,
+    pullListContainerFound,
+    hostEmptySignalFound,
+    hostListLoading,
+    unmatchedPullListLinkCount,
+    orphanMountCount,
     challengeDetected,
     ignoredPullLinkCount,
     activeFailureBannerCount,
@@ -1041,6 +1128,23 @@ export type CanaryVerdict = {
   samples: CanaryVerifiedSample[];
 };
 
+export function appendCanaryFailure(
+  verdict: CanaryVerdict,
+  failure: CanaryFailure | undefined,
+): CanaryVerdict {
+  if (
+    failure == null ||
+    verdict.failures.some(
+      (existing) =>
+        existing.owner === failure.owner &&
+        existing.code === failure.code &&
+        existing.pullNumber === failure.pullNumber,
+    )
+  )
+    return failure == null ? verdict : { ...verdict, ok: false };
+  return { ...verdict, ok: false, failures: [...verdict.failures, failure] };
+}
+
 export function evaluateLiveCanary(input: {
   repository: CanaryRepository;
   dom: CanaryDomSnapshot;
@@ -1070,13 +1174,35 @@ export function evaluateLiveCanary(input: {
       failures.push({ owner, code, pullNumber });
   };
 
+  const hasConfirmedEmptyHost =
+    input.dom.mainFound &&
+    input.dom.pullListContainerFound &&
+    input.dom.hostEmptySignalFound &&
+    !input.dom.hostListLoading &&
+    input.dom.hostPullNumbers.length === 0 &&
+    input.dom.unmatchedPullListLinkCount === 0;
+  const hasVerifiedEmptyList =
+    hasConfirmedEmptyHost && input.dom.orphanMountCount === 0;
+
   if (!input.dom.mainFound) fail("environment", "main-region-missing");
   if (input.dom.challengeDetected) fail("environment", "github-challenge");
   if (input.dom.activeFailureBannerCount > 0)
     fail("extension", "failure-banner-present");
-  if (input.dom.hostPullNumbers.length === 0)
-    fail("environment", "host-pull-rows-missing");
-  if (input.api.apiRequestCount === 0)
+  if (input.dom.unmatchedPullListLinkCount > 0)
+    fail("environment", "host-pull-row-unmatched");
+  if (input.dom.orphanMountCount > 0)
+    fail(
+      "extension",
+      hasConfirmedEmptyHost ? "empty-list-mount" : "orphan-mount-present",
+    );
+  if (input.dom.hostPullNumbers.length === 0 && !hasVerifiedEmptyList)
+    fail(
+      "environment",
+      input.dom.hostListLoading
+        ? "host-pull-list-loading"
+        : "host-pull-rows-missing",
+    );
+  if (input.api.apiRequestCount === 0 && !hasVerifiedEmptyList)
     fail("extension", "public-api-request-missing");
   if (input.api.apiRequestsWithAuthorization > 0)
     fail("extension", "authorization-header-present");
@@ -1169,7 +1295,7 @@ export function evaluateLiveCanary(input: {
   const empty = sampleCandidates.filter(
     ({ outcome }) => outcome.reviewers.length === 0,
   );
-  if (withReviewers.length === 0)
+  if (withReviewers.length === 0 && !hasVerifiedEmptyList)
     fail("environment", "reviewer-sample-missing");
   const selected = [
     ...withReviewers.slice(0, 1),
@@ -1210,6 +1336,44 @@ function reviewerListsMatch(
   );
 }
 
+export type CanaryNavigationObservation = {
+  stage: string;
+  operation: string;
+  previousUrl: string | null;
+  documentMaintained: boolean | null;
+};
+
+export function isDifferentPullListPage(
+  candidateUrl: URL,
+  currentUrl: string,
+): boolean {
+  const candidatePage = candidateUrl.searchParams.get("page");
+  const currentPage = new URL(currentUrl).searchParams.get("page") ?? "1";
+  return candidatePage != null && candidatePage !== currentPage;
+}
+
+export function isClosedPullListFilter(candidateUrl: URL): boolean {
+  return /(?:^|\s)is:closed(?:\s|$)/i.test(
+    candidateUrl.searchParams.get("q") ?? "",
+  );
+}
+
+export function sameCanaryPullNumberSet(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  return (
+    leftSet.size === rightSet.size &&
+    [...leftSet].every((pullNumber) => rightSet.has(pullNumber))
+  );
+}
+
+export type CanaryDomCapture = {
+  source: "current-document" | "unavailable";
+};
+
 export function createCanaryDiagnostics(input: {
   phase: string;
   repository: CanaryRepository;
@@ -1219,6 +1383,8 @@ export function createCanaryDiagnostics(input: {
   dom: CanaryDomSnapshot;
   api: CanaryApiEvidence;
   verdict: CanaryVerdict;
+  navigation?: CanaryNavigationObservation;
+  domCapture?: CanaryDomCapture;
 }): object {
   return {
     phase: input.phase,
@@ -1226,11 +1392,18 @@ export function createCanaryDiagnostics(input: {
     targetUrl: input.targetUrl,
     currentUrl: input.currentUrl,
     responseStatus: input.responseStatus,
+    domCapture: input.domCapture ?? { source: "current-document" },
+    ...(input.navigation == null ? {} : { navigation: input.navigation }),
     host: {
       mainFound: input.dom.mainFound,
+      pullListContainerFound: input.dom.pullListContainerFound,
+      emptySignalFound: input.dom.hostEmptySignalFound,
+      listLoading: input.dom.hostListLoading,
+      unmatchedPullListLinkCount: input.dom.unmatchedPullListLinkCount,
       challengeDetected: input.dom.challengeDetected,
       independentRowCount: input.dom.hostPullNumbers.length,
       productionRowCount: new Set(input.dom.productionPullNumbers).size,
+      pullNumbers: input.dom.hostPullNumbers,
       ignoredPullLinkCount: input.dom.ignoredPullLinkCount,
       activeFailureBannerCount: input.dom.activeFailureBannerCount,
     },
@@ -1248,6 +1421,7 @@ export function createCanaryDiagnostics(input: {
         (sum, row) => sum + row.invalidReviewerChipCount,
         0,
       ),
+      orphaned: input.dom.orphanMountCount,
     },
     terminal: input.verdict.terminal,
     api: {

@@ -4,10 +4,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   collectLiveCanaryDomSnapshot,
+  appendCanaryFailure,
+  canaryStageArtifactFileName,
+  captureSettledCanaryStage,
   createCanaryDiagnostics,
   createCanaryResponseObserver,
   deriveCanaryExpectedOutcome,
   evaluateLiveCanary,
+  isClosedPullListFilter,
+  isDifferentPullListPage,
+  isTerminalCanaryDomSnapshot,
+  sameCanaryPullNumberSet,
   type CanaryApiEvidence,
   type CanaryDomSnapshot,
   type CanaryPullEvidence,
@@ -23,6 +30,45 @@ afterEach(() => {
 });
 
 describe("live canary host-row oracle", () => {
+  it("rejects GitHub's current-page pagination self link", () => {
+    const initial = "https://github.com/octo/repo/pulls?q=is%3Apr";
+
+    expect(
+      isDifferentPullListPage(
+        new URL("https://github.com/octo/repo/pulls?page=1&q=is%3Apr"),
+        initial,
+      ),
+    ).toBe(false);
+    expect(
+      isDifferentPullListPage(
+        new URL("https://github.com/octo/repo/pulls?page=2&q=is%3Apr"),
+        initial,
+      ),
+    ).toBe(true);
+  });
+
+  it("requires a Closed filter instead of accepting an Open fallback", () => {
+    expect(
+      isClosedPullListFilter(
+        new URL("https://github.com/octo/repo/pulls?q=is%3Apr+is%3Aclosed"),
+      ),
+    ).toBe(true);
+    expect(
+      isClosedPullListFilter(
+        new URL("https://github.com/octo/repo/pulls?q=is%3Apr+is%3Aopen"),
+      ),
+    ).toBe(false);
+  });
+
+  it("compares host pull-number sets without treating order as a change", () => {
+    expect(sameCanaryPullNumberSet(["42", "43"], ["43", "42"])).toBe(
+      true,
+    );
+    expect(sameCanaryPullNumberSet(["42", "43"], ["42", "44"])).toBe(
+      false,
+    );
+  });
+
   it("uses deduplicated main-list PR links instead of the production selector", () => {
     document.body.innerHTML = `
       <aside><div id="issue_100"><a href="/octo/repo/pull/100">outside</a></div></aside>
@@ -54,9 +100,240 @@ describe("live canary host-row oracle", () => {
 
     expect(collectDom().challengeDetected).toBe(true);
   });
+
+  it("requires a visible host empty-state signal for a zero-row list", () => {
+    document.body.innerHTML =
+      '<main><div class="js-navigation-container"><div data-testid="empty-state">No pull requests</div></div></main>';
+    const emptyDom = collectDom();
+    const emptyVerdict = evaluateLiveCanary({
+      repository,
+      dom: emptyDom,
+      api: {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      },
+    });
+
+    expect(emptyDom).toMatchObject({
+      pullListContainerFound: true,
+      hostEmptySignalFound: true,
+      hostListLoading: false,
+      hostPullNumbers: [],
+      rows: [],
+    });
+    expect(emptyVerdict.ok).toBe(true);
+    expect(isTerminalCanaryDomSnapshot(emptyDom)).toBe(true);
+
+    document.body.innerHTML =
+      '<main><div class="js-navigation-container">Loading…</div></main>';
+    expect(isTerminalCanaryDomSnapshot(collectDom())).toBe(false);
+    expect(
+      failureCodes(collectDom(), {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("host-pull-rows-missing");
+
+    document.body.innerHTML =
+      '<main><div class="js-navigation-container" aria-busy="true">Loading…</div></main>';
+    const loadingDom = collectDom();
+    expect(loadingDom.hostListLoading).toBe(true);
+    expect(isTerminalCanaryDomSnapshot(loadingDom)).toBe(false);
+    expect(
+      failureCodes(loadingDom, {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("host-pull-list-loading");
+
+    document.body.innerHTML = `
+      <main>
+        <div class="js-navigation-container">
+          <div data-testid="empty-state">No pull requests</div>
+          <span data-ghpsr-root></span>
+        </div>
+      </main>`;
+    expect(
+      failureCodes(collectDom(), {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("empty-list-mount");
+
+    document.body.innerHTML = "<main><div>selector drift</div></main>";
+    const missingDom = collectDom();
+    expect(
+      failureCodes(missingDom, {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        "host-pull-rows-missing",
+        "public-api-request-missing",
+      ]),
+    );
+
+    document.body.innerHTML = `
+      <main>
+        <div class="js-navigation-container">
+          <div class="new-row"><a href="/octo/repo/pull/42">PR</a></div>
+        </div>
+      </main>`;
+    const unmatchedDom = collectDom();
+    expect(unmatchedDom).toMatchObject({
+      pullListContainerFound: true,
+      hostPullNumbers: [],
+      unmatchedPullListLinkCount: 1,
+    });
+    expect(
+      failureCodes(unmatchedDom, {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("host-pull-row-unmatched");
+
+    document.body.innerHTML = `
+      <main>
+        <div class="js-navigation-container">
+          <div id="issue_42"><a href="/octo/repo/pull/42">PR</a></div>
+          <span data-ghpsr-root></span>
+        </div>
+      </main>`;
+    const orphanDom = collectDom();
+    expect(orphanDom).toMatchObject({
+      hostPullNumbers: ["42"],
+      orphanMountCount: 1,
+    });
+    expect(
+      failureCodes(orphanDom, {
+        apiRequestCount: 1,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 1,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("orphan-mount-present");
+  });
 });
 
 describe("live canary response observer", () => {
+  it("settles a response observed during async stage DOM capture", async () => {
+    const unsafeBody = deferred<unknown>();
+    const unsafeObserver = createCanaryResponseObserver({ repository });
+    await unsafeObserver.settle();
+    await (async () => {
+      unsafeObserver.observeResponse(
+        response(
+          "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+          unsafeBody.promise,
+        ),
+      );
+      return { captured: true };
+    })();
+    expect(unsafeObserver.snapshot().endpoints).toMatchObject([
+      { body: "pending" },
+    ]);
+    unsafeBody.resolve([]);
+    await unsafeObserver.settle();
+
+    const safeBody = deferred<unknown>();
+    const safeObserver = createCanaryResponseObserver({ repository });
+    const stage = captureSettledCanaryStage({
+      observer: safeObserver,
+      async readDom() {
+        safeObserver.observeResponse(
+          response(
+            "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+            safeBody.promise,
+          ),
+        );
+        return { captured: true };
+      },
+    });
+    await Promise.resolve();
+    safeBody.resolve([]);
+
+    await expect(stage).resolves.toMatchObject({
+      dom: { captured: true },
+      api: { endpoints: [{ body: "parsed" }] },
+    });
+  });
+
+  it("settles failed DOM captures without weakening body-read or timeout failures", async () => {
+    const bodyRead = createCanaryResponseObserver({ repository });
+    await expect(
+      captureSettledCanaryStage({
+        observer: bodyRead,
+        async readDom() {
+          bodyRead.observeResponse(
+            response(
+              "https://api.github.com/repos/octo/repo/pulls/42/reviews",
+              Promise.reject(new Error("body unavailable")),
+            ),
+          );
+          throw new Error("document detached");
+        },
+      }),
+    ).rejects.toThrow("document detached");
+    expect(bodyRead.snapshot().endpoints[0]).toMatchObject({
+      body: "failed",
+      failure: "body-read",
+    });
+
+    const never = deferred<unknown>();
+    const bodyTimeout = createCanaryResponseObserver({
+      repository,
+      bodyTimeoutMs: 1,
+    });
+    await expect(
+      captureSettledCanaryStage({
+        observer: bodyTimeout,
+        async readDom() {
+          bodyTimeout.observeResponse(
+            response(
+              "https://api.github.com/repos/octo/repo/pulls/42/reviews",
+              never.promise,
+            ),
+          );
+          throw new Error("document detached");
+        },
+      }),
+    ).rejects.toThrow("document detached");
+    expect(bodyTimeout.snapshot().endpoints[0]).toMatchObject({
+      body: "failed",
+      failure: "body-timeout",
+    });
+    never.reject(new Error("closed after observer timeout"));
+  });
+
+  it("assigns a distinct artifact name to a post-stage failure", () => {
+    expect(canaryStageArtifactFileName("C")).toBe(
+      "canary-navigation-C.json",
+    );
+    expect(canaryStageArtifactFileName("C", true)).toBe(
+      "canary-navigation-C-failure.json",
+    );
+  });
+
   it("waits for every asynchronous body read before exposing parsed evidence", async () => {
     const metadata = deferred<unknown>();
     const reviews = deferred<unknown>();
@@ -407,6 +684,38 @@ describe("independent reviewer expectation oracle", () => {
 });
 
 describe("live canary verdict", () => {
+  it("persists a typed navigation failure even when the current DOM is healthy", () => {
+    const verdict = appendCanaryFailure(
+      evaluateLiveCanary({ repository, dom: positiveDom(), api: positiveApi() }),
+      {
+        owner: "environment",
+        code: "required-pagination-link-unavailable",
+        pullNumber: null,
+      },
+    );
+    const diagnostics = createCanaryDiagnostics({
+      phase: "navigation:B",
+      repository,
+      targetUrl: "https://github.com/octo/repo/pulls?q=is%3Apr",
+      currentUrl: "https://github.com/octo/repo/pulls?q=is%3Apr",
+      responseStatus: null,
+      dom: positiveDom(),
+      api: positiveApi(),
+      verdict,
+    });
+
+    expect(verdict.ok).toBe(false);
+    expect(diagnostics).toMatchObject({
+      failures: [
+        {
+          owner: "environment",
+          code: "required-pagination-link-unavailable",
+          pullNumber: null,
+        },
+      ],
+    });
+  });
+
   it("accepts a rendered reviewer row and a verified empty row", () => {
     const verdict = evaluateLiveCanary({
       repository,
@@ -478,6 +787,58 @@ describe("live canary verdict", () => {
     expect(JSON.stringify(diagnostics)).not.toContain(
       "DO_NOT_RECORD_BANNER_COPY",
     );
+  });
+
+  it("records when a failure diagnostic could not capture the current DOM", () => {
+    const api = positiveApi();
+    const diagnostics = createCanaryDiagnostics({
+      phase: "navigation:D",
+      repository,
+      targetUrl: "https://github.com/octo/repo/pulls?q=is%3Apr",
+      currentUrl: "https://github.com/octo/repo/pulls?q=is%3Apr+is%3Aclosed",
+      responseStatus: null,
+      dom: {
+        ...positiveDom(),
+        mainFound: false,
+        pullListContainerFound: false,
+        hostPullNumbers: [],
+        productionPullNumbers: [],
+        rows: [],
+      },
+      api,
+      verdict: {
+        ok: false,
+        failures: [
+          {
+            owner: "observation",
+            code: "current-dom-capture-failed",
+            pullNumber: null,
+          },
+        ],
+        terminal: {
+          loading: 0,
+          empty: 0,
+          success: 0,
+          failure: 0,
+          unverifiable: 0,
+        },
+        samples: [],
+      },
+      domCapture: { source: "unavailable" },
+    });
+
+    expect(diagnostics).toMatchObject({
+      phase: "navigation:D",
+      domCapture: { source: "unavailable" },
+      host: { pullNumbers: [] },
+      failures: [
+        {
+          owner: "observation",
+          code: "current-dom-capture-failed",
+          pullNumber: null,
+        },
+      ],
+    });
   });
 
   it("fails a mounted row whose loading state never settles", () => {
@@ -729,6 +1090,11 @@ function endpoint(kind: "pull-list" | "reviews", pullNumber: string | null) {
 function positiveDom(): CanaryDomSnapshot {
   return {
     mainFound: true,
+    pullListContainerFound: true,
+    hostEmptySignalFound: false,
+    hostListLoading: false,
+    unmatchedPullListLinkCount: 0,
+    orphanMountCount: 0,
     challengeDetected: false,
     ignoredPullLinkCount: 0,
     activeFailureBannerCount: 0,

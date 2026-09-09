@@ -79,8 +79,49 @@ host rows without matching response evidence is also unverifiable, not empty.
 
 `tests/live-github-canary.test.ts` covers the independent oracle and failure
 matrix without a browser. `tests/e2e/live-github-canary-fixture.spec.ts` runs
-positive rendered/empty and negative detail-failure scenarios in the packaged
-extension suite.
+positive rendered/empty, negative detail-failure, and native-link
+pagination/back/forward/filter navigation scenarios in the packaged extension
+suite. The surrounding controller fixture also holds eight FIFO rows across a
+same-repository navigation and proves that late results cannot render or
+populate the former generation's cache.
+
+The live test uses one finite, clean-profile sequence on the same public
+repository:
+
+1. A opens the all-state pull list.
+2. B reads and clicks GitHub's actual same-repository pagination link.
+3. C uses browser Back to return to A.
+4. D reads and clicks GitHub's actual same-repository Closed filter link.
+
+The test does not synthesize `history.pushState` or extension events. It reads
+the native locator and href before each click, verifies the current PR-number
+set after B and D changes, and records whether each transition preserved the
+document. Full document navigation is evidence of full navigation, not a
+claimed PJAX success; the deterministic fixture owns same-document race
+coverage. A missing pagination/filter link, changed PR set, challenge, rate
+limit, or insufficient sample fails the required sequence rather than skipping
+it.
+
+A host-confirmed empty list is valid only when its independent list container
+has a visible GitHub empty-state signal (`data-testid="empty-state"`, a
+`blankslate` element, or a Primer Blankslate element), and it has zero rows,
+zero mounts, and no unmatched exact PR link inside that container. A generic or
+busy/loading container, missing list container, or unmatched list PR link with
+zero discovered rows remains a selector/host failure, not an empty result.
+An orphan reviewer mount is a failure in every stage, including non-empty
+lists, so a late prior-generation result cannot be hidden outside the current
+row denominator.
+
+For each navigation-stage artifact, `responseStatus` is the status of the
+matching main-document response when the transition produces one. `null` means
+that no matching document response was observed (for example, a same-document
+transition); it is not a successful HTTP result. The canary separately records
+the extension's observed public API endpoint statuses and rate-limit quota, and
+uses those records—not a navigation response—to verify reviewer outcomes.
+Required pagination/filter links, unchanged navigation URLs or PR sets, and a
+Back restore-set mismatch are also written as typed, sanitized navigation
+failures. Thus a healthy-looking current DOM cannot hide a failed required
+navigation invariant in the stage JSON.
 
 `.github/workflows/live-github-dom-canary.yml` runs the live project daily at
 06:17 UTC and can also be started with `workflow_dispatch`. The workflow has
@@ -108,9 +149,36 @@ pnpm test:e2e:build
 pnpm test:e2e:live
 ```
 
+The live-canary project has a two-minute per-attempt timeout. This lifts the
+default 30-second ceiling for a normal four-stage attempt while keeping the
+attempt bounded well below the workflow timeout; it does not add retries beyond
+the project's existing two retries.
+
+Each native pagination or filter link must be visible and not marked
+`aria-disabled` in GitHub's current `main` region. Hidden or `aria-disabled`
+matches are ignored;
+if no usable required link remains, the canary records its typed required-link
+failure rather than waiting for an unclickable element.
+
 ## Evidence
 
-`canary-diagnostics.json` is attached on both success and failure. It contains
+`canary-diagnostics.json` is attached on both success and failure. Each live
+navigation stage additionally persists and attaches
+`canary-navigation-A.json` through `canary-navigation-D.json`, so a failing
+stage does not overwrite the previous successful evidence. If a stage verdict
+itself fails, its original JSON remains in place and the catch-time snapshot is
+persisted separately as `canary-navigation-<stage>-failure.json`. Every
+navigation record includes its stage/operation, previous and current public
+URLs, whether its DOM was captured from the current document (or was
+unavailable), document-maintained observation, host PR-number set,
+mount/loading/terminal counts, bounded expected/actual samples, and observed
+endpoint quota. Every stage and catch-time capture reads the DOM before
+settling the response observer; if DOM capture fails, the observer still
+settles before the unavailable-capture diagnostic is written. This prevents a
+response observed during DOM capture from being snapshotted before its body
+settles.
+The test reads each persisted JSON back before accepting its stage. The
+diagnostics contain
 only the observation phase, target/current public URL and navigation status,
 independent/production row counts, active failure-banner and
 mount/loading/rendered/invalid-chip/terminal counts, up to three minimal
@@ -125,7 +193,8 @@ days. The retained trace and failure screenshot are accompanied by:
 - `canary-diagnostics.json`, for the minimal stage/count/sample/endpoint
   comparison described above.
 - `github-pr-list.html`, for the delivered GitHub page DOM when the assertion
-  failed.
+  failed. It is written in the test's Playwright output directory before being
+  attached by path, so the uploaded `test-results` artifact retains the HTML.
 
 Artifacts are collected only from the clean public profile.
 
@@ -137,16 +206,19 @@ run in this order:
 1. Read `canary-diagnostics.json`. Start with the failure owner and phase, then
    compare independent/production row counts, terminal counts, endpoint
    statuses, body outcomes, quota, and the bounded reviewer samples.
-2. For an environment-owned failure, inspect the trace and screenshot for a
+2. When a stage JSON and matching `-failure` JSON both exist, read the original
+   stage verdict first. The later file records catch-time state and does not
+   replace the original observed failure.
+3. For an environment-owned failure, inspect the trace and screenshot for a
    GitHub incident, challenge, rate limit, or public data set with no complete
    reviewer sample. Do not relabel it as a passing mount check.
-3. For an observation-owned failure, use endpoint/body completeness to decide
+4. For an observation-owned failure, use endpoint/body completeness to decide
    whether GitHub delivery, pagination, response parsing, or a navigation
    mismatch prevented verification.
-4. For an extension-owned mismatch, compare the minimal expected/actual sample
+5. For an extension-owned mismatch, compare the minimal expected/actual sample
    and saved DOM with `src/github/selectors.ts`, reviewer DOM semantics, and the
    deterministic fixtures.
-5. If selector drift is demonstrated, minimize the captured structure into a
+6. If selector drift is demonstrated, minimize the captured structure into a
    fixture before changing the centralized production selector. Do not change
    selectors based only on an assumed live markup change.
 

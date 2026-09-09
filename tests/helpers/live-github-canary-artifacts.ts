@@ -7,12 +7,27 @@ type CanaryArtifactTarget = Pick<TestInfo, "attach" | "outputPath">;
 export async function attachCanaryDiagnostics(
   testInfo: CanaryArtifactTarget,
   diagnostics: object,
+  fileName = "canary-diagnostics.json",
 ): Promise<string> {
-  const diagnosticsPath = testInfo.outputPath("canary-diagnostics.json");
-  await writeFile(diagnosticsPath, JSON.stringify(diagnostics, null, 2));
-  await testInfo.attach("canary-diagnostics.json", {
-    path: diagnosticsPath,
-    contentType: "application/json",
+  return attachCanaryTextArtifact(
+    testInfo,
+    JSON.stringify(diagnostics, null, 2),
+    fileName,
+    "application/json",
+  );
+}
+
+export async function attachCanaryTextArtifact(
+  testInfo: CanaryArtifactTarget,
+  content: string,
+  fileName: string,
+  contentType: string,
+): Promise<string> {
+  const artifactPath = testInfo.outputPath(fileName);
+  await writeFile(artifactPath, content);
+  await testInfo.attach(fileName, {
+    path: artifactPath,
+    contentType,
   });
-  return diagnosticsPath;
+  return artifactPath;
 }

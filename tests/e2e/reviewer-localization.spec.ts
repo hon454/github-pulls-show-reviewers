@@ -148,6 +148,18 @@ test("switches five reviewer locales during FIFO requests, preserves errors and 
       "https://github.com/hon454/github-pulls-show-reviewers/pulls",
     );
     await expect.poll(() => started.length).toBe(4);
+    const stateBadgePreference = options.getByTestId(
+      "prefs-show-state-badge",
+    );
+    // This controlled input commits through the background RPC. Playwright's
+    // `uncheck()` requires an immediate DOM change, which races that commit.
+    await stateBadgePreference.click();
+    await expect(stateBadgePreference).not.toBeChecked();
+    await expect(stateBadgePreference).toBeEnabled();
+    // Presentation changes share the pending generation: they must not consume
+    // a fifth FIFO slot or trigger another metadata request.
+    expect(started).toEqual(pulls.slice(0, 4));
+    expect(metadataRequests).toBe(1);
     const githubLang = await page.locator("html").getAttribute("lang");
     const originalTitle = await page
       .locator(".js-issue-row")
