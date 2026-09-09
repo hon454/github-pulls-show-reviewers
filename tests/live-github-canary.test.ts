@@ -173,22 +173,28 @@ describe("live canary response observer", () => {
     );
   });
 
-  it("does not treat a malformed Link relation as complete pagination", async () => {
-    const observer = createCanaryResponseObserver({ repository });
-    observer.observeResponse(
-      response(
-        "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
-        Promise.resolve([]),
-        200,
-        {
-          link: '<https://api.github.com/repos/octo/repo/pulls/42/reviews?page=2>; rel: "next"',
-        },
-      ),
-    );
-    await observer.settle();
+  it.each([
+    '<https://api.github.com/repos/octo/repo/pulls/42/reviews?page=2>; rel: "next"',
+    '<https://api.github.com/repos/octo/repo/pulls/42/reviews?page=2>; rel=""',
+  ])(
+    "does not treat malformed Link relation %s as complete pagination",
+    async (link) => {
+      const observer = createCanaryResponseObserver({ repository });
+      observer.observeResponse(
+        response(
+          "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+          Promise.resolve([]),
+          200,
+          { link },
+        ),
+      );
+      await observer.settle();
 
-    expect(observer.snapshot().pulls[0].reviews.completeness).toBe("truncated");
-  });
+      expect(observer.snapshot().pulls[0].reviews.completeness).toBe(
+        "truncated",
+      );
+    },
+  );
 
   it("keeps an external AbortError body failure explicit", async () => {
     const observer = createCanaryResponseObserver({ repository });

@@ -444,7 +444,9 @@ function readPagination(link: string | undefined): {
       segment.trim(),
     );
     if (match == null) return { hasNext: false, valid: false };
-    if (match[1].split(/\s+/).includes("next")) hasNext = true;
+    const relations = match[1].trim().split(/\s+/).filter(Boolean);
+    if (relations.length === 0) return { hasNext: false, valid: false };
+    if (relations.includes("next")) hasNext = true;
   }
   return { hasNext, valid: true };
 }
