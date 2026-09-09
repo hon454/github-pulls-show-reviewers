@@ -30,7 +30,10 @@ import {
   type CanaryRepository,
   type CanaryResponseObserver,
 } from "../helpers/live-github-canary";
-import { attachCanaryDiagnostics } from "../helpers/live-github-canary-artifacts";
+import {
+  attachCanaryDiagnostics,
+  attachCanaryTextArtifact,
+} from "../helpers/live-github-canary-artifacts";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "../..");
@@ -350,10 +353,12 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     const pageHtml = await page.content().catch((contentError: unknown) => {
       return `Unable to capture page DOM: ${String(contentError)}`;
     });
-    await testInfo.attach("github-pr-list.html", {
-      body: Buffer.from(pageHtml),
-      contentType: "text/html",
-    });
+    await attachCanaryTextArtifact(
+      testInfo,
+      pageHtml,
+      "github-pr-list.html",
+      "text/html",
+    );
     throw error;
   } finally {
     await apiObserver.settle();

@@ -175,7 +175,8 @@ days. The retained trace and failure screenshot are accompanied by:
 - `canary-diagnostics.json`, for the minimal stage/count/sample/endpoint
   comparison described above.
 - `github-pr-list.html`, for the delivered GitHub page DOM when the assertion
-  failed.
+  failed. It is written in the test's Playwright output directory before being
+  attached by path, so the uploaded `test-results` artifact retains the HTML.
 
 Artifacts are collected only from the clean public profile.
 

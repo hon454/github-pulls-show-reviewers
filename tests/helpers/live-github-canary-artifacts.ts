@@ -9,11 +9,25 @@ export async function attachCanaryDiagnostics(
   diagnostics: object,
   fileName = "canary-diagnostics.json",
 ): Promise<string> {
-  const diagnosticsPath = testInfo.outputPath(fileName);
-  await writeFile(diagnosticsPath, JSON.stringify(diagnostics, null, 2));
+  return attachCanaryTextArtifact(
+    testInfo,
+    JSON.stringify(diagnostics, null, 2),
+    fileName,
+    "application/json",
+  );
+}
+
+export async function attachCanaryTextArtifact(
+  testInfo: CanaryArtifactTarget,
+  content: string,
+  fileName: string,
+  contentType: string,
+): Promise<string> {
+  const artifactPath = testInfo.outputPath(fileName);
+  await writeFile(artifactPath, content);
   await testInfo.attach(fileName, {
-    path: diagnosticsPath,
-    contentType: "application/json",
+    path: artifactPath,
+    contentType,
   });
-  return diagnosticsPath;
+  return artifactPath;
 }
