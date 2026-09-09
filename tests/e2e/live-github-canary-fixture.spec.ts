@@ -2,7 +2,14 @@ import { mkdtemp } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { chromium, expect, test, type BrowserContext } from "@playwright/test";
+import {
+  chromium,
+  expect,
+  test,
+  type BrowserContext,
+  type JSHandle,
+  type Page,
+} from "@playwright/test";
 
 import { githubSelectors } from "../../src/github/selectors";
 import {
@@ -99,6 +106,15 @@ test("packaged canary oracle rejects list success with failed review detail", as
         return snapshot.rows[0]?.loadingMountCount ?? 1;
       })
       .toBe(0);
+    await expect
+      .poll(async () => {
+        const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
+          repository,
+          productionRowSelector: githubSelectors.row,
+        });
+        return snapshot.activeFailureBannerCount;
+      })
+      .toBe(1);
     await observer.settle();
     const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
       repository,
@@ -115,6 +131,78 @@ test("packaged canary oracle rejects list success with failed review detail", as
     expect(verdict.failures.map((failure) => failure.code)).toEqual(
       expect.arrayContaining(["api-server-error", "reviews-unavailable"]),
     );
+  });
+});
+
+test("packaged canary recovers one mount per current row across pagination, back, forward, and filter navigation", async () => {
+  await withExtension(async (context) => {
+    const initialUrl = `${pullListUrl}?q=is%3Apr`;
+    const pageTwoUrl = `${pullListUrl}?q=is%3Apr&page=2`;
+    const closedUrl = `${pullListUrl}?q=is%3Apr+is%3Aclosed`;
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routeNavigablePullLists(context, {
+      [initialUrl]: createPullListFixtureHtml(["42", "43"], repository, {
+        paginationHref: pageTwoUrl,
+        filterHref: closedUrl,
+      }),
+      [pageTwoUrl]: createPullListFixtureHtml(["44", "45"], repository),
+      [closedUrl]: createPullListFixtureHtml(["46", "47"], repository),
+    });
+    await routeMetadata(
+      context,
+      [42, 43, 44, 45, 46, 47].map((number) =>
+        metadata(number, number % 2 === 0 ? ["alice"] : []),
+      ),
+    );
+    await routeReviews(context, {
+      "42": [],
+      "43": [],
+      "44": [],
+      "45": [],
+      "46": [],
+      "47": [],
+    });
+
+    const page = await context.newPage();
+    await page.goto(initialUrl);
+    await expectCurrentCanary(page, observer, ["42", "43"]);
+
+    const initialDocument = await page.evaluateHandle(() => document);
+    const pagination = page.locator("a[data-fixture-pagination]");
+    await expect(pagination).toHaveAttribute("href", pageTwoUrl);
+    await Promise.all([page.waitForURL(pageTwoUrl), pagination.click()]);
+    expect(await documentWasMaintained(initialDocument)).toBe(false);
+    await initialDocument.dispose();
+    await expectCurrentCanary(page, observer, ["44", "45"]);
+
+    const pageTwoDocument = await page.evaluateHandle(() => document);
+    await Promise.all([page.waitForURL(initialUrl), page.goBack()]);
+    expect(await documentWasMaintained(pageTwoDocument)).toBe(false);
+    await pageTwoDocument.dispose();
+    await expectCurrentCanary(page, observer, ["42", "43"]);
+
+    const restoredDocument = await page.evaluateHandle(() => document);
+    await Promise.all([page.waitForURL(pageTwoUrl), page.goForward()]);
+    expect(await documentWasMaintained(restoredDocument)).toBe(false);
+    await restoredDocument.dispose();
+    await expectCurrentCanary(page, observer, ["44", "45"]);
+
+    const forwardDocument = await page.evaluateHandle(() => document);
+    await Promise.all([page.waitForURL(initialUrl), page.goBack()]);
+    expect(await documentWasMaintained(forwardDocument)).toBe(false);
+    await forwardDocument.dispose();
+    await expectCurrentCanary(page, observer, ["42", "43"]);
+
+    const restoredAgainDocument = await page.evaluateHandle(() => document);
+    const filter = page.locator("a[data-fixture-filter]");
+    await expect(filter).toHaveAttribute("href", closedUrl);
+    await Promise.all([page.waitForURL(closedUrl), filter.click()]);
+    expect(await documentWasMaintained(restoredAgainDocument)).toBe(false);
+    await restoredAgainDocument.dispose();
+    await expectCurrentCanary(page, observer, ["46", "47"]);
+    expect(observer.snapshot().apiRequestsWithAuthorization).toBe(0);
   });
 });
 
@@ -172,6 +260,24 @@ async function routePullList(
   });
 }
 
+async function routeNavigablePullLists(
+  context: BrowserContext,
+  pages: Record<string, string>,
+): Promise<void> {
+  await context.route(`${pullListUrl}**`, async (route) => {
+    const html = pages[route.request().url()];
+    if (html == null)
+      throw new Error(
+        `unexpected fixture pull-list URL: ${route.request().url()}`,
+      );
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: html,
+    });
+  });
+}
+
 async function routeMetadata(
   context: BrowserContext,
   payload: object,
@@ -213,4 +319,42 @@ function metadata(number: number, requestedUsers: string[]): object {
     requested_reviewers: requestedUsers.map((login) => ({ login })),
     requested_teams: [],
   };
+}
+
+async function expectCurrentCanary(
+  page: Page,
+  observer: ReturnType<typeof createCanaryResponseObserver>,
+  expectedPullNumbers: string[],
+): Promise<void> {
+  await expect
+    .poll(async () => {
+      const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
+        repository,
+        productionRowSelector: githubSelectors.row,
+      });
+      return snapshot.rows.every(
+        (row) => row.mountCount === 1 && row.loadingMountCount === 0,
+      );
+    })
+    .toBe(true);
+  await observer.settle();
+  const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+    repository,
+    productionRowSelector: githubSelectors.row,
+  });
+  expect(dom.hostPullNumbers).toEqual(expectedPullNumbers);
+  expect(dom.rows.map((row) => row.mountCount)).toEqual(
+    expectedPullNumbers.map(() => 1),
+  );
+  expect(
+    evaluateLiveCanary({ repository, dom, api: observer.snapshot() }).ok,
+  ).toBe(true);
+}
+
+async function documentWasMaintained(
+  documentHandle: JSHandle<Document>,
+): Promise<boolean> {
+  return documentHandle
+    .evaluate((previousDocument) => previousDocument === document)
+    .catch(() => false);
 }

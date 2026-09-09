@@ -2530,7 +2530,7 @@ describe("bootReviewerListPage", () => {
     clearReviewerCache();
   });
 
-  it("deduplicates duplicate processing of one pull while its summary is in flight", async () => {
+  it("keeps a current duplicate consumer when another row is removed during their shared summary", async () => {
     installPullListFixture(["42", "42"]);
     resolveAccountForRepoMock.mockResolvedValue(null);
     const summaryRequest = createDeferred<{
@@ -2553,6 +2553,10 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
 
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+    document.querySelectorAll("#issue_42")[0]!.remove();
+    await flushMicrotasks();
+    expect(document.querySelectorAll("#issue_42")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
 
     summaryRequest.resolve({
       ok: true,
@@ -2568,7 +2572,13 @@ describe("bootReviewerListPage", () => {
 
     expect(
       document.querySelectorAll('a.ghpsr-avatar[title*="@alice"]'),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    const cache = await import("../src/cache/reviewer-cache");
+    expect(
+      cache.getReviewerCacheEntry(
+        cache.buildReviewerCacheKey("cinev", "shotloom", "42"),
+      )?.summary,
+    ).toMatchObject({ requestedUsers: [{ login: "alice" }] });
   });
 
   it.each(["route change", "content-script invalidation"])(

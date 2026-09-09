@@ -557,6 +557,8 @@ export type CanaryDomRow = {
 
 export type CanaryDomSnapshot = {
   mainFound: boolean;
+  pullListContainerFound: boolean;
+  orphanMountCount: number;
   challengeDetected: boolean;
   ignoredPullLinkCount: number;
   activeFailureBannerCount: number;
@@ -702,6 +704,8 @@ export function collectLiveCanaryDomSnapshot(input: {
   if (main == null) {
     return {
       mainFound: false,
+      pullListContainerFound: false,
+      orphanMountCount: 0,
       challengeDetected,
       ignoredPullLinkCount: 0,
       activeFailureBannerCount,
@@ -710,6 +714,15 @@ export function collectLiveCanaryDomSnapshot(input: {
       rows: [],
     };
   }
+
+  // This is deliberately independent from the production row selector. A
+  // present list container with no PR links is a normal empty result; a bare
+  // main region with neither rows nor the list container is selector/host
+  // evidence failure, not a silently accepted empty list.
+  const pullListContainerFound =
+    main.querySelector(
+      ".js-navigation-container, [data-testid='issues-list']",
+    ) != null;
 
   const hostRows = new Map<string, { row: Element; links: Set<Element> }>();
   let ignoredPullLinkCount = 0;
@@ -775,9 +788,16 @@ export function collectLiveCanaryDomSnapshot(input: {
       reviewers,
     };
   });
+  const orphanMountCount = [
+    ...main.querySelectorAll<HTMLElement>("[data-ghpsr-root]"),
+  ].filter(
+    (mount) => ![...hostRows.values()].some(({ row }) => row.contains(mount)),
+  ).length;
 
   return {
     mainFound: true,
+    pullListContainerFound,
+    orphanMountCount,
     challengeDetected,
     ignoredPullLinkCount,
     activeFailureBannerCount,
@@ -1070,13 +1090,20 @@ export function evaluateLiveCanary(input: {
       failures.push({ owner, code, pullNumber });
   };
 
+  const hasVerifiedEmptyList =
+    input.dom.mainFound &&
+    input.dom.pullListContainerFound &&
+    input.dom.hostPullNumbers.length === 0;
+
   if (!input.dom.mainFound) fail("environment", "main-region-missing");
   if (input.dom.challengeDetected) fail("environment", "github-challenge");
   if (input.dom.activeFailureBannerCount > 0)
     fail("extension", "failure-banner-present");
-  if (input.dom.hostPullNumbers.length === 0)
+  if (hasVerifiedEmptyList && input.dom.orphanMountCount > 0)
+    fail("extension", "empty-list-mount");
+  if (input.dom.hostPullNumbers.length === 0 && !hasVerifiedEmptyList)
     fail("environment", "host-pull-rows-missing");
-  if (input.api.apiRequestCount === 0)
+  if (input.api.apiRequestCount === 0 && !hasVerifiedEmptyList)
     fail("extension", "public-api-request-missing");
   if (input.api.apiRequestsWithAuthorization > 0)
     fail("extension", "authorization-header-present");
@@ -1169,7 +1196,7 @@ export function evaluateLiveCanary(input: {
   const empty = sampleCandidates.filter(
     ({ outcome }) => outcome.reviewers.length === 0,
   );
-  if (withReviewers.length === 0)
+  if (withReviewers.length === 0 && !hasVerifiedEmptyList)
     fail("environment", "reviewer-sample-missing");
   const selected = [
     ...withReviewers.slice(0, 1),
@@ -1210,6 +1237,13 @@ function reviewerListsMatch(
   );
 }
 
+export type CanaryNavigationObservation = {
+  stage: string;
+  operation: string;
+  previousUrl: string | null;
+  documentMaintained: boolean | null;
+};
+
 export function createCanaryDiagnostics(input: {
   phase: string;
   repository: CanaryRepository;
@@ -1219,6 +1253,7 @@ export function createCanaryDiagnostics(input: {
   dom: CanaryDomSnapshot;
   api: CanaryApiEvidence;
   verdict: CanaryVerdict;
+  navigation?: CanaryNavigationObservation;
 }): object {
   return {
     phase: input.phase,
@@ -1226,11 +1261,14 @@ export function createCanaryDiagnostics(input: {
     targetUrl: input.targetUrl,
     currentUrl: input.currentUrl,
     responseStatus: input.responseStatus,
+    ...(input.navigation == null ? {} : { navigation: input.navigation }),
     host: {
       mainFound: input.dom.mainFound,
+      pullListContainerFound: input.dom.pullListContainerFound,
       challengeDetected: input.dom.challengeDetected,
       independentRowCount: input.dom.hostPullNumbers.length,
       productionRowCount: new Set(input.dom.productionPullNumbers).size,
+      pullNumbers: input.dom.hostPullNumbers,
       ignoredPullLinkCount: input.dom.ignoredPullLinkCount,
       activeFailureBannerCount: input.dom.activeFailureBannerCount,
     },
@@ -1248,6 +1286,7 @@ export function createCanaryDiagnostics(input: {
         (sum, row) => sum + row.invalidReviewerChipCount,
         0,
       ),
+      orphaned: input.dom.orphanMountCount,
     },
     terminal: input.verdict.terminal,
     api: {

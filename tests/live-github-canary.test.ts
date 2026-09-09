@@ -54,6 +54,61 @@ describe("live canary host-row oracle", () => {
 
     expect(collectDom().challengeDetected).toBe(true);
   });
+
+  it("accepts a host-confirmed empty list but rejects selectorless zero rows", () => {
+    document.body.innerHTML =
+      '<main><div class="js-navigation-container"></div></main>';
+    const emptyDom = collectDom();
+    const emptyVerdict = evaluateLiveCanary({
+      repository,
+      dom: emptyDom,
+      api: {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      },
+    });
+
+    expect(emptyDom).toMatchObject({
+      pullListContainerFound: true,
+      hostPullNumbers: [],
+      rows: [],
+    });
+    expect(emptyVerdict.ok).toBe(true);
+
+    document.body.innerHTML = `
+      <main>
+        <div class="js-navigation-container"><span data-ghpsr-root></span></div>
+      </main>`;
+    expect(
+      failureCodes(collectDom(), {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toContain("empty-list-mount");
+
+    document.body.innerHTML = "<main><div>selector drift</div></main>";
+    const missingDom = collectDom();
+    expect(
+      failureCodes(missingDom, {
+        apiRequestCount: 0,
+        apiRequestsWithAuthorization: 0,
+        targetApiResponseCount: 0,
+        endpoints: [],
+        pulls: [],
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        "host-pull-rows-missing",
+        "public-api-request-missing",
+      ]),
+    );
+  });
 });
 
 describe("live canary response observer", () => {
@@ -729,6 +784,8 @@ function endpoint(kind: "pull-list" | "reviews", pullNumber: string | null) {
 function positiveDom(): CanaryDomSnapshot {
   return {
     mainFound: true,
+    pullListContainerFound: true,
+    orphanMountCount: 0,
     challengeDetected: false,
     ignoredPullLinkCount: 0,
     activeFailureBannerCount: 0,

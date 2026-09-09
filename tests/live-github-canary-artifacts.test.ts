@@ -39,4 +39,49 @@ describe("live canary diagnostics artifact", () => {
       await rm(outputDir, { recursive: true, force: true });
     }
   });
+
+  it("keeps each navigation-stage artifact instead of overwriting prior evidence", async () => {
+    const outputDir = await mkdtemp(
+      path.join(os.tmpdir(), "ghpsr-canary-artifact-"),
+    );
+    const attach = vi.fn(async () => undefined);
+    try {
+      const aPath = await attachCanaryDiagnostics(
+        {
+          attach,
+          outputPath: (...segments: string[]) =>
+            path.join(outputDir, ...segments),
+        },
+        { phase: "navigation:A" },
+        "canary-navigation-A.json",
+      );
+      const bPath = await attachCanaryDiagnostics(
+        {
+          attach,
+          outputPath: (...segments: string[]) =>
+            path.join(outputDir, ...segments),
+        },
+        { phase: "navigation:B" },
+        "canary-navigation-B.json",
+      );
+
+      expect(aPath).not.toBe(bPath);
+      expect(JSON.parse(await readFile(aPath, "utf8"))).toEqual({
+        phase: "navigation:A",
+      });
+      expect(JSON.parse(await readFile(bPath, "utf8"))).toEqual({
+        phase: "navigation:B",
+      });
+      expect(attach).toHaveBeenNthCalledWith(1, "canary-navigation-A.json", {
+        path: aPath,
+        contentType: "application/json",
+      });
+      expect(attach).toHaveBeenNthCalledWith(2, "canary-navigation-B.json", {
+        path: bPath,
+        contentType: "application/json",
+      });
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
 });

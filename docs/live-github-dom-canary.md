@@ -79,8 +79,32 @@ host rows without matching response evidence is also unverifiable, not empty.
 
 `tests/live-github-canary.test.ts` covers the independent oracle and failure
 matrix without a browser. `tests/e2e/live-github-canary-fixture.spec.ts` runs
-positive rendered/empty and negative detail-failure scenarios in the packaged
-extension suite.
+positive rendered/empty, negative detail-failure, and native-link
+pagination/back/forward/filter navigation scenarios in the packaged extension
+suite. The surrounding controller fixture also holds eight FIFO rows across a
+same-repository navigation and proves that late results cannot render or
+populate the former generation's cache.
+
+The live test uses one finite, clean-profile sequence on the same public
+repository:
+
+1. A opens the all-state pull list.
+2. B reads and clicks GitHub's actual same-repository pagination link.
+3. C uses browser Back to return to A.
+4. D reads and clicks an actual same-repository Open or Closed filter link.
+
+The test does not synthesize `history.pushState` or extension events. It reads
+the native locator and href before each click, verifies the current PR-number
+set after B and D changes, and records whether each transition preserved the
+document. Full document navigation is evidence of full navigation, not a
+claimed PJAX success; the deterministic fixture owns same-document race
+coverage. A missing pagination/filter link, changed PR set, challenge, rate
+limit, or insufficient sample fails the required sequence rather than skipping
+it.
+
+A host-confirmed empty list is valid only when its independent list container
+is present and it has zero rows and zero mounts. A missing list container with
+zero discovered rows remains a selector/host failure, not an empty result.
 
 `.github/workflows/live-github-dom-canary.yml` runs the live project daily at
 06:17 UTC and can also be started with `workflow_dispatch`. The workflow has
@@ -110,7 +134,15 @@ pnpm test:e2e:live
 
 ## Evidence
 
-`canary-diagnostics.json` is attached on both success and failure. It contains
+`canary-diagnostics.json` is attached on both success and failure. Each live
+navigation stage additionally persists and attaches
+`canary-navigation-A.json` through `canary-navigation-D.json`, so a failing
+stage does not overwrite the previous successful evidence. Every navigation
+record includes its stage/operation, previous and current public URLs,
+document-maintained observation, host PR-number set, mount/loading/terminal
+counts, bounded expected/actual samples, and observed endpoint quota. The test
+reads each persisted JSON back before accepting its stage. The diagnostics
+contain
 only the observation phase, target/current public URL and navigation status,
 independent/production row counts, active failure-banner and
 mount/loading/rendered/invalid-chip/terminal counts, up to three minimal
