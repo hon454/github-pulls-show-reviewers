@@ -56,6 +56,9 @@ Agents working in this repository should preserve that narrow product scope. Do 
   UI code uses `AccountSummary`; full accounts and OAuth helpers stay in background.
 - `src/shared/preferences.ts`
   Pure preference schemas/defaults shared by UI contracts and background storage.
+- `src/shared/reviewer-deadline.ts`
+  Reviewer deadline defaults, injectable clock/timers, typed timeout and signal
+  wait helpers. Request owners create deadlines; consumers never extend them.
 - `src/storage/`
   Background-only extension settings and persistence. `accounts.ts::accountMutations` is the
   background-only account registry/auth commit owner, including initialization

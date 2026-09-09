@@ -40,6 +40,12 @@
   when GitHub updates their metadata or the page is refreshed; waiting for an
   API limit to reset does not itself retry reviewer requests. Display and
   language changes only update presentation, including on failed rows.
+- Limits each shared repository metadata load and each started reviewer load to
+  30 seconds, with a 35-second message safeguard for missing background replies.
+  Waiting for one of the four request slots does not count toward the deadline.
+  Optional review-request event evidence has a total 10-second limit within the
+  parent deadline. Timeouts use the same reload prompt and preserve loaded chips;
+  language and display changes do not restart deadlines.
 - Clears obsolete access guidance after connecting an account or updating its
   installation coverage when every visible reviewer load succeeds. A successful
   row never hides another row's failure or pending request; guidance can downgrade

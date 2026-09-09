@@ -68,6 +68,45 @@ raw-token refresh endpoint, generic fetch proxy, arbitrary URL or storage-key
 operation. Existing selection/fallback semantics remain unchanged; policy 1A is
 separate work in #176.
 
+## Reviewer deadlines and cancellation ownership
+
+`src/shared/reviewer-deadline.ts` is the sole owner of reviewer deadline defaults,
+the injectable monotonic clock/timer interface and `ReviewerTimeoutError`.
+Repository metadata/discovery gets 30 seconds from shared operation creation.
+A background summary gets 30 seconds from acceptance, including repository
+access and same-account refresh waits. Optional issue-events gets 10 seconds
+total across its existing two-page budget and inherits the parent's remaining
+lifetime. Content starts its 35-second reviewer-message watchdog at dispatch;
+waiting for a FIFO permit is excluded. No page, retry, subscriber, language or
+display change extends those lifetimes.
+
+An operation owns its HTTP controller. Fetch, JSON body and pagination waits
+observe that signal and settle even if a transport ignores it. Expiration uses
+a typed timeout reason; safe runtime/diagnostic evidence carries
+`failure.kind: "timeout"` and no HTTP status. It is not an access denial and
+cannot invalidate credentials, admit another account, reopen discovery, or reset
+its admission budget. The existing unavailable/reload banner and stale-chip
+retention handle mandatory failures. Optional timeout can return unavailable
+event evidence, preserving partial evidence for confirmed/unverified decisions;
+an expired mandatory parent is never converted to successful optional fallback.
+
+Each content request ID still owns only its subscription. Cancellation or a
+35-second watchdog sends the existing cancel message best effort. One consumer
+cannot abort shared metadata while another remains; the last detach aborts that
+shared operation. Its own 30-second deadline applies to all remaining consumers.
+Terminal discovery evidence is retained without waiting for persistence or
+auth-registry queues to deliver the timeout. Queued metadata success/admission
+callbacks recheck the operation before committing; late replies cannot update
+the metadata cache, row outcomes, DOM, or a newer PR/account generation.
+
+The refresh coordinator remains the sole token-refresh/auth-commit owner.
+Reviewer expiry detaches its refresh waiter without passing cancellation to the
+coordinator or canceling an already admitted auth commit. Late refresh completion
+cannot make the expired reviewer retry or invalidate the account. Timers,
+listeners, request entries and FIFO permits are released once on terminal paths.
+This does not redesign device flow, storage schemas, worker lifetime, alarms or
+general-purpose runtime messaging.
+
 ## Device-flow ordering and restoration
 
 Options creates an attempt ID before its first initiation request. Background
