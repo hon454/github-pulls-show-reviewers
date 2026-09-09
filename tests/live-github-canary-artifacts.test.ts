@@ -8,6 +8,7 @@ import {
   attachCanaryDiagnostics,
   attachCanaryTextArtifact,
 } from "./helpers/live-github-canary-artifacts";
+import { canaryStageArtifactFileName } from "./helpers/live-github-canary";
 
 describe("live canary diagnostics artifact", () => {
   it("persists diagnostics before attaching their path", async () => {
@@ -83,6 +84,62 @@ describe("live canary diagnostics artifact", () => {
         path: bPath,
         contentType: "application/json",
       });
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the original failed stage verdict separate from catch evidence", async () => {
+    const outputDir = await mkdtemp(
+      path.join(os.tmpdir(), "ghpsr-canary-artifact-"),
+    );
+    const attach = vi.fn(async () => undefined);
+    const stageDiagnostics = {
+      phase: "navigation:C",
+      failures: [{ code: "api-body-pending" }],
+    };
+    const catchDiagnostics = {
+      phase: "navigation:C",
+      failures: [{ code: "navigation-stage-failed" }],
+    };
+
+    try {
+      const stagePath = await attachCanaryDiagnostics(
+        {
+          attach,
+          outputPath: (...segments: string[]) =>
+            path.join(outputDir, ...segments),
+        },
+        stageDiagnostics,
+        canaryStageArtifactFileName("C"),
+      );
+      const catchPath = await attachCanaryDiagnostics(
+        {
+          attach,
+          outputPath: (...segments: string[]) =>
+            path.join(outputDir, ...segments),
+        },
+        catchDiagnostics,
+        canaryStageArtifactFileName("C", true),
+      );
+
+      expect(stagePath).not.toBe(catchPath);
+      expect(JSON.parse(await readFile(stagePath, "utf8"))).toEqual(
+        stageDiagnostics,
+      );
+      expect(JSON.parse(await readFile(catchPath, "utf8"))).toEqual(
+        catchDiagnostics,
+      );
+      expect(attach).toHaveBeenNthCalledWith(
+        1,
+        "canary-navigation-C.json",
+        { path: stagePath, contentType: "application/json" },
+      );
+      expect(attach).toHaveBeenNthCalledWith(
+        2,
+        "canary-navigation-C-failure.json",
+        { path: catchPath, contentType: "application/json" },
+      );
     } finally {
       await rm(outputDir, { recursive: true, force: true });
     }

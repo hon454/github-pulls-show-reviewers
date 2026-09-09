@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   collectLiveCanaryDomSnapshot,
   appendCanaryFailure,
+  canaryStageArtifactFileName,
+  captureSettledCanaryStage,
   createCanaryDiagnostics,
   createCanaryResponseObserver,
   deriveCanaryExpectedOutcome,
@@ -234,6 +236,57 @@ describe("live canary host-row oracle", () => {
 });
 
 describe("live canary response observer", () => {
+  it("settles a response observed during async stage DOM capture", async () => {
+    const unsafeBody = deferred<unknown>();
+    const unsafeObserver = createCanaryResponseObserver({ repository });
+    await unsafeObserver.settle();
+    await (async () => {
+      unsafeObserver.observeResponse(
+        response(
+          "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+          unsafeBody.promise,
+        ),
+      );
+      return { captured: true };
+    })();
+    expect(unsafeObserver.snapshot().endpoints).toMatchObject([
+      { body: "pending" },
+    ]);
+    unsafeBody.resolve([]);
+    await unsafeObserver.settle();
+
+    const safeBody = deferred<unknown>();
+    const safeObserver = createCanaryResponseObserver({ repository });
+    const stage = captureSettledCanaryStage({
+      observer: safeObserver,
+      async readDom() {
+        safeObserver.observeResponse(
+          response(
+            "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+            safeBody.promise,
+          ),
+        );
+        return { captured: true };
+      },
+    });
+    await Promise.resolve();
+    safeBody.resolve([]);
+
+    await expect(stage).resolves.toMatchObject({
+      dom: { captured: true },
+      api: { endpoints: [{ body: "parsed" }] },
+    });
+  });
+
+  it("assigns a distinct artifact name to a post-stage failure", () => {
+    expect(canaryStageArtifactFileName("C")).toBe(
+      "canary-navigation-C.json",
+    );
+    expect(canaryStageArtifactFileName("C", true)).toBe(
+      "canary-navigation-C-failure.json",
+    );
+  });
+
   it("waits for every asynchronous body read before exposing parsed evidence", async () => {
     const metadata = deferred<unknown>();
     const reviews = deferred<unknown>();

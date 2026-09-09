@@ -17,6 +17,8 @@ import { githubSelectors } from "../../src/github/selectors";
 import {
   collectLiveCanaryDomSnapshot,
   appendCanaryFailure,
+  canaryStageArtifactFileName,
+  captureSettledCanaryStage,
   createCanaryDiagnostics,
   createCanaryResponseObserver,
   evaluateLiveCanary,
@@ -334,7 +336,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       await attachCanaryDiagnostics(
         testInfo,
         diagnostics,
-        `canary-navigation-${failedStage}.json`,
+        canaryStageArtifactFileName(failedStage, true),
       );
     await attachCanaryDiagnostics(testInfo, diagnostics);
 
@@ -391,9 +393,10 @@ async function assertNavigationStage(input: {
       },
     )
     .toBe(true);
-  await input.apiObserver.settle();
-  const dom = await readDomSnapshot(input.page, input.repository);
-  const api = input.apiObserver.snapshot();
+  const { dom, api } = await captureSettledCanaryStage({
+    observer: input.apiObserver,
+    readDom: () => readDomSnapshot(input.page, input.repository),
+  });
   const verdict = evaluateLiveCanary({
     repository: input.repository,
     dom,
@@ -418,7 +421,7 @@ async function assertNavigationStage(input: {
       verdict,
       navigation,
     }),
-    `canary-navigation-${input.stage}.json`,
+    canaryStageArtifactFileName(input.stage),
   );
   const persisted = JSON.parse(await readFile(diagnosticsPath, "utf8")) as {
     navigation?: CanaryNavigationObservation;

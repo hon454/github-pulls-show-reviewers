@@ -154,7 +154,10 @@ pnpm test:e2e:live
 `canary-diagnostics.json` is attached on both success and failure. Each live
 navigation stage additionally persists and attaches
 `canary-navigation-A.json` through `canary-navigation-D.json`, so a failing
-stage does not overwrite the previous successful evidence. Every navigation
+stage does not overwrite the previous successful evidence. If a stage verdict
+itself fails, its original JSON remains in place and the catch-time snapshot is
+persisted separately as `canary-navigation-<stage>-failure.json`. Every
+navigation
 record includes its stage/operation, previous and current public URLs, whether
 its DOM was captured from the current document (or was unavailable),
 document-maintained observation, host PR-number set, mount/loading/terminal
@@ -188,16 +191,19 @@ run in this order:
 1. Read `canary-diagnostics.json`. Start with the failure owner and phase, then
    compare independent/production row counts, terminal counts, endpoint
    statuses, body outcomes, quota, and the bounded reviewer samples.
-2. For an environment-owned failure, inspect the trace and screenshot for a
+2. When a stage JSON and matching `-failure` JSON both exist, read the original
+   stage verdict first. The later file records catch-time state and does not
+   replace the original observed failure.
+3. For an environment-owned failure, inspect the trace and screenshot for a
    GitHub incident, challenge, rate limit, or public data set with no complete
    reviewer sample. Do not relabel it as a passing mount check.
-3. For an observation-owned failure, use endpoint/body completeness to decide
+4. For an observation-owned failure, use endpoint/body completeness to decide
    whether GitHub delivery, pagination, response parsing, or a navigation
    mismatch prevented verification.
-4. For an extension-owned mismatch, compare the minimal expected/actual sample
+5. For an extension-owned mismatch, compare the minimal expected/actual sample
    and saved DOM with `src/github/selectors.ts`, reviewer DOM semantics, and the
    deterministic fixtures.
-5. If selector drift is demonstrated, minimize the captured structure into a
+6. If selector drift is demonstrated, minimize the captured structure into a
    fixture before changing the centralized production selector. Do not change
    selectors based only on an assumed live markup change.
 

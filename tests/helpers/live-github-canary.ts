@@ -101,6 +101,22 @@ export type CanaryResponseObserver = {
   snapshot(): CanaryApiEvidence;
 };
 
+export async function captureSettledCanaryStage<T>(input: {
+  observer: CanaryResponseObserver;
+  readDom(): Promise<T>;
+}): Promise<{ dom: T; api: CanaryApiEvidence }> {
+  const dom = await input.readDom();
+  await input.observer.settle();
+  return { dom, api: input.observer.snapshot() };
+}
+
+export function canaryStageArtifactFileName(
+  stage: string,
+  failure = false,
+): string {
+  return `canary-navigation-${stage}${failure ? "-failure" : ""}.json`;
+}
+
 type ParsedEndpoint = {
   kind: CanaryEndpointKind;
   pullNumber: string | null;
