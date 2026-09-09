@@ -38,9 +38,11 @@ export function createPullListFixtureHtml(
     <html lang="en">
       <head><meta charset="UTF-8"><title>Pull list fixture</title></head>
       <body>
-        <div class="js-navigation-container js-active-navigation-container">
-          ${rows}
-        </div>
+        <main>
+          <div class="js-navigation-container js-active-navigation-container">
+            ${rows}
+          </div>
+        </main>
       </body>
     </html>`;
 }

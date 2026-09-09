@@ -1,0 +1,216 @@
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { chromium, expect, test, type BrowserContext } from "@playwright/test";
+
+import { githubSelectors } from "../../src/github/selectors";
+import {
+  collectLiveCanaryDomSnapshot,
+  createCanaryResponseObserver,
+  evaluateLiveCanary,
+  type CanaryRepository,
+} from "../helpers/live-github-canary";
+import { createPullListFixtureHtml } from "../helpers/pull-list-fixtures";
+
+const extensionPath = path.resolve(".output/chrome-mv3");
+const repository: CanaryRepository = {
+  owner: "hon454",
+  repo: "github-pulls-show-reviewers",
+};
+const pullListUrl = `https://github.com/${repository.owner}/${repository.repo}/pulls`;
+const apiBase = `https://api.github.com/repos/${repository.owner}/${repository.repo}`;
+
+test("packaged canary oracle accepts rendered and empty reviewer outcomes", async () => {
+  await withExtension(async (context) => {
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routePullList(context, ["42", "43"]);
+    await routeMetadata(context, [metadata(42, ["alice"]), metadata(43, [])]);
+    await routeReviews(context, {
+      "42": [
+        {
+          state: "APPROVED",
+          submitted_at: "2026-09-01T00:00:00Z",
+          user: { login: "bob" },
+        },
+      ],
+      "43": [],
+    });
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await expect
+      .poll(async () => {
+        const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
+          repository,
+          productionRowSelector: githubSelectors.row,
+        });
+        return snapshot.rows.every(
+          (row) => row.mountCount === 1 && row.loadingMountCount === 0,
+        );
+      })
+      .toBe(true);
+    await observer.settle();
+    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+      repository,
+      productionRowSelector: githubSelectors.row,
+    });
+    const verdict = evaluateLiveCanary({
+      repository,
+      dom,
+      api: observer.snapshot(),
+    });
+
+    expect(verdict).toMatchObject({
+      ok: true,
+      terminal: { success: 1, empty: 1, loading: 0, failure: 0 },
+    });
+    expect(verdict.samples).toHaveLength(2);
+    expect(dom.activeFailureBannerCount).toBe(0);
+    expect(observer.snapshot().apiRequestsWithAuthorization).toBe(0);
+  });
+});
+
+test("packaged canary oracle rejects list success with failed review detail", async () => {
+  await withExtension(async (context) => {
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routePullList(context, ["42"]);
+    await routeMetadata(context, [metadata(42, ["alice"])]);
+    await context.route(`${apiBase}/pulls/42/reviews**`, async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "fixture failure" }),
+      });
+    });
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await expect
+      .poll(async () => {
+        const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
+          repository,
+          productionRowSelector: githubSelectors.row,
+        });
+        return snapshot.rows[0]?.loadingMountCount ?? 1;
+      })
+      .toBe(0);
+    await observer.settle();
+    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+      repository,
+      productionRowSelector: githubSelectors.row,
+    });
+    const verdict = evaluateLiveCanary({
+      repository,
+      dom,
+      api: observer.snapshot(),
+    });
+
+    expect(verdict.ok).toBe(false);
+    expect(dom.activeFailureBannerCount).toBe(1);
+    expect(verdict.failures.map((failure) => failure.code)).toEqual(
+      expect.arrayContaining(["api-server-error", "reviews-unavailable"]),
+    );
+  });
+});
+
+async function withExtension(
+  run: (context: BrowserContext) => Promise<void>,
+): Promise<void> {
+  const profile = await mkdtemp(
+    path.join(os.tmpdir(), "ghpsr-canary-fixture-"),
+  );
+  const context = await chromium.launchPersistentContext(profile, {
+    channel: "chromium",
+    locale: "en-US",
+    args: [
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+    ],
+  });
+  try {
+    const worker =
+      context.serviceWorkers()[0] ??
+      (await context.waitForEvent("serviceworker"));
+    expect(worker.url()).toContain("chrome-extension://");
+    await closeInstallPage(context);
+    await run(context);
+  } finally {
+    await context.close();
+  }
+}
+
+async function closeInstallPage(context: BrowserContext): Promise<void> {
+  const closePages = () =>
+    Promise.all(
+      context
+        .pages()
+        .filter((page) => page.url().startsWith("chrome-extension://"))
+        .map((page) => page.close().catch(() => undefined)),
+    );
+  await closePages();
+  await context
+    .waitForEvent("page", { timeout: 1_000 })
+    .then(async () => closePages())
+    .catch(() => undefined);
+}
+
+async function routePullList(
+  context: BrowserContext,
+  pullNumbers: readonly string[],
+): Promise<void> {
+  await context.route(pullListUrl, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/html",
+      body: createPullListFixtureHtml(pullNumbers, repository),
+    });
+  });
+}
+
+async function routeMetadata(
+  context: BrowserContext,
+  payload: object,
+): Promise<void> {
+  await context.route(new RegExp(`^${apiBase}/pulls\\?`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(payload),
+    });
+  });
+}
+
+async function routeReviews(
+  context: BrowserContext,
+  payloads: Record<string, object>,
+): Promise<void> {
+  await context.route(
+    new RegExp(`^${apiBase}/pulls/(\\d+)/reviews`),
+    async (route) => {
+      const pullNumber = /\/pulls\/(\d+)\/reviews/.exec(
+        route.request().url(),
+      )?.[1];
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(
+          pullNumber == null ? [] : (payloads[pullNumber] ?? []),
+        ),
+      });
+    },
+  );
+}
+
+function metadata(number: number, requestedUsers: string[]): object {
+  return {
+    number,
+    user: { login: "author" },
+    requested_reviewers: requestedUsers.map((login) => ({ login })),
+    requested_teams: [],
+  };
+}
