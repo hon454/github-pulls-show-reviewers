@@ -281,6 +281,7 @@ function failureFields(
         message = t("diagnostics_network_failure", { endpoint });
         break;
       case "cancellation":
+      case "timeout":
       case "unknown":
         message = t("diagnostics_unknown_failure", { endpoint });
         break;

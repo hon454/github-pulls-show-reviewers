@@ -74,7 +74,7 @@ export function orderRepositoryCandidates(input: {
 
 /** Decoded, non-secret failure facts; no raw body/message or credential input. */
 export type RepositoryFailureFact = Readonly<{
-  kind: "http" | "network" | "schema" | "cancellation" | "unknown";
+  kind: "http" | "network" | "schema" | "cancellation" | "timeout" | "unknown";
   status: number | null;
   scope: "repository" | "pull" | "unknown";
   rateLimited?: boolean;
@@ -113,6 +113,8 @@ export function classifyRepositoryFailure(input: {
   const { failures } = input;
   if (failures.length === 0)
     return { kind: "stop", reason: "missing-evidence" };
+  if (failures.some((failure) => failure.kind === "timeout"))
+    return { kind: "stop", reason: "non-access-failure" };
 
   if (
     failures.some(

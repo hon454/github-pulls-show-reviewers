@@ -1,3 +1,9 @@
+import {
+  REVIEWER_DEADLINES,
+  throwIfReviewerAborted,
+  waitForReviewerSignal,
+  withReviewerDeadline,
+} from "../shared/reviewer-deadline";
 import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import type { RepositoryAccountService } from "./repository-accounts";
 import type { DiscoveryOwner } from "./repository-discovery-ledger";
@@ -89,63 +95,82 @@ export function createReviewerFetchService(input: {
     SuccessResponse extends { ok: true },
   >(
     message: ReviewerFetchMessage,
+    duration: number,
     execute: (token: string | null, signal: AbortSignal) => Promise<Result>,
     toSuccessResponse: (result: Result) => SuccessResponse,
   ): Promise<SuccessResponse | ReviewerFetchFailureResponse> {
     const controller = createController(message.requestId);
 
     try {
-      const account =
-        message.accountId == null
-          ? null
-          : await accountMutations.getAccountById(message.accountId);
+      return await withReviewerDeadline(
+        duration,
+        controller.signal,
+        async (signal) => {
+          const account =
+            message.accountId == null
+              ? null
+              : await accountMutations.getAccountById(message.accountId);
 
-      try {
-        const result = await execute(account?.token ?? null, controller.signal);
-        return toSuccessResponse(result);
-      } catch (error) {
-        if (extractGitHubApiStatus(error) !== 401 || account == null) {
-          return {
-            ok: false,
-            error: serializeReviewerFetchError(error),
-          };
-        }
-
-        const outcome = await refreshCoordinator.refreshAccountToken(
-          account.id,
-          credentialGeneration(account),
-        );
-        if (outcome.ok !== true) {
-          return {
-            ok: false,
-            error: serializeReviewerFetchError(error),
-          };
-        }
-
-        const refreshed = await accountMutations.getAccountById(account.id);
-        if (
-          refreshed == null ||
-          refreshed.invalidated ||
-          controller.signal.aborted
-        ) {
-          return { ok: false, error: serializeReviewerFetchError(error) };
-        }
-        try {
-          const result = await execute(refreshed.token, controller.signal);
-          return toSuccessResponse(result);
-        } catch (retryError) {
-          if (extractGitHubApiStatus(retryError) === 401) {
-            await refreshCoordinator.invalidateAccountToken(
-              account.id,
-              credentialGeneration(refreshed),
+          throwIfReviewerAborted(signal);
+          try {
+            const result = await waitForReviewerSignal(
+              execute(account?.token ?? null, signal),
+              signal,
             );
+            return toSuccessResponse(result);
+          } catch (error) {
+            throwIfReviewerAborted(signal);
+            if (extractGitHubApiStatus(error) !== 401 || account == null) {
+              return {
+                ok: false,
+                error: serializeReviewerFetchError(error),
+              };
+            }
+
+            const outcome = await waitForReviewerSignal(
+              refreshCoordinator.refreshAccountToken(
+                account.id,
+                credentialGeneration(account),
+              ),
+              signal,
+            );
+            throwIfReviewerAborted(signal);
+            if (outcome.ok !== true) {
+              return {
+                ok: false,
+                error: serializeReviewerFetchError(error),
+              };
+            }
+
+            const refreshed = await accountMutations.getAccountById(account.id);
+            throwIfReviewerAborted(signal);
+            if (refreshed == null || refreshed.invalidated || signal.aborted) {
+              return { ok: false, error: serializeReviewerFetchError(error) };
+            }
+            try {
+              const result = await waitForReviewerSignal(
+                execute(refreshed.token, signal),
+                signal,
+              );
+              return toSuccessResponse(result);
+            } catch (retryError) {
+              throwIfReviewerAborted(signal);
+              if (extractGitHubApiStatus(retryError) === 401) {
+                await refreshCoordinator.invalidateAccountToken(
+                  account.id,
+                  credentialGeneration(refreshed),
+                );
+              }
+              return {
+                ok: false,
+                error: serializeReviewerFetchError(retryError),
+              };
+            }
           }
-          return {
-            ok: false,
-            error: serializeReviewerFetchError(retryError),
-          };
-        }
-      }
+        },
+      );
+    } catch (error) {
+      return { ok: false, error: serializeReviewerFetchError(error) };
     } finally {
       releaseController(message.requestId, controller);
     }
@@ -196,6 +221,7 @@ export function createReviewerFetchService(input: {
       }
       return runWithRefreshRetry(
         message,
+        REVIEWER_DEADLINES.summary,
         (token, signal) =>
           fetchPullReviewerSummary({
             owner: message.owner,
@@ -243,6 +269,7 @@ export function createReviewerFetchService(input: {
       }
       return runWithRefreshRetry(
         message,
+        REVIEWER_DEADLINES.metadata,
         (token, signal) =>
           fetchPullReviewerMetadataBatch({
             owner: message.owner,

@@ -64,7 +64,7 @@ export type RepositoryValidationOutcome =
   | "unknown-error";
 
 export type RepositoryValidationEndpointFailure = {
-  kind: "http" | "schema" | "network" | "cancellation" | "unknown";
+  kind: "http" | "schema" | "network" | "cancellation" | "timeout" | "unknown";
   endpoint?: GitHubEndpointDescriptor;
   httpStatus?: number;
   rateLimit?: GitHubRateLimitSnapshot;
@@ -136,7 +136,12 @@ export class GitHubPullRequestEndpointsError extends Error {
 
 export class GitHubApiTransportError extends Error {
   constructor(
-    public readonly kind: "network" | "schema" | "cancellation" | "unknown",
+    public readonly kind:
+      | "network"
+      | "schema"
+      | "cancellation"
+      | "timeout"
+      | "unknown",
     public readonly endpoint: GitHubEndpointDescriptor,
   ) {
     super(`GitHub endpoint ${kind} failure.`);

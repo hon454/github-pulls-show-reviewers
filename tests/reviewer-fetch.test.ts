@@ -241,3 +241,23 @@ describe("extractReviewerFetchFailures", () => {
     ]);
   });
 });
+
+it("serializes typed timeout independently of HTTP and external AbortError", async () => {
+  const { ReviewerTimeoutError } =
+    await import("../src/shared/reviewer-deadline");
+  const { reviewerFetchErrorSchema } =
+    await import("../src/runtime/reviewer-fetch");
+  const envelope = serializeReviewerFetchError(new ReviewerTimeoutError());
+  expect(reviewerFetchErrorSchema.parse(envelope)).toEqual({
+    kind: "unknown",
+    status: null,
+    failures: [
+      { kind: "timeout", status: null, endpoint: null, rateLimited: false },
+    ],
+  });
+  expect(extractReviewerFetchFailures(envelope)[0].kind).toBe("timeout");
+  expect(
+    serializeReviewerFetchError(new DOMException("canceled", "AbortError"))
+      .failures?.[0].kind,
+  ).toBe("cancellation");
+});

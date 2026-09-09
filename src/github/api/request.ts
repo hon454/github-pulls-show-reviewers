@@ -1,4 +1,8 @@
 import type { z } from "zod";
+import {
+  throwIfReviewerAborted,
+  waitForReviewerSignal,
+} from "../../shared/reviewer-deadline";
 
 import { withOptionalSignal } from "../request-init";
 import { errorResponseSchema } from "./schemas";
@@ -27,28 +31,43 @@ export function fetchGitHubApiResponse(
   headers: Headers,
   signal?: AbortSignal,
 ): Promise<Response> {
-  return fetch(url, withOptionalSignal({ headers }, signal));
+  throwIfReviewerAborted(signal);
+  return waitForReviewerSignal(
+    fetch(url, withOptionalSignal({ headers }, signal)),
+    signal,
+  );
+}
+
+export function readGitHubResponseJson(
+  response: Response,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  throwIfReviewerAborted(signal);
+  return waitForReviewerSignal(response.json(), signal);
 }
 
 export async function createGitHubApiErrorFromResponse(
   response: Response,
   endpoint: GitHubEndpointDescriptor,
+  signal?: AbortSignal,
 ): Promise<GitHubApiError | null> {
   if (response.ok) {
     return null;
   }
 
-  return createGitHubApiError(response, endpoint);
+  return createGitHubApiError(response, endpoint, signal);
 }
 
 export async function createGitHubApiError(
   response: Response,
   endpoint?: GitHubEndpointDescriptor,
+  signal?: AbortSignal,
 ): Promise<GitHubApiError> {
   let rawPayload: unknown = null;
   try {
-    rawPayload = await response.json();
+    rawPayload = await readGitHubResponseJson(response, signal);
   } catch (error) {
+    throwIfReviewerAborted(signal);
     if (isAbortError(error)) {
       throw error;
     }
@@ -111,7 +130,9 @@ export async function collectGitHubApiPagesDetailed<T>(params: {
   let pageCount = 0;
   while (true) {
     try {
-      const parsed = params.schema.safeParse(await response.json());
+      const parsed = params.schema.safeParse(
+        await readGitHubResponseJson(response, params.signal),
+      );
       if (!parsed.success) {
         throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
       }
@@ -153,6 +174,7 @@ export async function collectGitHubApiPagesDetailed<T>(params: {
       const error = await createGitHubApiErrorFromResponse(
         response,
         params.endpoint,
+        params.signal,
       );
       if (error != null) {
         throw params.mapNextPageError?.(error) ?? error;

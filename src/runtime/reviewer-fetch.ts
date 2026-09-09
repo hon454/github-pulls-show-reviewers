@@ -83,7 +83,14 @@ export type ReviewerFetchRateLimitSnapshot = {
 
 export type ReviewerFetchFailure = {
   status: number | null;
-  kind?: "http" | "schema" | "network" | "cancellation" | "unknown" | undefined;
+  kind?:
+    | "http"
+    | "schema"
+    | "network"
+    | "cancellation"
+    | "timeout"
+    | "unknown"
+    | undefined;
   endpoint: string | null;
   rateLimited: boolean;
   rateLimit?: ReviewerFetchRateLimitSnapshot | undefined;
@@ -133,7 +140,14 @@ export const reviewerFetchErrorSchema = z.object({
       z.object({
         status: z.number().nullable(),
         kind: z
-          .enum(["http", "schema", "network", "cancellation", "unknown"])
+          .enum([
+            "http",
+            "schema",
+            "network",
+            "cancellation",
+            "timeout",
+            "unknown",
+          ])
           .optional(),
         endpoint: z.string().nullable(),
         rateLimited: z.boolean(),
@@ -331,7 +345,14 @@ export function extractReviewerFetchFailures(
         };
         const rateLimit = parseRateLimitSnapshot(failure.rateLimit);
         const kind = z
-          .enum(["http", "schema", "network", "cancellation", "unknown"])
+          .enum([
+            "http",
+            "schema",
+            "network",
+            "cancellation",
+            "timeout",
+            "unknown",
+          ])
           .safeParse(failure.kind);
         return {
           ...base,

@@ -123,6 +123,11 @@ function deferred<T = unknown>() {
   return { promise, resolve, reject };
 }
 async function drain(): Promise<void> {
+  if (vi.isFakeTimers()) {
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+    return;
+  }
   await new Promise((resolve) => setTimeout(resolve, 0));
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
@@ -263,6 +268,7 @@ beforeEach(() => {
 afterEach(async () => {
   teardown.forEach((fn) => fn());
   await drain();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -818,5 +824,118 @@ describe("real content access banner recovery", () => {
     expect(
       latest().rows.every(({ outcome }) => outcome.status === "failure"),
     ).toBe(true);
+  });
+});
+
+describe("deadline recovery in the real content controller", () => {
+  it("keeps stale chips, settles four watchdog failures, drains FIFO and rerenders locales without extending time", async () => {
+    vi.useFakeTimers();
+    const numbers = ["42", "43", "44", "45", "46", "47", "48", "49"];
+    installRows(numbers);
+    const cache = await import("../src/cache/reviewer-cache");
+    const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+    for (const number of numbers) {
+      const staleKey = cache.buildReviewerCacheKey("cinev", "shotloom", number);
+      cache.setCachedReviewerSummary(staleKey, alice);
+      cache.markReviewerCacheStale(staleKey);
+    }
+    const late = deferred();
+    summary = ({ pullNumber }) =>
+      Number(pullNumber) <= 45 ? late.promise : Promise.resolve(success());
+    await boot();
+    expect(
+      messages("fetchPullReviewerSummary").map(({ pullNumber }) => pullNumber),
+    ).toEqual(numbers.slice(0, 4));
+    expect(
+      document.querySelector('#issue_42 a[title*="@alice"]'),
+    ).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(20_000);
+    changePreferences({ language: "ko", showReviewerName: true });
+    await drain();
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(messages("fetchPullReviewerSummary")).toHaveLength(4);
+    await vi.advanceTimersByTimeAsync(1);
+    await drain();
+    expect(
+      messages("fetchPullReviewerSummary").map(({ pullNumber }) => pullNumber),
+    ).toEqual(numbers);
+    expect(
+      latest().rows.filter(({ outcome }) => outcome.status === "failure"),
+    ).toHaveLength(4);
+    expect(
+      latest().rows.filter(({ outcome }) => outcome.status === "success"),
+    ).toHaveLength(4);
+    expect(document.querySelectorAll("[data-ghpsr-banner]")).toHaveLength(1);
+    expect(
+      document.querySelector('#issue_42 a[title*="@alice"]'),
+    ).not.toBeNull();
+    expect(document.querySelectorAll(".ghpsr-status")).toHaveLength(0);
+    const published = latest();
+    late.resolve(
+      success({
+        ...alice,
+        requestedUsers: [{ login: "late", avatarUrl: null }],
+      }),
+    );
+    await drain();
+    expect(latest()).toBe(published);
+    expect(cache.getReviewerCacheEntry(key)?.summary).toEqual(alice);
+    expect(
+      cache.isReviewerCacheEntryFresh(cache.getReviewerCacheEntry(key)!),
+    ).toBe(false);
+    const requests = sendMessage.mock.calls.length;
+    for (const language of locales) {
+      changePreferences({ language });
+      await drain();
+      expect(document.querySelectorAll("[data-ghpsr-banner]")).toHaveLength(1);
+    }
+    expect(sendMessage).toHaveBeenCalledTimes(requests);
+  });
+
+  it("settles a lost shared metadata reply once and does not dispatch row fallbacks", async () => {
+    vi.useFakeTimers();
+    installRows(["42", "43", "44", "45", "46", "47", "48", "49"]);
+    const late = deferred();
+    metadata = () => late.promise;
+    await boot();
+    expect(messages("fetchPullReviewerMetadataBatch")).toHaveLength(1);
+    expect(messages("fetchPullReviewerSummary")).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(35_000);
+    await drain();
+    expect(
+      latest().rows.every(({ outcome }) => outcome.status === "failure"),
+    ).toBe(true);
+    expect(document.querySelectorAll("[data-ghpsr-banner]")).toHaveLength(1);
+    expect(document.querySelectorAll(".ghpsr-status")).toHaveLength(0);
+    expect(messages("fetchPullReviewerSummary")).toHaveLength(0);
+    late.resolve({ ok: true, metadata: [] });
+    await drain();
+    expect(messages("fetchPullReviewerMetadataBatch")).toHaveLength(1);
+    expect(messages("fetchPullReviewerSummary")).toHaveLength(0);
+  });
+
+  it("a canceled old generation cannot publish its watchdog or late reply on the next route", async () => {
+    vi.useFakeTimers();
+    const old = deferred();
+    summary = () => old.promise;
+    await boot();
+    await vi.advanceTimersByTimeAsync(34_999);
+    summary = async () => success();
+    installRows(["44"]);
+    refresh(`${pathname}?q=is%3Apr+is%3Aopen`);
+    await drain();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(banner()).toBeNull();
+    expect(
+      latest().rows.map(({ pullNumber, outcome }) => [
+        pullNumber,
+        outcome.status,
+      ]),
+    ).toEqual([["44", "success"]]);
+    const published = latest();
+    old.resolve(failure(500));
+    await drain();
+    expect(latest()).toBe(published);
+    expect(banner()).toBeNull();
   });
 });

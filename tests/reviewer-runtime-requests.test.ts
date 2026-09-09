@@ -130,3 +130,102 @@ describe("reviewer runtime requests", () => {
     );
   });
 });
+
+describe("dispatched reviewer RPC watchdog", () => {
+  afterEach(() => vi.useRealTimers());
+
+  const args = () => ({
+    account: null,
+    owner: "acme",
+    repo: "widgets",
+    pullNumber: "42",
+    targetPullNumbers: ["42"],
+    signal: new AbortController().signal,
+  });
+  const result = {
+    status: "ok",
+    requestedUsers: [],
+    requestedTeams: [],
+    completedReviews: [],
+  };
+
+  it.each(["summary", "metadata"])(
+    "fails lost %s replies at 35s and sends one cancellation",
+    async (kind) => {
+      vi.useFakeTimers();
+      let reply!: (value: unknown) => void;
+      const onAccount = vi.fn();
+      sendMessage.mockImplementation((message: { type: string }) =>
+        message.type === "cancelPullReviewerSummary"
+          ? Promise.resolve(undefined)
+          : new Promise((resolve) => {
+              reply = resolve;
+            }),
+      );
+      const work = (
+        kind === "summary" ? fetchReviewerSummary : fetchReviewerMetadataBatch
+      )({ ...args(), onAccount }).catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(34_999);
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await work).toMatchObject({
+        envelope: {
+          status: null,
+          failures: [{ kind: "timeout", status: null }],
+        },
+      });
+      const requestId = sendMessage.mock.calls[0][0].requestId;
+      expect(sendMessage).toHaveBeenLastCalledWith({
+        type: "cancelPullReviewerSummary",
+        requestId,
+      });
+      reply({ ok: true, summary: result, metadata: [], account: null });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onAccount).not.toHaveBeenCalled();
+      expect(sendMessage).toHaveBeenCalledTimes(2);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each([34_999, 35_000, 35_001])(
+    "settles reply/watchdog boundary once at %sms",
+    async (delay) => {
+      vi.useFakeTimers();
+      sendMessage.mockImplementation((message: { type: string }) =>
+        message.type === "cancelPullReviewerSummary"
+          ? Promise.resolve(undefined)
+          : new Promise((resolve) =>
+              setTimeout(() => resolve({ ok: true, summary: result }), delay),
+            ),
+      );
+      const work = fetchReviewerSummary(args()).catch(
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(35_001);
+      if (delay < 35_000) expect(await work).toEqual(result);
+      else expect(await work).toBeInstanceOf(ReviewerFetchRuntimeError);
+      expect(sendMessage).toHaveBeenCalledTimes(delay < 35_000 ? 1 : 2);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it("external cancellation wins without timeout or duplicate cancellation", async () => {
+    vi.useFakeTimers();
+    sendMessage.mockImplementation((message: { type: string }) =>
+      message.type === "cancelPullReviewerSummary"
+        ? Promise.resolve(undefined)
+        : new Promise(() => {}),
+    );
+    const controller = new AbortController();
+    const work = fetchReviewerSummary({
+      ...args(),
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(34_999);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await work).toMatchObject({ name: "AbortError" });
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

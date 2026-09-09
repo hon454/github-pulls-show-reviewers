@@ -1,3 +1,11 @@
+import {
+  createReviewerDeadline,
+  REVIEWER_DEADLINES,
+  ReviewerTimeoutError,
+  reviewerAbortReason,
+  throwIfReviewerAborted,
+  withReviewerDeadline,
+} from "../shared/reviewer-deadline";
 import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import {
   fetchPullReviewerMetadataBatch,
@@ -46,6 +54,7 @@ type Operation = {
   subscribers: Set<object>;
   accounts: Map<string, string>;
   accountId: string | null;
+  account: AccountSummary | null;
   lastFailure?: ReviewerFetchErrorEnvelope | undefined;
   promise: Promise<Access>;
 };
@@ -122,7 +131,8 @@ export function createRepositoryAccountService(input: {
     );
   }
   function check(operation: Operation) {
-    if (disposed || operation.controller.signal.aborted) throw abortError();
+    throwIfReviewerAborted(operation.controller.signal);
+    if (disposed) throw abortError();
   }
   function candidates(accounts: Account[], record: DiscoveryRecord) {
     return orderRepositoryCandidates({
@@ -207,6 +217,7 @@ export function createRepositoryAccountService(input: {
         record.authenticationFailure.revision === credentialGeneration(current)
       ) {
         record = await ledger.update(owner, discovery.id, (entry) => {
+          check(operation);
           entry.status = "stopped";
           entry.error = entry.authenticationFailure!.error;
         });
@@ -262,6 +273,7 @@ export function createRepositoryAccountService(input: {
         check(operation);
         if (!candidate) {
           record = await ledger.update(owner, discovery.id, (entry) => {
+            check(operation);
             entry.status = "exhausted";
             if (entry.error) entry.error.discoveryOutcome = "exhausted";
           });
@@ -279,6 +291,7 @@ export function createRepositoryAccountService(input: {
       nextAccount = undefined;
       const id = candidate?.id ?? null;
       operation.accountId = id;
+      operation.account = candidate ? summarizeAccount(candidate) : null;
       if (candidate)
         operation.accounts.set(candidate.id, accountAccessKey(candidate));
       if (!ordinaryMetadata && candidate) {
@@ -286,6 +299,7 @@ export function createRepositoryAccountService(input: {
         const accessRevision = await accountAccessRevision(candidate);
         check(operation);
         record = await ledger.update(owner, discovery.id, (entry) => {
+          check(operation);
           if (
             entry.attempts.some((attempt) => attempt.accountId === candidate.id)
           )
@@ -301,6 +315,7 @@ export function createRepositoryAccountService(input: {
         });
       } else {
         record = await ledger.update(owner, discovery.id, (entry) => {
+          check(operation);
           entry.status = "running";
         });
       }
@@ -333,6 +348,7 @@ export function createRepositoryAccountService(input: {
         const accessRevision = used ? await accountAccessRevision(used) : null;
         check(operation);
         record = await ledger.update(owner, discovery.id, (entry) => {
+          check(operation);
           entry.status = "success";
           entry.accountId = used?.id ?? null;
           delete entry.error;
@@ -395,6 +411,7 @@ export function createRepositoryAccountService(input: {
         const decision = classifyAuthenticatedFailure(error);
         const denied = id !== null && decision.kind === "repository-denial";
         record = await ledger.update(owner, discovery.id, (entry) => {
+          check(operation);
           entry.status = denied ? "denied" : "stopped";
           entry.accountId = id;
           entry.error = envelope;
@@ -419,46 +436,52 @@ export function createRepositoryAccountService(input: {
     anonymousFailure?: unknown,
     refresh = false,
   ): Promise<Access> {
-    if (signal.aborted) return Promise.reject(abortError());
+    if (signal.aborted) return Promise.reject(reviewerAbortReason(signal));
     const operationKey = key(owner, discovery.id);
     let operation = operations.get(operationKey);
     if (!operation) {
+      const deadline = createReviewerDeadline(REVIEWER_DEADLINES.metadata);
       const created: Operation = {
-        controller: new AbortController(),
+        controller: deadline.controller,
         subscribers: new Set(),
         accounts: new Map(),
         accountId: null,
+        account: null,
         promise: Promise.resolve({ account: null, metadata: undefined }),
       };
       operations.set(operationKey, created);
-      created.promise = waitWithSignal(
-        Promise.resolve().then(() =>
-          discover(
-            owner,
-            discovery,
-            created,
-            wantMetadata,
-            targets,
-            anonymousFailure,
-            refresh,
+      created.promise = deadline
+        .wait(
+          Promise.resolve().then(() =>
+            discover(
+              owner,
+              discovery,
+              created,
+              wantMetadata,
+              targets,
+              anonymousFailure,
+              refresh,
+            ),
           ),
-        ),
-        created.controller.signal,
-      )
-        .catch(async (error: unknown) => {
+        )
+        .catch((error: unknown) => {
           if (
             error instanceof ReviewerFetchRuntimeError &&
             !created.controller.signal.aborted
           )
             throw error;
-          const reason =
-            error instanceof DiscoveryUnavailableError
+          const timedOut = error instanceof ReviewerTimeoutError;
+          const reason = timedOut
+            ? "unavailable"
+            : error instanceof DiscoveryUnavailableError
               ? error.reason
               : created.controller.signal.aborted || disposed
                 ? "interrupted"
                 : "unavailable";
           const envelope: ReviewerFetchErrorEnvelope = {
-            ...(created.lastFailure ?? unavailable(reason)),
+            ...(timedOut
+              ? serializeReviewerFetchError(error)
+              : (created.lastFailure ?? unavailable(reason))),
             discoveryOutcome: reason,
           };
           if (
@@ -466,23 +489,34 @@ export function createRepositoryAccountService(input: {
             activeIds.get(JSON.stringify([owner.lane, owner.documentId])) !==
               discovery.id
           )
-            throw new ReviewerFetchRuntimeError(envelope);
+            throw new ReviewerFetchRuntimeError(envelope, created.account);
           terminal.set(operationKey, envelope);
           metadataCache.delete(operationKey);
+          if (timedOut) {
+            void ledger
+              .update(owner, discovery.id, (record) => {
+                record.status = "stopped";
+                record.error = envelope;
+                const attempt = record.attempts.find(
+                  (value) => value.accountId === created.accountId,
+                );
+                if (attempt) attempt.status = "stopped";
+              })
+              .catch(() => undefined);
+            throw new ReviewerFetchRuntimeError(envelope, created.account);
+          }
           if (!disposed)
-            await ledger
+            void ledger
               .update(owner, discovery.id, (record) => {
                 record.status =
                   reason === "retired" ? "retired" : "interrupted";
                 record.error = envelope;
               })
               .catch(() => undefined);
-          throw new ReviewerFetchRuntimeError(
-            envelope,
-            await accountSummary(created.accountId),
-          );
+          throw new ReviewerFetchRuntimeError(envelope, created.account);
         })
         .finally(() => {
+          deadline.dispose();
           if (operations.get(operationKey) === created)
             operations.delete(operationKey);
         });
@@ -492,13 +526,16 @@ export function createRepositoryAccountService(input: {
     const subscriber = {};
     active.subscribers.add(subscriber);
     return new Promise<Access>((resolve, reject) => {
+      let detached = false;
       const detach = () => {
+        if (detached) return;
+        detached = true;
         signal.removeEventListener("abort", cancel);
         active.subscribers.delete(subscriber);
       };
       const cancel = () => {
         detach();
-        reject(abortError());
+        reject(reviewerAbortReason(signal));
         if (active.subscribers.size === 0) active.controller.abort();
       };
       signal.addEventListener("abort", cancel, { once: true });
@@ -656,124 +693,159 @@ export function createRepositoryAccountService(input: {
         validatePull?: boolean;
       },
     ) {
-      const resolved = await access(owner, discovery, request.signal, false);
-      const cached = resolved.metadata?.find(
-        (pull) => pull.number === request.pullNumber,
-      );
-      const supplied =
-        request.metadataAccount?.id === resolved.account?.id &&
-        request.metadataAccount?.revision === resolved.account?.revision
-          ? request.pullMetadata
-          : undefined;
-      const pullMetadata = request.validatePull
-        ? undefined
-        : (cached ?? supplied);
-      const controller = new AbortController();
-      const cancel = () => controller.abort();
-      request.signal.addEventListener("abort", cancel, { once: true });
-      if (request.signal.aborted) cancel();
-      const operationKey = key(owner, discovery.id);
-      const row = {
-        controller,
-        accountId: resolved.account?.id ?? null,
-        accessKey: resolved.accessKey,
-      };
-      const pending = rows.get(operationKey) ?? new Set();
-      rows.set(operationKey, pending);
-      pending.add(row);
-      try {
-        await ledger.read(owner, discovery.id);
-        const result = await execute({
-          accountId: resolved.account?.id ?? null,
-          signal: controller.signal,
-          expectedAccessKey: resolved.accessKey,
-          onFailure: (error, used) =>
-            rememberAuthenticationFailure(owner, discovery, error, used),
-          execute: (token, signal) =>
-            fetchPullReviewerSummary({
-              owner: discovery.owner,
-              repo: discovery.repo,
-              pullNumber: request.pullNumber,
-              githubToken: token,
-              signal,
-              ...(pullMetadata ? { pullMetadata } : {}),
-            }),
-        });
-        await ledger.read(owner, discovery.id);
-        if (controller.signal.aborted) throw abortError();
-        return {
-          summary: result.value,
-          account: result.account ? summarizeAccount(result.account) : null,
-        };
-      } catch (error) {
-        if (
-          resolved.account === null &&
-          !controller.signal.aborted &&
-          serializeReviewerFetchError(error).failures?.some(
-            (failure) =>
-              failure.rateLimited ||
-              [401, 403, 404, 429].includes(failure.status ?? 0),
-          )
-        ) {
-          const fallback = await access(
+      return withReviewerDeadline(
+        REVIEWER_DEADLINES.summary,
+        request.signal,
+        async (signal) => {
+          request = { ...request, signal };
+          const resolved = await access(
             owner,
             discovery,
-            controller.signal,
+            request.signal,
             false,
-            undefined,
-            error,
           );
-          if (fallback.account) {
-            row.accountId = fallback.account.id;
-            row.accessKey = fallback.accessKey;
-            const fallbackMetadata = fallback.metadata?.find(
-              (pull) => pull.number === request.pullNumber,
+          const cached = resolved.metadata?.find(
+            (pull) => pull.number === request.pullNumber,
+          );
+          const supplied =
+            request.metadataAccount?.id === resolved.account?.id &&
+            request.metadataAccount?.revision === resolved.account?.revision
+              ? request.pullMetadata
+              : undefined;
+          const pullMetadata = request.validatePull
+            ? undefined
+            : (cached ?? supplied);
+          const controller = new AbortController();
+          const cancel = () =>
+            controller.abort(reviewerAbortReason(request.signal));
+          request.signal.addEventListener("abort", cancel, { once: true });
+          if (request.signal.aborted) cancel();
+          const operationKey = key(owner, discovery.id);
+          const row = {
+            controller,
+            accountId: resolved.account?.id ?? null,
+            accessKey: resolved.accessKey,
+          };
+          const pending = rows.get(operationKey) ?? new Set();
+          rows.set(operationKey, pending);
+          pending.add(row);
+          try {
+            return await waitWithSignal(
+              (async () => {
+                try {
+                  await ledger.read(owner, discovery.id);
+                  const result = await execute({
+                    accountId: resolved.account?.id ?? null,
+                    signal: controller.signal,
+                    expectedAccessKey: resolved.accessKey,
+                    onFailure: (error, used) =>
+                      rememberAuthenticationFailure(
+                        owner,
+                        discovery,
+                        error,
+                        used,
+                      ),
+                    execute: (token, signal) =>
+                      fetchPullReviewerSummary({
+                        owner: discovery.owner,
+                        repo: discovery.repo,
+                        pullNumber: request.pullNumber,
+                        githubToken: token,
+                        signal,
+                        ...(pullMetadata ? { pullMetadata } : {}),
+                      }),
+                  });
+                  await ledger.read(owner, discovery.id);
+                  throwIfReviewerAborted(controller.signal);
+                  return {
+                    summary: result.value,
+                    account: result.account
+                      ? summarizeAccount(result.account)
+                      : null,
+                  };
+                } catch (error) {
+                  if (
+                    resolved.account === null &&
+                    !controller.signal.aborted &&
+                    serializeReviewerFetchError(error).failures?.some(
+                      (failure) =>
+                        failure.rateLimited ||
+                        [401, 403, 404, 429].includes(failure.status ?? 0),
+                    )
+                  ) {
+                    const fallback = await access(
+                      owner,
+                      discovery,
+                      controller.signal,
+                      false,
+                      undefined,
+                      error,
+                    );
+                    if (fallback.account) {
+                      row.accountId = fallback.account.id;
+                      row.accessKey = fallback.accessKey;
+                      const fallbackMetadata = fallback.metadata?.find(
+                        (pull) => pull.number === request.pullNumber,
+                      );
+                      try {
+                        const result = await execute({
+                          accountId: fallback.account.id,
+                          signal: controller.signal,
+                          expectedAccessKey: fallback.accessKey,
+                          onFailure: (error, used) =>
+                            rememberAuthenticationFailure(
+                              owner,
+                              discovery,
+                              error,
+                              used,
+                            ),
+                          execute: (token, signal) =>
+                            fetchPullReviewerSummary({
+                              owner: discovery.owner,
+                              repo: discovery.repo,
+                              pullNumber: request.pullNumber,
+                              githubToken: token,
+                              signal,
+                              ...(fallbackMetadata
+                                ? { pullMetadata: fallbackMetadata }
+                                : {}),
+                            }),
+                        });
+                        await ledger.read(owner, discovery.id);
+                        throwIfReviewerAborted(controller.signal);
+                        return {
+                          summary: result.value,
+                          account: result.account
+                            ? summarizeAccount(result.account)
+                            : null,
+                        };
+                      } catch (fallbackError) {
+                        throw new ReviewerFetchRuntimeError(
+                          serializeReviewerFetchError(fallbackError),
+                          fallback.account,
+                        );
+                      }
+                    }
+                  }
+                  // Repository access is already established. A missing PR stays row-local.
+                  throw new ReviewerFetchRuntimeError(
+                    serializeReviewerFetchError(error),
+                    resolved.account,
+                  );
+                }
+              })(),
+              controller.signal,
             );
-            try {
-              const result = await execute({
-                accountId: fallback.account.id,
-                signal: controller.signal,
-                expectedAccessKey: fallback.accessKey,
-                onFailure: (error, used) =>
-                  rememberAuthenticationFailure(owner, discovery, error, used),
-                execute: (token, signal) =>
-                  fetchPullReviewerSummary({
-                    owner: discovery.owner,
-                    repo: discovery.repo,
-                    pullNumber: request.pullNumber,
-                    githubToken: token,
-                    signal,
-                    ...(fallbackMetadata
-                      ? { pullMetadata: fallbackMetadata }
-                      : {}),
-                  }),
-              });
-              await ledger.read(owner, discovery.id);
-              if (controller.signal.aborted) throw abortError();
-              return {
-                summary: result.value,
-                account: result.account
-                  ? summarizeAccount(result.account)
-                  : null,
-              };
-            } catch (fallbackError) {
-              throw new ReviewerFetchRuntimeError(
-                serializeReviewerFetchError(fallbackError),
-                fallback.account,
-              );
-            }
+          } finally {
+            request.signal.removeEventListener("abort", cancel);
+            pending.delete(row);
+            if (pending.size === 0) rows.delete(operationKey);
           }
-        }
-        // Repository access is already established. A missing PR stays row-local.
-        throw new ReviewerFetchRuntimeError(
-          serializeReviewerFetchError(error),
-          resolved.account,
-        );
-      } finally {
-        request.signal.removeEventListener("abort", cancel);
-        pending.delete(row);
-        if (pending.size === 0) rows.delete(operationKey);
-      }
+        },
+      ).catch((error: unknown) => {
+        if (error instanceof ReviewerFetchRuntimeError) throw error;
+        throw new ReviewerFetchRuntimeError(serializeReviewerFetchError(error));
+      });
     },
     accountsChanged(accounts: Account[]) {
       const current = new Map(

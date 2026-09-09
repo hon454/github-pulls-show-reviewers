@@ -1,7 +1,10 @@
 import type { PullReviewerMetadata } from "../../github/api";
 import type { PullListRoute } from "../../github/routes";
 import type { AccountSummary as Account } from "../../runtime/ui-contract";
-import { ReviewerFetchRuntimeError } from "../../runtime/reviewer-fetch";
+import {
+  ReviewerFetchRuntimeError,
+  extractReviewerFetchFailures,
+} from "../../runtime/reviewer-fetch";
 import type { FallbackAccountIntegration } from "./fallback-account";
 import {
   fetchReviewerMetadataBatch,
@@ -150,7 +153,12 @@ export function createPageMetadataCoordinator(input: {
     const result: PageMetadataResult = {
       metadata: new Map((metadata ?? []).map((pull) => [pull.number, pull])),
       failure:
-        error && (args.discoveryId || shouldRetryWithFallbackAccount(error))
+        error &&
+        (args.discoveryId ||
+          shouldRetryWithFallbackAccount(error) ||
+          extractReviewerFetchFailures(error).some(
+            (failure) => failure.kind === "timeout",
+          ))
           ? { account: used, error, reported: false, suppressRowFallback: true }
           : null,
       account: used,
@@ -174,7 +182,10 @@ export function createPageMetadataCoordinator(input: {
     const consumer = {};
     request.consumers.add(consumer);
     return new Promise((resolve) => {
+      let detached = false;
       const detach = () => {
+        if (detached) return;
+        detached = true;
         signal.removeEventListener("abort", cancel);
         request.consumers.delete(consumer);
       };
