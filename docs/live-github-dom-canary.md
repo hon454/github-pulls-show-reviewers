@@ -157,17 +157,17 @@ navigation stage additionally persists and attaches
 stage does not overwrite the previous successful evidence. If a stage verdict
 itself fails, its original JSON remains in place and the catch-time snapshot is
 persisted separately as `canary-navigation-<stage>-failure.json`. Every
-stage and catch-time capture reads the DOM before settling the response observer;
-if DOM capture fails, the observer still settles before the unavailable-capture
-diagnostic is written. This prevents a late current-document response from
-being recorded as an earlier stage's API state.
-navigation
-record includes its stage/operation, previous and current public URLs, whether
-its DOM was captured from the current document (or was unavailable),
-document-maintained observation, host PR-number set, mount/loading/terminal
-counts, bounded expected/actual samples, and observed endpoint quota. The test
-reads each persisted JSON back before accepting its stage. The diagnostics
-contain
+navigation record includes its stage/operation, previous and current public
+URLs, whether its DOM was captured from the current document (or was
+unavailable), document-maintained observation, host PR-number set,
+mount/loading/terminal counts, bounded expected/actual samples, and observed
+endpoint quota. Every stage and catch-time capture reads the DOM before
+settling the response observer; if DOM capture fails, the observer still
+settles before the unavailable-capture diagnostic is written. This prevents a
+response observed during DOM capture from being snapshotted before its body
+settles.
+The test reads each persisted JSON back before accepting its stage. The
+diagnostics contain
 only the observation phase, target/current public URL and navigation status,
 independent/production row counts, active failure-banner and
 mount/loading/rendered/invalid-chip/terminal counts, up to three minimal
