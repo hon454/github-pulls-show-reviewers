@@ -585,7 +585,7 @@ describe("bootAccessBanner", () => {
   }
 
   async function bootOnPullList(input?: {
-    sendMessage?: ReturnType<typeof vi.fn>;
+    sendMessage?: Parameters<typeof stubBootGlobals>[0];
   }) {
     stubBootGlobals(input?.sendMessage);
     window.history.replaceState(

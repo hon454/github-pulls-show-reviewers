@@ -146,9 +146,20 @@ When the workflow fails:
 3. Run `pnpm verify:release` before pushing the fix.
 
 The current WXT `0.20.25` runner graph uses version-scoped pnpm overrides for
-patched `adm-zip`, `shell-quote`, `uuid`, `tmp`, `esbuild`, and Vite releases.
+`adm-zip`, `shell-quote`, `uuid`, `tmp`, `esbuild`, and Vite releases.
 Keep overrides narrow to the affected parent/package pair, and re-evaluate them
 when WXT or its runner graph changes; do not broaden them into global pins.
+
+As of 2026-09-09, Vitest and its V8 coverage provider are pinned to `4.1.11`,
+which fixes [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9).
+The full audit still reports one moderate finding in the Firefox runner path
+`wxt > web-ext-run > firefox-profile > adm-zip@0.6.0`:
+[GHSA-vwc7-r8mq-g2x9](https://github.com/advisories/GHSA-vwc7-r8mq-g2x9) has no
+reported patched version. Track an upstream-supported fix in
+[#195](https://github.com/hon454/github-pulls-show-reviewers/issues/195), without
+suppressing the advisory or inventing an override. These development packages
+are not shipped in the Chrome extension; the production audit reports zero
+findings. The full development audit is not clean.
 
 If a finding is a known false positive, document the rationale in the
 fix commit instead of suppressing the workflow.
