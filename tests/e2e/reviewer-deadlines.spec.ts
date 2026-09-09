@@ -140,7 +140,11 @@ test("packaged deadlines retain stale chips, free four slots and reject late rep
     await expect.poll(() => started.length).toBe(4);
     const metadataAtStart = metadataCount;
     await options.getByTestId("language-select").selectOption("ko");
-    await options.getByTestId("prefs-show-reviewer-name").check();
+    const showNames = options.getByTestId("prefs-show-reviewer-name");
+    await expect(showNames).not.toBeChecked();
+    await showNames.click();
+    await expect(showNames).toBeChecked();
+    await expect(showNames).toBeEnabled();
     await expect(page.locator(".ghpsr-root").first()).toHaveAttribute(
       "lang",
       "ko",
