@@ -202,7 +202,13 @@ function inspectNextPageUrl(
       continue;
     }
 
-    const rels = (relation[1] ?? relation[2]).split(/\s+/);
+    const relationValue = (relation[1] ?? relation[2]).trim();
+    if (relationValue === "") {
+      hasMalformedRelation = true;
+      continue;
+    }
+
+    const rels = relationValue.split(/\s+/);
     if (rels.includes("next")) {
       if (
         expectedPathname != null &&

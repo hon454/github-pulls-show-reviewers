@@ -151,16 +151,18 @@ describe("GitHub API request helpers", () => {
       }),
     ).resolves.toEqual({ items: [{ id: 1 }], status: "truncated" });
 
-    await expect(
-      collectGitHubApiPagesDetailed({
-        firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
-          headers: { Link: `<${pageTwo}>; rel: "next"` },
+    for (const relation of ['rel: "next"', 'rel=""', 'rel="  "']) {
+      await expect(
+        collectGitHubApiPagesDetailed({
+          firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
+            headers: { Link: `<${pageTwo}>; ${relation}` },
+          }),
+          endpoint,
+          headers: createGitHubHeaders(null),
+          schema,
         }),
-        endpoint,
-        headers: createGitHubHeaders(null),
-        schema,
-      }),
-    ).resolves.toEqual({ items: [{ id: 1 }], status: "truncated" });
+      ).resolves.toEqual({ items: [{ id: 1 }], status: "truncated" });
+    }
 
     vi.restoreAllMocks();
     const cycleFetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(

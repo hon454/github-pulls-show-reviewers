@@ -1225,7 +1225,9 @@ describe("fetchPullReviewerSummary", () => {
     ).rejects.toBe(abortError);
   });
 
-  it("preserves an unverified request when the Link relation is malformed", async () => {
+  it.each(['rel: "next"', 'rel=""', 'rel="  "'])(
+    "preserves an unverified request when the Link relation is malformed as %s",
+    async (relation) => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         new Response(
@@ -1249,7 +1251,7 @@ describe("fetchPullReviewerSummary", () => {
           ]),
           {
             headers: {
-              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?page=2>; rel: "next"',
+              Link: `<https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?page=2>; ${relation}`,
             },
           },
         ),
@@ -1274,7 +1276,8 @@ describe("fetchPullReviewerSummary", () => {
     expect(summary.reviewRequestEvidence).toEqual([
       { login: "alice", status: "unverified" },
     ]);
-  });
+    },
+  );
 
   it.each([
     {
