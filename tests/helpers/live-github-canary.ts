@@ -105,9 +105,14 @@ export async function captureSettledCanaryStage<T>(input: {
   observer: CanaryResponseObserver;
   readDom(): Promise<T>;
 }): Promise<{ dom: T; api: CanaryApiEvidence }> {
-  const dom = await input.readDom();
-  await input.observer.settle();
-  return { dom, api: input.observer.snapshot() };
+  try {
+    const dom = await input.readDom();
+    await input.observer.settle();
+    return { dom, api: input.observer.snapshot() };
+  } catch (error) {
+    await input.observer.settle();
+    throw error;
+  }
 }
 
 export function canaryStageArtifactFileName(

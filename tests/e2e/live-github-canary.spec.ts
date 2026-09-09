@@ -286,19 +286,23 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     );
     expect(finalVerdict.ok).toBe(true);
   } catch (error) {
-    await apiObserver.settle();
-    const capture = await readDomSnapshot(page, repository).then(
-      (dom) => ({
+    const capture = await captureSettledCanaryStage({
+      observer: apiObserver,
+      readDom: () => readDomSnapshot(page, repository),
+    }).then(
+      ({ dom, api }) => ({
         dom,
+        api,
         provenance: { source: "current-document" } satisfies CanaryDomCapture,
       }),
       () => ({
         dom: emptyDomSnapshot(),
+        api: apiObserver.snapshot(),
         provenance: { source: "unavailable" } satisfies CanaryDomCapture,
       }),
     );
     const dom = capture.dom;
-    const api = apiObserver.snapshot();
+    const api = capture.api;
     const evaluatedVerdict = evaluateLiveCanary({ repository, dom, api });
     const captureVerdict =
       capture.provenance.source === "current-document"

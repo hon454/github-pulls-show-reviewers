@@ -278,6 +278,53 @@ describe("live canary response observer", () => {
     });
   });
 
+  it("settles failed DOM captures without weakening body-read or timeout failures", async () => {
+    const bodyRead = createCanaryResponseObserver({ repository });
+    await expect(
+      captureSettledCanaryStage({
+        observer: bodyRead,
+        async readDom() {
+          bodyRead.observeResponse(
+            response(
+              "https://api.github.com/repos/octo/repo/pulls/42/reviews",
+              Promise.reject(new Error("body unavailable")),
+            ),
+          );
+          throw new Error("document detached");
+        },
+      }),
+    ).rejects.toThrow("document detached");
+    expect(bodyRead.snapshot().endpoints[0]).toMatchObject({
+      body: "failed",
+      failure: "body-read",
+    });
+
+    const never = deferred<unknown>();
+    const bodyTimeout = createCanaryResponseObserver({
+      repository,
+      bodyTimeoutMs: 1,
+    });
+    await expect(
+      captureSettledCanaryStage({
+        observer: bodyTimeout,
+        async readDom() {
+          bodyTimeout.observeResponse(
+            response(
+              "https://api.github.com/repos/octo/repo/pulls/42/reviews",
+              never.promise,
+            ),
+          );
+          throw new Error("document detached");
+        },
+      }),
+    ).rejects.toThrow("document detached");
+    expect(bodyTimeout.snapshot().endpoints[0]).toMatchObject({
+      body: "failed",
+      failure: "body-timeout",
+    });
+    never.reject(new Error("closed after observer timeout"));
+  });
+
   it("assigns a distinct artifact name to a post-stage failure", () => {
     expect(canaryStageArtifactFileName("C")).toBe(
       "canary-navigation-C.json",
