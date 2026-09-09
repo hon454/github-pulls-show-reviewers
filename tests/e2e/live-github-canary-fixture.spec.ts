@@ -306,8 +306,11 @@ test("packaged canary drops eight slow FIFO rows after same-document navigation"
       ),
     );
 
-    const slowReleases: Array<() => void> = [];
+    const lateOldReleases: Array<() => void> = [];
+    const freshOldReleases: Array<() => void> = [];
     const startedReviews: string[] = [];
+    const settledReviews: string[] = [];
+    let oldRequestPhase: "initial" | "reentry" = "initial";
     await context.route(
       new RegExp(`^${apiBase}/pulls/(\\d+)/reviews`),
       async (route) => {
@@ -316,13 +319,16 @@ test("packaged canary drops eight slow FIFO rows after same-document navigation"
         )?.[1];
         if (pullNumber == null) throw new Error("missing fixture pull number");
         startedReviews.push(pullNumber);
-        if (oldNumbers.includes(pullNumber))
-          await new Promise<void>((resolve) => slowReleases.push(resolve));
+        if (oldNumbers.includes(pullNumber) && oldRequestPhase === "initial")
+          await new Promise<void>((resolve) => lateOldReleases.push(resolve));
+        if (oldNumbers.includes(pullNumber) && oldRequestPhase === "reentry")
+          await new Promise<void>((resolve) => freshOldReleases.push(resolve));
         await route.fulfill({
           status: 200,
           contentType: "application/json",
           body: "[]",
         });
+        settledReviews.push(pullNumber);
       },
     );
 
@@ -349,19 +355,67 @@ test("packaged canary drops eight slow FIFO rows after same-document navigation"
         html: createPullListFixtureHtml(nextNumbers, repository),
       },
     );
-    await page.waitForTimeout(50);
-    for (const release of slowReleases.splice(0)) release();
+
+    // Aborting the old generation must free all four scheduler slots before
+    // any held old response settles; releasing old responses first would not
+    // distinguish cancellation from ordinary FIFO completion.
+    await expect
+      .poll(() =>
+        nextNumbers
+          .slice(0, 4)
+          .every((number) => startedReviews.includes(number)),
+      )
+      .toBe(true);
+    expect(startedReviews.filter((number) => oldNumbers.includes(number))).toEqual(
+      oldNumbers.slice(0, 4),
+    );
+    for (const release of lateOldReleases.splice(0)) release();
+    await expect.poll(() => settledReviews.filter((number) =>
+      oldNumbers.includes(number),
+    )).toEqual(oldNumbers.slice(0, 4));
 
     await expect.poll(() => startedReviews.filter((number) =>
       nextNumbers.includes(number),
     ).length).toBe(8);
-    expect(startedReviews.filter((number) => oldNumbers.includes(number))).toEqual(
-      oldNumbers.slice(0, 4),
-    );
     await expectCurrentCanary(page, observer, nextNumbers);
     expect(
       await page.locator('a.ghpsr-avatar[title*="@reviewer-"]').count(),
     ).toBe(8);
+
+    // Reintroduce old rows without another navigation. A late aborted result
+    // must not have populated a fresh cache entry: each row needs a second,
+    // held HTTP request and cannot display a reviewer chip before it settles.
+    oldRequestPhase = "reentry";
+    await page.evaluate(
+      ({ html }) => {
+        const oldDocument = new DOMParser().parseFromString(html, "text/html");
+        const oldContainer = oldDocument.querySelector(
+          ".js-navigation-container",
+        );
+        const currentContainer = document.querySelector(
+          ".js-navigation-container",
+        );
+        if (oldContainer == null || currentContainer == null)
+          throw new Error("fixture old navigation container missing");
+        currentContainer.replaceWith(oldContainer);
+      },
+      {
+        html: createPullListFixtureHtml(oldNumbers, repository),
+      },
+    );
+    await expect.poll(() => startedReviews.filter((number) =>
+      oldNumbers.includes(number),
+    ).length).toBe(8);
+    await expect(page.locator("#issue_1 .ghpsr-status")).toHaveCount(1);
+    await expect(
+      page.locator('#issue_1 a.ghpsr-avatar[title*="@reviewer-1"]'),
+    ).toHaveCount(0);
+    for (const release of freshOldReleases.splice(0)) release();
+    await expect.poll(() => startedReviews.filter((number) =>
+      oldNumbers.includes(number),
+    ).length).toBe(12);
+    for (const release of freshOldReleases.splice(0)) release();
+    await expectCurrentCanary(page, observer, oldNumbers);
   });
 });
 

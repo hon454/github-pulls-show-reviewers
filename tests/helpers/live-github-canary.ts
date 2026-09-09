@@ -571,6 +571,26 @@ export type CanaryDomSnapshot = {
 };
 
 /**
+ * A zero-row result is terminal only when GitHub has rendered a semantic empty
+ * state. A bare or busy list container can be a transient navigation frame.
+ */
+export function isTerminalCanaryDomSnapshot(dom: CanaryDomSnapshot): boolean {
+  if (dom.hostPullNumbers.length === 0) {
+    return (
+      dom.mainFound &&
+      dom.pullListContainerFound &&
+      dom.hostEmptySignalFound &&
+      !dom.hostListLoading &&
+      dom.unmatchedPullListLinkCount === 0 &&
+      dom.orphanMountCount === 0
+    );
+  }
+  return dom.rows.every(
+    (row) => row.mountCount === 1 && row.loadingMountCount === 0,
+  );
+}
+
+/**
  * Self-contained so Playwright can serialize it directly into the page. The
  * denominator is exact PR links inside main issue_N rows, never the production
  * row selector passed only for the coverage comparison.

@@ -9,6 +9,7 @@ import {
   deriveCanaryExpectedOutcome,
   evaluateLiveCanary,
   isDifferentPullListPage,
+  isTerminalCanaryDomSnapshot,
   type CanaryApiEvidence,
   type CanaryDomSnapshot,
   type CanaryPullEvidence,
@@ -97,9 +98,11 @@ describe("live canary host-row oracle", () => {
       rows: [],
     });
     expect(emptyVerdict.ok).toBe(true);
+    expect(isTerminalCanaryDomSnapshot(emptyDom)).toBe(true);
 
     document.body.innerHTML =
       '<main><div class="js-navigation-container">Loading…</div></main>';
+    expect(isTerminalCanaryDomSnapshot(collectDom())).toBe(false);
     expect(
       failureCodes(collectDom(), {
         apiRequestCount: 0,
@@ -114,6 +117,7 @@ describe("live canary host-row oracle", () => {
       '<main><div class="js-navigation-container" aria-busy="true">Loading…</div></main>';
     const loadingDom = collectDom();
     expect(loadingDom.hostListLoading).toBe(true);
+    expect(isTerminalCanaryDomSnapshot(loadingDom)).toBe(false);
     expect(
       failureCodes(loadingDom, {
         apiRequestCount: 0,

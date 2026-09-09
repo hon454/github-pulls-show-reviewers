@@ -10,6 +10,7 @@ import {
   type JSHandle,
   type Locator,
   type Page,
+  type Response,
 } from "@playwright/test";
 
 import { githubSelectors } from "../../src/github/selectors";
@@ -19,6 +20,7 @@ import {
   createCanaryResponseObserver,
   evaluateLiveCanary,
   isDifferentPullListPage,
+  isTerminalCanaryDomSnapshot,
   type CanaryDomSnapshot,
   type CanaryDomCapture,
   type CanaryNavigationObservation,
@@ -57,7 +59,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
 
   const page = await context.newPage();
   let phase = "service-worker";
-  let responseStatus: number | null = null;
+  let documentResponse = { status: null as number | null };
   let previousUrl: string | null = null;
   let navigation: CanaryNavigationObservation | undefined;
 
@@ -78,8 +80,8 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       waitUntil: "domcontentloaded",
       timeout: 60_000,
     });
-    responseStatus = response?.status() ?? null;
-    expect(responseStatus).toBe(200);
+    documentResponse.status = response?.status() ?? null;
+    expect(documentResponse.status).toBe(200);
     await expect(page).toHaveURL(new RegExp(`^${escapeRegExp(targetUrl)}`));
     const initialDom = await assertNavigationStage({
       page,
@@ -90,10 +92,10 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       operation: "initial-all-state",
       targetUrl,
       previousUrl: null,
-      responseStatus,
+      responseStatus: documentResponse.status,
       documentMaintained: null,
     });
-    responseStatus = null;
+    documentResponse = { status: null };
     previousUrl = page.url();
     const paginationCurrentUrl = previousUrl;
     const initialDocument = await page.evaluateHandle(() => document);
@@ -109,10 +111,17 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       repository,
       (url) => isDifferentPullListPage(url, paginationCurrentUrl),
     );
-    await Promise.all([
-      page.waitForURL(pagination.url, { timeout: 60_000 }),
-      pagination.locator.click(),
-    ]);
+    await observeMainDocumentResponse(
+      page,
+      pagination.url,
+      documentResponse,
+      async () => {
+        await Promise.all([
+          page.waitForURL(pagination.url, { timeout: 60_000 }),
+          pagination.locator.click(),
+        ]);
+      },
+    );
     const pageTwoDocumentMaintained =
       await documentWasMaintained(initialDocument);
     navigation.documentMaintained = pageTwoDocumentMaintained;
@@ -126,12 +135,12 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       operation: "native-pagination-click",
       targetUrl,
       previousUrl,
-      responseStatus: null,
+      responseStatus: documentResponse.status,
       documentMaintained: pageTwoDocumentMaintained,
     });
     expect(page.url()).not.toBe(previousUrl);
     expect(pageTwoDom.hostPullNumbers).not.toEqual(initialDom.hostPullNumbers);
-    responseStatus = null;
+    documentResponse = { status: null };
     previousUrl = page.url();
     const pageTwoDocument = await page.evaluateHandle(() => document);
     phase = "navigation:C";
@@ -141,10 +150,17 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       previousUrl,
       documentMaintained: null,
     };
-    await Promise.all([
-      page.waitForURL(targetUrl, { timeout: 60_000 }),
-      page.goBack({ waitUntil: "domcontentloaded", timeout: 60_000 }),
-    ]);
+    await observeMainDocumentResponse(
+      page,
+      targetUrl,
+      documentResponse,
+      async () => {
+        await Promise.all([
+          page.waitForURL(targetUrl, { timeout: 60_000 }),
+          page.goBack({ waitUntil: "domcontentloaded", timeout: 60_000 }),
+        ]);
+      },
+    );
     const restoredDocumentMaintained =
       await documentWasMaintained(pageTwoDocument);
     navigation.documentMaintained = restoredDocumentMaintained;
@@ -158,11 +174,11 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       operation: "browser-back",
       targetUrl,
       previousUrl,
-      responseStatus: null,
+      responseStatus: documentResponse.status,
       documentMaintained: restoredDocumentMaintained,
     });
     expect(restoredDom.hostPullNumbers).toEqual(initialDom.hostPullNumbers);
-    responseStatus = null;
+    documentResponse = { status: null };
     previousUrl = page.url();
     const restoredDocument = await page.evaluateHandle(() => document);
     phase = "navigation:D";
@@ -177,10 +193,17 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
         url.searchParams.get("q") ?? "",
       ),
     );
-    await Promise.all([
-      page.waitForURL(filter.url, { timeout: 60_000 }),
-      filter.locator.click(),
-    ]);
+    await observeMainDocumentResponse(
+      page,
+      filter.url,
+      documentResponse,
+      async () => {
+        await Promise.all([
+          page.waitForURL(filter.url, { timeout: 60_000 }),
+          filter.locator.click(),
+        ]);
+      },
+    );
     const filterDocumentMaintained =
       await documentWasMaintained(restoredDocument);
     navigation.documentMaintained = filterDocumentMaintained;
@@ -194,7 +217,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       operation: "native-open-closed-filter-click",
       targetUrl,
       previousUrl,
-      responseStatus: null,
+      responseStatus: documentResponse.status,
       documentMaintained: filterDocumentMaintained,
     });
     expect(page.url()).not.toBe(previousUrl);
@@ -216,7 +239,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
         repository,
         targetUrl,
         currentUrl: page.url(),
-        responseStatus: null,
+        responseStatus: documentResponse.status,
         dom: filteredDom,
         api: finalApi,
         verdict: finalVerdict,
@@ -264,7 +287,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       repository,
       targetUrl,
       currentUrl: page.url(),
-      responseStatus,
+      responseStatus: documentResponse.status,
       dom,
       api,
       verdict,
@@ -323,11 +346,7 @@ async function assertNavigationStage(input: {
     .poll(
       async () => {
         const dom = await readDomSnapshot(input.page, input.repository);
-        if (dom.hostPullNumbers.length === 0)
-          return dom.pullListContainerFound && dom.rows.length === 0;
-        return dom.rows.every(
-          (row) => row.mountCount === 1 && row.loadingMountCount === 0,
-        );
+        return isTerminalCanaryDomSnapshot(dom);
       },
       {
         message: `expected terminal reviewer mounts at navigation stage ${input.stage}`,
@@ -425,6 +444,35 @@ function readDomSnapshot(
     repository,
     productionRowSelector: githubSelectors.row,
   });
+}
+
+async function observeMainDocumentResponse(
+  page: Page,
+  targetUrl: string,
+  observation: { status: number | null },
+  action: () => Promise<void>,
+): Promise<void> {
+  const target = new URL(targetUrl);
+  const onResponse = (response: Response) => {
+    if (
+      !response.request().isNavigationRequest() ||
+      response.request().frame() !== page.mainFrame()
+    )
+      return;
+    const observed = new URL(response.url());
+    if (
+      observed.origin === target.origin &&
+      observed.pathname === target.pathname &&
+      observed.search === target.search
+    )
+      observation.status = response.status();
+  };
+  page.on("response", onResponse);
+  try {
+    await action();
+  } finally {
+    page.off("response", onResponse);
+  }
 }
 
 function emptyDomSnapshot(): CanaryDomSnapshot {

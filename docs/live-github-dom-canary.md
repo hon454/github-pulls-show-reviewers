@@ -112,6 +112,13 @@ An orphan reviewer mount is a failure in every stage, including non-empty
 lists, so a late prior-generation result cannot be hidden outside the current
 row denominator.
 
+For each navigation-stage artifact, `responseStatus` is the status of the
+matching main-document response when the transition produces one. `null` means
+that no matching document response was observed (for example, a same-document
+transition); it is not a successful HTTP result. The canary separately records
+the extension's observed public API endpoint statuses and rate-limit quota, and
+uses those records—not a navigation response—to verify reviewer outcomes.
+
 `.github/workflows/live-github-dom-canary.yml` runs the live project daily at
 06:17 UTC and can also be started with `workflow_dispatch`. The workflow has
 only `contents: read` permission, does not persist checkout credentials, and
