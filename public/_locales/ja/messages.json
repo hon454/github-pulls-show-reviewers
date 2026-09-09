@@ -757,6 +757,15 @@
     "message": "レビュー取り消し済み（引き続きレビュー依頼中）",
     "description": "Completed dismissed review while the reviewer is still requested."
   },
+  "reviewers_requested_previous_unverified": {
+    "message": "レビュー依頼中 · 以前のレビュー: $STATE$ · 再依頼の時点を確認できません",
+    "description": "以前の完了済みレビューは表示されるものの、再依頼の時点を確認できないレビュアーです。",
+    "placeholders": {
+      "state": {
+        "content": "$1"
+      }
+    }
+  },
   "banner_auth_expired": {
     "message": "GitHub のセッションが期限切れです。レビュアーを引き続き読み込むには、もう一度ログインしてください。",
     "description": "Expired GitHub session guidance."

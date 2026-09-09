@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
   collectGitHubApiPages,
+  collectGitHubApiPagesDetailed,
   createGitHubHeaders,
   parseNextPageUrl,
 } from "../src/github/api/request";
@@ -83,6 +84,133 @@ describe("GitHub API request helpers", () => {
       pageTwo,
       expect.objectContaining({ headers: expect.any(Headers) }),
     );
+  });
+
+  it("reports one- and two-page collections as complete when no next page remains", async () => {
+    const schema = z.array(z.object({ id: z.number() }));
+    await expect(
+      collectGitHubApiPagesDetailed({
+        firstResponse: new Response(JSON.stringify([{ id: 1 }])),
+        endpoint,
+        headers: createGitHubHeaders(null),
+        schema,
+        pageBudget: 2,
+      }),
+    ).resolves.toEqual({ items: [{ id: 1 }], status: "complete" });
+
+    const pageTwo = `https://api.github.com${endpoint.path}?page=2`;
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 2 }])),
+    );
+    await expect(
+      collectGitHubApiPagesDetailed({
+        firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
+          headers: { Link: `<${pageTwo}>; rel="next"` },
+        }),
+        endpoint,
+        headers: createGitHubHeaders(null),
+        schema,
+        pageBudget: 2,
+      }),
+    ).resolves.toEqual({
+      items: [{ id: 1 }, { id: 2 }],
+      status: "complete",
+    });
+  });
+
+  it("reports a remaining third page, malformed next link, and cycle as truncated", async () => {
+    const schema = z.array(z.object({ id: z.number() }));
+    const pageTwo = `https://api.github.com${endpoint.path}?page=2`;
+    const pageThree = `https://api.github.com${endpoint.path}?page=3`;
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 2 }]), {
+        headers: { Link: `<${pageThree}>; rel="next"` },
+      }),
+    );
+    await expect(
+      collectGitHubApiPagesDetailed({
+        firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
+          headers: { Link: `<${pageTwo}>; rel="next"` },
+        }),
+        endpoint,
+        headers: createGitHubHeaders(null),
+        schema,
+        pageBudget: 2,
+      }),
+    ).resolves.toMatchObject({ status: "truncated" });
+
+    await expect(
+      collectGitHubApiPagesDetailed({
+        firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
+          headers: { Link: "<not-a-url>; rel=next" },
+        }),
+        endpoint,
+        headers: createGitHubHeaders(null),
+        schema,
+      }),
+    ).resolves.toEqual({ items: [{ id: 1 }], status: "truncated" });
+
+    for (const relation of ['rel: "next"', 'rel=""', 'rel="  "']) {
+      await expect(
+        collectGitHubApiPagesDetailed({
+          firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
+            headers: { Link: `<${pageTwo}>; ${relation}` },
+          }),
+          endpoint,
+          headers: createGitHubHeaders(null),
+          schema,
+        }),
+      ).resolves.toEqual({ items: [{ id: 1 }], status: "truncated" });
+    }
+
+    vi.restoreAllMocks();
+    const cycleFetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 2 }]), {
+        headers: { Link: `<${pageTwo}>; rel="next"` },
+      }),
+    );
+    await expect(
+      collectGitHubApiPagesDetailed({
+        firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
+          headers: { Link: `<${pageTwo}>; rel="next"` },
+        }),
+        endpoint,
+        headers: createGitHubHeaders(null),
+        schema,
+      }),
+    ).resolves.toEqual({
+      items: [{ id: 1 }, { id: 2 }],
+      status: "truncated",
+    });
+    expect(cycleFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns partial items with unavailable when a later page fails", async () => {
+    const pageTwo = `https://api.github.com${endpoint.path}?page=2`;
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "rate limited" }), {
+        status: 429,
+      }),
+    );
+
+    const result = await collectGitHubApiPagesDetailed({
+      firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
+        headers: { Link: `<${pageTwo}>; rel="next"` },
+      }),
+      endpoint,
+      headers: createGitHubHeaders(null),
+      schema: z.array(z.object({ id: z.number() })),
+    });
+
+    expect(result.status).toBe("unavailable");
+    expect(result.items).toEqual([{ id: 1 }]);
+    if (result.status === "unavailable") {
+      expect(result.error).toMatchObject({
+        name: "GitHubApiError",
+        status: 429,
+      });
+    }
   });
 
   it("stops early when the caller has collected enough records", async () => {

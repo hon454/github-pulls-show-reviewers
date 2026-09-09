@@ -15,6 +15,7 @@ export interface MessageArgs {
   reviewers_changes_requested_requested: undefined;
   reviewers_commented_requested: undefined;
   reviewers_dismissed_requested: undefined;
+  reviewers_requested_previous_unverified: { state: string };
   banner_auth_expired: undefined;
   banner_app_uncovered: { repository: string; owner: string };
   banner_signin_required: undefined;

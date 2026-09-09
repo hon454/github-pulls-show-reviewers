@@ -45,9 +45,15 @@ export async function createGitHubApiError(
   response: Response,
   endpoint?: GitHubEndpointDescriptor,
 ): Promise<GitHubApiError> {
-  const payload = errorResponseSchema.safeParse(
-    await response.json().catch(() => null),
-  );
+  let rawPayload: unknown = null;
+  try {
+    rawPayload = await response.json();
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+  }
+  const payload = errorResponseSchema.safeParse(rawPayload);
   return new GitHubApiError(
     response.status,
     payload.success ? payload.data.message : undefined,
@@ -66,46 +72,93 @@ export async function collectGitHubApiPages<T>(params: {
   hasEnough?: (collected: T[]) => boolean;
   mapNextPageError?: (error: GitHubApiError) => Error;
 }): Promise<T[]> {
+  const result = await collectGitHubApiPagesDetailed(params);
+  if (result.status === "unavailable") {
+    throw result.error;
+  }
+  return result.items;
+}
+
+export type GitHubApiPageCollection<T> =
+  | {
+      items: T[];
+      status: "complete" | "truncated";
+    }
+  | {
+      items: T[];
+      status: "unavailable";
+      error: unknown;
+    };
+
+export async function collectGitHubApiPagesDetailed<T>(params: {
+  firstResponse: Response;
+  endpoint: GitHubEndpointDescriptor;
+  headers: Headers;
+  schema: z.ZodType<T[]>;
+  signal?: AbortSignal;
+  pageBudget?: number;
+  hasEnough?: (collected: T[]) => boolean;
+  mapNextPageError?: (error: GitHubApiError) => Error;
+}): Promise<GitHubApiPageCollection<T>> {
   const collected: T[] = [];
   const expectedPathname = params.endpoint.path.split("?")[0];
+  const visitedPageUrls = new Set<string>();
+  if (params.firstResponse.url !== "") {
+    visitedPageUrls.add(params.firstResponse.url);
+  }
 
   let response = params.firstResponse;
   let pageCount = 0;
   while (true) {
-    const parsed = params.schema.safeParse(await response.json());
-    if (!parsed.success) {
-      throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
-    }
-    collected.push(...parsed.data);
-    pageCount += 1;
-
-    if (
-      params.hasEnough?.(collected) === true ||
-      (params.pageBudget != null && pageCount >= params.pageBudget)
-    ) {
-      return collected;
+    try {
+      const parsed = params.schema.safeParse(await response.json());
+      if (!parsed.success) {
+        throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
+      }
+      collected.push(...parsed.data);
+      pageCount += 1;
+    } catch (error) {
+      return { items: collected, status: "unavailable", error };
     }
 
-    const nextUrl = parseNextPageUrl(
+    if (params.hasEnough?.(collected) === true) {
+      return { items: collected, status: "complete" };
+    }
+
+    const nextPage = inspectNextPageUrl(
       response.headers.get("Link"),
       expectedPathname,
     );
-    if (nextUrl == null) {
-      return collected;
+    if (nextPage.status === "none") {
+      return { items: collected, status: "complete" };
     }
+    if (nextPage.status === "invalid") {
+      return { items: collected, status: "truncated" };
+    }
+    if (
+      (params.pageBudget != null && pageCount >= params.pageBudget) ||
+      visitedPageUrls.has(nextPage.url)
+    ) {
+      return { items: collected, status: "truncated" };
+    }
+    visitedPageUrls.add(nextPage.url);
 
-    response = await fetchGitHubApiResponse(
-      nextUrl,
-      params.headers,
-      params.signal,
-    );
+    try {
+      response = await fetchGitHubApiResponse(
+        nextPage.url,
+        params.headers,
+        params.signal,
+      );
 
-    const error = await createGitHubApiErrorFromResponse(
-      response,
-      params.endpoint,
-    );
-    if (error != null) {
-      throw params.mapNextPageError?.(error) ?? error;
+      const error = await createGitHubApiErrorFromResponse(
+        response,
+        params.endpoint,
+      );
+      if (error != null) {
+        throw params.mapNextPageError?.(error) ?? error;
+      }
+    } catch (error) {
+      return { items: collected, status: "unavailable", error };
     }
   }
 }
@@ -114,28 +167,62 @@ export function parseNextPageUrl(
   linkHeader: string | null,
   expectedPathname?: string,
 ): string | null {
+  const result = inspectNextPageUrl(linkHeader, expectedPathname);
+  return result.status === "valid" ? result.url : null;
+}
+
+type NextPageInspection =
+  | { status: "none" }
+  | { status: "invalid" }
+  | { status: "valid"; url: string };
+
+function inspectNextPageUrl(
+  linkHeader: string | null,
+  expectedPathname?: string,
+): NextPageInspection {
   if (linkHeader == null) {
-    return null;
+    return { status: "none" };
   }
 
+  let hasMalformedRelation = false;
   for (const segment of linkHeader.split(",")) {
-    const match = /<([^>]+)>\s*;\s*rel="([^"]+)"/.exec(segment.trim());
+    const match = /^<([^<>]+)>(.*)$/.exec(segment.trim());
     if (match == null) {
+      hasMalformedRelation ||= /\brel\b/i.test(segment);
       continue;
     }
-    const rels = match[2].split(/\s+/);
+
+    const parameters = match[2].trim();
+    const relation =
+      /(?:^|;)\s*rel\s*=\s*(?:"([^"]*)"|([^;,\s]+))(?=\s*(?:;|$))/i.exec(
+        parameters,
+      );
+    if (relation == null) {
+      hasMalformedRelation ||= /\brel\b/i.test(parameters);
+      continue;
+    }
+
+    const relationValue = (relation[1] ?? relation[2]).trim();
+    if (relationValue === "") {
+      hasMalformedRelation = true;
+      continue;
+    }
+
+    const rels = relationValue.split(/\s+/);
     if (rels.includes("next")) {
       if (
         expectedPathname != null &&
         !isExpectedGitHubApiUrl(match[1], expectedPathname)
       ) {
-        return null;
+        return { status: "invalid" };
       }
-      return match[1];
+      return { status: "valid", url: match[1] };
     }
   }
 
-  return null;
+  return hasMalformedRelation || /\brel\s*=\s*"?[^",;]*\bnext\b/i.test(linkHeader)
+    ? { status: "invalid" }
+    : { status: "none" };
 }
 
 function isExpectedGitHubApiUrl(
@@ -173,4 +260,12 @@ function readHeaderNumber(headers: Headers, name: string): number | null {
 
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  return error instanceof Error && error.name === "AbortError";
 }

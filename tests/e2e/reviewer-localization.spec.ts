@@ -104,6 +104,17 @@ test("switches five reviewer locales during FIFO requests, preserves errors and 
         /\/issues\/\d+\/events$/.test(url.pathname)
       ) {
         eventRequests++;
+        const number = url.pathname.split("/").at(-2)!;
+        if (number === "48") {
+          await route.fulfill({
+            status: 403,
+            contentType: "application/json",
+            body: JSON.stringify({
+              message: "fixture event evidence unavailable",
+            }),
+          });
+          return;
+        }
         await route.fulfill({
           status: 200,
           contentType: "application/json",
@@ -185,6 +196,24 @@ test("switches five reviewer locales during FIFO requests, preserves errors and 
           login: "alice",
           state: t("reviewers_approved_requested"),
         }),
+      );
+      const unverified = page.locator("#issue_48 a.ghpsr-avatar");
+      const unverifiedState = t("reviewers_requested_previous_unverified", {
+        state: t("reviewers_approved"),
+      });
+      await expect(unverified).toHaveAttribute(
+        "aria-label",
+        t("reviewers_aria", { login: "alice", state: unverifiedState }),
+      );
+      await expect(unverified).toHaveAttribute(
+        "title",
+        t("reviewers_title", { login: "alice", state: unverifiedState }),
+      );
+      await expect(unverified).toHaveClass(/ghpsr-avatar--border-requested/);
+      await expect(unverified.locator(".ghpsr-badge--refresh")).toHaveCount(0);
+      await expect(unverified).toHaveAttribute(
+        "href",
+        /review-requested%3Aalice/,
       );
       await expect(page.locator("#issue_49 .ghpsr-root")).toBeEmpty();
       await expect(page.locator(".ghpsr-root").first()).toHaveAttribute(

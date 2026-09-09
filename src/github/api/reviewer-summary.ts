@@ -11,6 +11,7 @@ import {
 } from "./schemas";
 import {
   collectGitHubApiPages,
+  collectGitHubApiPagesDetailed,
   createGitHubApiErrorFromResponse,
   createGitHubHeaders,
   fetchGitHubApiResponse,
@@ -24,6 +25,7 @@ import {
   type GitHubEndpointDescriptor,
   type PullReviewerMetadata,
   type PullReviewerSummary,
+  type ReviewRequestEvidence,
   type ReviewerUser,
   type ReviewState,
 } from "./types";
@@ -47,6 +49,11 @@ type LatestCommentReview = {
 type LatestReviewEvidence = {
   latestNonCommentByUser: Map<string, LatestNonCommentReview>;
   latestCommentByUser: Map<string, LatestCommentReview>;
+};
+
+type ReviewRequestEventLookup = {
+  status: "complete" | "truncated" | "unavailable";
+  latestValidRequestByLogin: Map<string, string>;
 };
 
 export async function fetchPullReviewerSummary(input: {
@@ -239,7 +246,7 @@ export async function fetchPullReviewerMetadataBatch(input: {
 function buildPullReviewerSummary(
   pullMetadata: PullReviewerMetadata,
   latestReviewEvidence: LatestReviewEvidence,
-  latestReviewRequestByLogin: Map<string, string> | null = null,
+  reviewRequestLookup: ReviewRequestEventLookup | null = null,
 ): PullReviewerSummary {
   const { latestNonCommentByUser, latestCommentByUser } = latestReviewEvidence;
 
@@ -267,15 +274,20 @@ function buildPullReviewerSummary(
     })
     .sort((left, right) => left.login.localeCompare(right.login));
 
+  const requested = resolveRequestedUsers(
+    pullMetadata.requestedUsers,
+    latestNonCommentByUser,
+    reviewRequestLookup,
+  );
+
   return {
     status: "ok" as const,
-    requestedUsers: filterStaleRequestedUsers(
-      pullMetadata.requestedUsers,
-      latestNonCommentByUser,
-      latestReviewRequestByLogin,
-    ),
+    requestedUsers: requested.users,
     requestedTeams: pullMetadata.requestedTeams,
     completedReviews,
+    ...(requested.evidence.length === 0
+      ? {}
+      : { reviewRequestEvidence: requested.evidence }),
   };
 }
 
@@ -338,7 +350,7 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
   latestNonCommentByUser: Map<string, LatestNonCommentReview>;
   headers: Headers;
   signal?: AbortSignal;
-}): Promise<Map<string, string> | null> {
+}): Promise<ReviewRequestEventLookup | null> {
   const ambiguousLogins = params.pullMetadata.requestedUsers
     .map((user) => user.login)
     .filter((login) => params.latestNonCommentByUser.has(login));
@@ -369,17 +381,34 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
       throw new GitHubPullRequestEndpointsError([failure]);
     }
 
-    const events = await collectGitHubApiPages<GitHubReviewRequestEvent>({
-      firstResponse,
-      endpoint,
-      headers: params.headers,
-      schema: reviewRequestEventsSchema,
-      pageBudget: REVIEW_REQUEST_EVENT_PAGE_BUDGET,
-      mapNextPageError: (error) => new GitHubPullRequestEndpointsError([error]),
-      ...(params.signal == null ? {} : { signal: params.signal }),
-    });
+    const result =
+      await collectGitHubApiPagesDetailed<GitHubReviewRequestEvent>({
+        firstResponse,
+        endpoint,
+        headers: params.headers,
+        schema: reviewRequestEventsSchema,
+        pageBudget: REVIEW_REQUEST_EVENT_PAGE_BUDGET,
+        mapNextPageError: (error) =>
+          new GitHubPullRequestEndpointsError([error]),
+        ...(params.signal == null ? {} : { signal: params.signal }),
+      });
 
-    return selectLatestReviewRequestByLogin(events, new Set(ambiguousLogins));
+    if (result.status === "unavailable" && isAbortError(result.error)) {
+      throw result.error;
+    }
+    if (
+      result.status === "unavailable" &&
+      result.error instanceof GitHubApiSchemaError
+    ) {
+      console.warn(result.error.message, result.error.issues);
+    }
+    return {
+      status: result.status,
+      latestValidRequestByLogin: selectLatestReviewRequestByLogin(
+        result.items,
+        new Set(ambiguousLogins),
+      ),
+    };
   } catch (error) {
     if (isAbortError(error)) {
       throw error;
@@ -387,7 +416,10 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
     if (error instanceof GitHubApiSchemaError) {
       console.warn(error.message, error.issues);
     }
-    return new Map();
+    return {
+      status: "unavailable",
+      latestValidRequestByLogin: new Map(),
+    };
   }
 }
 
@@ -404,26 +436,46 @@ function collectReviewsAcrossPages(params: {
   });
 }
 
-function filterStaleRequestedUsers(
+function resolveRequestedUsers(
   requestedUsers: ReviewerUser[],
   latestNonCommentByUser: Map<string, LatestNonCommentReview>,
-  latestReviewRequestByLogin: Map<string, string> | null,
-): ReviewerUser[] {
-  if (latestReviewRequestByLogin == null) {
-    return requestedUsers;
-  }
+  lookup: ReviewRequestEventLookup | null,
+): { users: ReviewerUser[]; evidence: ReviewRequestEvidence[] } {
+  const users: ReviewerUser[] = [];
+  const evidence: ReviewRequestEvidence[] = [];
 
-  return requestedUsers.filter((user) => {
+  for (const user of requestedUsers) {
     const latestReview = latestNonCommentByUser.get(user.login);
     if (latestReview == null) {
-      return true;
+      users.push(user);
+      continue;
     }
 
-    return isReviewRequestAfterReview(
-      latestReviewRequestByLogin.get(user.login) ?? null,
-      latestReview.submittedAt,
-    );
-  });
+    const latestRequest =
+      lookup?.latestValidRequestByLogin.get(user.login) ?? null;
+    if (isReviewRequestAfterReview(latestRequest, latestReview.submittedAt)) {
+      users.push(user);
+      evidence.push({ login: user.login, status: "confirmed" });
+      continue;
+    }
+
+    if (
+      lookup?.status === "complete" &&
+      isValidTimestamp(latestRequest) &&
+      isValidTimestamp(latestReview.submittedAt)
+    ) {
+      continue;
+    }
+
+    users.push(user);
+    evidence.push({ login: user.login, status: "unverified" });
+  }
+
+  return { users, evidence };
+}
+
+function isValidTimestamp(value: string | null): value is string {
+  return parseValidTimestamp(value) != null;
 }
 
 function selectLatestReviewRequestByLogin(
@@ -437,7 +489,11 @@ function selectLatestReviewRequestByLogin(
       continue;
     }
     const login = event.requested_reviewer?.login;
-    if (login == null || !targetLogins.has(login)) {
+    if (
+      login == null ||
+      !targetLogins.has(login) ||
+      !isValidTimestamp(event.created_at)
+    ) {
       continue;
     }
     const existing = latestByLogin.get(login);
@@ -520,17 +576,63 @@ function isReviewRequestAfterReview(
 }
 
 function isTimestampAfter(left: string | null, right: string | null): boolean {
-  if (left == null || right == null) {
-    return false;
-  }
-
-  const leftTime = Date.parse(left);
-  const rightTime = Date.parse(right);
-  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
-    return false;
-  }
+  const leftTime = parseValidTimestamp(left);
+  const rightTime = parseValidTimestamp(right);
+  if (leftTime == null || rightTime == null) return false;
 
   return leftTime > rightTime;
+}
+
+function parseValidTimestamp(value: string | null): number | null {
+  if (value == null) return null;
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(
+      value,
+    );
+  if (match == null) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] == null ? 0 : Number(match[8]);
+  const offsetMinute = match[9] == null ? 0 : Number(match[9]);
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    isLeapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ][month - 1];
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    daysInMonth == null ||
+    day > daysInMonth ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function isAbortError(error: unknown): boolean {

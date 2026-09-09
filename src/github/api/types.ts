@@ -18,6 +18,11 @@ export type ReviewerUser = { login: string; avatarUrl: string | null };
 
 export type CompletedReview = ReviewerUser & { state: ReviewState };
 
+export type ReviewRequestEvidence = {
+  login: string;
+  status: "confirmed" | "unverified";
+};
+
 export type PullReviewerMetadata = {
   number: string;
   authorLogin: string;
@@ -30,6 +35,7 @@ export type PullReviewerSummary = {
   requestedUsers: ReviewerUser[];
   requestedTeams: string[];
   completedReviews: CompletedReview[];
+  reviewRequestEvidence?: ReviewRequestEvidence[] | undefined;
 };
 
 export type TokenValidationResult =

@@ -114,13 +114,16 @@
 7. For ambiguous user reviewers that appear in both `requested_reviewers` and
    the latest non-`COMMENTED` review set (`APPROVED`, `CHANGES_REQUESTED`, or
    `DISMISSED`), read up to two pages of the pull request's issue events and
-   compare ordering. When the latest `review_requested` event for that user
-   within that bounded lookup is newer than the latest completed review, keep
-   the user requested so the row shows the refresh badge. Otherwise, drop the
-   stale requested marker so the row shows the completed review state. If this
-   targeted issue-event lookup fails, or the confirming event is beyond the
-   two-page bound, fall back to the completed review state instead of labeling
-   the reviewer as re-requested.
+   compare ordering. The collector distinguishes a complete traversal from a
+   two-page truncation or unavailable response; malformed, unsafe, or cyclic
+   next links are not complete evidence. A valid `review_requested` timestamp
+   later than the latest valid completed-review timestamp confirms the request,
+   even when a later page is unavailable or remains beyond the budget. Remove
+   the requested marker only when a complete traversal proves that the latest
+   valid request is no later than the latest valid completed review. A missing
+   event, failed or truncated traversal, or missing/invalid comparison timestamp
+   leaves the requested marker in place as unverified evidence. Page-navigation
+   cancellation still aborts the lookup instead of producing a summary.
 8. Render a single `Reviewers` section inline in the PR row metadata area. The
    mount lives in an extension-owned `inline-flex` metadata container instead
    of GitHub's `d-none d-md-inline-flex` wrapper. Standard desktop placement and
@@ -134,7 +137,9 @@
    back to the latest `COMMENTED` review only when no non-comment review exists.
    A still-requested reviewer with prior `APPROVED`, `CHANGES_REQUESTED`, or
    `DISMISSED` evidence shows the refresh badge only when the event ordering
-   confirms a later re-request. Requested teams keep the text chip shape. User
+   confirms a later re-request. Unverified combinations keep the requested ring
+   and search link, retain the previous completed state in tooltip/accessible
+   text, and hide the refresh badge. Requested teams keep the text chip shape. User
    chip links follow the same primary axis as the ring color: blue-ring
    (still-requested) chips link to `review-requested:<login>`; colored-ring
    (completed) chips link to `reviewed-by:<login>`. Reviewer chip links use
@@ -319,9 +324,11 @@ uses the existing bounded revalidation path.
   overlaps only, and follow at most two GitHub API issue-event pages
   (`REVIEW_REQUEST_EVENT_PAGE_BUDGET`). Rows whose requested users do not
   overlap a latest non-`COMMENTED` review keep the lower-volume pull metadata
-  plus reviews path. If a confirming `review_requested` event is unavailable
-  within the two-page bound, the row uses the completed review state rather
-  than an uncertain refresh badge.
+  plus reviews path. Complete, truncated, and unavailable collection outcomes
+  carry the directly observed valid events into login-specific evidence. An
+  incomplete lookup never erases the requested state: a directly observed later
+  request is confirmed, while other ambiguous users remain unverified without
+  an uncertain refresh badge.
 - A GraphQL-first rewrite is not the next step because it would push the product away from the current no-token public-repository path and add a second transport model to maintain.
 - If request volume remains the next bottleneck, the preferred follow-up is to
   tune the three-page REST pagination bound with fixture-backed evidence before
@@ -743,7 +750,9 @@ Validate catalogs with the i18n unit tests and emitted metadata with
 - All reviewer state labels and completed-plus-still-requested combinations are
   full catalog messages. APPROVED, CHANGES_REQUESTED, COMMENTED, and DISMISSED
   retain the existing mapping: requested reviewers keep the blue ring; approved,
-  changes-requested, or dismissed evidence adds the optional refresh badge.
+  changes-requested, or dismissed evidence adds the optional refresh badge only
+  when the later request is confirmed. Unverified combinations use a localized
+  requested/previous-review/timing-unavailable description and no refresh badge.
   Requested COMMENTED has no refresh badge. Completed-only states retain their
   green/red/gray/purple ring and matching optional badge, sort order and links.
 - All six access-banner kinds, CTAs, dismiss labels, usage clauses and reset

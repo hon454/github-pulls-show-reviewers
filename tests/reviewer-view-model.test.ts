@@ -51,6 +51,7 @@ describe("buildReviewers", () => {
       login: "bob",
       state: "COMMENTED",
       isRequested: true,
+      reviewRequestStatus: null,
       avatarUrl: "https://example/b.png",
     });
   });
@@ -71,6 +72,7 @@ describe("buildReviewers", () => {
       kind: "user",
       state: "DISMISSED",
       isRequested: true,
+      reviewRequestStatus: "unverified",
     });
   });
 
@@ -89,6 +91,7 @@ describe("buildReviewers", () => {
       kind: "user",
       state: "APPROVED",
       isRequested: false,
+      reviewRequestStatus: null,
     });
   });
 
@@ -106,6 +109,7 @@ describe("buildReviewers", () => {
       kind: "user",
       state: "APPROVED",
       isRequested: true,
+      reviewRequestStatus: "unverified",
     });
   });
 
@@ -218,6 +222,7 @@ describe("buildReviewers", () => {
         completedReviews: [
           { login: "alice", avatarUrl: null, state: "APPROVED" },
         ],
+        reviewRequestEvidence: [{ login: "alice", status: "confirmed" }],
       }),
     );
     const user = entries[0];
@@ -225,6 +230,7 @@ describe("buildReviewers", () => {
     if (user.kind !== "user") return;
     expect(user.isRequested).toBe(true);
     expect(user.state).toBe("APPROVED");
+    expect(user.reviewRequestStatus).toBe("confirmed");
     expect(user.href).toContain("review-requested%3Aalice");
     expect(user.href).not.toContain("reviewed-by%3Aalice");
   });
