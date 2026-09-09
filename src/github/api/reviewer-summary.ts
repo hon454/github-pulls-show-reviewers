@@ -475,9 +475,7 @@ function resolveRequestedUsers(
 }
 
 function isValidTimestamp(value: string | null): value is string {
-  return (
-    value != null && value.trim() !== "" && !Number.isNaN(Date.parse(value))
-  );
+  return parseValidTimestamp(value) != null;
 }
 
 function selectLatestReviewRequestByLogin(
@@ -578,17 +576,63 @@ function isReviewRequestAfterReview(
 }
 
 function isTimestampAfter(left: string | null, right: string | null): boolean {
-  if (left == null || right == null) {
-    return false;
-  }
-
-  const leftTime = Date.parse(left);
-  const rightTime = Date.parse(right);
-  if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
-    return false;
-  }
+  const leftTime = parseValidTimestamp(left);
+  const rightTime = parseValidTimestamp(right);
+  if (leftTime == null || rightTime == null) return false;
 
   return leftTime > rightTime;
+}
+
+function parseValidTimestamp(value: string | null): number | null {
+  if (value == null) return null;
+
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(
+      value,
+    );
+  if (match == null) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[8] == null ? 0 : Number(match[8]);
+  const offsetMinute = match[9] == null ? 0 : Number(match[9]);
+  const isLeapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [
+    31,
+    isLeapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ][month - 1];
+
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    daysInMonth == null ||
+    day > daysInMonth ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function isAbortError(error: unknown): boolean {

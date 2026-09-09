@@ -45,9 +45,15 @@ export async function createGitHubApiError(
   response: Response,
   endpoint?: GitHubEndpointDescriptor,
 ): Promise<GitHubApiError> {
-  const payload = errorResponseSchema.safeParse(
-    await response.json().catch(() => null),
-  );
+  let rawPayload: unknown = null;
+  try {
+    rawPayload = await response.json();
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error;
+    }
+  }
+  const payload = errorResponseSchema.safeParse(rawPayload);
   return new GitHubApiError(
     response.status,
     payload.success ? payload.data.message : undefined,
@@ -178,12 +184,25 @@ function inspectNextPageUrl(
     return { status: "none" };
   }
 
+  let hasMalformedRelation = false;
   for (const segment of linkHeader.split(",")) {
-    const match = /<([^>]+)>\s*;\s*rel="([^"]+)"/.exec(segment.trim());
+    const match = /^<([^<>]+)>(.*)$/.exec(segment.trim());
     if (match == null) {
+      hasMalformedRelation ||= /\brel\b/i.test(segment);
       continue;
     }
-    const rels = match[2].split(/\s+/);
+
+    const parameters = match[2].trim();
+    const relation =
+      /(?:^|;)\s*rel\s*=\s*(?:"([^"]*)"|([^;,\s]+))(?=\s*(?:;|$))/i.exec(
+        parameters,
+      );
+    if (relation == null) {
+      hasMalformedRelation ||= /\brel\b/i.test(parameters);
+      continue;
+    }
+
+    const rels = (relation[1] ?? relation[2]).split(/\s+/);
     if (rels.includes("next")) {
       if (
         expectedPathname != null &&
@@ -195,7 +214,7 @@ function inspectNextPageUrl(
     }
   }
 
-  return /\brel\s*=\s*"?[^",;]*\bnext\b/i.test(linkHeader)
+  return hasMalformedRelation || /\brel\s*=\s*"?[^",;]*\bnext\b/i.test(linkHeader)
     ? { status: "invalid" }
     : { status: "none" };
 }
@@ -235,4 +254,12 @@ function readHeaderNumber(headers: Headers, name: string): number | null {
 
   const parsed = Number.parseInt(value, 10);
   return Number.isNaN(parsed) ? null : parsed;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  return error instanceof Error && error.name === "AbortError";
 }

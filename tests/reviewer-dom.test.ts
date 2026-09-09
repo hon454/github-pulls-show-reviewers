@@ -521,6 +521,7 @@ describe("renderReviewers — (isRequested, state) display truth table", () => {
         requestedUsers: [{ login: "u2", avatarUrl: null }],
         requestedTeams: [],
         completedReviews: [{ login: "u2", avatarUrl: null, state: "APPROVED" }],
+        reviewRequestEvidence: [{ login: "u2", status: "confirmed" }],
       }),
       { showStateBadge: false, showReviewerName: false },
     );
@@ -560,54 +561,84 @@ describe("five-locale reviewer presentation", () => {
               ? (["confirmed", "unverified"] as const)
               : ([null] as const);
           for (const evidenceStatus of evidenceStatuses) {
-            const completedLabel = t(`reviewers_${key}`);
-            const label =
-              evidenceStatus === "unverified"
-                ? t("reviewers_requested_previous_unverified", {
-                    state: completedLabel,
-                  })
-                : t(
-                    requested
-                      ? `reviewers_${key}_requested`
-                      : `reviewers_${key}`,
-                  );
-            const entries = buildReviewers(
-              { owner: "org", repo: "repo" },
-              {
-                status: "ok",
-                requestedUsers: requested ? [{ login, avatarUrl: null }] : [],
-                completedReviews: [{ login, avatarUrl: null, state }],
-                requestedTeams: ["platform"],
-                ...(evidenceStatus == null
-                  ? {}
-                  : {
-                      reviewRequestEvidence: [
-                        { login, status: evidenceStatus },
-                      ],
-                    }),
-              },
-            );
-            renderReviewers(
-              root,
-              entries,
-              { showReviewerName: requested, showStateBadge: true },
-              context,
-            );
-            const link = root.querySelector<HTMLAnchorElement>("a")!;
-            expect(link.title).toBe(
-              t("reviewers_title", { login, state: label }),
-            );
-            expect(link.getAttribute("aria-label")).toBe(
-              t("reviewers_aria", { login, state: label }),
-            );
-            expect(link.href).toBe(entries[0].href);
-            expect(root.querySelector(".ghpsr-chip--team")?.textContent).toBe(
-              t("reviewers_team", { slug: "platform" }),
-            );
-            expect(root.querySelector("script")).toBeNull();
-            expect(root.lang).toBe(context.lang);
-            if (evidenceStatus === "unverified") {
-              expect(root.querySelector(".ghpsr-badge--refresh")).toBeNull();
+            for (const showReviewerName of [false, true]) {
+              for (const showStateBadge of [false, true]) {
+                const completedLabel = t(`reviewers_${key}`);
+                const label =
+                  evidenceStatus === "unverified"
+                    ? t("reviewers_requested_previous_unverified", {
+                        state: completedLabel,
+                      })
+                    : t(
+                        requested
+                          ? `reviewers_${key}_requested`
+                          : `reviewers_${key}`,
+                      );
+                const entries = buildReviewers(
+                  { owner: "org", repo: "repo" },
+                  {
+                    status: "ok",
+                    requestedUsers: requested
+                      ? [{ login, avatarUrl: null }]
+                      : [],
+                    completedReviews: [{ login, avatarUrl: null, state }],
+                    requestedTeams: ["platform"],
+                    ...(evidenceStatus == null
+                      ? {}
+                      : {
+                          reviewRequestEvidence: [
+                            { login, status: evidenceStatus },
+                          ],
+                        }),
+                  },
+                );
+                renderReviewers(
+                  root,
+                  entries,
+                  { showReviewerName, showStateBadge },
+                  context,
+                );
+                const link = root.querySelector<HTMLAnchorElement>(
+                  showReviewerName ? "a.ghpsr-pill" : "a.ghpsr-avatar",
+                )!;
+                expect(link.title).toBe(
+                  t("reviewers_title", { login, state: label }),
+                );
+                expect(link.getAttribute("aria-label")).toBe(
+                  t("reviewers_aria", { login, state: label }),
+                );
+                expect(link.href).toBe(entries[0].href);
+                expect(link.querySelector(".ghpsr-pill-name")?.textContent).toBe(
+                  showReviewerName ? `@${login}` : undefined,
+                );
+                const ringTone = requested
+                  ? "requested"
+                  : key.replace("_", "-");
+                expect(
+                  link.matches(`.ghpsr-avatar--border-${ringTone}`) ||
+                    link.querySelector(`.ghpsr-avatar--border-${ringTone}`) !=
+                      null,
+                ).toBe(true);
+                expect(
+                  root.querySelector(".ghpsr-chip--team")?.textContent,
+                ).toBe(t("reviewers_team", { slug: "platform" }));
+                expect(root.querySelector("script")).toBeNull();
+                expect(root.lang).toBe(context.lang);
+
+                const expectsBadge =
+                  showStateBadge &&
+                  (!requested || evidenceStatus === "confirmed");
+                expect(root.querySelector(".ghpsr-badge") != null).toBe(
+                  expectsBadge,
+                );
+                expect(
+                  root.querySelector(".ghpsr-badge--refresh") != null,
+                ).toBe(
+                  expectsBadge &&
+                    requested &&
+                    state !== "COMMENTED",
+                );
+              }
             }
           }
         }

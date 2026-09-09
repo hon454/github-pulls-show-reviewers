@@ -1185,6 +1185,229 @@ describe("fetchPullReviewerSummary", () => {
     ).rejects.toBe(abortError);
   });
 
+  it("rethrows AbortError while reading an issue-events error body", async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException("page navigation", "AbortError");
+    const eventResponse = new Response(null, { status: 403 });
+    vi.spyOn(eventResponse, "json").mockImplementation(async () => {
+      controller.abort(abortError);
+      throw abortError;
+    });
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-03-03T00:00:00Z",
+              user: { login: "alice", avatar_url: null },
+            },
+          ]),
+        ),
+      )
+      .mockResolvedValueOnce(eventResponse);
+
+    await expect(
+      fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+        signal: controller.signal,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+        },
+      }),
+    ).rejects.toBe(abortError);
+  });
+
+  it("preserves an unverified request when the Link relation is malformed", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-03-03T00:00:00Z",
+              user: { login: "alice", avatar_url: null },
+            },
+          ]),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              event: "review_requested",
+              created_at: "2026-03-01T00:00:00Z",
+              requested_reviewer: { login: "alice", avatar_url: null },
+            },
+          ]),
+          {
+            headers: {
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?page=2>; rel: "next"',
+            },
+          },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+      pullMetadata: {
+        number: "42",
+        authorLogin: "author",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+      },
+    });
+
+    expect(summary.requestedUsers).toEqual([
+      { login: "alice", avatarUrl: null },
+    ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "unverified" },
+    ]);
+  });
+
+  it.each([
+    {
+      caseLabel: "request event",
+      reviewTimestamp: "2026-03-03T00:00:00Z",
+      requestTimestamp: "2026-02-30T00:00:00Z",
+    },
+    {
+      caseLabel: "completed review",
+      reviewTimestamp: "2026-02-30T00:00:00Z",
+      requestTimestamp: "2026-03-03T00:00:00Z",
+    },
+  ])(
+    "does not use an impossible calendar date from a $caseLabel as ordering evidence",
+    async ({ reviewTimestamp, requestTimestamp }) => {
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                state: "APPROVED",
+                submitted_at: reviewTimestamp,
+                user: { login: "alice", avatar_url: null },
+              },
+            ]),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                event: "review_requested",
+                created_at: requestTimestamp,
+                requested_reviewer: { login: "alice", avatar_url: null },
+              },
+            ]),
+          ),
+        );
+
+      const summary = await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+        },
+      });
+
+      expect(summary.requestedUsers).toEqual([
+        { login: "alice", avatarUrl: null },
+      ]);
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "unverified" },
+      ]);
+    },
+  );
+
+  it("keeps confirmed, unverified, and completed-only users independent in one complete lookup", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-03-03T00:00:00Z",
+              user: { login: "alice", avatar_url: null },
+            },
+            {
+              state: "CHANGES_REQUESTED",
+              submitted_at: "2026-03-03T00:00:00Z",
+              user: { login: "bob", avatar_url: null },
+            },
+            {
+              state: "DISMISSED",
+              submitted_at: "2026-03-03T00:00:00Z",
+              user: { login: "carol", avatar_url: null },
+            },
+          ]),
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              event: "review_requested",
+              created_at: "2026-03-04T00:00:00Z",
+              requested_reviewer: { login: "alice", avatar_url: null },
+            },
+            {
+              event: "review_requested",
+              created_at: "2026-03-02T00:00:00Z",
+              requested_reviewer: { login: "carol", avatar_url: null },
+            },
+          ]),
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+      pullMetadata: {
+        number: "42",
+        authorLogin: "author",
+        requestedUsers: [
+          { login: "alice", avatarUrl: null },
+          { login: "bob", avatarUrl: null },
+          { login: "carol", avatarUrl: null },
+        ],
+        requestedTeams: [],
+      },
+    });
+
+    expect(summary.requestedUsers.map(({ login }) => login)).toEqual([
+      "alice",
+      "bob",
+    ]);
+    expect(summary.completedReviews.map(({ login }) => login)).toEqual([
+      "alice",
+      "bob",
+      "carol",
+    ]);
+    expect(summary.reviewRequestEvidence).toEqual([
+      { login: "alice", status: "confirmed" },
+      { login: "bob", status: "unverified" },
+    ]);
+  });
+
   it("warns and preserves an unverified request when issue events are malformed", async () => {
     const warnMock = vi.spyOn(console, "warn").mockImplementation(() => {});
 
