@@ -12,7 +12,7 @@
 
 ![レビュアーチップとレビュー状態バッジを表示した GitHub PR 一覧](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.17.1 リリースノート](./docs/releases/v1.17.1.md)（英語）：主要ボタンの見やすさ、各言語のコピー結果表示、ログイン時のフォーカス復帰を改善。
+[v1.17.2 リリースノート](./docs/releases/v1.17.2.md)（英語）：開発ツールのセキュリティ更新。開発用依存関係の監査指摘が1件残っています。
 
 ## 主な機能
 

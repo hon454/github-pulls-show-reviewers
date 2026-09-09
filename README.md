@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.17.1 release notes](./docs/releases/v1.17.1.md) (English): clearer primary buttons, localized copy feedback, and sign-in focus recovery.
+[v1.17.2 release notes](./docs/releases/v1.17.2.md) (English): development-tool security maintenance; one development-only audit finding remains.
 
 ## What It Does
 
