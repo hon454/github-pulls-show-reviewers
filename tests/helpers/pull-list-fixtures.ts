@@ -20,6 +20,8 @@ export function createPullListFixtureHtml(
   navigation: {
     paginationHref?: string;
     filterHref?: string;
+    hiddenFilterHref?: string;
+    disabledFilterHref?: string;
   } = {},
 ): string {
   const rows = pullNumbers
@@ -49,6 +51,16 @@ export function createPullListFixtureHtml(
               navigation.paginationHref == null
                 ? ""
                 : `<a data-fixture-pagination href="${navigation.paginationHref}">Next page</a>`
+            }
+            ${
+              navigation.hiddenFilterHref == null
+                ? ""
+                : `<a hidden data-fixture-hidden-filter href="${navigation.hiddenFilterHref}">Hidden closed pull requests</a>`
+            }
+            ${
+              navigation.disabledFilterHref == null
+                ? ""
+                : `<a aria-disabled="true" data-fixture-disabled-filter href="${navigation.disabledFilterHref}">Disabled closed pull requests</a>`
             }
             ${
               navigation.filterHref == null

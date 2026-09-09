@@ -149,6 +149,17 @@ pnpm test:e2e:build
 pnpm test:e2e:live
 ```
 
+The live-canary project has a two-minute per-attempt timeout. This lifts the
+default 30-second ceiling for a normal four-stage attempt while keeping the
+attempt bounded well below the workflow timeout; it does not add retries beyond
+the project's existing two retries.
+
+Each native pagination or filter link must be visible and not marked
+`aria-disabled` in GitHub's current `main` region. Hidden or `aria-disabled`
+matches are ignored;
+if no usable required link remains, the canary records its typed required-link
+failure rather than waiting for an unclickable element.
+
 ## Evidence
 
 `canary-diagnostics.json` is attached on both success and failure. Each live

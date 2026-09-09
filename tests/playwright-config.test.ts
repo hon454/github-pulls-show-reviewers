@@ -9,6 +9,7 @@ type PlaywrightConfig = {
   projects?: Array<{
     name?: string;
     retries?: number;
+    timeout?: number;
     testIgnore?: string[];
     testMatch?: string[];
     use?: {
@@ -52,6 +53,7 @@ describe("Playwright config", () => {
     expect(liveProject).toMatchObject({
       testMatch: ["**/live-github-canary.spec.ts"],
       retries: 2,
+      timeout: 120_000,
       use: {
         screenshot: "only-on-failure",
         trace: "retain-on-failure",

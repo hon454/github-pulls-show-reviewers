@@ -23,6 +23,7 @@ export default defineConfig({
       name: "live-github-canary",
       testMatch: ["**/live-github-canary.spec.ts"],
       retries: 2,
+      timeout: 120_000,
       use: {
         screenshot: "only-on-failure",
         trace: "retain-on-failure",

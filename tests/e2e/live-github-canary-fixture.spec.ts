@@ -16,8 +16,13 @@ import {
   collectLiveCanaryDomSnapshot,
   createCanaryResponseObserver,
   evaluateLiveCanary,
+  isClosedPullListFilter,
   type CanaryRepository,
 } from "../helpers/live-github-canary";
+import {
+  findNativePullListLink,
+} from "../helpers/live-github-canary-navigation";
+import type { NavigationEvidenceError } from "../helpers/live-github-canary-navigation";
 import { createPullListFixtureHtml } from "../helpers/pull-list-fixtures";
 
 const extensionPath = path.resolve(".output/chrome-mv3");
@@ -500,6 +505,8 @@ test("packaged canary recovers one mount per current row across pagination, back
       [initialUrl]: createPullListFixtureHtml(["42", "43"], repository, {
         paginationHref: pageTwoUrl,
         filterHref: closedUrl,
+        hiddenFilterHref: closedUrl,
+        disabledFilterHref: closedUrl,
       }),
       [pageTwoUrl]: createPullListFixtureHtml(["44", "45"], repository),
       [closedUrl]: createPullListFixtureHtml(["46", "47"], repository),
@@ -550,13 +557,49 @@ test("packaged canary recovers one mount per current row across pagination, back
     await expectCurrentCanary(page, observer, ["42", "43"]);
 
     const restoredAgainDocument = await page.evaluateHandle(() => document);
-    const filter = page.locator("a[data-fixture-filter]");
-    await expect(filter).toHaveAttribute("href", closedUrl);
-    await Promise.all([page.waitForURL(closedUrl), filter.click()]);
+    const filter = await findNativePullListLink(
+      page,
+      repository,
+      isClosedPullListFilter,
+      "required-filter-link-unavailable",
+    );
+    await expect(filter.locator).toHaveAttribute("href", closedUrl);
+    await expect(filter.locator).toHaveAttribute("data-fixture-filter", "");
+    await expect(filter.locator).toBeVisible();
+    await Promise.all([page.waitForURL(closedUrl), filter.locator.click()]);
     expect(await documentWasMaintained(restoredAgainDocument)).toBe(false);
     await restoredAgainDocument.dispose();
     await expectCurrentCanary(page, observer, ["46", "47"]);
     expect(observer.snapshot().apiRequestsWithAuthorization).toBe(0);
+  });
+});
+
+test("native-link selection rejects an all-hidden Closed filter with typed evidence", async () => {
+  await withExtension(async (context) => {
+    const closedUrl = `${pullListUrl}?q=is%3Apr+is%3Aclosed`;
+    await routePullListHtml(
+      context,
+      createPullListFixtureHtml(["42"], repository, {
+        hiddenFilterHref: closedUrl,
+      }),
+    );
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+
+    await expect(
+      findNativePullListLink(
+        page,
+        repository,
+        isClosedPullListFilter,
+        "required-filter-link-unavailable",
+      ),
+    ).rejects.toMatchObject({
+      failure: {
+        owner: "environment",
+        code: "required-filter-link-unavailable",
+        pullNumber: null,
+      },
+    } satisfies Partial<NavigationEvidenceError>);
   });
 });
 

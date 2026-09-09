@@ -8,7 +8,6 @@ import {
   expect,
   test,
   type JSHandle,
-  type Locator,
   type Page,
   type Response,
 } from "@playwright/test";
@@ -37,6 +36,11 @@ import {
   attachCanaryDiagnostics,
   attachCanaryTextArtifact,
 } from "../helpers/live-github-canary-artifacts";
+import {
+  findNativePullListLink,
+  NavigationEvidenceError,
+  type NavigationFailureCode,
+} from "../helpers/live-github-canary-navigation";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "../..");
@@ -444,50 +448,6 @@ async function assertNavigationStage(input: {
     `live reviewer verdict failed at ${input.stage}: ${JSON.stringify(verdict.failures)}`,
   ).toBe(true);
   return dom;
-}
-
-async function findNativePullListLink(
-  page: Page,
-  repository: CanaryRepository,
-  predicate: (url: URL) => boolean,
-  failureCode:
-    | "required-pagination-link-unavailable"
-    | "required-filter-link-unavailable",
-): Promise<{ url: string; locator: Locator }> {
-  const links = page.locator("main a[href]");
-  const count = await links.count();
-  for (let index = 0; index < count; index += 1) {
-    const locator = links.nth(index);
-    const href = await locator.getAttribute("href");
-    if (href == null) continue;
-    const url = new URL(href, page.url());
-    if (
-      url.origin !== "https://github.com" ||
-      url.pathname.toLowerCase() !==
-        `/${repository.owner}/${repository.repo}/pulls`.toLowerCase() ||
-      !predicate(url)
-    )
-      continue;
-    return { url: url.toString(), locator };
-  }
-  throw new NavigationEvidenceError(failureCode);
-}
-
-type NavigationFailureCode =
-  | "required-pagination-link-unavailable"
-  | "required-filter-link-unavailable"
-  | "navigation-url-unchanged"
-  | "navigation-pull-set-unchanged"
-  | "back-restore-set-mismatch"
-  | "navigation-stage-failed";
-
-class NavigationEvidenceError extends Error {
-  readonly failure: CanaryFailure;
-
-  constructor(code: Exclude<NavigationFailureCode, "navigation-stage-failed">) {
-    super(code);
-    this.failure = { owner: "environment", code, pullNumber: null };
-  }
 }
 
 function requireNavigationEvidence(
