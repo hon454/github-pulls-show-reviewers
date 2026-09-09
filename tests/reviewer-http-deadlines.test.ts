@@ -3,6 +3,7 @@ import { createReviewerFetchService } from "../src/background/reviewer-fetch";
 import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
 import { createStorageHarness, deferred, json } from "./helpers/auth-harness";
 import { REVIEWER_DEADLINES } from "../src/shared/reviewer-deadline";
+import { reviewRequestEventsSchema } from "../src/github/api/schemas";
 
 const metadata = {
   number: "42",
@@ -426,6 +427,78 @@ describe("optional events inherit the mandatory operation lifetime", () => {
         expect(await work).toMatchObject(timeout);
       }
       expect(eventSignal.aborted).toBe(true);
+      expect(eventCalls).toBe(2);
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each(["2026-08-31T00:00:00Z", "2026-09-02T00:00:00Z"])(
+    "does not accept next-page event evidence validated after the deadline: %s",
+    async (lateRequestedAt) => {
+      let now = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      const parse = reviewRequestEventsSchema.safeParse.bind(
+        reviewRequestEventsSchema,
+      );
+      let parsedPages = 0;
+      vi.spyOn(reviewRequestEventsSchema, "safeParse").mockImplementation(
+        (input) => {
+          const result = parse(input);
+          // Model time spent validating a page after its body promise resolved.
+          if (++parsedPages === 2) now = 10_001;
+          return result;
+        },
+      );
+      let eventCalls = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string) => {
+          if (_url.includes("/reviews"))
+            return json([
+              ...completed,
+              { ...completed[0], user: { login: "bob" } },
+            ]);
+          eventCalls++;
+          const response = json([
+            {
+              event: "review_requested",
+              created_at:
+                eventCalls === 1 ? "2026-09-02T00:00:00Z" : lateRequestedAt,
+              requested_reviewer: { login: eventCalls === 1 ? "alice" : "bob" },
+            },
+          ]);
+          if (eventCalls === 1)
+            response.headers.set(
+              "Link",
+              '<https://api.github.com/repos/acme/widgets/issues/42/events?page=2>; rel="next"',
+            );
+          return response;
+        }),
+      );
+      expect(
+        await service.handleFetchMessage({
+          ...ambiguous,
+          pullMetadata: {
+            ...metadata,
+            requestedUsers: [
+              { login: "alice", avatarUrl: null },
+              { login: "bob", avatarUrl: null },
+            ],
+          },
+        }),
+      ).toMatchObject({
+        ok: true,
+        summary: {
+          requestedUsers: [
+            { login: "alice", avatarUrl: null },
+            { login: "bob", avatarUrl: null },
+          ],
+          reviewRequestEvidence: [
+            { login: "alice", status: "confirmed" },
+            { login: "bob", status: "unverified" },
+          ],
+        },
+      });
       expect(eventCalls).toBe(2);
       expect(vi.getTimerCount()).toBe(0);
     },

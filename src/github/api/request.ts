@@ -133,6 +133,7 @@ export async function collectGitHubApiPagesDetailed<T>(params: {
       const parsed = params.schema.safeParse(
         await readGitHubResponseJson(response, params.signal),
       );
+      throwIfReviewerAborted(params.signal);
       if (!parsed.success) {
         throw new GitHubApiSchemaError(params.endpoint, parsed.error.issues);
       }
