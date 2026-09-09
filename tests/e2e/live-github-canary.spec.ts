@@ -18,6 +18,7 @@ import {
   createCanaryDiagnostics,
   createCanaryResponseObserver,
   evaluateLiveCanary,
+  isDifferentPullListPage,
   type CanaryDomSnapshot,
   type CanaryDomCapture,
   type CanaryNavigationObservation,
@@ -94,6 +95,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     });
     responseStatus = null;
     previousUrl = page.url();
+    const paginationCurrentUrl = previousUrl;
     const initialDocument = await page.evaluateHandle(() => document);
     phase = "navigation:B";
     navigation = {
@@ -105,7 +107,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
     const pagination = await findNativePullListLink(
       page,
       repository,
-      (url) => url.searchParams.get("page") != null,
+      (url) => isDifferentPullListPage(url, paginationCurrentUrl),
     );
     await Promise.all([
       page.waitForURL(pagination.url, { timeout: 60_000 }),

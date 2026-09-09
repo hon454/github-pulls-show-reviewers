@@ -1285,6 +1285,15 @@ export type CanaryNavigationObservation = {
   documentMaintained: boolean | null;
 };
 
+export function isDifferentPullListPage(
+  candidateUrl: URL,
+  currentUrl: string,
+): boolean {
+  const candidatePage = candidateUrl.searchParams.get("page");
+  const currentPage = new URL(currentUrl).searchParams.get("page") ?? "1";
+  return candidatePage != null && candidatePage !== currentPage;
+}
+
 export type CanaryDomCapture = {
   source: "current-document" | "unavailable";
 };

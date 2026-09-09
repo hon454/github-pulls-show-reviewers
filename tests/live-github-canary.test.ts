@@ -8,6 +8,7 @@ import {
   createCanaryResponseObserver,
   deriveCanaryExpectedOutcome,
   evaluateLiveCanary,
+  isDifferentPullListPage,
   type CanaryApiEvidence,
   type CanaryDomSnapshot,
   type CanaryPullEvidence,
@@ -23,6 +24,23 @@ afterEach(() => {
 });
 
 describe("live canary host-row oracle", () => {
+  it("rejects GitHub's current-page pagination self link", () => {
+    const initial = "https://github.com/octo/repo/pulls?q=is%3Apr";
+
+    expect(
+      isDifferentPullListPage(
+        new URL("https://github.com/octo/repo/pulls?page=1&q=is%3Apr"),
+        initial,
+      ),
+    ).toBe(false);
+    expect(
+      isDifferentPullListPage(
+        new URL("https://github.com/octo/repo/pulls?page=2&q=is%3Apr"),
+        initial,
+      ),
+    ).toBe(true);
+  });
+
   it("uses deduplicated main-list PR links instead of the production selector", () => {
     document.body.innerHTML = `
       <aside><div id="issue_100"><a href="/octo/repo/pull/100">outside</a></div></aside>
