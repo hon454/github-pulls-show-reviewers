@@ -3,13 +3,7 @@ import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 
-import {
-  chromium,
-  expect,
-  test,
-  type Page,
-  type TestInfo,
-} from "@playwright/test";
+import { chromium, expect, test, type Page } from "@playwright/test";
 
 import { githubSelectors } from "../../src/github/selectors";
 import {
@@ -20,6 +14,7 @@ import {
   type CanaryDomSnapshot,
   type CanaryRepository,
 } from "../helpers/live-github-canary";
+import { attachCanaryDiagnostics } from "../helpers/live-github-canary-artifacts";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "../..");
@@ -116,7 +111,7 @@ test("verifies rendered reviewer outcomes on live GitHub", async ({
       api,
       verdict,
     });
-    await attachDiagnostics(testInfo, diagnostics);
+    await attachCanaryDiagnostics(testInfo, diagnostics);
     diagnosticsAttached = true;
     expect(
       verdict.ok,
@@ -129,7 +124,7 @@ test("verifies rendered reviewer outcomes on live GitHub", async ({
     const api = apiObserver.snapshot();
     const verdict = evaluateLiveCanary({ repository, dom, api });
     if (!diagnosticsAttached) {
-      await attachDiagnostics(
+      await attachCanaryDiagnostics(
         testInfo,
         createCanaryDiagnostics({
           phase,
@@ -191,16 +186,6 @@ function emptyDomSnapshot(): CanaryDomSnapshot {
     productionPullNumbers: [],
     rows: [],
   };
-}
-
-function attachDiagnostics(
-  testInfo: TestInfo,
-  diagnostics: object,
-): Promise<void> {
-  return testInfo.attach("canary-diagnostics.json", {
-    body: Buffer.from(JSON.stringify(diagnostics, null, 2)),
-    contentType: "application/json",
-  });
 }
 
 function escapeRegExp(value: string): string {
