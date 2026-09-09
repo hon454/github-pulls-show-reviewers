@@ -68,6 +68,7 @@ test("packaged canary oracle accepts rendered and empty reviewer outcomes", asyn
       terminal: { success: 1, empty: 1, loading: 0, failure: 0 },
     });
     expect(verdict.samples).toHaveLength(2);
+    expect(dom.activeFailureBannerCount).toBe(0);
     expect(observer.snapshot().apiRequestsWithAuthorization).toBe(0);
   });
 });
@@ -110,6 +111,7 @@ test("packaged canary oracle rejects list success with failed review detail", as
     });
 
     expect(verdict.ok).toBe(false);
+    expect(dom.activeFailureBannerCount).toBe(1);
     expect(verdict.failures.map((failure) => failure.code)).toEqual(
       expect.arrayContaining(["api-server-error", "reviews-unavailable"]),
     );

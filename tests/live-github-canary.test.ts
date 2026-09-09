@@ -405,6 +405,62 @@ describe("live canary verdict", () => {
     ]);
   });
 
+  it.each([
+    "https://github.com/other/repo/pulls?q=is%3Apr%20reviewed-by%3Amallory",
+    "https://github.com/octo/repo/pulls?q=is%3Apr%20assignee%3Amallory",
+  ])(
+    "retains and rejects an invalid reviewer chip on an expected-empty row: %s",
+    (invalidHref) => {
+      setCollectedVerdictDom({ invalidEmptyReviewerHref: invalidHref });
+      const dom = collectDom();
+      const verdict = evaluateLiveCanary({
+        repository,
+        dom,
+        api: positiveApi(),
+      });
+
+      expect(dom.rows[1]).toMatchObject({
+        reviewers: [],
+        invalidReviewerChipCount: 1,
+      });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.failures).toContainEqual({
+        owner: "extension",
+        code: "invalid-reviewer-chip",
+        pullNumber: "43",
+      });
+      expect(verdict.terminal).toMatchObject({ failure: 1, empty: 0 });
+    },
+  );
+
+  it("distinguishes a cleared failure row with an active banner from verified empty", () => {
+    setCollectedVerdictDom({ failureBanner: "DO_NOT_RECORD_BANNER_COPY" });
+    const dom = collectDom();
+    const api = positiveApi();
+    const verdict = evaluateLiveCanary({ repository, dom, api });
+    const diagnostics = createCanaryDiagnostics({
+      phase: "assertion",
+      repository,
+      targetUrl: "https://github.com/octo/repo/pulls?q=is%3Apr",
+      currentUrl: "https://github.com/octo/repo/pulls?q=is%3Apr",
+      responseStatus: 200,
+      dom,
+      api,
+      verdict,
+    });
+
+    expect(dom.activeFailureBannerCount).toBe(1);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failures).toContainEqual({
+      owner: "extension",
+      code: "failure-banner-present",
+      pullNumber: null,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain(
+      "DO_NOT_RECORD_BANNER_COPY",
+    );
+  });
+
   it("fails a mounted row whose loading state never settles", () => {
     const dom = positiveDom();
     dom.rows[0].loadingMountCount = 1;
@@ -509,6 +565,43 @@ function collectDom(): CanaryDomSnapshot {
     repository,
     productionRowSelector: ".js-issue-row",
   });
+}
+
+function setCollectedVerdictDom(input: {
+  invalidEmptyReviewerHref?: string;
+  failureBanner?: string;
+}): void {
+  const reviewerQuery = (qualifier: string) =>
+    `https://github.com/octo/repo/pulls?q=${encodeURIComponent(`is:pr is:open ${qualifier}`)}`;
+  document.body.innerHTML = `
+    <main>
+      ${input.failureBanner == null ? "" : `<div data-ghpsr-banner>${input.failureBanner}</div>`}
+      <div class="js-issue-row" id="issue_42">
+        <a href="/octo/repo/pull/42">PR 42</a>
+        <span data-ghpsr-root data-ghpsr-rendered="1">
+          <a class="ghpsr-avatar ghpsr-avatar--border-requested"
+             href="${reviewerQuery("review-requested:alice")}"
+             title="@alice · requested"></a>
+          <a class="ghpsr-avatar ghpsr-avatar--border-approved"
+             href="${reviewerQuery("reviewed-by:bob")}"
+             title="@bob · approved">
+            <span class="ghpsr-badge ghpsr-badge--approved"></span>
+          </a>
+        </span>
+      </div>
+      <div class="js-issue-row" id="issue_43">
+        <a href="/octo/repo/pull/43">PR 43</a>
+        <span data-ghpsr-root>
+          ${
+            input.invalidEmptyReviewerHref == null
+              ? ""
+              : `<a class="ghpsr-avatar ghpsr-avatar--border-approved"
+                    href="${input.invalidEmptyReviewerHref}"
+                    title="@mallory · approved"></a>`
+          }
+        </span>
+      </div>
+    </main>`;
 }
 
 function response(
@@ -619,6 +712,7 @@ function positiveDom(): CanaryDomSnapshot {
     mainFound: true,
     challengeDetected: false,
     ignoredPullLinkCount: 0,
+    activeFailureBannerCount: 0,
     hostPullNumbers: ["42", "43"],
     productionPullNumbers: ["42", "43"],
     rows: [
@@ -629,6 +723,7 @@ function positiveDom(): CanaryDomSnapshot {
         mountCount: 1,
         loadingMountCount: 0,
         renderedMountCount: 1,
+        invalidReviewerChipCount: 0,
         reviewers: [
           {
             kind: "user",
@@ -655,6 +750,7 @@ function positiveDom(): CanaryDomSnapshot {
         mountCount: 1,
         loadingMountCount: 0,
         renderedMountCount: 0,
+        invalidReviewerChipCount: 0,
         reviewers: [],
       },
     ],

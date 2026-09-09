@@ -186,6 +186,7 @@ function emptyDomSnapshot(): CanaryDomSnapshot {
     mainFound: false,
     challengeDetected: false,
     ignoredPullLinkCount: 0,
+    activeFailureBannerCount: 0,
     hostPullNumbers: [],
     productionPullNumbers: [],
     rows: [],

@@ -551,6 +551,7 @@ export type CanaryDomRow = {
   mountCount: number;
   loadingMountCount: number;
   renderedMountCount: number;
+  invalidReviewerChipCount: number;
   reviewers: CanaryActualReviewer[];
 };
 
@@ -558,6 +559,7 @@ export type CanaryDomSnapshot = {
   mainFound: boolean;
   challengeDetected: boolean;
   ignoredPullLinkCount: number;
+  activeFailureBannerCount: number;
   hostPullNumbers: string[];
   productionPullNumbers: string[];
   rows: CanaryDomRow[];
@@ -689,11 +691,20 @@ export function collectLiveCanaryDomSnapshot(input: {
     /you have triggered an abuse detection mechanism/i.test(
       document.body?.textContent?.slice(0, 1_000) ?? "",
     );
+  const activeFailureBannerCount = [
+    ...document.querySelectorAll<HTMLElement>("[data-ghpsr-banner]"),
+  ].filter(
+    (banner) =>
+      !banner.hidden &&
+      banner.getAttribute("aria-hidden") !== "true" &&
+      banner.style.display !== "none",
+  ).length;
   if (main == null) {
     return {
       mainFound: false,
       challengeDetected,
       ignoredPullLinkCount: 0,
+      activeFailureBannerCount,
       hostPullNumbers: [],
       productionPullNumbers: [],
       rows: [],
@@ -738,15 +749,16 @@ export function collectLiveCanaryDomSnapshot(input: {
 
   const rows = [...hostRows.entries()].map(([pullNumber, value]) => {
     const mounts = [...value.row.querySelectorAll("[data-ghpsr-root]")];
-    const reviewers = mounts.flatMap((mount) =>
-      [
-        ...mount.querySelectorAll(
-          "a.ghpsr-avatar, a.ghpsr-pill, a.ghpsr-chip--team",
-        ),
-      ].flatMap((element) => {
-        const reviewer = parseReviewer(element);
-        return reviewer == null ? [] : [reviewer];
-      }),
+    const reviewerChips = mounts.flatMap((mount) => [
+      ...mount.querySelectorAll(
+        "a.ghpsr-avatar, a.ghpsr-pill, a.ghpsr-chip--team",
+      ),
+    ]);
+    const parsedReviewers = reviewerChips.map((element) =>
+      parseReviewer(element),
+    );
+    const reviewers = parsedReviewers.filter(
+      (reviewer): reviewer is CanaryActualReviewer => reviewer != null,
     );
     return {
       pullNumber,
@@ -759,6 +771,7 @@ export function collectLiveCanaryDomSnapshot(input: {
       renderedMountCount: mounts.filter(
         (mount) => mount.getAttribute("data-ghpsr-rendered") === "1",
       ).length,
+      invalidReviewerChipCount: parsedReviewers.length - reviewers.length,
       reviewers,
     };
   });
@@ -767,6 +780,7 @@ export function collectLiveCanaryDomSnapshot(input: {
     mainFound: true,
     challengeDetected,
     ignoredPullLinkCount,
+    activeFailureBannerCount,
     hostPullNumbers: rows.map((row) => row.pullNumber),
     productionPullNumbers,
     rows,
@@ -1026,6 +1040,8 @@ export function evaluateLiveCanary(input: {
 
   if (!input.dom.mainFound) fail("environment", "main-region-missing");
   if (input.dom.challengeDetected) fail("environment", "github-challenge");
+  if (input.dom.activeFailureBannerCount > 0)
+    fail("extension", "failure-banner-present");
   if (input.dom.hostPullNumbers.length === 0)
     fail("environment", "host-pull-rows-missing");
   if (input.api.apiRequestCount === 0)
@@ -1082,6 +1098,11 @@ export function evaluateLiveCanary(input: {
     if (row.loadingMountCount > 0) {
       terminal.loading += 1;
       fail("extension", "loading-not-settled", row.pullNumber);
+      continue;
+    }
+    if (row.invalidReviewerChipCount > 0) {
+      terminal.failure += 1;
+      fail("extension", "invalid-reviewer-chip", row.pullNumber);
       continue;
     }
 
@@ -1179,6 +1200,7 @@ export function createCanaryDiagnostics(input: {
       independentRowCount: input.dom.hostPullNumbers.length,
       productionRowCount: new Set(input.dom.productionPullNumbers).size,
       ignoredPullLinkCount: input.dom.ignoredPullLinkCount,
+      activeFailureBannerCount: input.dom.activeFailureBannerCount,
     },
     mounts: {
       total: input.dom.rows.reduce((sum, row) => sum + row.mountCount, 0),
@@ -1188,6 +1210,10 @@ export function createCanaryDiagnostics(input: {
       ),
       rendered: input.dom.rows.reduce(
         (sum, row) => sum + row.renderedMountCount,
+        0,
+      ),
+      invalidReviewerChips: input.dom.rows.reduce(
+        (sum, row) => sum + row.invalidReviewerChipCount,
         0,
       ),
     },

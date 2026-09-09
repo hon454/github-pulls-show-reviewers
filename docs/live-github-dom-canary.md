@@ -15,7 +15,9 @@ following before it passes:
   `main`, links in sidebars or prose without an `issue_<number>` row, and deeper
   paths such as `/files` are not part of the denominator.
 - Every independently found row has exactly one extension mount and no mount is
-  left in its loading state.
+  left in its loading state. Every element with a reviewer chip class remains
+  in the actual snapshot; a malformed qualifier or foreign search link is an
+  invalid chip, never silently reclassified as empty.
 - Each row is classified as rendered, verified empty, extension failure, or
   unverifiable. An empty mount is accepted only when complete observed API
   evidence independently predicts no reviewer chips.
@@ -59,8 +61,9 @@ The canary fails rather than skips, continues on error, or falls back to
 mount-only success. Diagnostics assign each reason to one of three owners:
 
 - `extension`: missing/duplicate production rows or mounts, loading that does
-  not settle, unexpected Authorization, a missing extension API request, or a
-  rendered reviewer mismatch.
+  not settle, an invalid reviewer chip, an active reviewer-failure banner,
+  unexpected Authorization, a missing extension API request, or a rendered
+  reviewer mismatch.
 - `environment`: a GitHub challenge, missing live list rows, HTTP 429 or 5xx,
   or the absence of any complete reviewer-bearing sample in the current public
   data.
@@ -109,11 +112,12 @@ pnpm test:e2e:live
 
 `canary-diagnostics.json` is attached on both success and failure. It contains
 only the observation phase, target/current public URL and navigation status,
-independent/production row counts, mount/loading/rendered and terminal counts,
-up to three minimal expected/actual samples, endpoint kind/status/body outcome
-and quota, API request counts, and structured failure codes. It never contains
-raw response bodies, full response headers, Authorization values, credentials,
-or private repository data.
+independent/production row counts, active failure-banner and
+mount/loading/rendered/invalid-chip/terminal counts, up to three minimal
+expected/actual samples, endpoint kind/status/body outcome and quota, API
+request counts, and structured failure codes. It never contains banner copy,
+raw response bodies, full response headers, Authorization values,
+credentials, or private repository data.
 
 Failed scheduled runs upload the Playwright `test-results` directory for 14
 days. The retained trace and failure screenshot are accompanied by:
