@@ -12,7 +12,7 @@
 
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.1 发布说明](./docs/releases/v1.18.1.md)（英文）：支持在经典版和 Preview 仓库 PR 列表中显示审阅者，并维护开发工具依赖项。发布准备期间的全部依赖项和生产依赖项审计均未发现安全问题。
+[v1.18.2 发布说明](./docs/releases/v1.18.2.md)（英文）：优先通过 API 查询发布状态，复用已保存商店信息的验证证据，并分别说明扩展包复用与商店信息更新操作。扩展的审阅者显示行为保持不变。
 
 ## 主要功能
 

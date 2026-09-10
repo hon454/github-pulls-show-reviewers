@@ -15,7 +15,7 @@
     "tests/e2e/capture-cws-assets.spec.ts": "fc90a079f2cf3b547b0dc87ab0c90afa7d3fa81ec5cd221741c98b11a9cb6d9d",
     "tests/fixtures/github-pulls.html": "056970c49d86d0aff2e9d420e989fa39a84f7899e0d840346d6b6dd35ab21671",
     "pnpm-lock.yaml": "d13fb133bc1721490832793972b4f59b0a7f4f858836f2caa35d79897f520259",
-    "package.json": "49b30e08d1411605de6ccdde25aac41c1d5b16f191e61adf26fcce04563af9e1",
+    "package.json": "9be9482608b99b2e2dafc5d8b002816b9142e4765399e9a09d9aab730f01f19a",
     "wxt.config.ts": "14d9ddcf1caf63eea665d7553a50bcc6c2c982acc6a5e39822a5a0107b81a266",
     "scripts/verify-cws-assets.mjs": "f95bca20b55e8e20baf3c39dc5ef0c33058a1003e2680771b6014b9dfcb10661",
     "scripts/cws-description.mjs": "1ee7bc393b3754221e3a39e47f01f8e8eedbea86eea74957e3da75f701566fc5",
