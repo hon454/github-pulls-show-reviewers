@@ -140,6 +140,12 @@ pnpm install
 pnpm dev
 ```
 
+Requires Node.js 22.12+ and pnpm 10.x. With WXT 0.21, `pnpm dev` starts the
+dev server without opening a browser. In `chrome://extensions`, enable Developer
+mode and load `.output/chrome-mv3-dev` as an unpacked extension. Keep the dev
+server running. See [dependency audit notes](./CONTRIBUTING.md#dependency-audits)
+for why the optional browser runner is excluded.
+
 `pnpm install` runs `wxt prepare` automatically through pnpm's lifecycle, so no separate prepare step is needed.
 
 Useful validation commands:

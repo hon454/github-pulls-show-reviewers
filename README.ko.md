@@ -100,6 +100,12 @@ pnpm install
 pnpm dev
 ```
 
+Node.js 22.12 이상과 pnpm 10.x가 필요합니다. WXT 0.21에서 `pnpm dev`는
+브라우저를 열지 않고 개발 서버를 시작합니다. `chrome://extensions`에서 개발자
+모드를 켜고 `.output/chrome-mv3-dev`를 압축 해제된 확장 프로그램으로 로드한 뒤
+개발 서버를 계속 실행해 두세요. 선택적 브라우저 실행 패키지를 제외한 이유는
+[의존성 감사 안내](./CONTRIBUTING.md#dependency-audits)(영어)를 참고하세요.
+
 `pnpm install`은 pnpm 라이프사이클을 통해 `wxt prepare`를 자동으로 실행하므로 별도의 준비 단계가 필요하지 않습니다.
 
 주요 검증 명령:
