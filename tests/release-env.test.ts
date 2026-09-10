@@ -311,6 +311,25 @@ esac
     expect(workflow).not.toContain("- run: pnpm zip\n");
   });
 
+  it("isolates observations from the stable mutation queue across workflow versions", async () => {
+    const workflow = await readFile(
+      path.join(projectRoot, ".github/workflows/release.yml"),
+      "utf8",
+    );
+    expect(workflow).not.toMatch(/^concurrency:/m);
+    const statusJob = workflow.split("  status:\n")[1].split("  package:\n")[0];
+    const packageJob = workflow.split("  package:\n")[1];
+    const itemKey =
+      "${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}";
+    // The old workflow-level key must remain stable for writes on older refs.
+    expect(packageJob).toContain(`group: cws-${itemKey}\n`);
+    expect(statusJob).toContain(`group: cws-status-${itemKey}\n`);
+    for (const job of [packageJob, statusJob]) {
+      expect(job).toContain("    concurrency:\n");
+      expect(job).toContain("      cancel-in-progress: false\n");
+    }
+  });
+
   it("routes all CWS writes and GitHub Releases through the tested resolver", async () => {
     const workflow = await readFile(
       path.join(projectRoot, ".github/workflows/release.yml"),

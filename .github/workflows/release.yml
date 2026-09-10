@@ -43,17 +43,16 @@ permissions:
   contents: read
   actions: read
 
-# All mutations for this item share one queue; never cancel an in-flight write.
-concurrency:
-  group: cws-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
-  cancel-in-progress: false
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   status:
     if: github.event_name == 'workflow_dispatch' && inputs.chrome_web_store == 'status'
+    # Observations must never replace a pending mutation in the item queue.
+    concurrency:
+      group: cws-status-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -93,6 +92,10 @@ jobs:
 
   package:
     if: github.event_name != 'workflow_dispatch' || inputs.chrome_web_store != 'status'
+    # Preserve the existing item key across control refs and workflow versions.
+    concurrency:
+      group: cws-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
+      cancel-in-progress: false
     permissions:
       contents: write
       actions: read
