@@ -54,7 +54,7 @@ export const statusReportSchema = z.strictObject({
     draftExists: z.literal("unknown"),
     observed: z.boolean(),
   }),
-  listing: listingAssessmentSchema,
+  listing: listingAssessmentSchema.extend({ nextAction: z.string() }),
   receipts: z.array(
     receiptSchema
       .pick({
@@ -147,7 +147,7 @@ export async function observeRelease(input: {
       message:
         "Receipt/source/package provenance is missing, conflicting or unavailable.",
       nextAction:
-        "Inspect GitHub intent/result runs and artifact integrity/retention. Restore trusted evidence or obtain an explicit recovery decision; do not retry writes.",
+        "Inspect GitHub intent/result runs and artifact integrity/retention. If a release is still running, wait for completion and repeat read-only status. Otherwise restore trusted evidence or obtain an explicit recovery decision; do not retry writes.",
     });
   }
   if (status && !blockers.length) {
@@ -161,7 +161,7 @@ export async function observeRelease(input: {
       if (state === "pending" || state === "published") {
         route = state === "pending" ? "reuse-pending" : "reuse-published";
         nextAction =
-          "Reuse the verified original package under separate release authority; make zero additional CWS writes. Observe publication through the API.";
+          "Reuse the verified original package under separate release authority; never reupload or repeat its submission. Observe publication through the API.";
       } else {
         requireCertainHistory(target, history, prior);
         route =
@@ -192,7 +192,13 @@ export async function observeRelease(input: {
         "Perform scoped saved-content reconciliation for the affected locales and record a reviewed baseline. Do not infer dashboard contents from local hashes.",
     });
   }
-  if (blockers.length) nextAction = blockers.map((b) => b.nextAction).join(" ");
+  const listingAction = listingNextAction(listing, route, blockers.length > 0);
+  const reuse = route === "reuse-pending" || route === "reuse-published";
+  if (blockers.length) {
+    const blockerActions = blockers.map((b) => b.nextAction).join(" ");
+    nextAction = reuse ? `${nextAction} ${blockerActions}` : blockerActions;
+  }
+  if (reuse) nextAction += ` ${listingAction}`;
   // Never copy the raw API object: publicKey and unknown fields are intentionally dropped.
   return parse(
     statusReportSchema,
@@ -213,7 +219,7 @@ export async function observeRelease(input: {
         draftExists: "unknown",
         observed: Boolean(status),
       },
-      listing,
+      listing: { ...listing, nextAction: listingAction },
       receipts: history.map(({ receipt: r, complete }) => ({
         runId: r.runId,
         sourceSha: r.sourceSha,
@@ -252,10 +258,14 @@ export function statusSummary(report: StatusReport): string {
     `| Async upload | ${report.remote.lastAsyncUploadState} |`,
     `| Warned / taken down | ${report.remote.warned} / ${report.remote.takenDown} |`,
     "| Remote draft existence / version / ZIP hash | unknown / unknown / unknown |",
-    `| Listing baseline / route | ${report.listing.state} / ${report.route} |`,
+    `| Package / release route | ${report.route} |`,
+    `| Listing baseline | ${report.listing.state} |`,
+    `| Affected listing locales | ${report.listing.affectedLocales?.join(", ") || "not identified"} |`,
     `| Readiness blockers | ${report.blockers.length} |`,
     "",
     "Remote draft existence/version/ZIP hash: unknown. API version equality does not prove draft bytes.",
+    "",
+    `Listing next action: ${report.listing.nextAction}`,
     "",
     "### Blockers and next action",
     "",
@@ -275,6 +285,32 @@ export function statusSummary(report: StatusReport): string {
     "Any later mutation requires fresh API/receipt checks, main ancestry, production preflight, release verification and checked packaging.",
     "",
   ].join("\n");
+}
+
+function listingNextAction(
+  listing: ListingAssessment,
+  route: StatusReport["route"],
+  blocked: boolean,
+): string {
+  if (listing.state === "missing" || listing.state === "conflicting") {
+    return "Reconcile saved content for the affected locales and record a reviewed baseline; local equality alone is insufficient. Recheck status before any listing edit.";
+  }
+  if (listing.state === "unchanged") {
+    return "Reuse the verified saved-listing baseline; no listing edit or repeated dashboard save is required.";
+  }
+  const scope = listing.affectedLocales?.length
+    ? `changed locales (${listing.affectedLocales.join(", ")})`
+    : "changed locales";
+  if (route === "reuse-pending") {
+    return `Listing updates remain for ${scope}. Wait for the current review to finish without cancelling it, then recheck status and follow separately authorized scoped listing-edit procedures; never reupload the package.`;
+  }
+  if (route === "reuse-published") {
+    return `Listing updates remain for ${scope}. Follow separately authorized scoped listing-edit procedures, record saved/reopened evidence and determine the required listing submission from fresh state; never reupload the published package.`;
+  }
+  if (blocked) {
+    return `Listing updates remain for ${scope}. Resolve the reported blockers and repeat read-only status before selecting a listing-edit or submission procedure.`;
+  }
+  return `Complete scoped edits for ${scope} through the guarded staged-listing procedure and record saved/reopened evidence before authorized submit-existing; preserve any original uploaded package.`;
 }
 
 function readinessBlocker(error: unknown): StatusReport["blockers"][number] {
