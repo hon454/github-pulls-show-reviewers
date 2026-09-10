@@ -155,6 +155,123 @@ describe("package.json release scripts", () => {
 });
 
 describe("release workflow", () => {
+  it("writes a sanitized status artifact and Summary even when observations are unavailable", async () => {
+    const tempDir = await createTempDir();
+    const marker = path.join(tempDir, "git-calls");
+    const summary = path.join(tempDir, "summary.md");
+    await writeExecutable(
+      path.join(tempDir, "git"),
+      `#!/bin/sh
+case "$1" in
+  merge-base) exit 0 ;;
+  show) printf '%s' '{"version":"1.18.2"}' ;;
+  ls-tree) exit 0 ;;
+  *) printf '%s' 'unexpected git call' >> '${marker}'; exit 1 ;;
+esac
+`,
+    );
+    const result = await runProcess(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        path.join(projectRoot, "scripts/release/cli.ts"),
+        "status",
+      ],
+      {
+        cwd: tempDir,
+        env: {
+          ...process.env,
+          PATH: `${tempDir}${path.delimiter}${process.env.PATH}`,
+          GITHUB_EVENT_NAME: "workflow_dispatch",
+          GITHUB_REF: "refs/heads/main",
+          GITHUB_REPOSITORY: "hon454/github-pulls-show-reviewers",
+          RELEASE_WORKFLOW_SHA: "b".repeat(40),
+          CHROME_EXTENSION_ID: "a".repeat(32),
+          CHROME_PUBLISHER_ID: "publisher",
+          GITHUB_STEP_SUMMARY: summary,
+          GH_TOKEN: "",
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: "",
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: "",
+          RELEASE_INPUTS_JSON: JSON.stringify({
+            chrome_web_store: "status",
+            source_sha: "a".repeat(40),
+            expected_version: "1.18.2",
+          }),
+        },
+      },
+    );
+    expect(result.code).toBe(0);
+    const report = JSON.parse(
+      await readFile(path.join(tempDir, ".release/status.json"), "utf8"),
+    );
+    expect(report.observationOnly).toBe(true);
+    expect(report.remote.draftVersion).toBe("unknown");
+    expect(report.blockers.map((b: { code: string }) => b.code)).toEqual([
+      "status-unavailable",
+      "provenance-unavailable",
+      "listing-missing",
+    ]);
+    expect(await readFile(summary, "utf8")).toContain(
+      "not release authorization",
+    );
+    await expect(readFile(marker, "utf8")).rejects.toThrow();
+    for (const file of ["intent.json", "result.json", "prepared.json"])
+      await expect(
+        readFile(path.join(tempDir, ".release", file), "utf8"),
+      ).rejects.toThrow();
+  });
+  it("rejects every mutating/package CLI phase when status is selected", async () => {
+    for (const phase of ["prepare", "record", "execute", "dry-run"]) {
+      const result = await runProcess(
+        process.execPath,
+        [
+          "--experimental-strip-types",
+          path.join(projectRoot, "scripts/release/cli.ts"),
+          phase,
+        ],
+        {
+          cwd: projectRoot,
+          env: {
+            ...process.env,
+            GITHUB_EVENT_NAME: "workflow_dispatch",
+            GITHUB_REF: "refs/heads/main",
+            RELEASE_INPUTS_JSON: JSON.stringify({
+              chrome_web_store: "status",
+              source_sha: "a".repeat(40),
+              expected_version: "1.18.2",
+            }),
+          },
+        },
+      );
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain(
+        "Status mode cannot enter package, receipt or mutation phases.",
+      );
+    }
+  });
+  it("isolates status into a read-only workflow job without extension lifecycle scripts", async () => {
+    const workflow = await readFile(
+      path.join(projectRoot, ".github/workflows/release.yml"),
+      "utf8",
+    );
+    const statusJob = workflow
+      .split("  status:\n")[1]!
+      .split("  package:\n")[0]!;
+    expect(statusJob).toContain("inputs.chrome_web_store == 'status'");
+    expect(statusJob).toContain("contents: read");
+    expect(statusJob).toContain("actions: read");
+    expect(statusJob).toContain(
+      "pnpm install --frozen-lockfile --ignore-scripts",
+    );
+    expect(statusJob).toContain("scripts/release/cli.ts status");
+    expect(statusJob).toContain(".release/status.json");
+    expect(statusJob).not.toMatch(
+      /contents: write|pnpm (?:build|zip|prepare|verify:release)|action-gh-release|cli\.ts (?:prepare|record|execute)|git (?:push|tag)/,
+    );
+    expect(workflow.split("  package:\n")[1]).toContain(
+      "inputs.chrome_web_store != 'status'",
+    );
+  });
   it("runs the actual CLI resolver safely for manual dispatch against a tag", async () => {
     const tempDir = await createTempDir();
     const output = path.join(tempDir, "outputs");
