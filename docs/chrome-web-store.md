@@ -27,7 +27,7 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
-The current package target is [v1.18.1](./releases/v1.18.1.md). Its capture
+The current package target is [v1.18.2](./releases/v1.18.2.md). Its capture
 manifest is regenerated from the versioned release source; unchanged image
 bytes may be retained in the existing saved listings after comparison.
 

@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.1 release notes](./docs/releases/v1.18.1.md) (English): reviewer support for classic and Preview repository PR lists, plus development-tool dependency maintenance. The release-preparation full and production dependency audits report zero findings.
+[v1.18.2 release notes](./docs/releases/v1.18.2.md) (English): API-first release status, reusable saved-listing evidence, and separate guidance for package reuse and listing updates. Extension reviewer behavior is unchanged.
 
 ## What It Does
 
