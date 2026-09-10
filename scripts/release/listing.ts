@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { extractCwsDescription } from "../cws-description.mjs";
 import { hashSchema, parse, requireCondition, shaSchema } from "./policy.ts";
 import type { ReleaseTarget } from "./readiness.ts";
 
@@ -124,7 +125,15 @@ export async function assessListingBaseline(input: {
           input.target.sourceSha,
           files[i]!,
         );
-        if (digest(atTarget) !== hashes[i]) differs = true;
+        // The saved whole-file hash proves source provenance. Only submitted
+        // description text and ordered images determine actual listing work.
+        if (i === 0) {
+          if (
+            extractCwsDescription(atTarget.toString("utf8")) !==
+            extractCwsDescription(atBaseline.toString("utf8"))
+          )
+            differs = true;
+        } else if (digest(atTarget) !== hashes[i]) differs = true;
       }
       if (differs) changed.push(locale.locale);
     }

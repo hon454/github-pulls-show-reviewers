@@ -98,12 +98,81 @@ describe("reusable saved-listing evidence", () => {
         kind === "description" ? paths.description : paths.images[1];
       x.readSource.mockImplementation(async (sha, file) =>
         sha === target.sourceSha && file === changed
-          ? Buffer.from("changed")
+          ? kind === "description"
+            ? Buffer.from(
+                (await readFile(file, "utf8")).replace(
+                  "<!-- description:start -->\n",
+                  "<!-- description:start -->\nUpdated listing.\n",
+                ),
+              )
+            : Buffer.from("changed")
           : readFile(file),
       );
       const report = await assessListingBaseline(x);
       expect(report.state).toBe("changed");
       expect(report.affectedLocales).toEqual(["zh_TW"]);
+    },
+  );
+  it.each(listingLocales)(
+    "ignores contributor-only edits outside the %s description",
+    async (locale) => {
+      const x = await input();
+      x.readSource.mockImplementation(async (sha, file) => {
+        const original = await readFile(file);
+        return sha === target.sourceSha &&
+          file === listingPaths(locale).description
+          ? Buffer.concat([
+              Buffer.from("Contributor note before the listing.\n"),
+              original,
+              Buffer.from("\nContributor note after the listing.\n"),
+            ])
+          : original;
+      });
+      const report = await assessListingBaseline(x);
+      expect(report.state).toBe("unchanged");
+      expect(report.affectedLocales).toEqual([]);
+    },
+  );
+  it.each([" ", "\n"])(
+    "detects description whitespace changes (%j)",
+    async (whitespace) => {
+      const x = await input();
+      x.readSource.mockImplementation(async (sha, file) =>
+        sha === target.sourceSha && file === listingPaths("en").description
+          ? Buffer.from(
+              (await readFile(file, "utf8")).replace(
+                "<!-- description:end -->",
+                `${whitespace}\n<!-- description:end -->`,
+              ),
+            )
+          : readFile(file),
+      );
+      expect(await assessListingBaseline(x)).toMatchObject({
+        state: "changed",
+        affectedLocales: ["en"],
+      });
+    },
+  );
+  it.each(["missing", "duplicate", "reversed", "empty"])(
+    "rejects %s description markers even when baseline hashes match",
+    async (kind) => {
+      const x = await input();
+      const start = "<!-- description:start -->";
+      const end = "<!-- description:end -->";
+      const malformed = Buffer.from(
+        kind === "missing"
+          ? "No description markers"
+          : kind === "duplicate"
+            ? `${start}\nText\n${end}\n${start}\nOther\n${end}`
+            : kind === "reversed"
+              ? `${end}\nText\n${start}`
+              : `${start}\n \n${end}`,
+      );
+      x.raw.locales[0].descriptionSha256 = hash(malformed);
+      x.readSource.mockImplementation(async (_sha, file) =>
+        file === listingPaths("en").description ? malformed : readFile(file),
+      );
+      expect(await assessListingBaseline(x)).toEqual({ state: "conflicting" });
     },
   );
   it("rejects missing, duplicated, wrong-item, invalidated, forged or credential-bearing evidence", async () => {
