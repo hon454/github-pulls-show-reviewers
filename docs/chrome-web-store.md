@@ -27,6 +27,10 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
+The current package target is [v1.18.1](./releases/v1.18.1.md). Its capture
+manifest is regenerated from the versioned release source; unchanged image
+bytes may be retained in the existing saved listings after comparison.
+
 The [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) remains
 historical local preparation, not a CWS receipt or saved-listing attestation.
 Each later release must bind a fresh capture manifest and production-package

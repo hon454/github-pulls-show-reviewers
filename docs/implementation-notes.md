@@ -1,5 +1,9 @@
 # Implementation Notes
 
+The [v1.18.1 release notes](./releases/v1.18.1.md) collect the classic/Preview
+repository PR-list compatibility and development-tool dependency maintenance
+described below.
+
 ## Development toolchain
 
 WXT `0.21.4` uses the explicit Vite `8.2.2` peer and requires Node.js 22.12+
