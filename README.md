@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.17.2 release notes](./docs/releases/v1.17.2.md) (English): development-tool security maintenance; one development-only audit finding remains.
+[v1.18.0 release notes](./docs/releases/v1.18.0.md) (English): more accurate requested-reviewer status and bounded recovery from stalled requests; includes v1.17.2 development-tool security maintenance. One development-only audit finding remains.
 
 ## What It Does
 
