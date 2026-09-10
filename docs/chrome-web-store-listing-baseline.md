@@ -6,9 +6,11 @@ images are unchanged. It is separate from the one-hour, draft-bound
 [`listing-ready` handoff](./chrome-web-store-agent-runbook.md#listing-ready-json-and-separate-submission).
 
 The reviewed record belongs at `docs/chrome-web-store-listing-baseline.json`.
-No successful record is supplied by this implementation: create one only from
-actual saved/reopened dashboard evidence and review it into `main`. Its absence
-is reported as `listing-missing`, not silently treated as ready. The status job
+The initial record is backed by the actual
+[v1.18.2 saved-content observation ledger](./releases/v1.18.2-listing-evidence.md).
+Create or replace records only from actual saved/reopened dashboard evidence
+and review them into `main`. An absent record is reported as `listing-missing`,
+not silently treated as ready. The status job
 reads this file from freshly fetched `origin/main`, even when observing an old
 package source or running new status code on a reviewed implementation branch.
 A local uncommitted file or a record present only on the control branch cannot

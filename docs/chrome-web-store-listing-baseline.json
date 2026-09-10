@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "state": "verified",
+  "repository": "hon454/github-pulls-show-reviewers",
+  "publisherId": "16a34e3f-68e1-4179-83e0-c6b1178a511d",
+  "itemId": "hoocgjopdboeghdkfjlkngkkpbiljggk",
+  "sourceSha": "b0f1e794a19681da8125491c5a5f713ba1d35515",
+  "locales": [
+    {
+      "locale": "en",
+      "observedAt": "2026-09-10T08:50:31.312Z",
+      "evidenceUrl": "https://github.com/hon454/github-pulls-show-reviewers/commit/437d076efbc461c2c5979686909c68b7ac661d7a",
+      "savedAndReopened": true,
+      "descriptionSha256": "b0059041471714d3607f687b20f97a59ceb73816cdd6c6851f516a753d70a320",
+      "imageSha256": [
+        "96c4c2f4957b70bfeca02040d233ce7bf5853f7f9b9551c08ac97d35dfc989f8",
+        "c41f04ebdccd949d8e5d77b8a469e519bdd74d131889e7ea58170247b1200594",
+        "690d5bacfd3ef0b943df99de6205b7e3739362acba0278e32bcc06415f75810d"
+      ]
+    },
+    {
+      "locale": "ko",
+      "observedAt": "2026-09-10T08:51:56.709Z",
+      "evidenceUrl": "https://github.com/hon454/github-pulls-show-reviewers/commit/437d076efbc461c2c5979686909c68b7ac661d7a",
+      "savedAndReopened": true,
+      "descriptionSha256": "8552f726beac64f8f489657ddfdd80f2df89d10391f8f4ae569718ae4779c900",
+      "imageSha256": [
+        "056cdd8d1bb1384ad92051d5cfb6b7b8e202b328d25eaf46dcdf110da28b2d0d",
+        "076bb6bbed18b1e8acb66028ba306978d4fa6777576f54d475677f7797596a52",
+        "5256f2bbcf258804255f5c57fff66c7544d7720171cd55da8301f07b566e7db4"
+      ]
+    },
+    {
+      "locale": "ja",
+      "observedAt": "2026-09-10T08:50:45.551Z",
+      "evidenceUrl": "https://github.com/hon454/github-pulls-show-reviewers/commit/437d076efbc461c2c5979686909c68b7ac661d7a",
+      "savedAndReopened": true,
+      "descriptionSha256": "4a561aed3f2c6105ddd71d4a5dcd902cf4862c815243657eae8eb2da3dfe25a0",
+      "imageSha256": [
+        "f8fa41e48e8be9944757ccae296c0df25b77f51cf792665c432babacf7884ce1",
+        "89d841ae07a69753056f6234b66a90575745491f01881c14654affd94e4caa63",
+        "1187780ef064d7ff8b5231a3af041019e63b8702c57c68c4154ce06e962f7e7a"
+      ]
+    },
+    {
+      "locale": "zh_CN",
+      "observedAt": "2026-09-10T08:51:31.784Z",
+      "evidenceUrl": "https://github.com/hon454/github-pulls-show-reviewers/commit/437d076efbc461c2c5979686909c68b7ac661d7a",
+      "savedAndReopened": true,
+      "descriptionSha256": "a17e21230c188e0c968d119aef7b0127367f1127d57d4cdebd47c18e6135a307",
+      "imageSha256": [
+        "b52826de212f69710202c8172e115ee7f4dc00f83c0ce1e827cb6cb82d39365f",
+        "cc37b281fbfb3b064268d7c3437f0db8dadce7a6460f6c55b7a1eb537c2dddee",
+        "ac4f8e393fc94a93d9c5e455fc3c287c6624a6f21ceafec6ecc5b8189caf290e"
+      ]
+    },
+    {
+      "locale": "zh_TW",
+      "observedAt": "2026-09-10T08:51:18.827Z",
+      "evidenceUrl": "https://github.com/hon454/github-pulls-show-reviewers/commit/437d076efbc461c2c5979686909c68b7ac661d7a",
+      "savedAndReopened": true,
+      "descriptionSha256": "55a5d700ab586c3111cf1675cddff2f4d8fc68991a3e8a4a36f7b93a3ecbc55c",
+      "imageSha256": [
+        "d5a0a1e8aa9d3d2c4f1b6aee31a9143161aea4459851a6630656501d1ea37ac8",
+        "c703120fc81604fd96afdb23328019bf7aa64b1e8d3478abb1cae2513be0272d",
+        "d5bd40d623ef48bbf085a91028eb27464d08b30cc72c5e9b409f99d67c05af1b"
+      ]
+    }
+  ]
+}
