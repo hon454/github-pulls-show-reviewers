@@ -29,6 +29,51 @@ beforeEach(() => {
 });
 
 describe("repository pull list Preview", () => {
+  it("ignores live checks updates inside the Preview description", async () => {
+    const row = document.querySelector(githubSelectors.row)!;
+    const processRow = vi.fn();
+    const stale = vi.fn();
+    const lifecycle = createReviewerRowLifecycle({
+      getRoute: () => route,
+      processRow,
+      markPageMetadataStale: stale,
+    });
+    lifecycle.recordFingerprint(row, "42", route);
+    const observer = lifecycle.observe();
+    try {
+      const badge = row.querySelector(
+        '[data-testid="checks-status-badge-button"]',
+      )!;
+      badge.textContent = "3/4";
+      await flush();
+      expect(processRow).not.toHaveBeenCalled();
+      expect(stale).not.toHaveBeenCalled();
+      const description = row.querySelector(
+        '[class*="PullsListItem-module__description"]',
+      )!;
+      const replacement = description.cloneNode(true) as Element;
+      replacement.querySelector(
+        '[data-testid="checks-status-badge-button"]',
+      )!.textContent = "4/4";
+      description.replaceWith(replacement);
+      await flush();
+      expect(processRow).not.toHaveBeenCalled();
+      expect(stale).not.toHaveBeenCalled();
+      replacement
+        .querySelector('[class*="PullsListItem-module__inlineChecksBadge"]')!
+        .remove();
+      await flush();
+      expect(processRow).not.toHaveBeenCalled();
+      replacement.querySelector(
+        '[data-testid="author-filter-link"]',
+      )!.textContent = "updated-author";
+      await flush();
+      expect(processRow).toHaveBeenCalledOnce();
+      expect(stale).toHaveBeenCalledOnce();
+    } finally {
+      observer.disconnect();
+    }
+  });
   it("discovers structural fallback rows when ListView hydrates its marker", async () => {
     document.querySelector("li")!.removeAttribute("class");
     const list = document.querySelector("ul")!;

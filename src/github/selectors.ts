@@ -20,7 +20,15 @@ export const githubSelectors = {
     '[class*="Description-module__container"]',
   ],
   fallbackMetaContainer: "[data-ghpsr-fallback-meta]",
-  volatileMetadataSelectors: ["relative-time", "time-ago", ".js-timeago"],
+  volatileMetadataSelectors: [
+    "relative-time",
+    "time-ago",
+    ".js-timeago",
+    // Preview puts live check counts inside the description. They must not
+    // invalidate reviewer caches when GitHub refreshes checks independently.
+    '[class*="PullsListItem-module__inlineChecksBadge"]',
+    '[data-testid="checks-status-badge-button"]',
+  ],
   observedRowAttributes: [
     "class",
     "href",

@@ -205,7 +205,8 @@ for shared-consumer and token-refresh ownership.
     selector matches and pull identity. Each observer delivery collects added
     and mutated PR rows in sets, then fingerprints each affected existing row
     at most once. The fingerprint excludes extension-rendered reviewer nodes
-    and GitHub's volatile relative timestamp nodes; mutations inside those
+    and GitHub's volatile relative timestamp nodes and Preview inline checks
+    badges. Checks-only updates must not invalidate reviewer caches; mutations inside those
     subtrees are rejected before cloning metadata. Same-repository route events
     remain the fallback for full-page GitHub renders.
 
