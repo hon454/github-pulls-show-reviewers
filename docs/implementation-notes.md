@@ -860,3 +860,19 @@ browser/platform/system-font assumptions; identical pixels require the same rend
 environment. Per-image visual review and dashboard registration are separate
 steps in the [submission packet](./chrome-web-store-submission.md#capture-maintenance).
 These artifacts are not production-config package or publication evidence.
+
+## API-first release operations
+
+The release workflow exposes a separate read-only `status` job with sanitized
+JSON and Actions Summary output. It uses the CWS adapter and the same readiness
+and provenance logic as guarded execution, without building or mutating CWS,
+tags or GitHub Releases. `dry-run` remains credential-only and manual `skip`
+remains the default. See the [agent runbook](./chrome-web-store-agent-runbook.md#choose-the-release-route).
+
+Ordinary readiness reuses reviewed [saved-listing evidence](./chrome-web-store-listing-baseline.md)
+when five description files and 15 ordered images match their baseline source.
+Changed listings use staging; missing/conflicting evidence selects targeted
+reconciliation. Status observes current publication separately from review and
+leaves remote draft existence/version/hash unknown. Reports are not release
+authorization, and subsequent writes recheck API/receipt state. This work does
+not change reviewer behavior, permissions, auth or account storage.

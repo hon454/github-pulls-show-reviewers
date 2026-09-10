@@ -9,6 +9,14 @@ The five locales are `en`, `ko`, `ja`, `zh_CN`, and `zh_TW`. Their reviewed copy
 and ordered images are linked from the [submission packet](./chrome-web-store-submission.md).
 Runtime UI language and store listing language are separate surfaces.
 
+Ordinary package releases start with the runbook's
+[API/receipt status route](./chrome-web-store-agent-runbook.md#choose-the-release-route).
+Reuse verified saved-listing evidence when descriptions/images are unchanged;
+browser access, login and repeated per-locale saves are not prerequisites.
+Use this staged handoff for listing changes or identified draft-continuity work.
+Missing/conflicting baseline evidence needs targeted reconciliation, never an
+assumption based on local hashes.
+
 ## Action matrix
 
 This matrix applies only when the selected **control ref contains the updated
@@ -16,15 +24,16 @@ workflow**. GitHub executes workflow code from `--ref`; old tags are immutable
 snapshots, so `--ref v1.15.0` still runs the legacy publish condition and is not
 safe for skip/dry-run. Do not dispatch a legacy workflow ref or move old tags.
 
-| Event/input                                                     | CWS behavior                                                         | GitHub Release                              |
-| --------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------- |
-| Push a new `v<version>` tag                                     | Checked upload, then normal review/automatic publication             | Create/refresh after success                |
-| Push a tag for an exact staged source already pending/published | Verify original receipt, artifact and current state; no CWS write    | Create/refresh using original zip           |
-| Dispatch `skip` on a branch or tag                              | No CWS access                                                        | Only if an existing version tag is selected |
-| Dispatch `dry-run` on a branch or tag                           | Authenticate both supported clients, read status only                | Never                                       |
-| Dispatch `publish`                                              | Checked upload + submit, or verified already-pending/published no-op | Only if an existing version tag is selected |
-| Dispatch `upload-only`                                          | Checked upload only                                                  | Never                                       |
-| Dispatch `submit-existing`                                      | Publish existing revision only; zero upload calls                    | Never                                       |
+| Event/input                                                     | CWS behavior                                                                                    | GitHub Release                              |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Push a new `v<version>` tag                                     | Checked upload, then normal review/automatic publication                                        | Create/refresh after success                |
+| Push a tag for an exact staged source already pending/published | Verify original receipt, artifact and current state; no CWS write                               | Create/refresh using original zip           |
+| Dispatch `skip` on a branch or tag                              | No CWS access                                                                                   | Only if an existing version tag is selected |
+| Dispatch `dry-run` on a branch or tag                           | Authenticate both supported clients, read status only                                           | Never                                       |
+| Dispatch `status` with exact source SHA/version                 | Read API status and trusted receipts; save sanitized JSON and Actions Summary; no build/package | Never                                       |
+| Dispatch `publish`                                              | Checked upload + submit, or verified already-pending/published no-op                            | Only if an existing version tag is selected |
+| Dispatch `upload-only`                                          | Checked upload only                                                                             | Never                                       |
+| Dispatch `submit-existing`                                      | Publish existing revision only; zero upload calls                                               | Never                                       |
 
 Staging requires an exact 40-character `source_sha` and bare `expected_version`.
 Do not provide the `tag` input for either staging action. A dispatch selected
@@ -45,6 +54,23 @@ This skips CWS but may refresh the GitHub Release for that existing tag. For
 credential-only checks, use updated `main` after integration or the exact
 reviewed branch before integration, as in the next example; do not use an old
 tag as the workflow control ref.
+
+## Read-only release status
+
+```bash
+gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
+  --ref main -f chrome_web_store=status \
+  -f source_sha="$SOURCE_SHA" -f expected_version="$VERSION"
+```
+
+Use only updated control refs; a reviewed implementation branch can validate
+status before merge. `receipt_run_id` is an optional original-upload selector.
+Do not set `tag` or `listing_evidence`. Read `cws-status-RUN_ID/status.json` and
+Actions Summary for published versus submitted revisions, unknown draft facts,
+async/policy state, provenance, listing routing and next actions. A timestamped
+report never authorizes release or replaces fresh guarded checks before writes.
+The job uses read-only GitHub permissions; it may read/download existing receipts
+and packages, but creates no extension package, tag, GitHub Release or CWS write.
 
 ## Credential-only rehearsal
 

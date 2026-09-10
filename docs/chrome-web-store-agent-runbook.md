@@ -1,11 +1,11 @@
 # Chrome Web Store agent runbook
 
-This is the canonical procedure for an authorized agent to stage a checked
-release, register five localized listings, verify saved content, and hand off
-or submit for normal review. **Manual means a deliberate supported dashboard
-step; an agent may execute it under the session's authorization.** Preserve
-that authorization across interruptions instead of requesting it on each click.
-This document is a procedure, not permission to perform a production release.
+This is the canonical procedure for ordinary package releases, localized listing
+changes, and exceptional reconciliation. Start with the routing section below.
+**Manual means a deliberate supported dashboard step; an agent may execute it
+under the session's authorization.** Preserve that authorization across
+interruptions instead of requesting it on each click. This procedure does not
+grant permission to perform a production release.
 
 The implementation contracts are [release.yml](../.github/workflows/release.yml),
 [policy.ts](../scripts/release/policy.ts), [engine.ts](../scripts/release/engine.ts),
@@ -14,6 +14,86 @@ The implementation contracts are [release.yml](../.github/workflows/release.yml)
 The [staged handoff reference](./cws-agent-handoff.md) summarizes action semantics;
 the [submission packet](./chrome-web-store-submission.md) owns listing/privacy
 materials and the [store notes](./chrome-web-store.md) own configuration.
+
+## Choose the release route
+
+| Work                                                                                        | Normal readiness checks                                                                                                                                                 | When the dashboard is needed                                                                                |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Ordinary package release; saved listing baseline verified and descriptions/images unchanged | Read-only `status`, trusted intent/result and package provenance, source/version alignment, then the existing guarded release checks                                    | No browser, dashboard login, repeated locale save/reopen, or navigation is required                         |
+| Descriptions or screenshots changed                                                         | Checked `upload-only`, scoped listing edits, five saved/reopened records, original upload receipt and fresh `listing-ready` evidence, then authorized `submit-existing` | Only the listing/draft work described below                                                                 |
+| Baseline missing, inconsistent or contradicted; ambiguous draft continuity                  | API and receipt observation first; identify the exact unresolved fact                                                                                                   | Targeted saved-content or draft-continuity observation; state what cannot be established by the API and why |
+
+### Read-only status report
+
+Use a control ref containing the updated workflow. A reviewed implementation
+branch can validate this read-only action before merge; the observed source and
+all trusted receipt commits must be reachable from freshly fetched `origin/main`.
+
+```bash
+gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
+  --ref main -f chrome_web_store=status \
+  -f source_sha="$SOURCE_SHA" -f expected_version="$VERSION"
+```
+
+Do not pass `tag` or `listing_evidence`. An optional `receipt_run_id` selects the
+original upload when required to disambiguate source history. Download
+`cws-status-RUN_ID` and read its `status.json` together with the Actions Summary.
+The separate status job has read-only GitHub permissions. It installs tooling
+without lifecycle scripts and does not build/package, upload/submit to CWS,
+create/move tags, or create/update a GitHub Release. It may download and verify
+an existing checked package. `dry-run` remains a credential-only check, and
+`skip` remains the manual default.
+
+The report separates published and submitted revisions, records UTC observation
+time, source/workflow/item identity, async upload state, warning/takedown flags,
+validated receipt/package references, listing route, and actionable blockers.
+Missing API fields are `unknown` (absent revisions are `null`); remote draft
+existence, version and ZIP hash are always `unknown`. The policy's internal
+`draft` classification means no conflicting submitted/published version was
+observed, not that the expected remote draft exists. See the supported
+[fetchStatus response](https://developer.chrome.com/docs/webstore/api/reference/rest/v2/publishers.items/fetchStatus).
+
+A report is a timestamped observation, not release authorization. A later write
+still uses fresh API/receipt validation, exact source/version binding, fresh
+main ancestry, production preflight, release verification and checked packaging.
+Never reuse an old report to bypass a new conflict. A completed status run may
+report blockers; read the report rather than equating workflow success with
+release readiness.
+
+| Reported condition                                                 | Next action                                                                                                                       |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Another version pending review                                     | Wait and observe API status; never cancel the review                                                                              |
+| Matching pending/published version with validated original package | Reuse the checked artifact under separate release authority; zero additional CWS writes                                           |
+| Missing, conflicting, expired or incomplete provenance             | Inspect original Actions intent/result/package artifacts; stop for explicit recovery if trusted evidence cannot be restored       |
+| Async upload still processing                                      | Wait and repeat API/receipt observation; no reupload                                                                              |
+| Known async upload now successful                                  | For a staged submission, obtain the existing scoped draft-continuity/listing evidence; API success does not prove draft bytes     |
+| Unknown upload/submission                                          | API/receipt observation first, then an explicit recovery decision; dashboard only for an identified fact the API cannot establish |
+| Warning/takedown                                                   | Inspect the specific policy details in the dashboard, then obtain a recovery decision                                             |
+| Missing/conflicting saved-listing baseline                         | Reconcile affected saved locale content and record actual evidence; local source equality is not dashboard proof                  |
+
+## Reusable saved-listing evidence
+
+Store the reviewed record at `docs/chrome-web-store-listing-baseline.json` on
+`main`, following the [strict baseline contract](./chrome-web-store-listing-baseline.md).
+The status job reads it from fresh `origin/main`; absent records remain missing.
+A baseline must identify the repository, publisher/item, reviewed source SHA,
+observation time, all five locales, the exact description source hashes and
+three ordered image hashes per locale, and real same-repository evidence
+permalinks for the saved/reopened comparisons. The evidence must show persisted
+full descriptions and each image's identity/order after navigation away and
+back. A generated source hash, screenshot capture manifest, save toast, or an
+unverified JSON assertion does not establish saved dashboard contents.
+
+Compare the reviewed baseline's hashes to its source and to the release source.
+Reuse it across package versions only while the descriptions/images match and
+there is no contradictory observation or intervening listing edit. Do not
+expire saved-content evidence solely because the package version changed; do
+invalidate or replace it when listing content changes or evidence conflicts.
+If a baseline is missing, reconcile saved content once and record the actual
+observations. Never manufacture a successful baseline from current local files.
+Local image hashes identify selected files; they do not prove remote image-byte
+hashes. The one-hour draft-bound `listing-ready` JSON below remains a separate
+requirement for `submit-existing`, not a replacement for this reusable baseline.
 
 ## Copy-paste assignment and resume contract
 
@@ -58,27 +138,29 @@ GitHub Release, privacy/distribution/pricing, or review-cancellation authority.
 Payment, a material scope change, ambiguous account choice, conflicting draft
 state, or a missing permission requires appropriate user input. Return control
 for login/MFA/CAPTCHA; never ask for pasted credentials or bypass authentication.
-Unavailable browser tooling is a handoff boundary, not a reason to invent a
-private API. Preserve completed work and give the exact next action.
+Unavailable browser tooling is a handoff boundary only for a next action
+that actually needs dashboard observation, not for ordinary package readiness.
+It is never a reason to invent a private API. Preserve completed work and give the exact next action.
 
 ## Identity and preflight
 
 Keep these identities separate in every report:
 
-| Identity | Authoritative observation |
-| --- | --- |
-| Reviewed source | Full `sourceSha`, source `package.json`, notes and approved assets |
-| Version | Bare manifest version; equal numbers alone do not identify a draft/package |
-| Workflow control | `--ref main` resolves the updated control code; record actual run `headSha` / receipt `workflowSha` separately from package source |
-| Store item | Receipt `publisherId` and `itemId`, visually matched to the selected dashboard account/item |
-| Checked ZIP | `package.zipName` and `package.zipSha256` of the inner extension ZIP |
-| GitHub artifact | `package.artifactId`, `artifactName`, `artifactDigest`; this digest covers the outer Actions artifact archive, not the inner ZIP |
-| Receipt run | Original upload `runId`, `runAttempt: "1"`, `runUrl`, workflow path and successful gates; later receipts may contain `priorReceiptRunId` |
-| Actual draft | Fresh visual draft-version check, receipt/history continuity and no-intervening-upload attestation; CWS API has no remote draft ZIP digest |
+| Identity         | Authoritative observation                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Reviewed source  | Full `sourceSha`, source `package.json`, notes and approved assets                                                                         |
+| Version          | Bare manifest version; equal numbers alone do not identify a draft/package                                                                 |
+| Workflow control | `--ref main` resolves the updated control code; record actual run `headSha` / receipt `workflowSha` separately from package source         |
+| Store item       | Receipt `publisherId` and `itemId`, visually matched to the selected dashboard account/item                                                |
+| Checked ZIP      | `package.zipName` and `package.zipSha256` of the inner extension ZIP                                                                       |
+| GitHub artifact  | `package.artifactId`, `artifactName`, `artifactDigest`; this digest covers the outer Actions artifact archive, not the inner ZIP           |
+| Receipt run      | Original upload `runId`, `runAttempt: "1"`, `runUrl`, workflow path and successful gates; later receipts may contain `priorReceiptRunId`   |
+| Actual draft     | Fresh visual draft-version check, receipt/history continuity and no-intervening-upload attestation; CWS API has no remote draft ZIP digest |
 
 Discover the installed tools at execution time. Prefer `gh` or an available
 purpose-built public workflow/status/artifact API for GitHub; use an available
-supported browser/UI tool for the signed-in Developer Dashboard. Do not require
+supported browser/UI tool when the selected route requires the signed-in
+Developer Dashboard. Do not require
 a particular agent application's tool name, use private dashboard endpoints,
 or call the upload SDK/`pnpm submit:chrome` as a standalone shortcut. Read current
 UI labels and accessibility structure; fixed coordinates are not a procedure.
@@ -87,9 +169,11 @@ In your own checkout, fetch `origin/main` and tags, read the assigned exact
 source, and confirm both source and workflow commits are reachable from fresh
 main. Confirm source version, notes, default locale `en`, all five catalogs and
 approved listing materials. Run `pnpm verify:cws` there; its capture manifest
-binds source hashes (including `package.json`) and all 15 image hashes. If source
-inputs changed, recapture and review via the submission packet before release;
-capture uses a TESTING build, so it is not production package verification.
+binds source hashes (including `package.json`) and all 15 image hashes. Distinguish capture provenance from saved-listing evidence: inspect source drift
+for actual visual changes before deciding to recapture. An unchanged listing
+with a verified baseline does not require recapture or another dashboard save
+just because package/dependency metadata changed. Capture uses a TESTING build,
+so it is not production package verification.
 The workflow runs `pnpm preflight:release`, `pnpm verify:release`, and
 `pnpm zip:checked` against the selected source. Never replace that gate with
 plain `pnpm zip` or a dashboard package upload. A later local production build
@@ -105,18 +189,18 @@ does not build, upload, submit, save artifacts or create a Release. Run that
 credential check only when required by a credential/linkage/dependency/publish
 change, under its own authorization; writing this runbook requires none.
 
-## Stage table
+## Staged listing route
 
-| Stage | Inputs and action | Expected observation and evidence | Retry / resume and stop condition |
-| --- | --- | --- | --- |
-| Preflight | Assignment, source/control SHA, version, account/item and exclusive owner; check source, artifacts, tools and scope | Identity ledger; reviewed copy/image hashes; expected state and authorization | Resume from current facts. Stop on identity, authority or tool/login gaps affecting the next action |
-| Checked upload | Authorized `upload-only` with exact source/version | Completed run; successful gates; paired intent/result; `upload: SUCCEEDED`, `submission: NOT_ATTEMPTED`, `outcome: UPLOADED`; checked package | Never rerun attempt or blindly reupload. IN_PROGRESS permits read-only observation; UNKNOWN or lost provenance needs recovery decision |
-| Per-locale registration | Visually match account/item/draft to receipt; preserve scoped before-state; edit each approved description and ordered images | Correct locale, exact text and three matching previews; record actions and source files | Reopen current state first; retain matching images and replace identified prior-release images within scope. Stop on unidentifiable content or draft change |
-| Read-after-save proof | Save each locale, navigate away and back, compare persisted text and images | Five timestamped reopen records with file hashes, order, scoped screenshots/text evidence | A toast or unsaved preview is insufficient. Recheck interrupted saves; never assume failure means nothing persisted |
-| Listing-ready | Recheck draft, all five locales, no intervening upload and permission scope | Fresh JSON below plus real same-repository evidence permalink | Refresh after queue/build delays if older than one hour. No submission authority: stop here with ready status |
-| Submission | Authorized `submit-existing`, original receipt run, source/version and fresh evidence | New result `SUBMITTED` / `submission: CONFIRMED`, or verified `ALREADY_PENDING` / `ALREADY_PUBLISHED`; save result/evidence artifacts | Zero upload calls. UNKNOWN requires read-only reconciliation; draft after uncertain submission needs explicit recovery, no blind resubmit |
-| Pending / published | Read status through supported tools and dashboard; compare receipt/source/version | Record actual pending/rejected/published state and UTC evidence; pending is not published | Observe without cancel/reupload. Rejection, warnings, takedown, cancelled/staged/tester state or conflicting version stop for recovery |
-| Later tag / GitHub completion | Separate authority; tag original reviewed source after confirmed staged submission; inspect push workflow and Release | Same source/version, original ZIP reused, `ALREADY_PENDING` or `ALREADY_PUBLISHED`; GitHub Release link and asset hash; finally public five-locale availability | Never tag a later commit under that version. Missing/expired receipt stops reuse. Close release issue/milestone only under authority and after actual publication/acceptance |
+| Stage                         | Inputs and action                                                                                                             | Expected observation and evidence                                                                                                                               | Retry / resume and stop condition                                                                                                                                            |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Preflight                     | Assignment, source/control SHA, version, account/item and exclusive owner; check source, artifacts, tools and scope           | Identity ledger; reviewed copy/image hashes; expected state and authorization                                                                                   | Resume from current facts. Stop on identity, authority or tool/login gaps affecting the next action                                                                          |
+| Checked upload                | Authorized `upload-only` with exact source/version                                                                            | Completed run; successful gates; paired intent/result; `upload: SUCCEEDED`, `submission: NOT_ATTEMPTED`, `outcome: UPLOADED`; checked package                   | Never rerun attempt or blindly reupload. IN_PROGRESS permits read-only observation; UNKNOWN or lost provenance needs recovery decision                                       |
+| Per-locale registration       | Visually match account/item/draft to receipt; preserve scoped before-state; edit each approved description and ordered images | Correct locale, exact text and three matching previews; record actions and source files                                                                         | Reopen current state first; retain matching images and replace identified prior-release images within scope. Stop on unidentifiable content or draft change                  |
+| Read-after-save proof         | Save each locale, navigate away and back, compare persisted text and images                                                   | Five timestamped reopen records with file hashes, order, scoped screenshots/text evidence                                                                       | A toast or unsaved preview is insufficient. Recheck interrupted saves; never assume failure means nothing persisted                                                          |
+| Listing-ready                 | Recheck draft, all five locales, no intervening upload and permission scope                                                   | Fresh JSON below plus real same-repository evidence permalink                                                                                                   | Refresh after queue/build delays if older than one hour. No submission authority: stop here with ready status                                                                |
+| Submission                    | Authorized `submit-existing`, original receipt run, source/version and fresh evidence                                         | New result `SUBMITTED` / `submission: CONFIRMED`, or verified `ALREADY_PENDING` / `ALREADY_PUBLISHED`; save result/evidence artifacts                           | Zero upload calls. UNKNOWN requires read-only reconciliation; draft after uncertain submission needs explicit recovery, no blind resubmit                                    |
+| Pending / published           | Read API status and trusted receipts; use dashboard only for a specifically unresolved fact                                   | Record actual pending/rejected/published state and UTC evidence; pending is not published                                                                       | Observe without cancel/reupload. Rejection, warnings, takedown, cancelled/staged/tester state or conflicting version stop for recovery                                       |
+| Later tag / GitHub completion | Separate authority; tag original reviewed source after confirmed staged submission; inspect push workflow and Release         | Same source/version, original ZIP reused, `ALREADY_PENDING` or `ALREADY_PUBLISHED`; GitHub Release link and asset hash; finally public five-locale availability | Never tag a later commit under that version. Missing/expired receipt stops reuse. Close release issue/milestone only under authority and after actual publication/acceptance |
 
 ## Checked upload and artifact inspection
 
@@ -151,12 +235,12 @@ gh run download "$UPLOAD_RUN_ID" --repo hon454/github-pulls-show-reviewers \
 Wait for the run to finish; `conclusion: failure` alone does not disprove an
 upload. Compare the sanitized receipts, not raw credential-bearing logs.
 
-| Actions artifact name | Runner path / downloaded member |
-| --- | --- |
-| `chrome-package-<run-id>` | Initially `release-source/.output/github-pulls-show-reviewers-<version>-chrome.zip`; on reuse `.release/github-pulls-show-reviewers-<version>-chrome.zip`; member is that ZIP basename |
-| `cws-intent-<item-id>` | `.release/intent.json` / `intent.json` |
-| `cws-result-<item-id>` | `.release/result.json` / `result.json` (saved even after uncertain failure when available) |
-| `cws-listing-ready-<submission-run-id>` | `.release/listing-evidence.json` / `listing-evidence.json` (when execution saves evidence) |
+| Actions artifact name                   | Runner path / downloaded member                                                                                                                                                        |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chrome-package-<run-id>`               | Initially `release-source/.output/github-pulls-show-reviewers-<version>-chrome.zip`; on reuse `.release/github-pulls-show-reviewers-<version>-chrome.zip`; member is that ZIP basename |
+| `cws-intent-<item-id>`                  | `.release/intent.json` / `intent.json`                                                                                                                                                 |
+| `cws-result-<item-id>`                  | `.release/result.json` / `result.json` (saved even after uncertain failure when available)                                                                                             |
+| `cws-listing-ready-<submission-run-id>` | `.release/listing-evidence.json` / `listing-evidence.json` (when execution saves evidence)                                                                                             |
 
 `.release/prepared.json` and `.release/downloads/<artifact-id>.zip` are internal
 runner files, not named handoff artifacts. Artifacts retain for 90 days; preserve
@@ -239,13 +323,13 @@ source to absolute paths for browser file upload. Each row uses files **01, 02,
 03**, in this order: `01-pr-list-before-after.png`,
 `02-pr-list-avatar-state-showcase.png`, `03-options-repository-check.png`.
 
-| Locale / label intent | Detailed description | Directory containing its three images |
-| --- | --- | --- |
-| `en` / English | `docs/chrome-web-store-locales/en.md` | `docs/chrome-web-store-assets/` (no `en/` subdirectory) |
-| `ko` / 한국어 / Korean | `docs/chrome-web-store-locales/ko.md` | `docs/chrome-web-store-assets/ko/` |
-| `ja` / 日本語 / Japanese | `docs/chrome-web-store-locales/ja.md` | `docs/chrome-web-store-assets/ja/` |
-| `zh_CN` / 简体中文 / Chinese (Simplified) | `docs/chrome-web-store-locales/zh_CN.md` | `docs/chrome-web-store-assets/zh_CN/` |
-| `zh_TW` / 繁體中文 / Chinese (Traditional) | `docs/chrome-web-store-locales/zh_TW.md` | `docs/chrome-web-store-assets/zh_TW/` |
+| Locale / label intent                      | Detailed description                     | Directory containing its three images                   |
+| ------------------------------------------ | ---------------------------------------- | ------------------------------------------------------- |
+| `en` / English                             | `docs/chrome-web-store-locales/en.md`    | `docs/chrome-web-store-assets/` (no `en/` subdirectory) |
+| `ko` / 한국어 / Korean                     | `docs/chrome-web-store-locales/ko.md`    | `docs/chrome-web-store-assets/ko/`                      |
+| `ja` / 日本語 / Japanese                   | `docs/chrome-web-store-locales/ja.md`    | `docs/chrome-web-store-assets/ja/`                      |
+| `zh_CN` / 简体中文 / Chinese (Simplified)  | `docs/chrome-web-store-locales/zh_CN.md` | `docs/chrome-web-store-assets/zh_CN/`                   |
+| `zh_TW` / 繁體中文 / Chinese (Traditional) | `docs/chrome-web-store-locales/zh_TW.md` | `docs/chrome-web-store-assets/zh_TW/`                   |
 
 Use this evidence row once per locale. Keep the detailed ledger separate from
 the strict listing-ready JSON; extra JSON fields will be rejected.
@@ -335,17 +419,17 @@ dispatch for an allowed next action, never rerun a mutating workflow attempt.
 One item queue has `cancel-in-progress: false`; never cancel another operator's
 run/review to clear it.
 
-| Status example | Exact next action |
-| --- | --- |
-| Upload pending: original result `upload: IN_PROGRESS`, `outcome: UNCERTAIN`; no submit | Read-only status/dashboard observation. After API async SUCCEEDED plus fresh draft/listings and no intervening upload, use original receipt + `asyncUploadConfirmed: true` for authorized submit-existing. No reupload |
-| Partial listing: en/ko reopened PASS, ja save interrupted, zh_CN/zh_TW untouched | Reopen en/ko to confirm continuity; reopen ja before retrying its save, retain persisted images, complete missing locales and record new proof |
-| Ready without submit authority: five reopened PASS, draft verified | Report ready and original receipt/evidence; request only review-submission authority. Refresh all required observations if authority arrives after evidence expiry |
-| Review pending: matching source receipt and `PENDING_REVIEW` at expected version | Report pending, zero further submission. Under separate tag authority, complete same-source GitHub Release; continue read-only publication observation |
-| Rejected: submitted revision `REJECTED` / dashboard rejection | Preserve sanitized reason/current state; stop for reviewed remediation/version decision. Do not cancel, overwrite or resubmit automatically |
-| Published: matching receipt/version `PUBLISHED` | Check public listing availability for all five locales and GitHub Release artifact/version; complete remaining authorized tag/report/closure work |
-| UNKNOWN upload, missing result/intent, expired artifact or lost continuity | Preserve all evidence and stop for explicit recovery. API/local ZIP equality cannot establish a safe replacement upload |
-| UNKNOWN submission, remote expected version pending/published | Report observed state without resubmitting. Workflow reuse still requires validated original upload or supported confirmed-submission history; otherwise stop |
-| UNKNOWN submission, remote draft; wrong version/source/item; STAGED/CANCELLED/PUBLISHED_TO_TESTERS; warning/takedown | Stop for explicit recovery. No skip-review, cancellation or overwrite |
+| Status example                                                                                                       | Exact next action                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Upload pending: original result `upload: IN_PROGRESS`, `outcome: UNCERTAIN`; no submit                               | Read-only status/dashboard observation. After API async SUCCEEDED plus fresh draft/listings and no intervening upload, use original receipt + `asyncUploadConfirmed: true` for authorized submit-existing. No reupload |
+| Partial listing: en/ko reopened PASS, ja save interrupted, zh_CN/zh_TW untouched                                     | Reopen en/ko to confirm continuity; reopen ja before retrying its save, retain persisted images, complete missing locales and record new proof                                                                         |
+| Ready without submit authority: five reopened PASS, draft verified                                                   | Report ready and original receipt/evidence; request only review-submission authority. Refresh all required observations if authority arrives after evidence expiry                                                     |
+| Review pending: matching source receipt and `PENDING_REVIEW` at expected version                                     | Report pending, zero further submission. Under separate tag authority, complete same-source GitHub Release; continue read-only publication observation                                                                 |
+| Rejected: submitted revision `REJECTED` / dashboard rejection                                                        | Preserve sanitized reason/current state; stop for reviewed remediation/version decision. Do not cancel, overwrite or resubmit automatically                                                                            |
+| Published: matching receipt/version `PUBLISHED`                                                                      | Check public listing availability for all five locales and GitHub Release artifact/version; complete remaining authorized tag/report/closure work                                                                      |
+| UNKNOWN upload, missing result/intent, expired artifact or lost continuity                                           | Preserve all evidence and stop for explicit recovery. API/local ZIP equality cannot establish a safe replacement upload                                                                                                |
+| UNKNOWN submission, remote expected version pending/published                                                        | Report observed state without resubmitting. Workflow reuse still requires validated original upload or supported confirmed-submission history; otherwise stop                                                          |
+| UNKNOWN submission, remote draft; wrong version/source/item; STAGED/CANCELLED/PUBLISHED_TO_TESTERS; warning/takedown | Stop for explicit recovery. No skip-review, cancellation or overwrite                                                                                                                                                  |
 
 Async recovery depends on the public status field still being available; if it
 cannot confirm success, stop. Do not turn an unknown outcome into success based
