@@ -7,7 +7,7 @@ product rules and architecture expectations before proposing changes.
 
 ## Prerequisites
 
-- Node.js LTS
+- Node.js 22.12+ (WXT 0.21 requires Node 22; Vite 8 requires 22.12+)
 - `pnpm` 10.x (see the `packageManager` field in `package.json`)
 - Playwright Chromium (optional — only needed for `pnpm test:e2e`)
 
@@ -145,21 +145,33 @@ When the workflow fails:
 2. Bump the affected dependency or transitive override.
 3. Run `pnpm verify:release` before pushing the fix.
 
-The current WXT `0.20.25` runner graph uses version-scoped pnpm overrides for
-`adm-zip`, `shell-quote`, `uuid`, `tmp`, `esbuild`, and Vite releases.
-Keep overrides narrow to the affected parent/package pair, and re-evaluate them
-when WXT or its runner graph changes; do not broaden them into global pins.
+As of 2026-09-10, both `pnpm audit --audit-level moderate` and
+`pnpm audit --prod --audit-level moderate` report zero findings on the locked
+graph. Vitest and its V8 coverage provider remain pinned to `4.1.11`, which
+fixes [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9).
 
-As of 2026-09-09, Vitest and its V8 coverage provider are pinned to `4.1.11`,
-which fixes [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9).
-The full audit still reports one moderate finding in the Firefox runner path
-`wxt > web-ext-run > firefox-profile > adm-zip@0.6.0`:
-[GHSA-vwc7-r8mq-g2x9](https://github.com/advisories/GHSA-vwc7-r8mq-g2x9) has no
-reported patched version. Track an upstream-supported fix in
-[#195](https://github.com/hon454/github-pulls-show-reviewers/issues/195), without
-suppressing the advisory or inventing an override. These development packages
-are not shipped in the Chrome extension; the production audit reports zero
-findings. The full development audit is not clean.
+WXT is pinned to `0.21.4`, with Vite `8.2.2` now an explicit development peer.
+The [official WXT migration guide](https://wxt.dev/guide/resources/upgrading)
+makes browser auto-launch optional. We omit `web-ext`, removing the old
+`wxt > web-ext-run > firefox-profile > adm-zip@0.6.0` path and its obsolete
+parent-scoped overrides. This removes the affected dependency from this project;
+it does not fix `adm-zip` upstream. npm still lists `adm-zip@0.6.0` as latest,
+and [GHSA-vwc7-r8mq-g2x9](https://github.com/advisories/GHSA-vwc7-r8mq-g2x9)
+still reports no patched version. Upstream
+[PR #575](https://github.com/cthackers/adm-zip/pull/575) remains open.
+`firefox-profile@4.7.1` still depends on `adm-zip ~0.6.x`, and
+`web-ext@10.6.0` depends on that profile package, so installing the optional
+runner would reintroduce the finding. Do not add it or an unpatched override
+just to restore auto-launch. Recheck these upstream versions and both audits
+before changing the development runner graph.
+
+`pnpm dev` now requires manually loading `.output/chrome-mv3-dev` from
+`chrome://extensions` with Developer mode enabled; keep the server running.
+Production Chrome builds still use `.output/chrome-mv3`. The project keeps its
+previous `noUncheckedIndexedAccess: false` setting explicitly while adopting the
+other generated WXT TypeScript defaults, avoiding an unrelated repository-wide
+indexed-access migration. `strict` and `exactOptionalPropertyTypes` remain enabled.
+The audit workflow still checks the full graph and does not suppress advisories.
 
 If a finding is a known false positive, document the rationale in the
 fix commit instead of suppressing the workflow.

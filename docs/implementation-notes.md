@@ -1,5 +1,15 @@
 # Implementation Notes
 
+## Development toolchain
+
+WXT `0.21.4` uses the explicit Vite `8.2.2` peer and requires Node.js 22.12+
+for this toolchain. The optional `web-ext` auto-launch dependency is excluded to
+remove the unpatched Firefox profile ZIP extraction dependency. `pnpm dev`
+serves `.output/chrome-mv3-dev`, which contributors load manually in Chrome;
+production output remains `.output/chrome-mv3`. See the
+[dependency audit notes](../CONTRIBUTING.md#dependency-audits) for upstream
+evidence, separate full/production audit results, and TypeScript compatibility.
+
 ## Current MVP behavior
 
 - Repository PR lists support both classic and New Repository Pull Requests
