@@ -2,6 +2,10 @@
 
 ## Current MVP behavior
 
+- Repository PR lists support both classic and New Repository Pull Requests
+  Dashboard Preview markup by inspecting the current DOM, without reading or
+  changing GitHub feature settings. The global `github.com/pulls` dashboard
+  remains outside the supported repository route scope.
 - Background stores multiple connected accounts in v4 local storage: a versioned
   `settings` ID registry and separate profile/auth/installation fragments. UI
   receives only allowlisted summaries and safe preferences. Each account caches
@@ -91,11 +95,20 @@ for shared-consumer and token-refresh ownership.
 ## Runtime flow
 
 1. Parse the current repository route from `window.location.pathname`.
-2. Find PR rows with centralized GitHub selectors.
+2. Find PR rows with centralized GitHub selectors: classic `.js-issue-row`
+   elements or Preview `li` elements with a `PullsListItem` class prefix. A
+   ListView items-list/title-container/title-link structural fallback tolerates
+   changed CSS-module names. Do not depend on generated class hashes or
+   translated list labels.
 3. Extract the pull request number from the row id or a centralized pull
    request link selector. The selector prefers GitHub's `Link--primary` class
    and falls back to `js-navigation-open` pull links for markup variants where
    the title link keeps navigation behavior but loses the primary-link class.
+   Preview titles use `data-testid="listitem-title-link"`, with a heading link
+   inside `data-listview-item-title-container` as fallback; both absolute and
+   relative pull URLs work. Preview reviewer mounts use the PR description,
+   with the generic description class prefix and existing title-adjacent mount
+   as fallbacks, rather than the trailing comments/assignees column.
 4. Resolve the covering account for `owner/repo` via
    `resolveAccountForRepo`. Internally, account coverage distinguishes
    definite coverage from a truncated selected-installation snapshot that may
@@ -187,7 +200,8 @@ for shared-consumer and token-refresh ownership.
     The observer stays rooted at `document.body` with `subtree`, `childList`,
     and `characterData` coverage so rows inserted under current, future, or
     fallback list containers remain discoverable. Attribute observation is
-    filtered to `class`, `href`, and `id`, which determine row/metadata
+    filtered to `class`, `href`, `id`, `data-testid`,
+    `data-listview-component`, and `data-listview-item-title-container`, which determine row/metadata
     selector matches and pull identity. Each observer delivery collects added
     and mutated PR rows in sets, then fingerprints each affected existing row
     at most once. The fingerprint excludes extension-rendered reviewer nodes

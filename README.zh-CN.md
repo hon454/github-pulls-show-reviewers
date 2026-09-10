@@ -16,6 +16,7 @@
 
 ## 主要功能
 
+- 同时支持传统仓库 PR 列表和 GitHub 的 New Repository Pull Requests Dashboard Preview，自动识别页面结构，无需在扩展中另行设置。全局 PR 仪表板 `github.com/pulls` 不在支持范围内。
 - 在 GitHub 拉取请求列表的每一行显示已请求审阅的用户。
 - 在 GitHub 拉取请求列表的每一行显示已请求审阅的团队。
 - 显示每位审阅者已完成的审阅状态：已批准（`approved`）、已请求更改（`changes requested`）、已评论（`commented`）或审阅已撤销（`dismissed`）。最近一次非评论审阅优先于之后的评论；仅在没有非评论审阅时才采用评论。

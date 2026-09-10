@@ -24,6 +24,11 @@ type FixtureCase = {
 
 const renderCases: FixtureCase[] = [
   {
+    name: "repository Preview dashboard",
+    fixture: "github-pulls-repository-preview.html",
+    pullNumber: "42",
+  },
+  {
     name: "standard metadata row",
     fixture: singleRowFixture,
     pullNumber: "42",
@@ -103,7 +108,7 @@ for (const fixtureCase of renderCases) {
   });
 }
 
-test("reviewer mount recovery restores fresh chips without another API request", async () => {
+test("reviewer mount recovery and classic/Preview switching reuse fresh chips without another API request", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(
       path.join(fixturesDir, singleRowFixture),
@@ -169,6 +174,25 @@ test("reviewer mount recovery restores fresh chips without another API request",
     await expect(page.locator("[data-ghpsr-root]")).toHaveCount(1);
     expect(metadataRequests).toBe(1);
     expect(reviewsRequests).toBe(1);
+
+    const previewHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-repository-preview.html"),
+      "utf8",
+    );
+    for (const html of [previewHtml, fixtureHtml]) {
+      await page.evaluate((nextHtml) => {
+        document.body.innerHTML = new DOMParser().parseFromString(
+          nextHtml,
+          "text/html",
+        ).body.innerHTML;
+      }, html);
+      await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+        1,
+      );
+      await expect(page.locator("[data-ghpsr-root]")).toHaveCount(1);
+      expect(metadataRequests).toBe(1);
+      expect(reviewsRequests).toBe(1);
+    }
   });
 });
 

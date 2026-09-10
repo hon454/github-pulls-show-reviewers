@@ -94,6 +94,13 @@ export function createReviewerRowLifecycle(input: {
 
       for (const mutation of mutations) {
         if (mutation.type !== "childList") {
+          // A hydrated ListView can add its structural marker after its rows.
+          if (
+            mutation.type === "attributes" &&
+            mutation.attributeName === "data-listview-component" &&
+            mutation.target instanceof Element
+          )
+            collectRows(mutation.target, addedRows);
           const row = findMutationRow(mutation.target);
           if (row != null) mutatedRows.add(row);
           if (

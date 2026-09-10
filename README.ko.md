@@ -16,6 +16,7 @@
 
 ## 주요 기능
 
+- 기존 저장소 PR 목록과 GitHub의 New Repository Pull Requests Dashboard Preview를 모두 지원하며, 페이지 구조를 자동으로 감지합니다. 확장 프로그램에서 별도로 설정할 필요는 없습니다. 전체 PR 대시보드인 `github.com/pulls`는 지원 범위에 포함되지 않습니다.
 - GitHub 풀 리퀘스트 목록의 각 행에 리뷰를 요청한 사용자를 표시합니다.
 - GitHub 풀 리퀘스트 목록의 각 행에 리뷰를 요청한 팀을 표시합니다.
 - 리뷰어별 완료된 리뷰 상태를 표시합니다: 승인됨(`approved`), 변경 요청됨(`changes requested`), 의견 남김(`commented`), 리뷰 무효화됨(`dismissed`). 의견을 제외한 가장 최근 리뷰가 이후 의견보다 우선하며, 의견 외의 리뷰가 없을 때만 의견을 사용합니다.

@@ -16,6 +16,7 @@
 
 ## What It Does
 
+- Supports both the classic repository PR list and GitHub’s New Repository Pull Requests Dashboard Preview, detecting the page layout automatically. No extension setting is needed; the global `github.com/pulls` dashboard remains outside the supported scope.
 - Shows requested user reviewers on GitHub pull request list rows.
 - Shows requested team reviewers on GitHub pull request list rows.
 - Shows each reviewer's completed review state: `approved`, `changes requested`,
