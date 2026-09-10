@@ -16,6 +16,11 @@ browser access, login and repeated per-locale saves are not prerequisites.
 Use this staged handoff for listing changes or identified draft-continuity work.
 Missing/conflicting baseline evidence needs targeted reconciliation, never an
 assumption based on local hashes.
+Only description-marker contents and ordered images determine listing changes;
+whole-file hashes still validate baseline provenance. Contributor notes outside
+the description do not require dashboard work. Package reuse and listing work
+are separate: wait for a pending review to finish without cancellation, then
+recheck status; published packages need scoped listing work without reupload.
 
 ## Action matrix
 
@@ -71,6 +76,10 @@ async/policy state, provenance, listing routing and next actions. A timestamped
 report never authorizes release or replaces fresh guarded checks before writes.
 The job uses read-only GitHub permissions; it may read/download existing receipts
 and packages, but creates no extension package, tag, GitHub Release or CWS write.
+Its independent item queue cannot replace a pending mutation. Concurrent
+incomplete receipt evidence is reported as a blocker requiring another read
+after the running release completes. Read `listing.nextAction` alongside the
+package/release `route`; reuse does not mean that listing edits are complete.
 
 ## Credential-only rehearsal
 

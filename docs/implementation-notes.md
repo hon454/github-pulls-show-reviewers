@@ -868,11 +868,21 @@ JSON and Actions Summary output. It uses the CWS adapter and the same readiness
 and provenance logic as guarded execution, without building or mutating CWS,
 tags or GitHub Releases. `dry-run` remains credential-only and manual `skip`
 remains the default. See the [agent runbook](./chrome-web-store-agent-runbook.md#choose-the-release-route).
+The status job has its own item queue, leaving the stable mutation key in the
+package job. It cannot replace a queued release. Concurrent incomplete receipt
+observations report blockers and advise another read after completion.
 
 Ordinary readiness reuses reviewed [saved-listing evidence](./chrome-web-store-listing-baseline.md)
-when five description files and 15 ordered images match their baseline source.
-Changed listings use staging; missing/conflicting evidence selects targeted
+when five extracted description bodies and 15 ordered images match their baseline
+source. Whole-file hashes validate source provenance; the shared `verify:cws`
+extractor preserves description whitespace and rejects malformed markers.
+Contributor-only notes outside the description do not trigger listing work.
+Changed listings use staging for unsubmitted packages; missing/conflicting evidence selects targeted
 reconciliation. Status observes current publication separately from review and
+reports package reuse separately from `listing.nextAction`. Listing changes do
+not disappear for a verified pending/published package: wait for pending review
+without cancellation, or perform authorized scoped edits after publication
+without reuploading the package. Status
 leaves remote draft existence/version/hash unknown. Reports are not release
 authorization, and subsequent writes recheck API/receipt state. This work does
 not change reviewer behavior, permissions, auth or account storage.

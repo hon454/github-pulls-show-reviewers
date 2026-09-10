@@ -25,17 +25,28 @@ readiness checks with guarded execution. Emit schema-validated, sanitized JSON
 and Actions Summary. Keep observed publication separate from submitted review;
 leave remote draft existence, version and ZIP hash unknown. Reports never
 authorize a release or replace fresh validation before later mutations.
+Give status its own item queue so it cannot replace a pending mutation. Preserve
+the existing mutation key in the package job across workflow versions. Concurrent
+observations with incomplete provenance remain blocked until a fresh read can
+establish the evidence.
 
 Store reviewed saved-content attestations in
 `docs/chrome-web-store-listing-baseline.json` on `main`, independently of a
 particular package version. Bind five saved/reopened locale records to actual
 evidence permalinks, a reviewed source SHA, description-file hashes and three
 ordered image hashes per locale. Validate the baseline against its own source
-before comparing the requested release source. Do not add a successful baseline
+before comparing exact description-marker contents and ordered images at the
+requested release source. Share strict description extraction with `verify:cws`;
+retain whole-file hashes for provenance and ignore contributor-only changes
+outside the markers. Do not add a successful baseline
 without real observations. See the [contract](../chrome-web-store-listing-baseline.md).
 
 Ordinary unchanged listings reuse that evidence through API/receipt readiness.
-Changed listings keep the staged upload/edit/submit-existing procedure. Missing,
+Changed listings for unsubmitted packages keep the staged upload/edit/submit-existing
+procedure. Verified pending/published package reuse remains independent of
+listing work, which is explicitly reported in `listing.nextAction`. Pending
+review must finish without cancellation before listing edits; published
+packages require scoped listing work without reupload. Missing,
 invalidated or conflicting evidence requires targeted reconciliation. Dashboard
 access is required only for a specifically identified fact unavailable through
 the API, including some draft-continuity and policy-warning details.

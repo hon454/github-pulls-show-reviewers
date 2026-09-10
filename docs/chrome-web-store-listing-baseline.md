@@ -61,7 +61,14 @@ local source equality, or automatically populated JSON is insufficient.
 
 The status reader validates item identity, locale completeness, evidence URL
 shape/repository, timestamps, reviewed baseline source ancestry, and every file
-hash at that source before comparing the selected release source. Package
+hash at that source before comparing the selected release source. Keep
+`descriptionSha256` as the whole-file source hash; it does not become a body-only
+hash. Compare the extracted detailed description at each source, including its
+whitespace and newlines, and the three ordered image hashes. The shared
+`extractCwsDescription` helper also serves `verify:cws` and requires exactly one
+ordered marker pair with a non-empty description of at most 16000 characters.
+Contributor instructions outside the markers do not count as listing changes.
+Package
 version changes and the age of saved-content evidence alone do not invalidate
 it. The capture manifest's wider build/dependency source hashes do not replace
 this saved-content record and do not force a dashboard save for an unchanged
@@ -70,12 +77,15 @@ listing.
 - `unchanged`: every current description and image matches the verified
   baseline. Ordinary readiness can use API status and trusted receipts without
   browser tools or dashboard login.
-- `changed`: the baseline is valid, but current files differ. The report names
-  affected locales. Use checked staging and authorized listing work.
+- `changed`: the baseline is valid, but submitted description text or ordered
+  images differ. The report names affected locales and a separate listing next
+  action. Use staging only for unsubmitted packages; preserve pending/published
+  package reuse, wait for active review, then perform authorized listing work.
 - `missing`: there is no reviewed record. Reconcile saved content and record
   actual evidence; do not assume readiness from local hashes.
 - `conflicting`: invalidated/malformed evidence, wrong identity, missing or
-  duplicated locale, untrusted source, or a hash/evidence mismatch. Inspect the
+  duplicated locale, invalid description markers/content, untrusted source, or
+  a hash/evidence mismatch. Inspect the
   specific evidence and reconcile saved content before recording a replacement.
 
 A dashboard edit, contrary observation, source mismatch or lost evidence must
@@ -87,7 +97,9 @@ receipt hashes establish checked artifact provenance, while the listing record
 binds source files to actual saved-content observations. Neither proves remote
 draft ZIP identity.
 
-The status report documents the route and blockers. It never authorizes a CWS
+The status report documents the package/release route, independent
+`listing.nextAction`, and blockers. Missing/conflicting listing evidence does
+not erase verified package reuse guidance. It never authorizes a CWS
 write, changes the existing mutation policy, or supplies `listing-ready` evidence
 to `submit-existing`. Complete the runbook's readiness and authorization checks;
 later execution still performs its own fresh API/receipt checks. Do not upload,

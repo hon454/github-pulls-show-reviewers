@@ -183,6 +183,15 @@ browser access, a dashboard login, or saving/reopening every locale again.
 Missing/conflicting baseline evidence requires targeted saved-content
 reconciliation; changed listings follow the staged path below. A local image or
 source match is not evidence that the dashboard contains that content.
+Change detection compares the submitted description body and ordered images;
+contributor notes outside the description do not trigger listing work. The
+status report keeps package reuse and `listing.nextAction` separate. Wait for
+an existing review to finish without cancellation before editing its listing.
+For a published package, perform separately authorized edits for changed locales,
+record saved/reopened evidence, and determine listing submission from fresh
+state without reuploading the package. Status has a separate queue from release
+mutations; incomplete concurrent observations require another read after the
+running release completes.
 
 For a first localized listing release, use the
 [canonical agent runbook](./chrome-web-store-agent-runbook.md): checked `upload-only`, register

@@ -106,16 +106,27 @@ The separate job has read-only GitHub permissions, calls the supported status
 adapter and trusted provenance readers, and saves `cws-status-RUN_ID/status.json`
 and an Actions Summary. It performs no extension build/package, CWS write,
 tag change or GitHub Release mutation. `dry-run` remains credential-only.
+Status uses its own item queue, so it cannot replace a pending release. An
+observation may overlap a write; incomplete receipt evidence reports blockers
+and asks for another read after the running release completes.
 
 Ordinary releases with unchanged descriptions/images and a verified saved-listing
 baseline ([record contract](./chrome-web-store-listing-baseline.md)) use API/receipt
 readiness checks without browser access, dashboard
-login, or repeated saves. Listing changes select the staged path; missing or
+login, or repeated saves. Compare exact description-marker contents and ordered
+images, while retaining whole-file hashes for baseline source provenance.
+Contributor-only edits outside those markers do not change the listing.
+Listing changes select the staged path for an unsubmitted package; missing or
 conflicting saved-content evidence selects targeted reconciliation. Local hashes
 alone never prove dashboard contents. Reports retain unknown remote draft
 existence/version/hash fields, distinguish publication from review, and name the
 next API observation, wait, scoped UI check or recovery decision. They cannot
 authorize release or bypass fresh validation by the existing guarded write path.
+The package/release `route` and `listing.nextAction` are independent: verified
+pending/published packages remain reusable even when listing work remains.
+Wait for pending review to finish without cancelling it before listing edits.
+For published packages, use separately authorized scoped listing work and fresh
+state to determine its submission; never reupload the package to fix metadata.
 
 ### Staged listing updates
 
@@ -135,8 +146,9 @@ but makes **zero upload calls**. It calls CWS v2 `publish` once with
 `skipReview: false`, `publishType: DEFAULT_PUBLISH`, and `blockOnWarnings: true`.
 Warnings therefore stop for inspection rather than being silently accepted.
 
-All CWS actions share one item-specific concurrency group with
-`cancel-in-progress: false`. The workflow saves an immutable intent artifact
+All CWS mutations share the existing item-specific concurrency key in the
+`package` job with `cancel-in-progress: false`; `status` has a separate key.
+The workflow saves an immutable intent artifact
 before any CWS mutation and a sanitized result artifact even after an uncertain
 failure. Receipt history is item-wide, so an unfinished draft/intent from another
 source cannot be overwritten by a new release. Do not delete active receipts or

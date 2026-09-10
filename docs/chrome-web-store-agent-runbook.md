@@ -17,11 +17,12 @@ materials and the [store notes](./chrome-web-store.md) own configuration.
 
 ## Choose the release route
 
-| Work                                                                                        | Normal readiness checks                                                                                                                                                 | When the dashboard is needed                                                                                |
-| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Ordinary package release; saved listing baseline verified and descriptions/images unchanged | Read-only `status`, trusted intent/result and package provenance, source/version alignment, then the existing guarded release checks                                    | No browser, dashboard login, repeated locale save/reopen, or navigation is required                         |
-| Descriptions or screenshots changed                                                         | Checked `upload-only`, scoped listing edits, five saved/reopened records, original upload receipt and fresh `listing-ready` evidence, then authorized `submit-existing` | Only the listing/draft work described below                                                                 |
-| Baseline missing, inconsistent or contradicted; ambiguous draft continuity                  | API and receipt observation first; identify the exact unresolved fact                                                                                                   | Targeted saved-content or draft-continuity observation; state what cannot be established by the API and why |
+| Work                                                                                        | Normal readiness checks                                                                                                                                                         | When the dashboard is needed                                                                                |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Ordinary package release; saved listing baseline verified and descriptions/images unchanged | Read-only `status`, trusted intent/result and package provenance, source/version alignment, then the existing guarded release checks                                            | No browser, dashboard login, repeated locale save/reopen, or navigation is required                         |
+| Descriptions or screenshots changed; package not submitted/published                        | Checked `upload-only`, scoped listing edits, five saved/reopened records, original upload receipt and fresh `listing-ready` evidence, then authorized `submit-existing`         | Only the listing/draft work described below                                                                 |
+| Verified pending/published package with changed listing content                             | Preserve package reuse; report outstanding listing work independently. Wait for pending review without cancellation; after publication, use fresh state for scoped listing work | Changed locales under separate listing authority; no package reupload                                       |
+| Baseline missing, inconsistent or contradicted; ambiguous draft continuity                  | API and receipt observation first; identify the exact unresolved fact                                                                                                           | Targeted saved-content or draft-continuity observation; state what cannot be established by the API and why |
 
 ### Read-only status report
 
@@ -43,10 +44,18 @@ without lifecycle scripts and does not build/package, upload/submit to CWS,
 create/move tags, or create/update a GitHub Release. It may download and verify
 an existing checked package. `dry-run` remains a credential-only check, and
 `skip` remains the manual default.
+Status has its own item-specific job concurrency key, separate from the stable
+mutation key used by `package`. It cannot replace a queued release and can
+observe a running one. Incomplete or unavailable receipt evidence is a blocker:
+wait for the running release to complete and repeat the read-only observation.
 
 The report separates published and submitted revisions, records UTC observation
 time, source/workflow/item identity, async upload state, warning/takedown flags,
 validated receipt/package references, listing route, and actionable blockers.
+The package/release `route` remains `reuse-pending` or `reuse-published` when
+provenance supports reuse, independently of outstanding listing work.
+`listing.state`, `listing.affectedLocales` and `listing.nextAction` record that
+work; the Summary and top-level next action preserve both instructions.
 Missing API fields are `unknown` (absent revisions are `null`); remote draft
 existence, version and ZIP hash are always `unknown`. The policy's internal
 `draft` classification means no conflicting submitted/published version was
@@ -60,16 +69,18 @@ Never reuse an old report to bypass a new conflict. A completed status run may
 report blockers; read the report rather than equating workflow success with
 release readiness.
 
-| Reported condition                                                 | Next action                                                                                                                       |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| Another version pending review                                     | Wait and observe API status; never cancel the review                                                                              |
-| Matching pending/published version with validated original package | Reuse the checked artifact under separate release authority; zero additional CWS writes                                           |
-| Missing, conflicting, expired or incomplete provenance             | Inspect original Actions intent/result/package artifacts; stop for explicit recovery if trusted evidence cannot be restored       |
-| Async upload still processing                                      | Wait and repeat API/receipt observation; no reupload                                                                              |
-| Known async upload now successful                                  | For a staged submission, obtain the existing scoped draft-continuity/listing evidence; API success does not prove draft bytes     |
-| Unknown upload/submission                                          | API/receipt observation first, then an explicit recovery decision; dashboard only for an identified fact the API cannot establish |
-| Warning/takedown                                                   | Inspect the specific policy details in the dashboard, then obtain a recovery decision                                             |
-| Missing/conflicting saved-listing baseline                         | Reconcile affected saved locale content and record actual evidence; local source equality is not dashboard proof                  |
+| Reported condition                                                 | Next action                                                                                                                                            |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Another version pending review                                     | Wait and observe API status; never cancel the review                                                                                                   |
+| Matching pending/published version with validated original package | Reuse the checked artifact under separate release authority; no reupload or duplicate package submission. Assess listing work independently            |
+| Changed listing for matching pending package                       | Wait for review to finish without cancelling it, then recheck status before separately authorized scoped listing edits                                 |
+| Changed listing for matching published package                     | Edit affected locales under separate authority, record saved/reopened evidence, and determine listing submission from fresh state; no package reupload |
+| Missing, conflicting, expired or incomplete provenance             | Inspect original Actions intent/result/package artifacts; stop for explicit recovery if trusted evidence cannot be restored                            |
+| Async upload still processing                                      | Wait and repeat API/receipt observation; no reupload                                                                                                   |
+| Known async upload now successful                                  | For a staged submission, obtain the existing scoped draft-continuity/listing evidence; API success does not prove draft bytes                          |
+| Unknown upload/submission                                          | API/receipt observation first, then an explicit recovery decision; dashboard only for an identified fact the API cannot establish                      |
+| Warning/takedown                                                   | Inspect the specific policy details in the dashboard, then obtain a recovery decision                                                                  |
+| Missing/conflicting saved-listing baseline                         | Reconcile affected saved locale content and record actual evidence; local source equality is not dashboard proof                                       |
 
 ## Reusable saved-listing evidence
 
@@ -84,7 +95,13 @@ full descriptions and each image's identity/order after navigation away and
 back. A generated source hash, screenshot capture manifest, save toast, or an
 unverified JSON assertion does not establish saved dashboard contents.
 
-Compare the reviewed baseline's hashes to its source and to the release source.
+Validate the reviewed baseline's whole-file hashes against its own source. For
+the release source, compare only exact text between the description markers
+and the three ordered image hashes per locale. The shared description extractor
+also serves `verify:cws`; missing/duplicate/reversed markers or empty/oversized
+descriptions conflict with the baseline contract. Preserve body whitespace and
+newlines in comparisons. Contributor notes outside the markers are not listing
+changes and do not require another saved-content record.
 Reuse it across package versions only while the descriptions/images match and
 there is no contradictory observation or intervening listing edit. Do not
 expire saved-content evidence solely because the package version changed; do
@@ -416,7 +433,8 @@ safe retry signal. No raw credential/error payload belongs in the report.
 These are illustrative statuses, not live results. Reinspect state and receipt
 history first; an old ledger is a resume hint, not current proof. Use a new
 dispatch for an allowed next action, never rerun a mutating workflow attempt.
-One item queue has `cancel-in-progress: false`; never cancel another operator's
+The mutation item queue has `cancel-in-progress: false`; status observations use
+a separate queue. Never cancel another operator's
 run/review to clear it.
 
 | Status example                                                                                                       | Exact next action                                                                                                                                                                                                      |
