@@ -16,6 +16,7 @@
 
 ## 主要功能
 
+- 同時支援傳統儲存庫 PR 清單與 GitHub 的 New Repository Pull Requests Dashboard Preview，並自動辨識頁面結構，無須在擴充功能中另行設定。全域 PR 儀表板 `github.com/pulls` 不在支援範圍內。
 - 在 GitHub Pull Request 清單的各列顯示已要求審查的使用者。
 - 在 GitHub Pull Request 清單的各列顯示已要求審查的團隊。
 - 顯示每位審查者已完成的審查狀態：已核准（`approved`）、已要求變更（`changes requested`）、已留言（`commented`）或審查已撤銷（`dismissed`）。最近一次非留言審查優先於後續留言；只有在沒有非留言審查時，才採用留言。
