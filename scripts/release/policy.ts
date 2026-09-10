@@ -1,6 +1,23 @@
 import { z } from "zod";
 
 export class ReleaseError extends Error {}
+export class ReadinessError extends ReleaseError {
+  readonly code: string;
+  readonly nextAction: string;
+  constructor(code: string, message: string, nextAction: string) {
+    super(message);
+    this.code = code;
+    this.nextAction = nextAction;
+  }
+}
+export function requireReadiness(
+  value: unknown,
+  code: string,
+  message: string,
+  nextAction: string,
+): asserts value {
+  if (!value) throw new ReadinessError(code, message, nextAction);
+}
 
 export function requireCondition(
   value: unknown,
@@ -29,6 +46,7 @@ const idSchema = z.string().regex(/^[1-9]\d*$/);
 export const actionSchema = z.enum([
   "skip",
   "dry-run",
+  "status",
   "publish",
   "upload-only",
   "submit-existing",
@@ -74,7 +92,16 @@ export function resolveAction(input: {
   );
   const action = parse(actionSchema, input.action || "skip", "release action");
   const staging = action === "upload-only" || action === "submit-existing";
-  if (staging) {
+  if (action === "status") {
+    requireCondition(
+      !input.tag,
+      "Status uses source SHA/version inputs, not a tag input.",
+    );
+    parse(shaSchema, input.sourceSha, "status source SHA");
+    parse(versionSchema, input.expectedVersion, "status expected version");
+    if (input.receiptRunId)
+      parse(idSchema, input.receiptRunId, "upload receipt run ID");
+  } else if (staging) {
     requireCondition(
       !input.tag,
       "Staging actions must not target a release tag input.",
@@ -96,9 +123,13 @@ export function resolveAction(input: {
   }
   return {
     action,
-    sourceRef: staging ? input.sourceSha! : input.tag || input.ref,
-    tag: staging || action === "dry-run" ? "" : tag,
-    createRelease: !staging && action !== "dry-run" && Boolean(tag),
+    sourceRef:
+      staging || action === "status"
+        ? input.sourceSha!
+        : input.tag || input.ref,
+    tag: staging || action === "dry-run" || action === "status" ? "" : tag,
+    createRelease:
+      !staging && action !== "dry-run" && action !== "status" && Boolean(tag),
   };
 }
 
@@ -139,44 +170,58 @@ export function inspectStatus(
   version: string,
 ) {
   const status = parse(statusSchema, raw, "CWS status");
-  requireCondition(
+  requireReadiness(
     status.name === `publishers/${item.publisherId}/items/${item.itemId}` &&
       status.itemId === item.itemId,
+    "item-identity",
     "CWS item identity mismatch.",
+    "Check the configured publisher/item against the API and trusted receipts.",
   );
-  requireCondition(
+  requireReadiness(
     !status.takenDown && !status.warned,
+    "policy-warning",
     "CWS policy state requires an explicit recovery decision.",
+    "Inspect the specific warning/takedown details in the dashboard, then obtain an explicit recovery decision.",
   );
-  requireCondition(
+  requireReadiness(
     !status.lastAsyncUploadState || status.lastAsyncUploadState === "SUCCEEDED",
-    "Async upload state is uncertain or unsuccessful; inspect the dashboard without retrying writes.",
+    "async-upload",
+    "Async upload state is uncertain or unsuccessful; inspect API status and receipts without retrying writes.",
+    "Wait and repeat API status/receipt observation. Failed or unresolvable uploads require an explicit recovery decision; never reupload blindly.",
   );
   const submitted = status.submittedItemRevisionStatus;
   if (submitted) {
-    requireCondition(
+    requireReadiness(
       submitted.state === "PENDING_REVIEW",
+      "submitted-state",
       "Submitted revision requires an explicit recovery decision.",
+      "Preserve the API revision state; obtain an explicit recovery decision before another write.",
     );
-    requireCondition(
+    requireReadiness(
       submitted.distributionChannels.every((c) => c.crxVersion === version),
+      "pending-conflict",
       "A conflicting version is pending review.",
+      "Wait for the other version and observe API status; do not cancel its review.",
     );
     return "pending" as const;
   }
   const published = status.publishedItemRevisionStatus;
   if (published) {
-    requireCondition(
+    requireReadiness(
       published.state === "PUBLISHED",
+      "published-state",
       "Unexpected published revision state.",
+      "Inspect API/receipt state and obtain an explicit recovery decision.",
     );
     if (published.distributionChannels.every((c) => c.crxVersion === version))
       return "published" as const;
-    requireCondition(
+    requireReadiness(
       published.distributionChannels.every(
         (c) => compareVersions(c.crxVersion, version) < 0,
       ),
+      "published-conflict",
       "Published version conflicts with the expected release.",
+      "Check the selected source/version against API publication and receipt history; decide the correct release version.",
     );
   }
   return "draft" as const;

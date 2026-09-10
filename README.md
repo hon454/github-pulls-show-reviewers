@@ -177,6 +177,21 @@ explicit authorization. Follow the [Chrome Web Store notes](./docs/chrome-web-st
 and [canonical agent runbook](./docs/chrome-web-store-agent-runbook.md) for staging,
 legacy tags, listing updates, verification evidence, and recovery procedures.
 
+Read-only `status` produces a sanitized JSON report and Actions Summary for
+API state, trusted receipts and the next release action, without building or
+changing the store. Its separate queue cannot replace a pending release.
+Ordinary package releases reuse a verified saved-listing
+baseline when all five descriptions and their screenshots are unchanged; browser
+access and repeated dashboard saves are unnecessary. Only the submitted
+description text and ordered images determine listing changes; contributor notes
+outside the description do not. Package reuse and remaining listing work are
+reported separately. Changed listings use staging when the package has not been
+submitted or published; an existing pending review must finish before listing
+edits, and a published package needs scoped listing work without reupload.
+Missing or conflicting evidence requires targeted reconciliation. Status reports
+are observations, not authorization, and later writes always repeat the guarded
+checks.
+
 For repository workflow, branch naming, commit style, and pull request requirements, see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Documentation

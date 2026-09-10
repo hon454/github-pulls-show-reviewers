@@ -18,19 +18,20 @@ on:
         options:
           - skip
           - dry-run
+          - status
           - publish
           - upload-only
           - submit-existing
       source_sha:
-        description: Exact reviewed release commit SHA (required for both staging actions)
+        description: Exact release commit SHA (required for status and staging actions)
         required: false
         type: string
       expected_version:
-        description: Bare manifest version (required for both staging actions)
+        description: Bare manifest version (required for status and staging actions)
         required: false
         type: string
       receipt_run_id:
-        description: Original upload workflow run ID (required for submit-existing)
+        description: Original upload run ID (required for submit-existing; optional selector for status)
         required: false
         type: string
       listing_evidence:
@@ -39,19 +40,65 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
   actions: read
-
-# All mutations for this item share one queue; never cancel an in-flight write.
-concurrency:
-  group: cws-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
-  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  status:
+    if: github.event_name == 'workflow_dispatch' && inputs.chrome_web_store == 'status'
+    # Observations must never replace a pending mutation in the item queue.
+    concurrency:
+      group: cws-status-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      RELEASE_INPUTS_JSON: ${{ toJSON(inputs) }}
+      RELEASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
+      CHROME_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+      CHROME_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: git fetch origin main
+      - name: Observe Chrome Web Store status
+        run: node --experimental-strip-types scripts/release/cli.ts status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ vars.CWS_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_PRIVATE_KEY }}
+      - name: Save sanitized status report
+        if: always() && hashFiles('.release/status.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: cws-status-${{ github.run_id }}
+          path: .release/status.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 90
+
   package:
+    if: github.event_name != 'workflow_dispatch' || inputs.chrome_web_store != 'status'
+    # Preserve the existing item key across control refs and workflow versions.
+    concurrency:
+      group: cws-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: read
     runs-on: ubuntu-latest
     env:
       RELEASE_INPUTS_JSON: ${{ toJSON(inputs) }}
@@ -86,45 +133,45 @@ jobs:
           CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ vars.CWS_SERVICE_ACCOUNT_CLIENT_EMAIL }}
           CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_PRIVATE_KEY }}
 
-      - if: steps.action.outputs.action != 'dry-run'
+      - if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         uses: actions/checkout@v6
         with:
           ref: ${{ steps.action.outputs.source_ref }}
           path: release-source
           fetch-depth: 0
-      - if: steps.action.outputs.action != 'dry-run'
+      - if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: git fetch origin main --tags
-      - if: steps.action.outputs.action != 'dry-run'
+      - if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm install --frozen-lockfile
         working-directory: release-source
-      - if: steps.action.outputs.action != 'dry-run'
+      - if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm prepare
         working-directory: release-source
-      - if: steps.action.outputs.action != 'dry-run'
+      - if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm exec playwright install --with-deps chromium
         working-directory: release-source
       - name: Production preflight
-        if: steps.action.outputs.action != 'dry-run'
+        if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm preflight:release
         working-directory: release-source
       - name: Release verification
-        if: steps.action.outputs.action != 'dry-run'
+        if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm verify:release
         working-directory: release-source
       - name: Checked package
-        if: steps.action.outputs.action != 'dry-run'
+        if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm zip:checked
         working-directory: release-source
 
       - name: Verify source and previous receipts
-        if: steps.action.outputs.action != 'dry-run'
+        if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         id: package_meta
         run: node --experimental-strip-types scripts/release/cli.ts prepare
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Save checked package
-        if: steps.action.outputs.action != 'dry-run'
+        if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         id: package_artifact
         uses: actions/upload-artifact@v7
         with:
@@ -179,14 +226,14 @@ jobs:
           include-hidden-files: true
           retention-days: 90
 
-      - if: steps.package_meta.outputs.create_release == 'true' && steps.package_meta.outputs.has_notes == 'true'
+      - if: steps.action.outputs.action != 'status' && steps.package_meta.outputs.create_release == 'true' && steps.package_meta.outputs.has_notes == 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.package_meta.outputs.tag }}
           files: ${{ steps.package_meta.outputs.zip }}
           body_path: ${{ steps.package_meta.outputs.notes_path }}
 
-      - if: steps.package_meta.outputs.create_release == 'true' && steps.package_meta.outputs.has_notes != 'true'
+      - if: steps.action.outputs.action != 'status' && steps.package_meta.outputs.create_release == 'true' && steps.package_meta.outputs.has_notes != 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.package_meta.outputs.tag }}

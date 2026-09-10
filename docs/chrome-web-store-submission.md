@@ -175,6 +175,24 @@ link and the privacy fields aligned with the shipped behavior.
 
 ## Release and upload checklist
 
+First choose the [release route](./chrome-web-store-agent-runbook.md#choose-the-release-route).
+An ordinary package release uses `status`, trusted receipts, and a verified
+[saved-listing baseline](./chrome-web-store-listing-baseline.md) with unchanged
+descriptions/images. It does not require
+browser access, a dashboard login, or saving/reopening every locale again.
+Missing/conflicting baseline evidence requires targeted saved-content
+reconciliation; changed listings follow the staged path below. A local image or
+source match is not evidence that the dashboard contains that content.
+Change detection compares the submitted description body and ordered images;
+contributor notes outside the description do not trigger listing work. The
+status report keeps package reuse and `listing.nextAction` separate. Wait for
+an existing review to finish without cancellation before editing its listing.
+For a published package, perform separately authorized edits for changed locales,
+record saved/reopened evidence, and determine listing submission from fresh
+state without reuploading the package. Status has a separate queue from release
+mutations; incomplete concurrent observations require another read after the
+running release completes.
+
 For a first localized listing release, use the
 [canonical agent runbook](./chrome-web-store-agent-runbook.md): checked `upload-only`, register
 the five approved locale descriptions/screenshots, then `submit-existing` with
@@ -200,16 +218,22 @@ reviewed source and reuses its verified artifact without another CWS submission.
 7. For an ordinary new version, push the `v<version>` tag. The release workflow uploads
    `.output/*-chrome.zip` through the Chrome Web Store API v2 and submits it
    for automatic publication after approval.
-8. Confirm the release workflow and dashboard package version both read the
-   same bare `<version>`.
+8. Confirm the workflow source/package version and API published/submitted
+   revision versions using trusted receipt provenance. Distinguish pending review
+   from publication; API status does not reveal remote draft ZIP identity.
 9. Listing descriptions/screenshots must already be saved and reopened before
    submission when this release changes them; use the staged path above. An
-   ordinary tag-first release assumes the existing listing is ready.
+   ordinary tag-first release reuses the verified saved-listing baseline when
+   its descriptions/images match the release source and no contrary evidence exists.
 10. Verify catalog-sourced name/summary and the privacy policy URL above.
 11. Inspect privacy answers against shipped permissions and network behavior.
     Edit only if that scope is authorized; localized listing authority alone
     does not cover privacy, distribution, visibility or pricing changes.
-12. For a credential-only rehearsal, run the reviewed release workflow with
+12. For a read-only readiness observation, run `chrome_web_store: status` with
+    exact `source_sha` and `expected_version`; read the sanitized JSON artifact
+    and Actions Summary. This does not build/package or mutate CWS, tags or
+    GitHub Releases, and cannot replace fresh checks before a later write.
+    For a credential-only rehearsal, run the reviewed release workflow with
     `chrome_web_store: dry-run`; it performs no build, package upload, review
     submission, or GitHub Release creation. The default `skip` never mutates CWS,
     including a dispatch against a tag. A tag-scoped skip may refresh the GitHub

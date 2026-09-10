@@ -66,11 +66,11 @@ for reproducibility and visual review.
   - Push a version tag such as `v1.0.0`
   - Run the workflow manually with `workflow_dispatch`, optionally targeting an existing tag such as `v1.0.0`
 - The workflow installs Playwright Chromium, runs `pnpm verify:release`, and then packages with `pnpm zip:checked`.
-- Every run except credential-only `dry-run` saves a checked Chrome zip artifact.
+- Package runs save a checked Chrome zip artifact; `dry-run` and `status` do not build/package.
 - New-version push-tag runs upload and submit through CWS API v2, with normal
   review and automatic publication after approval, then attach the zip to a
   GitHub Release. The event type must be `push` for implicit CWS publication.
-- Manual runs expose `skip` (default), `dry-run`, `publish`, `upload-only`, and
+- Manual runs expose `skip` (default), `dry-run`, `status`, `publish`, `upload-only`, and
   `submit-existing`. Explicit dispatch input always wins, including on a tag.
 - `upload-only` and `submit-existing` never create tags or GitHub Releases.
   `dry-run` performs only credential/status checks, with no package build,
@@ -98,6 +98,36 @@ This example skips CWS writes but can refresh the existing GitHub Release. For
 credential-only checks before integration, use the exact reviewed branch as the
 control ref with `chrome_web_store=dry-run`; see the [handoff](./cws-agent-handoff.md).
 
+### Ordinary package status and listing reuse
+
+Run `chrome_web_store=status` with exact `source_sha` and `expected_version`
+using the [agent runbook](./chrome-web-store-agent-runbook.md#read-only-status-report).
+The separate job has read-only GitHub permissions, calls the supported status
+adapter and trusted provenance readers, and saves `cws-status-RUN_ID/status.json`
+and an Actions Summary. It performs no extension build/package, CWS write,
+tag change or GitHub Release mutation. `dry-run` remains credential-only.
+Status uses its own item queue, so it cannot replace a pending release. An
+observation may overlap a write; incomplete receipt evidence reports blockers
+and asks for another read after the running release completes.
+
+Ordinary releases with unchanged descriptions/images and a verified saved-listing
+baseline ([record contract](./chrome-web-store-listing-baseline.md)) use API/receipt
+readiness checks without browser access, dashboard
+login, or repeated saves. Compare exact description-marker contents and ordered
+images, while retaining whole-file hashes for baseline source provenance.
+Contributor-only edits outside those markers do not change the listing.
+Listing changes select the staged path for an unsubmitted package; missing or
+conflicting saved-content evidence selects targeted reconciliation. Local hashes
+alone never prove dashboard contents. Reports retain unknown remote draft
+existence/version/hash fields, distinguish publication from review, and name the
+next API observation, wait, scoped UI check or recovery decision. They cannot
+authorize release or bypass fresh validation by the existing guarded write path.
+The package/release `route` and `listing.nextAction` are independent: verified
+pending/published packages remain reusable even when listing work remains.
+Wait for pending review to finish without cancelling it before listing edits.
+For published packages, use separately authorized scoped listing work and fresh
+state to determine its submission; never reupload the package to fix metadata.
+
 ### Staged listing updates
 
 Use the [canonical agent runbook](./chrome-web-store-agent-runbook.md) for exact
@@ -116,8 +146,9 @@ but makes **zero upload calls**. It calls CWS v2 `publish` once with
 `skipReview: false`, `publishType: DEFAULT_PUBLISH`, and `blockOnWarnings: true`.
 Warnings therefore stop for inspection rather than being silently accepted.
 
-All CWS actions share one item-specific concurrency group with
-`cancel-in-progress: false`. The workflow saves an immutable intent artifact
+All CWS mutations share the existing item-specific concurrency key in the
+`package` job with `cancel-in-progress: false`; `status` has a separate key.
+The workflow saves an immutable intent artifact
 before any CWS mutation and a sanitized result artifact even after an uncertain
 failure. Receipt history is item-wide, so an unfinished draft/intent from another
 source cannot be overwritten by a new release. Do not delete active receipts or
@@ -208,7 +239,8 @@ After migrating from the former complete-JSON secret, remove
   new dispatch. Mutating workflow reruns are rejected to preserve attempt identity.
 - A credential-only dry-run failure does not upload or submit anything.
 - If the CWS step fails, inspect the intent/result artifacts, read-only API
-  status, and Developer Dashboard. A process exit or HTTP timeout is not proof
+  status first. Use the Developer Dashboard only for a specific unresolved fact.
+  A process exit or HTTP timeout is not proof
   of a failed remote write. Never blindly reupload, resubmit, or push another tag.
 - The SDK rejects upload responses other than `SUCCEEDED`, including
   `IN_PROGRESS`. That state is saved distinctly. Poll `fetchStatus` read-only;
@@ -322,7 +354,8 @@ Do not move a submitted release's tag or rebuild a different source under the
 same manifest version; an explicit recovery/new version is required.
 
 After the automated upload, the Chrome Web Store submission becomes available
-in the dashboard. Confirm it reads the same bare `<version>` and reaches the
+through API status and trusted receipts. Use the dashboard only for an unresolved
+draft fact. Confirm it reads the same bare `<version>` and reaches the
 expected review or published state.
 
 For a credential-only check, run `release.yml` manually with

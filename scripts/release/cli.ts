@@ -11,6 +11,9 @@ import { z } from "zod";
 
 import { createCwsAdapter } from "./cws.ts";
 import { executeRelease } from "./engine.ts";
+import { selectPriorReceipt } from "./readiness.ts";
+import { assessListingBaseline, listingBaselinePath } from "./listing.ts";
+import { observeRelease, statusSummary, targetSchema } from "./status.ts";
 import { checkedZip, GitHubProvenance } from "./provenance.ts";
 import type { HistoryEntry } from "./provenance.ts";
 import {
@@ -100,6 +103,80 @@ const github = () =>
     trustCommit,
   );
 
+async function status() {
+  requireCondition(
+    plan.action === "status",
+    "Status requires the explicit read-only action.",
+  );
+  const target = parse(
+    targetSchema,
+    {
+      repository: required("GITHUB_REPOSITORY"),
+      sourceSha: inputs.source_sha,
+      version: inputs.expected_version,
+      publisherId: required("CHROME_PUBLISHER_ID"),
+      itemId: required("CHROME_EXTENSION_ID"),
+    },
+    "status target",
+  );
+  trustCommit(target.sourceSha);
+  const sourcePackage = parse(
+    z.object({ version: versionSchema }),
+    JSON.parse(git("show", `${target.sourceSha}:package.json`)),
+    "status source package",
+  );
+  requireCondition(
+    sourcePackage.version === target.version,
+    "Status source and expected version must agree.",
+  );
+  // Read the latest reviewed baseline from fresh main, independently of an old
+  // package source or a pre-merge status implementation branch. Absence is not proof.
+  let rawBaseline: unknown;
+  if (
+    git(
+      "ls-tree",
+      "--name-only",
+      "refs/remotes/origin/main",
+      "--",
+      listingBaselinePath,
+    )
+  ) {
+    try {
+      rawBaseline = JSON.parse(
+        git("show", `refs/remotes/origin/main:${listingBaselinePath}`),
+      );
+    } catch {
+      rawBaseline = null; // Report conflicting evidence, never echo raw file data.
+    }
+  }
+  const listing = await assessListingBaseline({
+    raw: rawBaseline,
+    target,
+    trustSource: trustCommit,
+    readSource: async (sha, file) =>
+      execFileSync("git", ["show", `${sha}:${file}`], {
+        stdio: ["ignore", "pipe", "pipe"],
+        maxBuffer: 30 * 1024 * 1024,
+      }),
+  });
+  const report = await observeRelease({
+    target,
+    workflowSha: required("RELEASE_WORKFLOW_SHA"),
+    listing,
+    store: { status: () => adapter("unused-in-status-mode.zip").status() },
+    history: () => github().history(target.itemId, required("GITHUB_RUN_ID")),
+    verifyPackage: async (prior) => {
+      await checkedZip(await github().restorePackage(prior), target.version);
+    },
+    ...(inputs.receipt_run_id ? { receiptRunId: inputs.receipt_run_id } : {}),
+  });
+  await save("status.json", report);
+  await appendFile(required("GITHUB_STEP_SUMMARY"), statusSummary(report));
+  console.log(
+    `CWS observation: ${report.route}; ${report.blockers.length} blocker(s). Read the status artifact and Actions Summary.`,
+  );
+}
+
 async function prepare() {
   const sourceSha = git("-C", sourceDir, "rev-parse", "HEAD");
   parse(shaSchema, sourceSha, "release source SHA");
@@ -149,33 +226,17 @@ async function prepare() {
       required("CHROME_EXTENSION_ID"),
       required("GITHUB_RUN_ID"),
     );
-    for (const entry of history)
-      requireCondition(
-        entry.receipt.publisherId === required("CHROME_PUBLISHER_ID"),
-        "Receipt publisher identity mismatch.",
-      );
-    const candidates = history.filter(
-      (entry) =>
-        entry.complete &&
-        entry.receipt.sourceSha === sourceSha &&
-        ["SUCCEEDED", "IN_PROGRESS"].includes(entry.receipt.upload),
+    prior = selectPriorReceipt(
+      {
+        repository: required("GITHUB_REPOSITORY"),
+        sourceSha,
+        version,
+        publisherId: required("CHROME_PUBLISHER_ID"),
+        itemId: required("CHROME_EXTENSION_ID"),
+      },
+      history,
+      inputs.receipt_run_id,
     );
-    if (inputs.receipt_run_id) {
-      const selected = candidates.filter(
-        (entry) => entry.receipt.runId === inputs.receipt_run_id,
-      );
-      requireCondition(
-        selected.length === 1,
-        "The requested upload run has no unique confirmed/in-progress upload receipt.",
-      );
-      prior = selected[0]!.receipt;
-    } else {
-      requireCondition(
-        candidates.length <= 1,
-        "Multiple upload receipts identify this source; stop for inspection.",
-      );
-      prior = candidates[0]?.receipt;
-    }
     if (prior) {
       validateReceipt(prior, {
         repository: required("GITHUB_REPOSITORY"),
@@ -323,10 +384,15 @@ try {
   );
   resolve();
   const phase = process.argv[2];
+  requireCondition(
+    plan.action !== "status" || phase === "status" || phase === "resolve",
+    "Status mode cannot enter package, receipt or mutation phases.",
+  );
   if (phase === "resolve") {
     await output("action", plan.action);
     await output("source_ref", plan.sourceRef);
-  } else if (phase === "dry-run") {
+  } else if (phase === "status") await status();
+  else if (phase === "dry-run") {
     requireCondition(
       plan.action === "dry-run",
       "Credential-only mode requires the explicit dry-run action.",

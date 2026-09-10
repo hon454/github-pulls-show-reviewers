@@ -39,6 +39,25 @@ const name = `publishers/${config.publisherId}/items/${config.itemId}`;
 beforeEach(() => vi.clearAllMocks());
 
 describe("public SDK upload and narrow CWS publish adapter", () => {
+  it("observes status with one GET and no SDK submission call", async () => {
+    const observed = {
+      name,
+      itemId: config.itemId,
+      lastAsyncUploadState: "SUCCEEDED",
+    };
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(JSON.stringify(observed)));
+    expect(await createCwsAdapter(config, fetcher).status()).toEqual(observed);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[0]).toMatch(/:fetchStatus$/);
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      method: "GET",
+      redirect: "error",
+    });
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBeUndefined();
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
   it("uses only public upload configuration with review submission and cancellation disabled", async () => {
     const fetcher = vi.fn<typeof fetch>();
     const adapter = createCwsAdapter(config, fetcher);
@@ -55,17 +74,15 @@ describe("public SDK upload and narrow CWS publish adapter", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("publish-existing issues one publish request, never an upload, and retains normal review", async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            name,
-            itemId: config.itemId,
-            state: "PENDING_REVIEW",
-          }),
-        ),
-      );
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          name,
+          itemId: config.itemId,
+          state: "PENDING_REVIEW",
+        }),
+      ),
+    );
     await createCwsAdapter(config, fetcher).publish();
     expect(mocks.submit).not.toHaveBeenCalled();
     expect(fetcher).toHaveBeenCalledTimes(1);

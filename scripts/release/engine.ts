@@ -1,5 +1,5 @@
+import { inspectReleaseHistory, requireCertainHistory } from "./readiness.ts";
 import {
-  compareVersions,
   inspectStatus,
   parse,
   ReleaseError,
@@ -48,33 +48,13 @@ export async function executeRelease(input: {
       await input.store.status(),
       "CWS status",
     );
-    const state = inspectStatus(status, receipt, receipt.version);
-    const outstanding = input.history.filter((entry) => {
-      if (entry.receipt.sourceSha === receipt.sourceSha) return false;
-      if (entry.complete && !entry.receipt.mutationStarted) return false;
-      return !status.publishedItemRevisionStatus?.distributionChannels.every(
-        (channel) =>
-          compareVersions(channel.crxVersion, entry.receipt.version) >= 0 &&
-          entry.receipt.version !== receipt.version,
-      );
+    const state = inspectReleaseHistory({
+      target: receipt,
+      status,
+      history: input.history,
+      ...(input.prior ? { prior: input.prior } : {}),
     });
-    requireCondition(
-      !outstanding.length,
-      "Another release has an unresolved upload or draft; inspect its receipt before replacing it.",
-    );
     if (state === "pending" || state === "published") {
-      const recoveredSubmission = input.history.some(
-        (entry) =>
-          entry.complete &&
-          entry.receipt.sourceSha === receipt.sourceSha &&
-          entry.receipt.priorReceiptRunId === input.prior?.runId &&
-          entry.receipt.submission === "CONFIRMED" &&
-          entry.receipt.package.zipSha256 === input.prior?.package.zipSha256,
-      );
-      requireCondition(
-        input.prior?.upload === "SUCCEEDED" || recoveredSubmission,
-        "Version equality alone is insufficient; a confirmed source/package receipt is required.",
-      );
       receipt.outcome =
         state === "pending" ? "ALREADY_PENDING" : "ALREADY_PUBLISHED";
       return { receipt };
@@ -87,19 +67,7 @@ export async function executeRelease(input: {
       input.prior?.upload === "IN_PROGRESS" &&
       evidence?.asyncUploadConfirmed === true &&
       status.lastAsyncUploadState === "SUCCEEDED";
-    const uncertain = input.history.some(
-      (entry) =>
-        entry.receipt.sourceSha === receipt.sourceSha &&
-        (!entry.complete ||
-          entry.receipt.upload === "UNKNOWN" ||
-          (entry.receipt.upload === "IN_PROGRESS" &&
-            !(recoveredAsync && entry.receipt.runId === input.prior?.runId)) ||
-          entry.receipt.submission !== "NOT_ATTEMPTED"),
-    );
-    requireCondition(
-      !uncertain,
-      "An earlier attempt is uncertain; inspect its receipt and dashboard before an explicit recovery decision.",
-    );
+    requireCertainHistory(receipt, input.history, input.prior, recoveredAsync);
     if (receipt.action === "submit-existing") {
       requireCondition(
         input.prior?.upload === "SUCCEEDED" || recoveredAsync,
@@ -121,7 +89,7 @@ export async function executeRelease(input: {
       receipt.upload = await input.store.upload();
       requireCondition(
         receipt.upload === "SUCCEEDED",
-        "Upload is in progress; inspect fetchStatus and the dashboard without reuploading.",
+        "Upload is in progress; observe fetchStatus and the original receipt without reuploading.",
       );
       receipt.outcome = "UPLOADED";
       await input.checkpoint(receipt);
@@ -146,7 +114,7 @@ export async function executeRelease(input: {
       error:
         error instanceof ReleaseError
           ? error.message
-          : "Release operation failed or is uncertain; inspect receipts and dashboard. No write was retried.",
+          : "Release operation failed or is uncertain; inspect receipts and API status. No write was retried.",
     };
   }
 }

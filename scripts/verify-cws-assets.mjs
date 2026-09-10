@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
+import { extractCwsDescription } from "./cws-description.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 export const locales = ["en", "ko", "ja", "zh_CN", "zh_TW"];
@@ -26,6 +27,7 @@ export const sourcePaths = [
   "package.json",
   "wxt.config.ts",
   "scripts/verify-cws-assets.mjs",
+  "scripts/cws-description.mjs",
   ...["src", "entrypoints", "public/icon"].flatMap((directory) =>
     readdirSync(path.join(root, directory), {
       recursive: true,
@@ -102,17 +104,7 @@ export function verifyCwsAssets() {
       !copy.includes(summary),
       `${locale}: do not maintain a duplicate summary`,
     );
-    const description = copy.match(
-      /<!-- description:start -->\n([\s\S]+?)\n<!-- description:end -->/,
-    )?.[1];
-    assert.ok(
-      description?.trim(),
-      `${locale}: ready-to-paste detailed description`,
-    );
-    assert.ok(
-      description.length <= 16000,
-      `${locale}: detailed description limit`,
-    );
+    extractCwsDescription(copy);
     for (const caption of ["before", "after"]) {
       assert.equal(
         [...copy.matchAll(new RegExp(`<!-- capture-${caption}: (.+) -->`, "g"))]

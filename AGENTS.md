@@ -71,7 +71,8 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - `tests/`
   Automated tests, including future extension regression coverage.
 - `scripts/release/`
-  Release action policy, CWS adapter, checked-package receipts, and workflow orchestration.
+  Release action policy, CWS adapter, checked-package receipts, shared readiness
+  checks, saved-listing validation, read-only reports, and workflow orchestration.
 
 ## Implementation Guidelines
 
@@ -125,6 +126,16 @@ Agents working in this repository should preserve that narrow product scope. Do 
   API v2 for normal review and automatic publication after approval. If that
   exact source already has a validated upload receipt and is pending/published,
   reuse its checked artifact for the GitHub Release without another CWS write.
+- Use read-only `status` for ordinary release readiness: API state, trusted
+  receipts/package provenance and a verified saved-listing baseline. Unchanged
+  descriptions/images do not require a browser, login or repeated locale saves.
+  Route changed listings through the staged procedure; missing/conflicting
+  baseline or draft continuity requires only the specifically unresolved UI
+  observation. Never manufacture saved-listing proof from local file hashes.
+- `status` has read-only GitHub permissions and emits sanitized JSON and Actions
+  Summary without extension build/package or CWS/tag/GitHub Release mutations.
+  Reports are timestamped observations, never release authorization; later
+  mutations still require fresh API/receipt and existing guarded checks.
 - Keep manual workflow runs safe by default: `chrome_web_store: skip` must
   remain the default, even when dispatching against a tag. `dry-run` only checks
   credentials and never builds, uploads, submits, or creates a GitHub Release.

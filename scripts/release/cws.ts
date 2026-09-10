@@ -107,7 +107,7 @@ export function createCwsAdapter(
           if (cause.success) return "IN_PROGRESS";
         }
         throw new ReleaseError(
-          "Upload outcome is unknown or unsuccessful; inspect the dashboard and receipt without reuploading.",
+          "Upload outcome is unknown or unsuccessful; inspect API status and the original receipt without reuploading.",
         );
       }
     },
