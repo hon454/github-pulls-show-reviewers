@@ -485,12 +485,16 @@ without changing generations, outcomes, caches, dismissal or request order.
   across accounts. Installation refresh admission rereads the current account
   through that owner and joins in-flight work only for the same credential
   generation. A newer sign-in or token rotation starts separate work, and an
-  older completion cannot clear its admission. Installation snapshots commit
-  conditionally against the generation that fetched them; the owner reports
-  whether it committed or skipped the write, and a skipped write is not reported
-  as a successful refresh. The manual options refresh uses the background
-  installation service. The 15-minute alarm rechecks current expiry and the
-  30-minute threshold inside the coordinator, including expiry invalidation.
+  older completion cannot clear its admission. An older 401 may still retry
+  with newer credentials when the coordinator recovers them, but once a new
+  generation's installation refresh is admitted, that older retry cannot
+  replace its result or invalidate its credentials. Installation snapshots
+  commit conditionally against the generation that fetched them; the owner
+  reports whether it committed or skipped the write, and a skipped write is
+  not reported as a successful refresh. The manual options refresh uses the
+  background installation service. The 15-minute alarm rechecks current expiry
+  and the 30-minute threshold inside the coordinator, including expiry
+  invalidation.
 - Local/session storage is restricted to trusted contexts before initialization
   or sensitive operations. Content access is browser-blocked; options is still
   trusted by Chrome, so its token-free guarantee is enforced by application

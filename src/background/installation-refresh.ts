@@ -23,20 +23,28 @@ export function createInstallationRefreshService(input: {
   const { refreshCoordinator } = input;
   const inFlight = new Map<
     string,
-    { generation: string; promise: Promise<InstallationRefreshOutcome> }
+    {
+      generation: string;
+      promise: Promise<InstallationRefreshOutcome>;
+      supersede: () => void;
+    }
   >();
 
-  async function run(account: Account): Promise<InstallationRefreshOutcome> {
+  async function run(
+    account: Account,
+    isSuperseded: () => boolean,
+  ): Promise<InstallationRefreshOutcome> {
     try {
       const installations = await loadAccountInstallations({
         token: account.token,
       });
+      if (isSuperseded()) return { ok: false, reason: "failed" };
       const commit = await accountMutations.replaceInstallations(
         account.id,
         installations,
         credentialGeneration(account),
       );
-      return commit === "committed"
+      return commit === "committed" && !isSuperseded()
         ? { ok: true }
         : { ok: false, reason: "failed" };
     } catch (error) {
@@ -62,16 +70,19 @@ export function createInstallationRefreshService(input: {
         const installations = await loadAccountInstallations({
           token: tokenForRetry,
         });
+        // A retry may use newer credentials for recovery, but it must not
+        // overwrite a refresh already admitted for that newer generation.
+        if (isSuperseded()) return { ok: false, reason: "failed" };
         const commit = await accountMutations.replaceInstallations(
           account.id,
           installations,
           credentialGeneration(refreshed),
         );
-        return commit === "committed"
+        return commit === "committed" && !isSuperseded()
           ? { ok: true }
           : { ok: false, reason: "failed" };
       } catch (retryError) {
-        if (extractGitHubApiStatus(retryError) === 401) {
+        if (!isSuperseded() && extractGitHubApiStatus(retryError) === 401) {
           await refreshCoordinator.invalidateAccountToken(
             account.id,
             credentialGeneration(refreshed),
@@ -96,11 +107,19 @@ export function createInstallationRefreshService(input: {
       if (existing?.generation === generation) {
         return existing.promise;
       }
-      const promise = run(account).finally(() => {
+      existing?.supersede();
+      let superseded = false;
+      const promise = run(account, () => superseded).finally(() => {
         if (inFlight.get(accountId)?.promise === promise)
           inFlight.delete(accountId);
       });
-      inFlight.set(accountId, { generation, promise });
+      inFlight.set(accountId, {
+        generation,
+        promise,
+        supersede: () => {
+          superseded = true;
+        },
+      });
       return promise;
     },
   };

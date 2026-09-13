@@ -481,6 +481,73 @@ describe("deferred authenticated service schedules", () => {
     ).toEqual([99]);
   });
 
+  it.each(["success", "unauthorized"] as const)(
+    "an older 401 installation retry cannot settle a completed newer refresh (%s)",
+    async (retryResult) => {
+      const initial =
+        await accountMutations.upsertAccountByLogin(connectInput());
+      const service = createInstallationRefreshService({
+        refreshCoordinator: coordinator,
+      });
+      const oldWork = service.refreshAccountInstallations(initial.id);
+      const oldRequest = await http.next();
+
+      await accountMutations.upsertAccountByLogin(
+        connectInput({ token: "fixture-access-1" }),
+      );
+      const newWork = service.refreshAccountInstallations(initial.id);
+      const newRequest = await http.next();
+      newRequest.response.resolve(
+        json({
+          total_count: 1,
+          installations: [
+            {
+              id: 20,
+              account: {
+                login: "octocat",
+                type: "User",
+                avatar_url: null,
+              },
+              repository_selection: "all",
+            },
+          ],
+        }),
+      );
+      expect(await newWork).toEqual({ ok: true });
+
+      oldRequest.response.resolve(json({}, 401));
+      const oldRetry = await http.next();
+      expect(oldRetry.credential).toBe("1");
+      oldRetry.response.resolve(
+        retryResult === "success"
+          ? json({
+              total_count: 1,
+              installations: [
+                {
+                  id: 10,
+                  account: {
+                    login: "octocat",
+                    type: "User",
+                    avatar_url: null,
+                  },
+                  repository_selection: "all",
+                },
+              ],
+            })
+          : json({}, 401),
+      );
+      expect(await oldWork).toEqual({ ok: false, reason: "failed" });
+      const current = (await accountMutations.getAccountById(initial.id))!;
+      expect(
+        current.installations.map((installation) => installation.id),
+      ).toEqual([20]);
+      expect(current.invalidated).toBe(false);
+      expect(
+        http.requests.filter((request) => request.kind === "refresh"),
+      ).toHaveLength(0);
+    },
+  );
+
   it("background diagnostics use the shared owner for stale failure and retry invalidation", async () => {
     const refresh = vi.spyOn(coordinator, "refreshAccountToken");
     const invalidate = vi.spyOn(coordinator, "invalidateAccountToken");
