@@ -575,7 +575,7 @@ async function removeAccountUnlocked(id: string): Promise<void> {
 async function replaceInstallationsUnlocked(
   accountId: string,
   installations: Installation[],
-): Promise<void> {
+): Promise<"committed" | "skipped"> {
   const result = await browser.storage.local.get(
     accountInstallationsKey(accountId),
   );
@@ -586,7 +586,7 @@ async function replaceInstallationsUnlocked(
     console.warn(
       `[accounts] replaceInstallations skipped for ${accountId}: stored installations record is missing or malformed.`,
     );
-    return;
+    return "skipped";
   }
 
   await browser.storage.local.set({
@@ -595,6 +595,7 @@ async function replaceInstallationsUnlocked(
       installationsRefreshedAt: Date.now(),
     },
   });
+  return "committed";
 }
 
 async function markAccountInvalidatedUnlocked(
@@ -670,7 +671,8 @@ export const replaceInstallations = (
   id: string,
   installations: Installation[],
   expectedGeneration?: string,
-): Promise<void> =>
+  mayCommit?: () => boolean,
+): Promise<"committed" | "skipped"> =>
   commit(async () => {
     const account = await getAccountById(id);
     if (
@@ -679,8 +681,11 @@ export const replaceInstallations = (
         credentialGeneration(account) !== expectedGeneration ||
         account.invalidated)
     )
-      return;
-    await replaceInstallationsUnlocked(id, installations);
+      return "skipped";
+    // A newer installation refresh can supersede an old 401 retry while this
+    // commit is queued. Check its liveness inside the same owner boundary.
+    if (mayCommit != null && !mayCommit()) return "skipped";
+    return replaceInstallationsUnlocked(id, installations);
   });
 export const markAccountInvalidated = (
   id: string,
@@ -706,13 +711,15 @@ export const accountMutations = {
     change:
       | { tokens: AccountTokens }
       | { invalidatedReason: AccountInvalidationReason },
+    mayCommit?: () => boolean,
   ): Promise<Account | null> =>
     commit(async () => {
       const current = await getAccountById(id);
       if (
         current == null ||
         current.invalidated ||
-        credentialGeneration(current) !== expectedGeneration
+        credentialGeneration(current) !== expectedGeneration ||
+        (mayCommit != null && !mayCommit())
       ) {
         return current;
       }

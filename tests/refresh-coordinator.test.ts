@@ -25,6 +25,61 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("generation-aware refresh coordinator with real storage and HTTP parsing", () => {
+  it("does not suppress a current invalidation that joins an obsolete guarded one", async () => {
+    const account = await accountMutations.upsertAccountByLogin(connectInput());
+    const generation = credentialGeneration(account);
+    const obsolete = coordinator.invalidateAccountToken(
+      account.id,
+      generation,
+      () => false,
+    );
+    const current = coordinator.invalidateAccountToken(account.id, generation);
+    expect(current).toBe(obsolete);
+    await current;
+    expect(
+      (await accountMutations.getAccountById(account.id))?.invalidated,
+    ).toBe(true);
+  });
+
+  it("starts a new invalidation when a current caller arrives after the guarded commit was queued", async () => {
+    const account = await accountMutations.upsertAccountByLogin(connectInput());
+    const generation = credentialGeneration(account);
+    const commitAuth = accountMutations.commitAuth;
+    let current: Promise<void> | undefined;
+    let intercepted = false;
+    const spy = vi
+      .spyOn(accountMutations, "commitAuth")
+      .mockImplementation((...args) => {
+        const result = commitAuth(...args);
+        if (!intercepted) {
+          intercepted = true;
+          void result.then(() => {
+            current = coordinator.invalidateAccountToken(
+              account.id,
+              generation,
+            );
+          });
+        }
+        return result;
+      });
+    try {
+      const obsolete = coordinator.invalidateAccountToken(
+        account.id,
+        generation,
+        () => false,
+      );
+      await obsolete;
+      expect(current).toBeDefined();
+      expect(current).not.toBe(obsolete);
+      await current;
+      expect(
+        (await accountMutations.getAccountById(account.id))?.invalidated,
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it.each([
     ["reactive", "success"],
     ["reactive", "terminal"],

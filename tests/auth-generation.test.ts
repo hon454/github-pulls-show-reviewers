@@ -337,13 +337,258 @@ describe("deferred authenticated service schedules", () => {
         ],
       }),
     );
-    request.response.resolve(json({ installations: [] }));
-    await work;
+    request.response.resolve(json({ total_count: 0, installations: [] }));
+    expect(await work).toEqual({ ok: false, reason: "failed" });
     expect(
       (await accountMutations.getAccountById("acc-1"))?.installations.map(
         (i) => i.id,
       ),
     ).toEqual([99]);
+  });
+
+  it.each([
+    ["reauthentication", "old-first"],
+    ["reauthentication", "new-first"],
+    ["token rotation", "old-first"],
+    ["token rotation", "new-first"],
+    ["removal and reconnection", "old-first"],
+    ["removal and reconnection", "new-first"],
+  ] as const)(
+    "isolates installation refreshes across %s (%s)",
+    async (change, completionOrder) => {
+      const initial =
+        await accountMutations.upsertAccountByLogin(connectInput());
+      const service = createInstallationRefreshService({
+        refreshCoordinator: coordinator,
+      });
+      const oldWork = service.refreshAccountInstallations(initial.id);
+      const oldRequest = await http.next();
+      expect(oldRequest.credential).toBe("0");
+
+      if (change === "reauthentication") {
+        await accountMutations.upsertAccountByLogin(
+          connectInput({ token: "fixture-access-1" }),
+        );
+      } else if (change === "token rotation") {
+        await accountMutations.commitAuth(
+          initial.id,
+          credentialGeneration(initial),
+          {
+            tokens: {
+              token: "fixture-access-1",
+              refreshToken: "fixture-refresh-1",
+              expiresAt: null,
+              refreshTokenExpiresAt: null,
+            },
+          },
+        );
+      } else {
+        await accountMutations.removeAccount(initial.id);
+        await accountMutations.upsertAccountByLogin(
+          connectInput({ token: "fixture-access-1" }),
+        );
+      }
+
+      const current = (await accountMutations.getAccountById(initial.id))!;
+      expect(credentialGeneration(current)).not.toBe(
+        credentialGeneration(initial),
+      );
+      const newWork = service.refreshAccountInstallations(initial.id);
+      const newRequest = await http.next();
+      expect(newRequest.credential).toBe("1");
+
+      const respond = (request: typeof oldRequest, installationId: number) =>
+        request.response.resolve(
+          json({
+            total_count: 1,
+            installations: [
+              {
+                id: installationId,
+                account: {
+                  login: "octocat",
+                  type: "User",
+                  avatar_url: null,
+                },
+                repository_selection: "all",
+              },
+            ],
+          }),
+        );
+
+      if (completionOrder === "old-first") {
+        let newSettled = false;
+        void newWork.then(() => {
+          newSettled = true;
+        });
+        respond(oldRequest, 10);
+        expect(await oldWork).toEqual({ ok: false, reason: "failed" });
+        expect(newSettled).toBe(false);
+        // Old finally cannot clear the newer generation's admission.
+        const joined = service.refreshAccountInstallations(initial.id);
+        respond(newRequest, 20);
+        expect(await Promise.all([newWork, joined])).toEqual([
+          { ok: true },
+          { ok: true },
+        ]);
+      } else {
+        respond(newRequest, 20);
+        expect(await newWork).toEqual({ ok: true });
+        respond(oldRequest, 10);
+        expect(await oldWork).toEqual({ ok: false, reason: "failed" });
+      }
+
+      expect(
+        http.requests.filter((request) => request.kind === "api"),
+      ).toHaveLength(2);
+      expect(
+        (await accountMutations.getAccountById(initial.id))?.installations.map(
+          (installation) => installation.id,
+        ),
+      ).toEqual([20]);
+    },
+  );
+
+  it("reports a skipped post-401 installation retry without replacing a later sign-in", async () => {
+    const initial = await accountMutations.upsertAccountByLogin(connectInput());
+    const work = createInstallationRefreshService({
+      refreshCoordinator: coordinator,
+    }).refreshAccountInstallations(initial.id);
+    (await http.next()).response.resolve(json({}, 401));
+    const rotation = await http.next();
+    expect(rotation.kind).toBe("refresh");
+    rotation.response.resolve(rotated());
+    const retry = await http.next();
+    expect(retry.credential).toBe("1");
+    await accountMutations.upsertAccountByLogin(
+      connectInput({
+        token: "fixture-access-login",
+        installations: [
+          {
+            id: 99,
+            account: { login: "new", type: "User", avatarUrl: null },
+            repositorySelection: "all",
+            repoSnapshot: null,
+          },
+        ],
+      }),
+    );
+    retry.response.resolve(json({ total_count: 0, installations: [] }));
+    expect(await work).toEqual({ ok: false, reason: "failed" });
+    expect(
+      (await accountMutations.getAccountById(initial.id))?.installations.map(
+        (installation) => installation.id,
+      ),
+    ).toEqual([99]);
+  });
+
+  it.each(["success", "unauthorized"] as const)(
+    "an older 401 installation retry cannot settle a completed newer refresh (%s)",
+    async (retryResult) => {
+      const initial =
+        await accountMutations.upsertAccountByLogin(connectInput());
+      const service = createInstallationRefreshService({
+        refreshCoordinator: coordinator,
+      });
+      const oldWork = service.refreshAccountInstallations(initial.id);
+      const oldRequest = await http.next();
+
+      await accountMutations.upsertAccountByLogin(
+        connectInput({ token: "fixture-access-1" }),
+      );
+      const newWork = service.refreshAccountInstallations(initial.id);
+      const newRequest = await http.next();
+      newRequest.response.resolve(
+        json({
+          total_count: 1,
+          installations: [
+            {
+              id: 20,
+              account: {
+                login: "octocat",
+                type: "User",
+                avatar_url: null,
+              },
+              repository_selection: "all",
+            },
+          ],
+        }),
+      );
+      expect(await newWork).toEqual({ ok: true });
+
+      oldRequest.response.resolve(json({}, 401));
+      const oldRetry = await http.next();
+      expect(oldRetry.credential).toBe("1");
+      oldRetry.response.resolve(
+        retryResult === "success"
+          ? json({
+              total_count: 1,
+              installations: [
+                {
+                  id: 10,
+                  account: {
+                    login: "octocat",
+                    type: "User",
+                    avatar_url: null,
+                  },
+                  repository_selection: "all",
+                },
+              ],
+            })
+          : json({}, 401),
+      );
+      expect(await oldWork).toEqual({ ok: false, reason: "failed" });
+      const current = (await accountMutations.getAccountById(initial.id))!;
+      expect(
+        current.installations.map((installation) => installation.id),
+      ).toEqual([20]);
+      expect(current.invalidated).toBe(false);
+      expect(
+        http.requests.filter((request) => request.kind === "refresh"),
+      ).toHaveLength(0);
+    },
+  );
+
+  it("waits for an earlier new-generation admission before old retry invalidation", async () => {
+    const initial = await accountMutations.upsertAccountByLogin(connectInput());
+    const service = createInstallationRefreshService({
+      refreshCoordinator: coordinator,
+    });
+    const oldWork = service.refreshAccountInstallations(initial.id);
+    const first = await http.next();
+    await accountMutations.upsertAccountByLogin(
+      connectInput({ token: "fixture-access-1" }),
+    );
+    first.response.resolve(json({}, 401));
+    const oldRetry = await http.next();
+    expect(oldRetry.credential).toBe("1");
+
+    const barrier = storage.pauseGet(() => true);
+    const newWork = service.refreshAccountInstallations(initial.id);
+    await barrier.entered.promise;
+    const entered = deferred<void>();
+    const invalidate = coordinator.invalidateAccountToken;
+    const spy = vi
+      .spyOn(coordinator, "invalidateAccountToken")
+      .mockImplementation((...args) => {
+        const result = invalidate(...args);
+        entered.resolve();
+        return result;
+      });
+    oldRetry.response.resolve(json({}, 401));
+    await entered.promise;
+    barrier.release.resolve();
+
+    const newRequest = await http.next();
+    expect(newRequest.credential).toBe("1");
+    newRequest.response.resolve(json({ total_count: 0, installations: [] }));
+    expect(await Promise.all([oldWork, newWork])).toEqual([
+      { ok: false, reason: "failed" },
+      { ok: true },
+    ]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(
+      (await accountMutations.getAccountById(initial.id))?.invalidated,
+    ).toBe(false);
   });
 
   it("background diagnostics use the shared owner for stale failure and retry invalidation", async () => {

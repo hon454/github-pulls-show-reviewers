@@ -493,6 +493,9 @@ without changing generations, outcomes, caches, dismissal or request order.
   that invalidation before rereading state. Only earlier admissions are wait
   dependencies, preventing cycles. All waits remain outside the registry queue;
   a different generation's HTTP remains independent.
+  Same-generation invalidation callers share an admission only until its owner
+  commit is queued. A later caller starts a new owner operation rather than
+  inheriting a conditional commit that may already have been skipped.
   A successful rotation survives; a terminal failure retains `refresh_failed`.
   If refresh is transient, a genuinely rejected still-current retry may retain
   the existing `revoked` outcome. Refresh completion and terminal failure
@@ -501,10 +504,22 @@ without changing generations, outcomes, caches, dismissal or request order.
   are removed. UI requests operations; background retry helpers reread current
   accounts and stop if an account is gone or invalid.
 - HTTP never holds the registry commit queue, preserving network concurrency
-  across accounts. Installation snapshots commit conditionally against their
-  request generation. The manual options refresh uses the background
-  installation service. The 15-minute alarm rechecks current expiry and the
-  30-minute threshold inside the coordinator, including expiry invalidation.
+  across accounts. Installation refresh admission rereads the current account
+  through that owner and joins in-flight work only for the same credential
+  generation. A newer sign-in or token rotation starts separate work, and an
+  older completion cannot clear its admission. An older 401 may still retry
+  with newer credentials when the coordinator recovers them, but once a new
+  generation's installation refresh is admitted, that older retry cannot
+  replace its result or invalidate its credentials. The owner checks both
+  credential generation and whether the request was superseded inside the
+  serialized commit, closing the gap between a service-side check and the
+  actual write. Installation snapshots commit conditionally against the
+  generation that fetched them. The owner reports whether it committed or
+  skipped the write, and a skipped write is
+  not reported as a successful refresh. The manual options refresh uses the
+  background installation service. The 15-minute alarm rechecks current expiry
+  and the 30-minute threshold inside the coordinator, including expiry
+  invalidation.
 - Local/session storage is restricted to trusted contexts before initialization
   or sensitive operations. Content access is browser-blocked; options is still
   trusted by Chrome, so its token-free guarantee is enforced by application
@@ -545,7 +560,7 @@ without changing generations, outcomes, caches, dismissal or request order.
   same-owner candidates, requests the background installation service and reruns
   resolution. The content facade receives an `AccountSummary`, never a full
   account. Repository context and installation owner restrict content refresh.
-- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. The service response does not include tokens; content has no direct local-storage access.
+- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per account and credential generation. A skipped stale-generation commit returns the existing generic failure outcome. The service response does not include tokens; content has no direct local-storage access.
 - Each candidate is refreshed at most once per page session. Successful
   installation writes change the sanitized account/coverage digest; the content
   snapshot subscriber clears the row cache and rerenders covered rows.

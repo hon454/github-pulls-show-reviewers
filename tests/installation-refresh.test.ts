@@ -81,7 +81,7 @@ const refreshCoordinatorMock = {
 
 beforeEach(() => {
   getAccountByIdMock.mockReset();
-  replaceInstallationsMock.mockReset().mockResolvedValue(undefined);
+  replaceInstallationsMock.mockReset().mockResolvedValue("committed");
   markAccountInvalidatedMock.mockReset().mockResolvedValue(undefined);
   refreshAccountTokenMock
     .mockReset()
@@ -295,7 +295,11 @@ describe("createInstallationRefreshService", () => {
     const outcome = await service.refreshAccountInstallations("acc-1");
 
     expect(outcome).toEqual({ ok: false, reason: "failed" });
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "legacy");
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+      "acc-1",
+      "legacy",
+      expect.any(Function),
+    );
     expect(replaceInstallationsMock).not.toHaveBeenCalled();
   });
 
@@ -389,7 +393,7 @@ describe("createInstallationRefreshService", () => {
 
     expect(outcomeA).toEqual({ ok: true });
     expect(outcomeB).toEqual({ ok: true });
-    expect(getAccountByIdMock).toHaveBeenCalledTimes(1);
+    expect(getAccountByIdMock).toHaveBeenCalledTimes(2);
     expect(fetchUserInstallationsMock).toHaveBeenCalledTimes(1);
     expect(replaceInstallationsMock).toHaveBeenCalledTimes(1);
   });

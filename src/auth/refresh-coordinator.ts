@@ -20,6 +20,7 @@ export type RefreshCoordinator = {
   invalidateAccountToken(
     accountId: string,
     failedGeneration: string,
+    mayCommit?: () => boolean,
   ): Promise<void>;
   refreshAccountIfDue(accountId: string, now: number): Promise<RefreshOutcome>;
 };
@@ -42,6 +43,9 @@ export function createRefreshCoordinator(input: {
     kind: "invalidation";
     generation: string;
     result: Promise<void>;
+    accepting: boolean;
+    unconditional: boolean;
+    guards: Array<() => boolean>;
   };
   type Admission = RecoveryAdmission | InvalidationAdmission;
   const admissions = new Map<string, Set<Admission>>();
@@ -200,11 +204,21 @@ export function createRefreshCoordinator(input: {
   function invalidateAccountToken(
     accountId: string,
     failedGeneration: string,
+    mayCommit?: () => boolean,
   ): Promise<void> {
     const pending = pendingFor(accountId);
     for (const item of pending) {
-      if (item.kind === "invalidation" && item.generation === failedGeneration)
+      if (
+        item.kind === "invalidation" &&
+        item.generation === failedGeneration &&
+        item.accepting
+      ) {
+        // A current caller must not inherit a stale caller's conditional
+        // suppression when they share the same invalidation admission.
+        if (mayCommit == null) item.unconditional = true;
+        else item.guards.push(mayCommit);
         return item.result;
+      }
     }
     const earlierRecoveries = [...pending].filter(
       (item): item is RecoveryAdmission => item.kind === "recovery",
@@ -212,6 +226,9 @@ export function createRefreshCoordinator(input: {
     const admission: InvalidationAdmission = {
       kind: "invalidation",
       generation: failedGeneration,
+      accepting: true,
+      unconditional: mayCommit == null,
+      guards: mayCommit == null ? [] : [mayCommit],
       result: Promise.resolve()
         .then(async () => {
           // Only earlier admissions are dependencies, so a later recovery waiting
@@ -223,9 +240,20 @@ export function createRefreshCoordinator(input: {
                 await item.result;
             }),
           );
-          await accountMutations.commitAuth(accountId, failedGeneration, {
-            invalidatedReason: "revoked",
-          });
+          // This admission accepts callers only until its owner mutation is
+          // queued. A later caller needs a new commit: its intent cannot alter
+          // the decision of the conditional commit already in that queue.
+          admission.accepting = false;
+          await accountMutations.commitAuth(
+            accountId,
+            failedGeneration,
+            {
+              invalidatedReason: "revoked",
+            },
+            () =>
+              admission.unconditional ||
+              admission.guards.some((guard) => guard()),
+          );
         })
         .finally(() => {
           pending.delete(admission);
