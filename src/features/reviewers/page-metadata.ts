@@ -40,6 +40,7 @@ type Request = {
   controller: AbortController;
   consumers: Set<object>;
   promise: Promise<PageMetadataResult>;
+  invalidation: number;
 };
 type Cache = {
   identity: string;
@@ -64,9 +65,11 @@ export function createPageMetadataCoordinator(input: {
   const fetchMetadata = input.fetchMetadata ?? fetchReviewerMetadataBatch;
   const now = input.now ?? Date.now;
   const requests = new Map<string, Request>();
+  const activeRequests = new Set<Request>();
   let cache: Cache | undefined;
   let sequence = 0;
   let epoch = 0;
+  let invalidation = 0;
   const identity = (args: Input) =>
     JSON.stringify([
       args.route.owner.toLowerCase(),
@@ -84,6 +87,8 @@ export function createPageMetadataCoordinator(input: {
     controller: AbortController,
     requestSequence: number,
     requestEpoch: number,
+    requestInvalidation: number,
+    forceRefresh: boolean,
   ): Promise<PageMetadataResult> {
     let used = account;
     let error: unknown;
@@ -95,7 +100,7 @@ export function createPageMetadataCoordinator(input: {
         repo: args.route.repo,
         targetPullNumbers: args.targetPullNumbers,
         signal: controller.signal,
-        ...(cache?.stale ? { refresh: true } : {}),
+        ...(forceRefresh || cache?.stale ? { refresh: true } : {}),
         ...(args.discoveryId ? { discoveryId: args.discoveryId } : {}),
         onAccount: (actual) => {
           used = actual;
@@ -171,7 +176,10 @@ export function createPageMetadataCoordinator(input: {
         result,
         sequence: requestSequence,
         fetchedAt: now(),
-        stale: false,
+        // Preserve a later row change across an older successful fetch. A
+        // failed batch keeps its normal admission window and waits for another
+        // eligible row event rather than retrying immediately.
+        stale: !error && requestInvalidation !== invalidation,
       };
     return result;
   }
@@ -234,7 +242,9 @@ export function createPageMetadataCoordinator(input: {
         targets,
       ]);
       let request = requests.get(key);
-      if (!request || request.controller.signal.aborted) {
+      const invalidatedRequest =
+        request != null && request.invalidation !== invalidation;
+      if (!request || request.controller.signal.aborted || invalidatedRequest) {
         const controller = new AbortController();
         const requestSequence = ++sequence;
         const requestEpoch = epoch;
@@ -242,15 +252,20 @@ export function createPageMetadataCoordinator(input: {
           controller,
           consumers: new Set(),
           promise: Promise.resolve(emptyResult()),
+          invalidation,
         };
         requests.set(key, created);
+        activeRequests.add(created);
         created.promise = fetch(
           args,
           account,
           controller,
           requestSequence,
           requestEpoch,
+          invalidation,
+          invalidatedRequest,
         ).finally(() => {
+          activeRequests.delete(created);
           if (requests.get(key) === created) requests.delete(key);
         });
         request = created;
@@ -258,11 +273,13 @@ export function createPageMetadataCoordinator(input: {
       return join(request, args.signal);
     },
     markStale() {
+      invalidation += 1;
       if (cache) cache.stale = true;
     },
     abortAndClear() {
       epoch += 1;
-      for (const request of requests.values()) request.controller.abort();
+      for (const request of activeRequests) request.controller.abort();
+      activeRequests.clear();
       requests.clear();
       cache = undefined;
     },

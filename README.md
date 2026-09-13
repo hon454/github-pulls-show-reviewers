@@ -33,6 +33,9 @@
   rows.
 - Keeps working as GitHub updates the page during normal navigation, including
   restoring an extension mount when equivalent native PR metadata replaces it.
+  If native PR-row metadata changes during a reviewer load, the row is checked
+  again after that load succeeds; several changes during the load share one
+  follow-up check.
 - Keeps reviewer metadata visible in narrow desktop and split-window layouts
   without restoring GitHub metadata that GitHub intentionally hides there.
 - Leaves rows visually unchanged when a pull request has no reviewers. If a
