@@ -474,6 +474,9 @@ without changing generations, outcomes, caches, dismissal or request order.
   that invalidation before rereading state. Only earlier admissions are wait
   dependencies, preventing cycles. All waits remain outside the registry queue;
   a different generation's HTTP remains independent.
+  Same-generation invalidation callers share an admission only until its owner
+  commit is queued. A later caller starts a new owner operation rather than
+  inheriting a conditional commit that may already have been skipped.
   A successful rotation survives; a terminal failure retains `refresh_failed`.
   If refresh is transient, a genuinely rejected still-current retry may retain
   the existing `revoked` outcome. Refresh completion and terminal failure

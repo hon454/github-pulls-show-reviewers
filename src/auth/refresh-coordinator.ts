@@ -43,6 +43,7 @@ export function createRefreshCoordinator(input: {
     kind: "invalidation";
     generation: string;
     result: Promise<void>;
+    accepting: boolean;
     unconditional: boolean;
     guards: Array<() => boolean>;
   };
@@ -209,7 +210,8 @@ export function createRefreshCoordinator(input: {
     for (const item of pending) {
       if (
         item.kind === "invalidation" &&
-        item.generation === failedGeneration
+        item.generation === failedGeneration &&
+        item.accepting
       ) {
         // A current caller must not inherit a stale caller's conditional
         // suppression when they share the same invalidation admission.
@@ -224,6 +226,7 @@ export function createRefreshCoordinator(input: {
     const admission: InvalidationAdmission = {
       kind: "invalidation",
       generation: failedGeneration,
+      accepting: true,
       unconditional: mayCommit == null,
       guards: mayCommit == null ? [] : [mayCommit],
       result: Promise.resolve()
@@ -237,6 +240,10 @@ export function createRefreshCoordinator(input: {
                 await item.result;
             }),
           );
+          // This admission accepts callers only until its owner mutation is
+          // queued. A later caller needs a new commit: its intent cannot alter
+          // the decision of the conditional commit already in that queue.
+          admission.accepting = false;
           await accountMutations.commitAuth(
             accountId,
             failedGeneration,
