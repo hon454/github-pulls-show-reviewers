@@ -458,6 +458,15 @@ without changing generations, outcomes, caches, dismissal or request order.
   writes. All registry and fragment writes share that queue. Background device
   flow commits through that owner, and `src/runtime/account-mutations.ts` exposes
   options-only local removal. Future account work must reuse this owner.
+- The owner reconciles stored account-fragment keys against the repaired v4
+  account index on its first initialization after each worker start. Index
+  changes that detach an account request another reconciliation before the next
+  owner operation. This retries a removal or duplicate/malformed-record cleanup
+  interrupted after the index write, including older orphaned fragments with no
+  cleanup marker. Only the three account-record prefixes are eligible for
+  deletion; indexed accounts and unrelated local storage are preserved. The
+  queue serializes reconciliation with sign-in and reconnection, so a new
+  account generation cannot be deleted by an older cleanup attempt.
 - The options account card keeps local removal available whether credentials are
   active or invalidated. It calls the same background mutation wrapper by
   account ID, so removal neither starts device sign-in nor revokes the GitHub

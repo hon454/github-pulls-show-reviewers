@@ -4,6 +4,11 @@ const SETTINGS_KEY = "settings";
 const ACCOUNT_PROFILE_KEY_PREFIX = "account:profile:";
 const ACCOUNT_AUTH_KEY_PREFIX = "account:auth:";
 const ACCOUNT_INSTALLATIONS_KEY_PREFIX = "account:installations:";
+const ACCOUNT_RECORD_KEY_PREFIXES = [
+  ACCOUNT_PROFILE_KEY_PREFIX,
+  ACCOUNT_AUTH_KEY_PREFIX,
+  ACCOUNT_INSTALLATIONS_KEY_PREFIX,
+] as const;
 
 const installationBaseSchema = z.object({
   id: z.number().int().positive(),
@@ -246,6 +251,30 @@ async function migrateAccounts(
   return settings;
 }
 
+// A worker restart always scans once, including records orphaned before this
+// cleanup existed. Index-changing commits request another scan so a failed
+// fragment deletion is retried before the next account mutation.
+let accountRecordCleanupPending = true;
+
+async function cleanupOrphanedAccountRecords(
+  accountIds: string[],
+): Promise<void> {
+  if (!accountRecordCleanupPending) return;
+
+  const registeredIds = new Set(accountIds);
+  const keys = Object.keys(await browser.storage.local.get(null));
+  const orphanedKeys = keys.filter((key) => {
+    const prefix = ACCOUNT_RECORD_KEY_PREFIXES.find((candidate) =>
+      key.startsWith(candidate),
+    );
+    return prefix != null && !registeredIds.has(key.slice(prefix.length));
+  });
+  if (orphanedKeys.length > 0) {
+    await browser.storage.local.remove(orphanedKeys);
+  }
+  accountRecordCleanupPending = false;
+}
+
 async function loadAccountsByIds(accountIds: string[]): Promise<{
   accounts: Account[];
   validIds: string[];
@@ -339,15 +368,16 @@ export function credentialGeneration(account: Account): string {
 }
 
 async function initializeAccountsUnlocked(): Promise<void> {
-  const { settings, legacyAccounts } = await readRegistry();
+  const registry = await readRegistry();
+  let settings = registry.settings;
+  const { legacyAccounts } = registry;
   if (legacyAccounts) {
-    await migrateAccounts(
+    settings = await migrateAccounts(
       legacyAccounts.map((account) => ({
         ...account,
         credentialGeneration: credentialGeneration(account),
       })),
     );
-    return;
   }
   const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
   const migrations = accounts.filter((a) => a.credentialGeneration == null);
@@ -372,6 +402,7 @@ async function initializeAccountsUnlocked(): Promise<void> {
     );
   }
   if (validIds.length !== settings.accountIds.length) {
+    accountRecordCleanupPending = true;
     await writeSettings({ version: 4, accountIds: validIds });
     const removedIds = settings.accountIds.filter(
       (id) => !validIds.includes(id),
@@ -382,6 +413,7 @@ async function initializeAccountsUnlocked(): Promise<void> {
       );
     }
   }
+  await cleanupOrphanedAccountRecords(validIds);
 }
 
 // Background-only commit boundary. Never hold it across HTTP. All callers use
@@ -472,6 +504,7 @@ async function upsertAccountByLoginUnlocked(input: {
           };
 
     // Preserve the retained account's position in the accountIds ordering.
+    if (duplicateIds.length > 0) accountRecordCleanupPending = true;
     await writeAccounts(nextSettings, [updated]);
     if (duplicateIds.length > 0) {
       await browser.storage.local.remove(
@@ -514,7 +547,9 @@ async function findAccountsByLogin(login: string): Promise<{
   const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
   if (validIds.length !== settings.accountIds.length) {
     settings = { version: 4, accountIds: validIds };
+    accountRecordCleanupPending = true;
     await writeSettings(settings);
+    await cleanupOrphanedAccountRecords(validIds);
   }
 
   const normalized = login.toLowerCase();
@@ -532,6 +567,7 @@ async function removeAccountUnlocked(id: string): Promise<void> {
     version: 4,
     accountIds: settings.accountIds.filter((accountId) => accountId !== id),
   };
+  accountRecordCleanupPending = true;
   await writeSettings(next);
   await browser.storage.local.remove(accountStorageKeys(id));
 }
