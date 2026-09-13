@@ -228,7 +228,8 @@ for shared-consumer and token-refresh ownership.
     Its older successful result remains stale and releases request ownership
     before one follow-up revalidation of the live row. Repeated changes during
     the same attempt coalesce; the page-metadata coordinator retains changes
-    across a pending batch and refetches current metadata for the follow-up.
+    across a pending batch. A follow-up does not join a batch started before
+    that change, and refetches current metadata instead.
     Failed attempts retain their existing admission window and do not start an
     automatic retry. Equivalent mount repair and render-only changes do not
     create this follow-up.

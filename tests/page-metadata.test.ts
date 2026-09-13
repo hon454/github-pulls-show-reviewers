@@ -159,6 +159,82 @@ describe("page metadata coordinator", () => {
     expect(fetchMetadata).toHaveBeenCalledTimes(2);
   });
 
+  it("does not join an expanded metadata batch started before invalidation", async () => {
+    const oldBatch = createDeferred<PullReviewerMetadata[]>();
+    const currentBatch = createDeferred<PullReviewerMetadata[]>();
+    const updated = { ...metadata, authorLogin: "updated" };
+    const fetchMetadata = vi
+      .fn()
+      .mockResolvedValueOnce([metadata])
+      .mockReturnValueOnce(oldBatch.promise)
+      .mockReturnValueOnce(currentBatch.promise);
+    const coordinator = createPageMetadataCoordinator({
+      fallbackAccounts: fallbackAccounts(),
+      fetchMetadata,
+    });
+    const signal = new AbortController().signal;
+    await coordinator.get({
+      route,
+      account: null,
+      targetPullNumbers: ["42"],
+      signal,
+    });
+    const expanded = {
+      route,
+      account: null,
+      targetPullNumbers: ["42", "43"],
+      signal,
+    };
+    const pendingOldBatch = coordinator.get(expanded);
+    coordinator.markStale();
+    const followUp = coordinator.get(expanded);
+    expect(fetchMetadata).toHaveBeenCalledTimes(3);
+    expect(fetchMetadata).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({ refresh: true }),
+    );
+
+    oldBatch.resolve([metadata]);
+    expect((await pendingOldBatch).metadata.get("42")).toEqual(metadata);
+    currentBatch.resolve([updated]);
+    expect((await followUp).metadata.get("42")).toEqual(updated);
+    expect((await coordinator.get(expanded)).metadata.get("42")).toEqual(
+      updated,
+    );
+    expect(fetchMetadata).toHaveBeenCalledTimes(3);
+  });
+
+  it("aborts both metadata generations when the page is invalidated", async () => {
+    const signals: AbortSignal[] = [];
+    const fetchMetadata = vi.fn(
+      ({ signal }: { signal: AbortSignal }) =>
+        new Promise<PullReviewerMetadata[]>((resolve) => {
+          signals.push(signal);
+          signal.addEventListener("abort", () => resolve([metadata]), {
+            once: true,
+          });
+        }),
+    );
+    const coordinator = createPageMetadataCoordinator({
+      fallbackAccounts: fallbackAccounts(),
+      fetchMetadata,
+    });
+    const request = {
+      route,
+      account: null,
+      targetPullNumbers: ["42"],
+      signal: new AbortController().signal,
+    };
+    const old = coordinator.get(request);
+    coordinator.markStale();
+    const current = coordinator.get(request);
+    expect(signals).toHaveLength(2);
+    coordinator.abortAndClear();
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    expect((await old).metadata.size).toBe(0);
+    expect((await current).metadata.size).toBe(0);
+  });
+
   it("retries an auth-like public request failure with the fallback account", async () => {
     const account = makeAccount();
     const fallback = fallbackAccounts({
