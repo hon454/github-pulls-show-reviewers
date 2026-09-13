@@ -250,10 +250,10 @@ reviewed source and reuses its verified artifact without another CWS submission.
 Expected package path after `pnpm zip:release`:
 
 ```text
-.output/github-pulls-show-reviewers-1.18.2-chrome.zip
+.output/github-pulls-show-reviewers-1.18.3-chrome.zip
 ```
 
-See the [v1.18.2 release notes](./releases/v1.18.2.md) for this version's scope.
+See the [v1.18.3 release notes](./releases/v1.18.3.md) for this version's scope.
 Its source-bound capture and local package-validation evidence belongs in the
 release-preparation PR and handoff. This target
 does not attest an uploaded draft, saved listings or publication.

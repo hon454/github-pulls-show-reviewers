@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.2 release notes](./docs/releases/v1.18.2.md) (English): API-first release status, reusable saved-listing evidence, and separate guidance for package reuse and listing updates. Extension reviewer behavior is unchanged.
+[v1.18.3 release notes](./docs/releases/v1.18.3.md) (English): preserve reviewer updates during pending requests, recover interrupted local account removal, and isolate installation refreshes across credential changes.
 
 ## What It Does
 
