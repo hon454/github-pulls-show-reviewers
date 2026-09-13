@@ -42,7 +42,10 @@ To provide its reviewer visibility feature, the extension may access:
   identifier is derived from token contents.
   Entries live there until the user removes the account locally, including when
   its credentials have been invalidated. Local removal does not revoke the
-  GitHub App authorization.
+  GitHub App authorization. If local record deletion is interrupted after an
+  account is removed from the index, the background account owner retries
+  cleanup during its next initialization. It also removes older unindexed
+  account records, while preserving connected accounts and other local data.
 - Display preferences are stored locally in `browser.storage.local` under a
   separate `preferences` key. That record currently stores whether review-state
   badges stay visible, whether reviewer names expand into text pills, and
