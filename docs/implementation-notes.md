@@ -223,6 +223,15 @@ for shared-consumer and token-refresh ownership.
     badges. Checks-only updates must not invalidate reviewer caches; mutations inside those
     subtrees are rejected before cloning metadata. Same-repository route events
     remain the fallback for full-page GitHub renders.
+    A meaningful fingerprint change also marks any pending summary for that PR
+    invalid, even with no cache entry or while its summary waits for a slot.
+    Its older successful result remains stale and releases request ownership
+    before one follow-up revalidation of the live row. Repeated changes during
+    the same attempt coalesce; the page-metadata coordinator retains changes
+    across a pending batch and refetches current metadata for the follow-up.
+    Failed attempts retain their existing admission window and do not start an
+    automatic retry. Equivalent mount repair and render-only changes do not
+    create this follow-up.
 
 ## Mutation observation decision
 

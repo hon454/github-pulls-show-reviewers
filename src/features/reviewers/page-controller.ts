@@ -14,11 +14,13 @@ import {
   clearReviewerCache,
   getReviewerCacheEntry,
   isReviewerCacheEntryFresh,
+  markReviewerCacheStale,
   markReviewerCacheStaleForRepository,
   setCachedReviewerSummary,
 } from "../../cache/reviewer-cache";
 import type { PullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
+import { githubSelectors } from "../../github/selectors";
 import type {
   AccountSummary as Account,
   UISnapshot,
@@ -101,6 +103,8 @@ export function bootReviewerListPage(
     promise: Promise<void>;
     controller: AbortController;
     consumers: Map<HTMLElement, () => boolean>;
+    invalidated: boolean;
+    succeeded: boolean;
   };
   const localeStore = getLocaleStore();
   type Presentation =
@@ -186,6 +190,10 @@ export function bootReviewerListPage(
     getRoute: () => currentRoute,
     processRow,
     markPageMetadataStale: pageMetadata.markStale,
+    onMeaningfulChange: (cacheKey) => {
+      const request = inflightRequests.get(cacheKey);
+      if (request) request.invalidated = true;
+    },
     onRowsChanged: () => outcomes.reconcile(collectVisiblePullNumbers()),
   });
 
@@ -318,6 +326,7 @@ export function bootReviewerListPage(
       if (!isOperationCurrent() || existingRequest.controller.signal.aborted) {
         return;
       }
+      if (existingRequest.invalidated && existingRequest.succeeded) return;
       const settledSummary = getReviewerCacheEntry(cacheKey)?.summary;
       if (settledSummary == null) {
         clearReviewerMountWithoutCache(mount, cacheKey);
@@ -342,6 +351,7 @@ export function bootReviewerListPage(
     const outcomeOwner = requestOwner;
     outcomes.begin(rowGeneration, pullNumber, outcomeOwner);
     let request: InflightRequest | null = null;
+    let completedSuccessfully = false;
     const consumers = new Map([[mount, isRowCurrent]]);
     // Data belongs to live rows, even if their presentation mounts were removed.
     // A replacement row may still need the shared request after its owner left.
@@ -413,9 +423,16 @@ export function bootReviewerListPage(
             account: actualSummaryAccount,
             discoveryId: repositoryDiscovery.id,
           });
-          outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
-            status: "success",
-          });
+          if (inflightRequests.get(cacheKey)?.invalidated)
+            markReviewerCacheStale(cacheKey);
+          completedSuccessfully = true;
+          const settledRequest = inflightRequests.get(cacheKey);
+          if (settledRequest?.owner === outcomeOwner)
+            settledRequest.succeeded = true;
+          if (!settledRequest?.invalidated)
+            outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
+              status: "success",
+            });
         } catch (error) {
           if (isAbortError(error) || !isRequestCurrent()) {
             return;
@@ -456,12 +473,47 @@ export function bootReviewerListPage(
           error,
         });
       } finally {
-        if (request != null && inflightRequests.get(cacheKey) === request) {
+        const settledRequest = inflightRequests.get(cacheKey);
+        if (settledRequest?.owner === outcomeOwner) {
           inflightRequests.delete(cacheKey);
+          if (completedSuccessfully && settledRequest.invalidated) {
+            // The old result remains stale. Revalidate once after its slot and
+            // per-PR request ownership are released, using current page metadata.
+            const liveRows = [...settledRequest.consumers]
+              .filter(([, isCurrent]) => isCurrent())
+              .map(([consumerMount]) =>
+                consumerMount.closest(githubSelectors.row),
+              )
+              .filter((liveRow): liveRow is Element => liveRow != null);
+            void (async () => {
+              let attempted = false;
+              for (const liveRow of new Set(liveRows)) {
+                if (!liveRow.isConnected) continue;
+                // Another dirty follow-up may already own this PR. A failed
+                // attempt must not make duplicate consumers start a retry loop.
+                const entry = getReviewerCacheEntry(cacheKey);
+                if (
+                  attempted &&
+                  !inflightRequests.has(cacheKey) &&
+                  (entry == null || !isReviewerCacheEntryFresh(entry))
+                )
+                  break;
+                attempted = true;
+                await processRow(liveRow);
+              }
+            })();
+          }
         }
       }
     })();
-    request = { owner: outcomeOwner, controller, promise, consumers };
+    request = {
+      owner: outcomeOwner,
+      controller,
+      promise,
+      consumers,
+      invalidated: false,
+      succeeded: false,
+    };
 
     inflightRequests.set(cacheKey, request);
     try {
@@ -473,6 +525,7 @@ export function bootReviewerListPage(
     if (!isOperationCurrent() || controller.signal.aborted) {
       return;
     }
+    if (request.invalidated && completedSuccessfully) return;
 
     await renderSummaryForMount(
       mount,

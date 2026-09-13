@@ -196,6 +196,73 @@ test("reviewer mount recovery and classic/Preview switching reuse fresh chips wi
   });
 });
 
+test("rechecks a packaged PR row after native metadata changes during a reviewer request", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, singleRowFixture),
+      "utf8",
+    );
+    let metadataRequests = 0;
+    let reviewRequests = 0;
+    let releaseFirstReviews: () => void = () => {};
+    const firstReviews = new Promise<void>((resolve) => {
+      releaseFirstReviews = resolve;
+    });
+    await routeFixturePage(context, fixtureHtml);
+    await context.route(
+      /^https:\/\/api\.github\.com\/repos\/hon454\/github-pulls-show-reviewers\/pulls\?/,
+      async (route) => {
+        metadataRequests += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([
+            {
+              number: 42,
+              user: { login: "hon454" },
+              requested_reviewers: [
+                { login: metadataRequests === 1 ? "alice" : "bob" },
+              ],
+              requested_teams: [],
+            },
+          ]),
+        });
+      },
+    );
+    await context.route(
+      "https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls/42/reviews**",
+      async (route) => {
+        reviewRequests += 1;
+        if (reviewRequests === 1) await firstReviews;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: "[]",
+        });
+      },
+    );
+
+    const page = await context.newPage();
+    try {
+      await page.goto(
+        "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+      );
+      await expect.poll(() => reviewRequests).toBe(1);
+      await page.evaluate(() => {
+        document.querySelector(".issue-meta-section")!.append(" updated");
+      });
+      releaseFirstReviews();
+      await expect(page.locator('a.ghpsr-avatar[title*="@bob"]')).toHaveCount(
+        1,
+      );
+      expect(metadataRequests).toBe(2);
+      expect(reviewRequests).toBe(2);
+    } finally {
+      releaseFirstReviews();
+    }
+  });
+});
+
 test("bounds reviewer-summary API concurrency for a representative 25-row list", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = createPullListFixtureHtml(

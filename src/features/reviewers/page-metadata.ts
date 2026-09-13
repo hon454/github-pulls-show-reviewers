@@ -67,6 +67,7 @@ export function createPageMetadataCoordinator(input: {
   let cache: Cache | undefined;
   let sequence = 0;
   let epoch = 0;
+  let invalidation = 0;
   const identity = (args: Input) =>
     JSON.stringify([
       args.route.owner.toLowerCase(),
@@ -84,6 +85,7 @@ export function createPageMetadataCoordinator(input: {
     controller: AbortController,
     requestSequence: number,
     requestEpoch: number,
+    requestInvalidation: number,
   ): Promise<PageMetadataResult> {
     let used = account;
     let error: unknown;
@@ -171,7 +173,10 @@ export function createPageMetadataCoordinator(input: {
         result,
         sequence: requestSequence,
         fetchedAt: now(),
-        stale: false,
+        // Preserve a later row change across an older successful fetch. A
+        // failed batch keeps its normal admission window and waits for another
+        // eligible row event rather than retrying immediately.
+        stale: !error && requestInvalidation !== invalidation,
       };
     return result;
   }
@@ -250,6 +255,7 @@ export function createPageMetadataCoordinator(input: {
           controller,
           requestSequence,
           requestEpoch,
+          invalidation,
         ).finally(() => {
           if (requests.get(key) === created) requests.delete(key);
         });
@@ -258,6 +264,7 @@ export function createPageMetadataCoordinator(input: {
       return join(request, args.signal);
     },
     markStale() {
+      invalidation += 1;
       if (cache) cache.stale = true;
     },
     abortAndClear() {

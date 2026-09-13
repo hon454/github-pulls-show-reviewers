@@ -3002,11 +3002,157 @@ describe("settled reviewer request ownership", () => {
       replacement.resolve(null);
       await flushMicrotasks();
       await flushMicrotasks();
-      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+      // The replacement itself observed another meaningful row change while
+      // pending, so it must complete one follow-up after the old owner settles.
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
       expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
       expect(onRowFailure).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("row changes during pending summaries", () => {
+  const makeSummary = (login: string): PullReviewerSummary => ({
+    status: "ok",
+    requestedUsers: [{ login, avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [],
+  });
+  const changeNativeMetadata = (text: string) => {
+    document.querySelector("#issue_42 .issue-meta-section")!.append(text);
+  };
+
+  it.each(["cold", "stale"])(
+    "coalesces multiple %s-row changes into one fresh follow-up",
+    async (mode) => {
+      resolveAccountForRepoMock.mockResolvedValue(null);
+      const old = createDeferred<{ ok: true; summary: PullReviewerSummary }>();
+      const current = createDeferred<{
+        ok: true;
+        summary: PullReviewerSummary;
+      }>();
+      let summaryCalls = 0;
+      runtimeSendMessageMock.mockImplementation((message: { type: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve({ ok: true, metadata: [] });
+        return ++summaryCalls === 1 ? old.promise : current.promise;
+      });
+      const cache = await import("../src/cache/reviewer-cache");
+      const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+      if (mode === "stale") {
+        cache.setCachedReviewerSummary(key, makeSummary("cached"));
+        cache.markReviewerCacheStale(key);
+      }
+      const { bootReviewerListPage } =
+        await import("../src/features/reviewers");
+      bootReviewerListPage(makeCtx());
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
+      changeNativeMetadata(" changed once");
+      await flushMicrotasks();
+      changeNativeMetadata(" changed twice");
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+
+      old.resolve({ ok: true, summary: makeSummary("alice") });
+      await flushMicrotasks();
+      await flushMicrotasks();
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
+      expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+        2,
+      );
+      expect(cache.getReviewerCacheEntry(key)?.stale).toBe(true);
+
+      current.resolve({ ok: true, summary: makeSummary("bob") });
+      await flushMicrotasks();
+      expect(
+        document.querySelector('a.ghpsr-avatar[title*="@bob"]'),
+      ).not.toBeNull();
+      expect(cache.getReviewerCacheEntry(key)?.stale).toBe(false);
+      expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
+    },
+  );
+
+  it("keeps a queued row change until its active response can revalidate", async () => {
+    installPullListFixture(["43", "44", "45", "46", "42"]);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const completions = new Map<string, Array<() => void>>();
+    let active = 0;
+    let peak = 0;
+    runtimeSendMessageMock.mockImplementation(
+      (message: { type: string; pullNumber: string }) => {
+        if (message.type === "fetchPullReviewerMetadataBatch")
+          return Promise.resolve({ ok: true, metadata: [] });
+        active += 1;
+        peak = Math.max(peak, active);
+        return new Promise((resolve) => {
+          const queue = completions.get(message.pullNumber) ?? [];
+          queue.push(() => {
+            active -= 1;
+            resolve({
+              ok: true,
+              summary: makeSummary(
+                message.pullNumber === "42" && queue.length > 1
+                  ? "bob"
+                  : "alice",
+              ),
+            });
+          });
+          completions.set(message.pullNumber, queue);
+        });
+      },
+    );
+    const cache = await import("../src/cache/reviewer-cache");
+    const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map((m) => m.pullNumber),
+    ).toEqual(["43", "44", "45", "46"]);
+    changeNativeMetadata(" changed while queued");
+    await flushMicrotasks();
+    completions.get("43")![0]!();
+    await flushMicrotasks();
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map((m) => m.pullNumber),
+    ).toEqual(["43", "44", "45", "46", "42"]);
+    completions.get("42")![0]!();
+    await flushMicrotasks();
+    expect(cache.getReviewerCacheEntry(key)?.stale).toBe(true);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(6);
+    completions.get("42")![1]!();
+    for (const number of ["44", "45", "46"]) completions.get(number)![0]!();
+    await flushMicrotasks();
+    expect(cache.getReviewerCacheEntry(key)?.stale).toBe(false);
+    expect(
+      document.querySelector('#issue_42 a.ghpsr-avatar[title*="@bob"]'),
+    ).not.toBeNull();
+    expect(peak).toBeLessThanOrEqual(4);
+    expect(active).toBe(0);
+  });
+
+  it("does not automatically retry a failed invalidated attempt", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    const failed = createDeferred<unknown>();
+    runtimeSendMessageMock.mockImplementation((message: { type: string }) =>
+      message.type === "fetchPullReviewerMetadataBatch"
+        ? Promise.resolve({ ok: true, metadata: [] })
+        : failed.promise,
+    );
+    const onRowFailure = vi.fn();
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx(), { onRowFailure });
+    await flushMicrotasks();
+    changeNativeMetadata(" changed during failure");
+    await flushMicrotasks();
+    failed.reject(new Error("Reviewer request failed"));
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+    expect(onRowFailure).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("reviewer asynchronous presentation ownership", () => {

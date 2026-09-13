@@ -1,6 +1,7 @@
 import {
   buildReviewerCacheKey,
   markReviewerCacheStale,
+  type CacheKey,
 } from "../../cache/reviewer-cache";
 import type { PullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
@@ -29,6 +30,7 @@ export function createReviewerRowLifecycle(input: {
   getRoute: () => PullListRoute | null;
   processRow: (row: Element) => void | Promise<void>;
   markPageMetadataStale: () => void;
+  onMeaningfulChange?: (cacheKey: CacheKey) => void;
   onRowsChanged?: () => void;
   diagnostics?: ReviewerRowLifecycleDiagnostics;
 }): ReviewerRowLifecycle {
@@ -80,6 +82,7 @@ export function createReviewerRowLifecycle(input: {
     if (previousFingerprint !== nextFingerprint) {
       markReviewerCacheStale(cacheKey);
       input.markPageMetadataStale();
+      input.onMeaningfulChange?.(cacheKey);
     }
     processRow(row);
   }

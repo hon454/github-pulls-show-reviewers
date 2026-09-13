@@ -132,6 +132,33 @@ describe("page metadata coordinator", () => {
     expect(fetchMetadata).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps an invalidation that arrives during a cold metadata request", async () => {
+    const old = createDeferred<PullReviewerMetadata[]>();
+    const updated = { ...metadata, authorLogin: "updated" };
+    const fetchMetadata = vi
+      .fn()
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValueOnce([updated]);
+    const coordinator = createPageMetadataCoordinator({
+      fallbackAccounts: fallbackAccounts(),
+      fetchMetadata,
+    });
+    const request = {
+      route,
+      account: null,
+      targetPullNumbers: ["42"],
+      signal: new AbortController().signal,
+    };
+    const pending = coordinator.get(request);
+    coordinator.markStale();
+    old.resolve([metadata]);
+    expect((await pending).metadata.get("42")).toEqual(metadata);
+    expect((await coordinator.get(request)).metadata.get("42")).toEqual(
+      updated,
+    );
+    expect(fetchMetadata).toHaveBeenCalledTimes(2);
+  });
+
   it("retries an auth-like public request failure with the fallback account", async () => {
     const account = makeAccount();
     const fallback = fallbackAccounts({
