@@ -81,7 +81,7 @@ const refreshCoordinatorMock = {
 
 beforeEach(() => {
   getAccountByIdMock.mockReset();
-  replaceInstallationsMock.mockReset().mockResolvedValue(undefined);
+  replaceInstallationsMock.mockReset().mockResolvedValue("committed");
   markAccountInvalidatedMock.mockReset().mockResolvedValue(undefined);
   refreshAccountTokenMock
     .mockReset()
@@ -389,7 +389,7 @@ describe("createInstallationRefreshService", () => {
 
     expect(outcomeA).toEqual({ ok: true });
     expect(outcomeB).toEqual({ ok: true });
-    expect(getAccountByIdMock).toHaveBeenCalledTimes(1);
+    expect(getAccountByIdMock).toHaveBeenCalledTimes(2);
     expect(fetchUserInstallationsMock).toHaveBeenCalledTimes(1);
     expect(replaceInstallationsMock).toHaveBeenCalledTimes(1);
   });

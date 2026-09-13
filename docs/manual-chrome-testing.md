@@ -328,9 +328,11 @@ supported languages during a refresh must only reformat the existing UI.
 
 The deterministic `auth-generation` and `accounts.registry-concurrency` tests
 cover delayed 401s after rotation, obsolete retry invalidation, reauthentication
-or removal during refresh, and concurrent sign-in/registry repair. Inspect only
-account IDs, revision identities, result codes and request counts; never copy
-credentials into logs or test reports.
+or removal during refresh, and concurrent sign-in/registry repair. The
+installation refresh cases also verify that a new credential generation starts
+its own request and an old skipped commit reports failure, regardless of which
+request completes first. Inspect only account IDs, revision identities, result
+codes and request counts; never copy credentials into logs or test reports.
 
 ### Expired access token with invalid refresh token
 

@@ -482,8 +482,13 @@ without changing generations, outcomes, caches, dismissal or request order.
   are removed. UI requests operations; background retry helpers reread current
   accounts and stop if an account is gone or invalid.
 - HTTP never holds the registry commit queue, preserving network concurrency
-  across accounts. Installation snapshots commit conditionally against their
-  request generation. The manual options refresh uses the background
+  across accounts. Installation refresh admission rereads the current account
+  through that owner and joins in-flight work only for the same credential
+  generation. A newer sign-in or token rotation starts separate work, and an
+  older completion cannot clear its admission. Installation snapshots commit
+  conditionally against the generation that fetched them; the owner reports
+  whether it committed or skipped the write, and a skipped write is not reported
+  as a successful refresh. The manual options refresh uses the background
   installation service. The 15-minute alarm rechecks current expiry and the
   30-minute threshold inside the coordinator, including expiry invalidation.
 - Local/session storage is restricted to trusted contexts before initialization
@@ -526,7 +531,7 @@ without changing generations, outcomes, caches, dismissal or request order.
   same-owner candidates, requests the background installation service and reruns
   resolution. The content facade receives an `AccountSummary`, never a full
   account. Repository context and installation owner restrict content refresh.
-- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per `accountId`. The service response does not include tokens; content has no direct local-storage access.
+- The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per account and credential generation. A skipped stale-generation commit returns the existing generic failure outcome. The service response does not include tokens; content has no direct local-storage access.
 - Each candidate is refreshed at most once per page session. Successful
   installation writes change the sanitized account/coverage digest; the content
   snapshot subscriber clears the row cache and rerenders covered rows.
