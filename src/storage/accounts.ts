@@ -635,6 +635,7 @@ export const replaceInstallations = (
   id: string,
   installations: Installation[],
   expectedGeneration?: string,
+  mayCommit?: () => boolean,
 ): Promise<"committed" | "skipped"> =>
   commit(async () => {
     const account = await getAccountById(id);
@@ -645,6 +646,9 @@ export const replaceInstallations = (
         account.invalidated)
     )
       return "skipped";
+    // A newer installation refresh can supersede an old 401 retry while this
+    // commit is queued. Check its liveness inside the same owner boundary.
+    if (mayCommit != null && !mayCommit()) return "skipped";
     return replaceInstallationsUnlocked(id, installations);
   });
 export const markAccountInvalidated = (
@@ -671,13 +675,15 @@ export const accountMutations = {
     change:
       | { tokens: AccountTokens }
       | { invalidatedReason: AccountInvalidationReason },
+    mayCommit?: () => boolean,
   ): Promise<Account | null> =>
     commit(async () => {
       const current = await getAccountById(id);
       if (
         current == null ||
         current.invalidated ||
-        credentialGeneration(current) !== expectedGeneration
+        credentialGeneration(current) !== expectedGeneration ||
+        (mayCommit != null && !mayCommit())
       ) {
         return current;
       }

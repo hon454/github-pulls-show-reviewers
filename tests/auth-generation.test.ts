@@ -548,6 +548,49 @@ describe("deferred authenticated service schedules", () => {
     },
   );
 
+  it("waits for an earlier new-generation admission before old retry invalidation", async () => {
+    const initial = await accountMutations.upsertAccountByLogin(connectInput());
+    const service = createInstallationRefreshService({
+      refreshCoordinator: coordinator,
+    });
+    const oldWork = service.refreshAccountInstallations(initial.id);
+    const first = await http.next();
+    await accountMutations.upsertAccountByLogin(
+      connectInput({ token: "fixture-access-1" }),
+    );
+    first.response.resolve(json({}, 401));
+    const oldRetry = await http.next();
+    expect(oldRetry.credential).toBe("1");
+
+    const barrier = storage.pauseGet(() => true);
+    const newWork = service.refreshAccountInstallations(initial.id);
+    await barrier.entered.promise;
+    const entered = deferred<void>();
+    const invalidate = coordinator.invalidateAccountToken;
+    const spy = vi
+      .spyOn(coordinator, "invalidateAccountToken")
+      .mockImplementation((...args) => {
+        const result = invalidate(...args);
+        entered.resolve();
+        return result;
+      });
+    oldRetry.response.resolve(json({}, 401));
+    await entered.promise;
+    barrier.release.resolve();
+
+    const newRequest = await http.next();
+    expect(newRequest.credential).toBe("1");
+    newRequest.response.resolve(json({ total_count: 0, installations: [] }));
+    expect(await Promise.all([oldWork, newWork])).toEqual([
+      { ok: false, reason: "failed" },
+      { ok: true },
+    ]);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(
+      (await accountMutations.getAccountById(initial.id))?.invalidated,
+    ).toBe(false);
+  });
+
   it("background diagnostics use the shared owner for stale failure and retry invalidation", async () => {
     const refresh = vi.spyOn(coordinator, "refreshAccountToken");
     const invalidate = vi.spyOn(coordinator, "invalidateAccountToken");

@@ -295,7 +295,11 @@ describe("createInstallationRefreshService", () => {
     const outcome = await service.refreshAccountInstallations("acc-1");
 
     expect(outcome).toEqual({ ok: false, reason: "failed" });
-    expect(markAccountInvalidatedMock).toHaveBeenCalledWith("acc-1", "legacy");
+    expect(markAccountInvalidatedMock).toHaveBeenCalledWith(
+      "acc-1",
+      "legacy",
+      expect.any(Function),
+    );
     expect(replaceInstallationsMock).not.toHaveBeenCalled();
   });
 

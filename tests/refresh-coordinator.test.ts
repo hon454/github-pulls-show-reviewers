@@ -25,6 +25,22 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("generation-aware refresh coordinator with real storage and HTTP parsing", () => {
+  it("does not suppress a current invalidation that joins an obsolete guarded one", async () => {
+    const account = await accountMutations.upsertAccountByLogin(connectInput());
+    const generation = credentialGeneration(account);
+    const obsolete = coordinator.invalidateAccountToken(
+      account.id,
+      generation,
+      () => false,
+    );
+    const current = coordinator.invalidateAccountToken(account.id, generation);
+    expect(current).toBe(obsolete);
+    await current;
+    expect(
+      (await accountMutations.getAccountById(account.id))?.invalidated,
+    ).toBe(true);
+  });
+
   it.each([
     ["reactive", "success"],
     ["reactive", "terminal"],

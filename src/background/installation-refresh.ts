@@ -43,6 +43,7 @@ export function createInstallationRefreshService(input: {
         account.id,
         installations,
         credentialGeneration(account),
+        () => !isSuperseded(),
       );
       return commit === "committed" && !isSuperseded()
         ? { ok: true }
@@ -77,6 +78,7 @@ export function createInstallationRefreshService(input: {
           account.id,
           installations,
           credentialGeneration(refreshed),
+          () => !isSuperseded(),
         );
         return commit === "committed" && !isSuperseded()
           ? { ok: true }
@@ -86,6 +88,7 @@ export function createInstallationRefreshService(input: {
           await refreshCoordinator.invalidateAccountToken(
             account.id,
             credentialGeneration(refreshed),
+            () => !isSuperseded(),
           );
         }
         return { ok: false, reason: "failed" };

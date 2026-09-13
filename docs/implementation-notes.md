@@ -488,9 +488,12 @@ without changing generations, outcomes, caches, dismissal or request order.
   older completion cannot clear its admission. An older 401 may still retry
   with newer credentials when the coordinator recovers them, but once a new
   generation's installation refresh is admitted, that older retry cannot
-  replace its result or invalidate its credentials. Installation snapshots
-  commit conditionally against the generation that fetched them; the owner
-  reports whether it committed or skipped the write, and a skipped write is
+  replace its result or invalidate its credentials. The owner checks both
+  credential generation and whether the request was superseded inside the
+  serialized commit, closing the gap between a service-side check and the
+  actual write. Installation snapshots commit conditionally against the
+  generation that fetched them. The owner reports whether it committed or
+  skipped the write, and a skipped write is
   not reported as a successful refresh. The manual options refresh uses the
   background installation service. The 15-minute alarm rechecks current expiry
   and the 30-minute threshold inside the coordinator, including expiry
