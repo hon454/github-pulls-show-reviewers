@@ -116,6 +116,31 @@ jobs. Regenerate Chrome Web Store screenshots with
 and run `pnpm zip` (or `pnpm zip:release` for production
 packaging) only after the checks above are green.
 
+### Download packaged E2E diagnostics
+
+Regular CI saves `test-results/` as `ci-e2e-<run-id>-<attempt>`;
+release-source verification saves `release-source/test-results/` as
+`release-e2e-<run-id>-<attempt>`. Both artifacts expire after 14 days and are
+uploaded after a final failure or a successful retry. Skipped verification and
+empty output do not create an artifact. Cancelled jobs may not upload evidence.
+The CI retry count remains one, with traces collected on the first retry.
+
+Open the workflow run's **Artifacts** section or download a specific artifact:
+
+```bash
+gh run download <run-id> --name ci-e2e-<run-id>-<attempt> --dir /tmp/e2e-evidence
+pnpm exec playwright show-trace /tmp/e2e-evidence/<test-directory>/trace.zip
+```
+
+For a release run, substitute the `release-e2e-` artifact name. Trace Viewer
+shows recorded actions, fixture DOM snapshots, and test attachments. Diagnostics
+written with `testInfo.outputPath()` are also available as standalone files;
+body-only attachments can be inspected inside the retry trace. A first-attempt
+failure has no trace under the existing policy. Preserve a needed artifact
+before retention expires. Only fixture test output is uploaded: never write
+credentials, real account data, browser profiles, or arbitrary workspace files
+into `test-results/`.
+
 The scheduled [live GitHub DOM canary](./docs/live-github-dom-canary.md)
 checks production GitHub markup separately. It is diagnostic and is not part
 of the blocking pull-request gate; use its runbook for ownership, transient
