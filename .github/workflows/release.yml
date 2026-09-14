@@ -155,9 +155,18 @@ jobs:
         run: pnpm preflight:release
         working-directory: release-source
       - name: Release verification
+        id: verification
         if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm verify:release
         working-directory: release-source
+      - name: Save packaged E2E evidence
+        if: ${{ !cancelled() && (steps.verification.outcome == 'success' || steps.verification.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-source/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Checked package
         if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm zip:checked

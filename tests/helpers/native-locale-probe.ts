@@ -139,8 +139,8 @@ try {
     metadataLocale,
     nativeMessages,
   };
-  // Preserve raw observations even if a later contract fails. CI has no artifact
-  // upload step, so also emit this non-sensitive fixture data to its test log.
+  // Preserve raw observations even if a later contract fails. CI retains this
+  // output file; also emit the non-sensitive fixture data for quick log triage.
   await writeFile(output, JSON.stringify(observation, null, 2));
   process.stdout.write(`Native locale observation: ${JSON.stringify(observation)}\n`);
   expect(SUPPORTED_LOCALES).toContain(metadataLocale);
