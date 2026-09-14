@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.3 release notes](./docs/releases/v1.18.3.md) (English): preserve reviewer updates during pending requests, recover interrupted local account removal, and isolate installation refreshes across credential changes.
+[v1.18.4 release notes](./docs/releases/v1.18.4.md) (English): retain packaged E2E traces and diagnostic attachments from CI and release verification for 14 days, including successful retries.
 
 ## What It Does
 

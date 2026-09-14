@@ -12,7 +12,7 @@
 
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.3 发布说明](./docs/releases/v1.18.3.md)（英文）：保留请求期间发生的审阅者信息变更，恢复中断的本地账户删除，并在凭据变更后单独处理安装列表刷新。
+[v1.18.4 发布说明](./docs/releases/v1.18.4.md)（英文）：将 CI 和发布验证中的扩展包 E2E 跟踪文件与诊断附件保留 14 天，包括重试后成功的测试。
 
 ## 主要功能
 
