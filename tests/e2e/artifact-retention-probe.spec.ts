@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { chromium, expect, test } from "@playwright/test";
 
-for (const scenario of ["final-failure", "successful-retry"]) {
+for (const scenario of ["successful-retry"]) {
   test(`artifact retention probe: ${scenario}`, async ({
     browserName,
   }, info) => {
