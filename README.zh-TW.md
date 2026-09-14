@@ -12,7 +12,7 @@
 
 ![GitHub PR 清單內的審查者標籤與審查狀態徽章](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.3 版本說明](./docs/releases/v1.18.3.md)（英文）：保留請求處理期間發生的審查者資訊變更，恢復中斷的本機帳戶刪除，並在憑證變更後分別處理安裝清單更新。
+[v1.18.4 版本說明](./docs/releases/v1.18.4.md)（英文）：將 CI 與發行驗證中的擴充功能套件 E2E 追蹤檔和診斷附件保留 14 天，包括重試後成功的測試。
 
 ## 主要功能
 

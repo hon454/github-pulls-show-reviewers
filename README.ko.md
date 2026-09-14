@@ -12,7 +12,7 @@
 
 ![리뷰어 칩과 리뷰 상태 배지가 표시된 GitHub PR 목록](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.3 릴리스 노트](./docs/releases/v1.18.3.md)(영어): 요청 중 발생한 리뷰어 정보 변경을 보존하고, 중단된 로컬 계정 삭제를 복구하며, 자격 증명이 바뀌면 설치 목록 갱신을 별도로 처리합니다.
+[v1.18.4 릴리스 노트](./docs/releases/v1.18.4.md)(영어): CI와 릴리스 검증의 패키지 E2E trace·진단 첨부를 재시도로 성공한 경우까지 포함해 14일간 보존합니다.
 
 ## 주요 기능
 
