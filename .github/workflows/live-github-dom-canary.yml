@@ -2,7 +2,7 @@ name: Live GitHub DOM canary
 
 on:
   schedule:
-    - cron: "17 6 * * *"
+    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -37,6 +37,14 @@ jobs:
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e:build
       - run: pnpm test:e2e:live
+      - name: Upload successful stage diagnostics
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-github-dom-canary-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results/**/canary-*.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v7
