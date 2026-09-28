@@ -42,6 +42,11 @@ describe("live GitHub DOM canary workflow", () => {
     const workflow = await readLiveCanaryWorkflow();
 
     expect(workflow).toContain("schedule:");
+    expect(
+      [...workflow.matchAll(/cron:\s*"([^"]+)"/g)].map((match) => match[1]),
+    ).toEqual(["17 6 * * 1"]);
+    expect(workflow).toContain("group: live-github-dom-canary");
+    expect(workflow).toContain("cancel-in-progress: false");
     expect(workflow).toContain("workflow_dispatch:");
     expect(workflow).not.toContain("pull_request:");
     expect(workflow).toContain("permissions:\n  contents: read");
@@ -59,6 +64,9 @@ describe("live GitHub DOM canary workflow", () => {
     expect(canaryIndex).toBeGreaterThan(buildIndex);
     expect(workflow).toContain("pnpm install --frozen-lockfile");
     expect(workflow).toContain("if: failure()");
+    expect(workflow).toContain("if: success()");
+    expect(workflow).toContain("path: test-results/**/canary-*.json");
+    expect(workflow).toContain("if-no-files-found: error");
     expect(workflow).toContain("actions/upload-artifact@v7");
     expect(workflow).toContain("path: test-results");
     expect(workflow).toContain("retention-days: 14");
@@ -66,9 +74,11 @@ describe("live GitHub DOM canary workflow", () => {
   });
 });
 
-function readLiveCanaryWorkflow(): Promise<string> {
-  return readFile(
-    path.join(projectRoot, ".github/workflows/live-github-dom-canary.yml"),
-    "utf8",
-  );
+async function readLiveCanaryWorkflow(): Promise<string> {
+  return (
+    await readFile(
+      path.join(projectRoot, ".github/workflows/live-github-dom-canary.yml"),
+      "utf8",
+    )
+  ).replace(/\r\n/g, "\n");
 }

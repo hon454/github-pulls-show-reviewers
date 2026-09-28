@@ -12,8 +12,14 @@ following before it passes:
 - An independent oracle finds exact `/<owner>/<repo>/pull/<number>` links in
   the page's `main` pull-list rows, deduplicates their pull numbers, and confirms
   that the production row selector covers the same set. PR links outside
-  `main`, links in sidebars or prose without an `issue_<number>` row, and deeper
-  paths such as `/files` are not part of the denominator.
+  `main`, links in sidebars or prose without a recognized row, and deeper
+  paths such as `/files` are not part of the denominator. Classic rows use the
+  number-bound `issue_<number>` ID. ListView falls back to direct `li` or
+  `role="listitem"` children of `data-listview-component="items-list"`, with an
+  exact PR link in that item's heading. CSS module classes, title test IDs,
+  extension mounts, and production selectors never identify oracle rows.
+  Nested list headings do not identify an outer item. Unrecognized exact links
+  inside the list fail as unmatched; they are never treated as an empty list.
 - Every independently found row has exactly one extension mount and no mount is
   left in its loading state. Every element with a reviewer chip class remains
   in the actual snapshot; a malformed qualifier or foreign search link is an
@@ -64,7 +70,8 @@ mount-only success. Diagnostics assign each reason to one of three owners:
   not settle, an invalid reviewer chip, an active reviewer-failure banner,
   unexpected Authorization, a missing extension API request, or a rendered
   reviewer mismatch.
-- `environment`: a GitHub challenge, missing live list rows, HTTP 429 or 5xx,
+- `environment`: a GitHub challenge, missing live list rows, HTTP 429, HTTP 403
+  with observed remaining quota zero, or 5xx,
   or the absence of any complete reviewer-bearing sample in the current public
   data.
 - `observation`: an API failure, response body timeout/read/schema failure,
@@ -91,7 +98,8 @@ repository:
 1. A opens the all-state pull list.
 2. B reads and clicks GitHub's actual same-repository pagination link.
 3. C uses browser Back to return to A.
-4. D reads and clicks GitHub's actual same-repository Closed filter link.
+4. D reads and clicks GitHub's actual same-repository Closed filter link,
+   accepting either `is:closed` or the ListView `state:closed` qualifier.
 
 The test does not synthesize `history.pushState` or extension events. It reads
 the native locator and href before each click, verifies the current PR-number
@@ -123,8 +131,16 @@ Back restore-set mismatch are also written as typed, sanitized navigation
 failures. Thus a healthy-looking current DOM cannot hide a failed required
 navigation invariant in the stage JSON.
 
-`.github/workflows/live-github-dom-canary.yml` runs the live project daily at
-06:17 UTC and can also be started with `workflow_dispatch`. The workflow has
+The minimized `github-pulls-live-listview.html` fixture preserves the direct
+list-item/h4 structure from failed run 36431428327 with synthetic content.
+Classic and ListView DOM regressions cover missing/duplicate/orphan mounts,
+loading, missing reviewers, incorrect state, unavailable API evidence and
+production selector drift. The packaged fixture suite exercises both layouts.
+
+`.github/workflows/live-github-dom-canary.yml` runs the live project weekly on
+Monday at 06:17 UTC (15:17 Asia/Seoul), using `17 6 * * 1`, and can also be
+started with `workflow_dispatch`. GitHub Actions may delay the actual start.
+The workflow has
 only `contents: read` permission, does not persist checkout credentials, and
 does not receive a GitHub user token. The Playwright live project retries at
 most twice within one run.
@@ -197,6 +213,10 @@ days. The retained trace and failure screenshot are accompanied by:
   attached by path, so the uploaded `test-results` artifact retains the HTML.
 
 Artifacts are collected only from the clean public profile.
+Successful scheduled and manual runs retain only the sanitized `canary-*.json`
+stage diagnostics for 14 days as `live-github-dom-canary-diagnostics-<run>-<attempt>`.
+This preserves A→B→C→D verification without uploading successful page HTML or
+browser profiles; the existing full failure evidence upload remains unchanged.
 
 ## Triage
 

@@ -613,8 +613,8 @@ export function isTerminalCanaryDomSnapshot(dom: CanaryDomSnapshot): boolean {
 
 /**
  * Self-contained so Playwright can serialize it directly into the page. The
- * denominator is exact PR links inside main issue_N rows, never the production
- * row selector passed only for the coverage comparison.
+ * denominator is exact PR links inside classic issue_N rows or structural
+ * ListView items in main, never the production selector used for comparison.
  */
 export function collectLiveCanaryDomSnapshot(input: {
   repository: CanaryRepository;
@@ -767,7 +767,7 @@ export function collectLiveCanaryDomSnapshot(input: {
   // main region with neither rows nor the list container is selector/host
   // evidence failure, not a silently accepted empty list.
   const pullListContainer = main.querySelector(
-    ".js-navigation-container, [data-testid='issues-list']",
+    ".js-navigation-container, [data-testid='issues-list'], [data-listview-component='items-list']",
   );
   const pullListContainerFound = pullListContainer != null;
   const hostListLoading =
@@ -778,21 +778,53 @@ export function collectLiveCanaryDomSnapshot(input: {
     ) != null;
   const hostEmptySignalFound =
     !hostListLoading &&
-    [...(pullListContainer?.querySelectorAll(
-      "[data-testid='empty-state'], .blankslate, [class*='Blankslate']",
-    ) ?? [])].some(
+    [
+      ...(pullListContainer?.querySelectorAll(
+        "[data-testid='empty-state'], .blankslate, [class*='Blankslate']",
+      ) ?? []),
+    ].some(
       (element) =>
         !element.hasAttribute("hidden") &&
         element.getAttribute("aria-hidden") !== "true",
     );
 
-  const hostRows = new Map<string, { row: Element; links: Set<Element> }>();
+  const hostRows = new Map<
+    Element,
+    { pullNumber: string; row: Element; links: Set<Element> }
+  >();
   let ignoredPullLinkCount = 0;
   let unmatchedPullListLinkCount = 0;
   main.querySelectorAll<HTMLAnchorElement>("a[href]").forEach((link) => {
     const pullNumber = parsePullNumber(link.getAttribute("href"));
     if (pullNumber == null) return;
-    const row = link.closest(`[id="issue_${pullNumber}"]`);
+    // Prefer the classic number-bound row. Otherwise require a direct semantic
+    // ListView item with a heading linking to this PR. Do not depend on CSS
+    // module names, title test IDs, extension mounts, or production selectors.
+    let row = link.closest(`[id="issue_${pullNumber}"]`);
+    if (row == null) {
+      let candidate: Element | null = link.parentElement;
+      while (candidate != null && candidate !== main) {
+        if (
+          candidate.matches("li, [role='listitem']") &&
+          candidate.parentElement?.matches(
+            "[data-listview-component='items-list']",
+          ) &&
+          [
+            ...candidate.querySelectorAll(
+              "h1 a[href], h2 a[href], h3 a[href], h4 a[href], h5 a[href], h6 a[href], [role='heading'] a[href]",
+            ),
+          ].some(
+            (title) =>
+              title.closest("li, [role='listitem']") === candidate &&
+              parsePullNumber(title.getAttribute("href")) === pullNumber,
+          )
+        ) {
+          row = candidate;
+          break;
+        }
+        candidate = candidate.parentElement;
+      }
+    }
     if (row == null || !main.contains(row)) {
       // Exact PR links in prose, advertising, or other main-page content are
       // intentionally outside the pull-list denominator.
@@ -800,9 +832,9 @@ export function collectLiveCanaryDomSnapshot(input: {
       if (pullListContainer?.contains(link)) unmatchedPullListLinkCount += 1;
       return;
     }
-    const existing = hostRows.get(pullNumber) ?? { row, links: new Set() };
+    const existing = hostRows.get(row) ?? { pullNumber, row, links: new Set() };
     existing.links.add(link);
-    hostRows.set(pullNumber, existing);
+    hostRows.set(row, existing);
   });
 
   const productionPullNumbers: string[] = [];
@@ -824,7 +856,8 @@ export function collectLiveCanaryDomSnapshot(input: {
     );
   });
 
-  const rows = [...hostRows.entries()].map(([pullNumber, value]) => {
+  const rows = [...hostRows.values()].map((value) => {
+    const { pullNumber } = value;
     const mounts = [...value.row.querySelectorAll("[data-ghpsr-root]")];
     const reviewerChips = mounts.flatMap((mount) => [
       ...mount.querySelectorAll(
@@ -868,7 +901,7 @@ export function collectLiveCanaryDomSnapshot(input: {
     challengeDetected,
     ignoredPullLinkCount,
     activeFailureBannerCount,
-    hostPullNumbers: rows.map((row) => row.pullNumber),
+    hostPullNumbers: [...new Set(rows.map((row) => row.pullNumber))],
     productionPullNumbers,
     rows,
   };
@@ -1208,11 +1241,12 @@ export function evaluateLiveCanary(input: {
     fail("extension", "authorization-header-present");
   for (const endpoint of input.api.endpoints) {
     if (endpoint.status < 200 || endpoint.status >= 300) {
+      const rateLimited =
+        endpoint.status === 429 ||
+        (endpoint.status === 403 && endpoint.rateLimit.remaining === 0);
       fail(
-        endpoint.status === 429 || endpoint.status >= 500
-          ? "environment"
-          : "observation",
-        endpoint.status === 429
+        rateLimited || endpoint.status >= 500 ? "environment" : "observation",
+        rateLimited
           ? "api-rate-limited"
           : endpoint.status >= 500
             ? "api-server-error"
@@ -1353,7 +1387,7 @@ export function isDifferentPullListPage(
 }
 
 export function isClosedPullListFilter(candidateUrl: URL): boolean {
-  return /(?:^|\s)is:closed(?:\s|$)/i.test(
+  return /(?:^|\s)(?:is|state):closed(?:\s|$)/i.test(
     candidateUrl.searchParams.get("q") ?? "",
   );
 }

@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.4 release notes](./docs/releases/v1.18.4.md) (English): retain packaged E2E traces and diagnostic attachments from CI and release verification for 14 days, including successful retries.
+[v1.18.5 release notes](./docs/releases/v1.18.5.md) (English): independently verify reviewers on classic and ListView pages, and run the live GitHub canary weekly on Mondays at 06:17 UTC with manual checks retained.
 
 ## What It Does
 

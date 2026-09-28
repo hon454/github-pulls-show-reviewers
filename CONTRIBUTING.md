@@ -141,7 +141,7 @@ before retention expires. Only fixture test output is uploaded: never write
 credentials, real account data, browser profiles, or arbitrary workspace files
 into `test-results/`.
 
-The scheduled [live GitHub DOM canary](./docs/live-github-dom-canary.md)
+The weekly [live GitHub DOM canary](./docs/live-github-dom-canary.md)
 checks production GitHub markup separately. It is diagnostic and is not part
 of the blocking pull-request gate; use its runbook for ownership, transient
 failures, and captured evidence.
