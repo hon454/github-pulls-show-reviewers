@@ -40,13 +40,11 @@ describe("live canary host-row oracle", () => {
   it("supports semantic item/heading fallback and host-confirmed ListView empty states", () => {
     document.body.innerHTML = `<main><div data-listview-component="items-list"><div role="listitem"><div role="heading"><a href="/octo/repo/pull/42">PR</a></div></div></div></main>`;
     expect(collectListViewDom().hostPullNumbers).toEqual(["42"]);
-    document
-      .querySelector("[role='listitem']")!
-      .replaceWith(
-        Object.assign(document.createElement("div"), {
-          className: "blankslate",
-        }),
-      );
+    document.querySelector("[role='listitem']")!.replaceWith(
+      Object.assign(document.createElement("div"), {
+        className: "blankslate",
+      }),
+    );
     expect(isTerminalCanaryDomSnapshot(collectListViewDom())).toBe(true);
     document
       .querySelector("[data-listview-component]")!
@@ -190,6 +188,21 @@ describe("live canary host-row oracle", () => {
   });
 
   it("requires a Closed filter instead of accepting an Open fallback", () => {
+    expect(
+      isClosedPullListFilter(
+        new URL("https://github.com/octo/repo/pulls?q=is%3Apr+state%3Aclosed"),
+      ),
+    ).toBe(true);
+    expect(
+      isClosedPullListFilter(
+        new URL("https://github.com/octo/repo/pulls?q=is%3Apr+state%3Aopen"),
+      ),
+    ).toBe(false);
+    expect(
+      isClosedPullListFilter(
+        new URL("https://github.com/octo/repo/pulls?q=is%3Apr+-state%3Aclosed"),
+      ),
+    ).toBe(false);
     expect(
       isClosedPullListFilter(
         new URL("https://github.com/octo/repo/pulls?q=is%3Apr+is%3Aclosed"),
@@ -820,6 +833,30 @@ describe("independent reviewer expectation oracle", () => {
 });
 
 describe("live canary verdict", () => {
+  it.each([
+    [429, null, "environment", "api-rate-limited"],
+    [403, 0, "environment", "api-rate-limited"],
+    [403, null, "observation", "api-http-error"],
+    [403, 10, "observation", "api-http-error"],
+  ] as const)(
+    "classifies HTTP %s with remaining %s without treating it as success",
+    (status, remaining, owner, code) => {
+      const api = positiveApi();
+      api.endpoints[0].status = status;
+      api.endpoints[0].rateLimit.remaining = remaining;
+      const verdict = evaluateLiveCanary({
+        repository,
+        dom: positiveDom(),
+        api,
+      });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.failures).toContainEqual({
+        owner,
+        code,
+        pullNumber: api.endpoints[0].pullNumber,
+      });
+    },
+  );
   it("persists a typed navigation failure even when the current DOM is healthy", () => {
     const verdict = appendCanaryFailure(
       evaluateLiveCanary({

@@ -70,7 +70,8 @@ mount-only success. Diagnostics assign each reason to one of three owners:
   not settle, an invalid reviewer chip, an active reviewer-failure banner,
   unexpected Authorization, a missing extension API request, or a rendered
   reviewer mismatch.
-- `environment`: a GitHub challenge, missing live list rows, HTTP 429 or 5xx,
+- `environment`: a GitHub challenge, missing live list rows, HTTP 429, HTTP 403
+  with observed remaining quota zero, or 5xx,
   or the absence of any complete reviewer-bearing sample in the current public
   data.
 - `observation`: an API failure, response body timeout/read/schema failure,
@@ -97,7 +98,8 @@ repository:
 1. A opens the all-state pull list.
 2. B reads and clicks GitHub's actual same-repository pagination link.
 3. C uses browser Back to return to A.
-4. D reads and clicks GitHub's actual same-repository Closed filter link.
+4. D reads and clicks GitHub's actual same-repository Closed filter link,
+   accepting either `is:closed` or the ListView `state:closed` qualifier.
 
 The test does not synthesize `history.pushState` or extension events. It reads
 the native locator and href before each click, verifies the current PR-number

@@ -1241,11 +1241,12 @@ export function evaluateLiveCanary(input: {
     fail("extension", "authorization-header-present");
   for (const endpoint of input.api.endpoints) {
     if (endpoint.status < 200 || endpoint.status >= 300) {
+      const rateLimited =
+        endpoint.status === 429 ||
+        (endpoint.status === 403 && endpoint.rateLimit.remaining === 0);
       fail(
-        endpoint.status === 429 || endpoint.status >= 500
-          ? "environment"
-          : "observation",
-        endpoint.status === 429
+        rateLimited || endpoint.status >= 500 ? "environment" : "observation",
+        rateLimited
           ? "api-rate-limited"
           : endpoint.status >= 500
             ? "api-server-error"
@@ -1386,7 +1387,7 @@ export function isDifferentPullListPage(
 }
 
 export function isClosedPullListFilter(candidateUrl: URL): boolean {
-  return /(?:^|\s)is:closed(?:\s|$)/i.test(
+  return /(?:^|\s)(?:is|state):closed(?:\s|$)/i.test(
     candidateUrl.searchParams.get("q") ?? "",
   );
 }

@@ -519,7 +519,7 @@ for (const layout of ["classic", "ListView"] as const) {
     await withExtension(async (context) => {
       const initialUrl = `${pullListUrl}?q=is%3Apr`;
       const pageTwoUrl = `${pullListUrl}?q=is%3Apr&page=2`;
-      const closedUrl = `${pullListUrl}?q=is%3Apr+is%3Aclosed`;
+      const closedUrl = `${pullListUrl}?q=is%3Apr+${layout === "ListView" ? "state" : "is"}%3Aclosed`;
       const observer = createCanaryResponseObserver({ repository });
       context.on("request", (request) => observer.observeRequest(request));
       context.on("response", (response) => observer.observeResponse(response));
