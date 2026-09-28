@@ -12,7 +12,7 @@
 
 ![리뷰어 칩과 리뷰 상태 배지가 표시된 GitHub PR 목록](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.4 릴리스 노트](./docs/releases/v1.18.4.md)(영어): CI와 릴리스 검증의 패키지 E2E trace·진단 첨부를 재시도로 성공한 경우까지 포함해 14일간 보존합니다.
+[v1.18.5 릴리스 노트](./docs/releases/v1.18.5.md)(영어): classic·ListView 페이지의 리뷰어를 독립적으로 검증하며, 실제 GitHub Canary를 매주 월요일 06:17 UTC(한국시간 15:17)에 실행합니다. 수동 실행도 유지합니다.
 
 ## 주요 기능
 

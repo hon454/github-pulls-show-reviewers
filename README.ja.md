@@ -12,7 +12,7 @@
 
 ![レビュアーチップとレビュー状態バッジを表示した GitHub PR 一覧](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.4 リリースノート](./docs/releases/v1.18.4.md)（英語）：CI とリリース検証で取得した拡張機能パッケージの E2E トレースと診断添付ファイルを、再試行後に成功した場合も含めて 14 日間保持します。
+[v1.18.5 リリースノート](./docs/releases/v1.18.5.md)（英語）：classic・ListView ページのレビュアーを独立して検証し、実際の GitHub を使う Canary を毎週月曜日 06:17 UTC に実行します。手動実行も引き続き利用できます。
 
 ## 主な機能
 

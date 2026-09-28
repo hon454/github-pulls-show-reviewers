@@ -12,7 +12,7 @@
 
 ![GitHub PR 清單內的審查者標籤與審查狀態徽章](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.4 版本說明](./docs/releases/v1.18.4.md)（英文）：將 CI 與發行驗證中的擴充功能套件 E2E 追蹤檔和診斷附件保留 14 天，包括重試後成功的測試。
+[v1.18.5 版本說明](./docs/releases/v1.18.5.md)（英文）：獨立驗證 classic 與 ListView 頁面中的審查者資訊，並於每週一 06:17 UTC 執行實際 GitHub Canary 檢查，同時保留手動執行。
 
 ## 主要功能
 

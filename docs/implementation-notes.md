@@ -4,6 +4,11 @@ The [v1.18.1 release notes](./releases/v1.18.1.md) collect the classic/Preview
 repository PR-list compatibility and development-tool dependency maintenance
 described below.
 
+The [v1.18.5 release notes](./releases/v1.18.5.md) cover test-only ListView
+oracle compatibility and weekly live monitoring. The [canary runbook](./live-github-dom-canary.md)
+defines independent classic/ListView row and reviewer checks, native navigation,
+and evidence retention. Extension runtime behavior is unchanged.
+
 ## Development toolchain
 
 WXT `0.21.4` uses the explicit Vite `8.2.2` peer and requires Node.js 22.12+
