@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -23,6 +24,12 @@ import {
 } from "./helpers/live-github-canary";
 
 const repository: CanaryRepository = { owner: "octo", repo: "repo" };
+const listViewFixture = readFileSync(
+  "tests/fixtures/github-pulls-live-listview.html",
+  "utf8",
+);
+const listViewProductionSelector =
+  'li[class*="PullsListItem-module__listItem"]';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -30,6 +37,141 @@ afterEach(() => {
 });
 
 describe("live canary host-row oracle", () => {
+  it("supports semantic item/heading fallback and host-confirmed ListView empty states", () => {
+    document.body.innerHTML = `<main><div data-listview-component="items-list"><div role="listitem"><div role="heading"><a href="/octo/repo/pull/42">PR</a></div></div></div></main>`;
+    expect(collectListViewDom().hostPullNumbers).toEqual(["42"]);
+    document
+      .querySelector("[role='listitem']")!
+      .replaceWith(
+        Object.assign(document.createElement("div"), {
+          className: "blankslate",
+        }),
+      );
+    expect(isTerminalCanaryDomSnapshot(collectListViewDom())).toBe(true);
+    document
+      .querySelector("[data-listview-component]")!
+      .setAttribute("aria-busy", "true");
+    expect(isTerminalCanaryDomSnapshot(collectListViewDom())).toBe(false);
+  });
+
+  it("retains distinct duplicate host rows so an unmounted duplicate cannot disappear", () => {
+    document.body.innerHTML = listViewFixture;
+    const row = document.querySelector("li")!;
+    row.after(row.cloneNode(true));
+    const dom = collectListViewDom();
+    expect(dom.hostPullNumbers).toEqual(["42", "43"]);
+    expect(dom.rows.map((item) => item.pullNumber)).toEqual(["42", "42", "43"]);
+    expect(failureCodes(dom, positiveApi())).toContain(
+      "production-row-duplicate-or-missing",
+    );
+    expect(failureCodes(dom, positiveApi())).toContain("mount-count");
+  });
+
+  it("recognizes captured ListView structure independently of production classes and title markers", () => {
+    document.body.innerHTML = listViewFixture;
+    const snapshot = collectListViewDom();
+    expect(snapshot).toMatchObject({
+      hostPullNumbers: ["42", "43"],
+      productionPullNumbers: ["42", "43"],
+      pullListContainerFound: true,
+      orphanMountCount: 0,
+      ignoredPullLinkCount: 1,
+    });
+    expect(snapshot.rows[0].hostLinkCount).toBe(2);
+    document
+      .querySelectorAll("li, h4 a, [data-listview-item-title-container]")
+      .forEach((element) => {
+        element.removeAttribute("class");
+        element.removeAttribute("data-testid");
+        element.removeAttribute("data-listview-item-title-container");
+      });
+    expect(collectListViewDom().hostPullNumbers).toEqual(["42", "43"]);
+    expect(failureCodes(collectListViewDom(), positiveApi())).toContain(
+      "production-selector-coverage",
+    );
+  });
+
+  it("does not promote list prose, nested lists, foreign links or deeper PR paths into host rows", () => {
+    document.body.innerHTML = listViewFixture;
+    document
+      .querySelector("ul")!
+      .insertAdjacentHTML(
+        "beforeend",
+        `<li><p><a href="/octo/repo/pull/90">prose</a></p></li><li><ul><li><h4><a href="/octo/repo/pull/91">nested</a></h4></li></ul></li><li><h4><a href="/foreign/repo/pull/92">foreign</a><a href="/octo/repo/pull/42/files">files</a></h4></li>`,
+      );
+    expect(collectListViewDom().hostPullNumbers).toEqual(["42", "43"]);
+    expect(collectListViewDom().unmatchedPullListLinkCount).toBe(2);
+  });
+
+  it.each(["classic", "ListView"])(
+    "preserves outcome failures with %s fixture DOM",
+    (layout) => {
+      const reset = () => {
+        setCollectedVerdictDom({});
+        if (layout === "ListView") {
+          const mounts = [...document.querySelectorAll("[data-ghpsr-root]")];
+          document.body.innerHTML = listViewFixture;
+          document
+            .querySelectorAll("main > ul > li")
+            .forEach((row, index) => row.append(mounts[index]));
+        }
+      };
+      const snapshot = () =>
+        layout === "ListView" ? collectListViewDom() : collectDom();
+      reset();
+      expect(failureCodes(snapshot(), positiveApi())).toEqual([]);
+      const cases: [string, () => void][] = [
+        [
+          "mount-count",
+          () => document.querySelector("[data-ghpsr-root]")!.remove(),
+        ],
+        [
+          "mount-count",
+          () => {
+            const mount = document.querySelector("[data-ghpsr-root]")!;
+            mount.after(mount.cloneNode(true));
+          },
+        ],
+        [
+          "orphan-mount-present",
+          () =>
+            document
+              .querySelector("main")!
+              .insertAdjacentHTML("beforeend", "<span data-ghpsr-root></span>"),
+        ],
+        [
+          "loading-not-settled",
+          () =>
+            document
+              .querySelector("[data-ghpsr-root]")!
+              .insertAdjacentHTML(
+                "beforeend",
+                '<span class="ghpsr-status">Loading</span>',
+              ),
+        ],
+        [
+          "reviewer-outcome-mismatch",
+          () =>
+            document
+              .querySelector(".ghpsr-avatar--border-approved")!
+              .setAttribute("title", "@bob · commented"),
+        ],
+        [
+          "terminal-outcome-mismatch",
+          () => document.querySelector("[data-ghpsr-root]")!.replaceChildren(),
+        ],
+      ];
+      for (const [code, mutate] of cases) {
+        reset();
+        mutate();
+        expect(failureCodes(snapshot(), positiveApi()), code).toContain(code);
+      }
+      reset();
+      const api = positiveApi();
+      api.pulls[0].reviews.completeness = "unavailable";
+      expect(failureCodes(snapshot(), api)).toContain("reviews-unavailable");
+    },
+  );
   it("rejects GitHub's current-page pagination self link", () => {
     const initial = "https://github.com/octo/repo/pulls?q=is%3Apr";
 
@@ -61,12 +203,8 @@ describe("live canary host-row oracle", () => {
   });
 
   it("compares host pull-number sets without treating order as a change", () => {
-    expect(sameCanaryPullNumberSet(["42", "43"], ["43", "42"])).toBe(
-      true,
-    );
-    expect(sameCanaryPullNumberSet(["42", "43"], ["42", "44"])).toBe(
-      false,
-    );
+    expect(sameCanaryPullNumberSet(["42", "43"], ["43", "42"])).toBe(true);
+    expect(sameCanaryPullNumberSet(["42", "43"], ["42", "44"])).toBe(false);
   });
 
   it("uses deduplicated main-list PR links instead of the production selector", () => {
@@ -326,9 +464,7 @@ describe("live canary response observer", () => {
   });
 
   it("assigns a distinct artifact name to a post-stage failure", () => {
-    expect(canaryStageArtifactFileName("C")).toBe(
-      "canary-navigation-C.json",
-    );
+    expect(canaryStageArtifactFileName("C")).toBe("canary-navigation-C.json");
     expect(canaryStageArtifactFileName("C", true)).toBe(
       "canary-navigation-C-failure.json",
     );
@@ -686,7 +822,11 @@ describe("independent reviewer expectation oracle", () => {
 describe("live canary verdict", () => {
   it("persists a typed navigation failure even when the current DOM is healthy", () => {
     const verdict = appendCanaryFailure(
-      evaluateLiveCanary({ repository, dom: positiveDom(), api: positiveApi() }),
+      evaluateLiveCanary({
+        repository,
+        dom: positiveDom(),
+        api: positiveApi(),
+      }),
       {
         owner: "environment",
         code: "required-pagination-link-unavailable",
@@ -944,6 +1084,13 @@ function collectDom(): CanaryDomSnapshot {
   return collectLiveCanaryDomSnapshot({
     repository,
     productionRowSelector: ".js-issue-row",
+  });
+}
+
+function collectListViewDom(): CanaryDomSnapshot {
+  return collectLiveCanaryDomSnapshot({
+    repository,
+    productionRowSelector: listViewProductionSelector,
   });
 }
 

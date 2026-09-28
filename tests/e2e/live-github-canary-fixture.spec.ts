@@ -19,9 +19,7 @@ import {
   isClosedPullListFilter,
   type CanaryRepository,
 } from "../helpers/live-github-canary";
-import {
-  findNativePullListLink,
-} from "../helpers/live-github-canary-navigation";
+import { findNativePullListLink } from "../helpers/live-github-canary-navigation";
 import type { NavigationEvidenceError } from "../helpers/live-github-canary-navigation";
 import { createPullListFixtureHtml } from "../helpers/pull-list-fixtures";
 
@@ -33,111 +31,113 @@ const repository: CanaryRepository = {
 const pullListUrl = `https://github.com/${repository.owner}/${repository.repo}/pulls`;
 const apiBase = `https://api.github.com/repos/${repository.owner}/${repository.repo}`;
 
-test("packaged canary oracle accepts rendered and empty reviewer outcomes", async () => {
-  await withExtension(async (context) => {
-    const observer = createCanaryResponseObserver({ repository });
-    context.on("request", (request) => observer.observeRequest(request));
-    context.on("response", (response) => observer.observeResponse(response));
-    await routePullList(context, ["42", "43"]);
-    await routeMetadata(context, [metadata(42, ["alice"]), metadata(43, [])]);
-    await routeReviews(context, {
-      "42": [
-        {
-          state: "APPROVED",
-          submitted_at: "2026-09-01T00:00:00Z",
-          user: { login: "bob" },
-        },
-      ],
-      "43": [],
-    });
-
-    const page = await context.newPage();
-    await page.goto(pullListUrl);
-    await expect
-      .poll(async () => {
-        const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
-          repository,
-          productionRowSelector: githubSelectors.row,
-        });
-        return snapshot.rows.every(
-          (row) => row.mountCount === 1 && row.loadingMountCount === 0,
-        );
-      })
-      .toBe(true);
-    await observer.settle();
-    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
-      repository,
-      productionRowSelector: githubSelectors.row,
-    });
-    const verdict = evaluateLiveCanary({
-      repository,
-      dom,
-      api: observer.snapshot(),
-    });
-
-    expect(verdict).toMatchObject({
-      ok: true,
-      terminal: { success: 1, empty: 1, loading: 0, failure: 0 },
-    });
-    expect(verdict.samples).toHaveLength(2);
-    expect(dom.activeFailureBannerCount).toBe(0);
-    expect(observer.snapshot().apiRequestsWithAuthorization).toBe(0);
-  });
-});
-
-test("packaged canary oracle rejects list success with failed review detail", async () => {
-  await withExtension(async (context) => {
-    const observer = createCanaryResponseObserver({ repository });
-    context.on("request", (request) => observer.observeRequest(request));
-    context.on("response", (response) => observer.observeResponse(response));
-    await routePullList(context, ["42"]);
-    await routeMetadata(context, [metadata(42, ["alice"])]);
-    await context.route(`${apiBase}/pulls/42/reviews**`, async (route) => {
-      await route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ message: "fixture failure" }),
+for (const layout of ["classic", "ListView"] as const) {
+  test(`packaged canary oracle accepts rendered and empty reviewer outcomes (${layout})`, async () => {
+    await withExtension(async (context) => {
+      const observer = createCanaryResponseObserver({ repository });
+      context.on("request", (request) => observer.observeRequest(request));
+      context.on("response", (response) => observer.observeResponse(response));
+      await routePullList(context, ["42", "43"], layout);
+      await routeMetadata(context, [metadata(42, ["alice"]), metadata(43, [])]);
+      await routeReviews(context, {
+        "42": [
+          {
+            state: "APPROVED",
+            submitted_at: "2026-09-01T00:00:00Z",
+            user: { login: "bob" },
+          },
+        ],
+        "43": [],
       });
-    });
 
-    const page = await context.newPage();
-    await page.goto(pullListUrl);
-    await expect
-      .poll(async () => {
-        const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
-          repository,
-          productionRowSelector: githubSelectors.row,
-        });
-        return snapshot.rows[0]?.loadingMountCount ?? 1;
-      })
-      .toBe(0);
-    await expect
-      .poll(async () => {
-        const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
-          repository,
-          productionRowSelector: githubSelectors.row,
-        });
-        return snapshot.activeFailureBannerCount;
-      })
-      .toBe(1);
-    await observer.settle();
-    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
-      repository,
-      productionRowSelector: githubSelectors.row,
-    });
-    const verdict = evaluateLiveCanary({
-      repository,
-      dom,
-      api: observer.snapshot(),
-    });
+      const page = await context.newPage();
+      await page.goto(pullListUrl);
+      await expect
+        .poll(async () => {
+          const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
+            repository,
+            productionRowSelector: githubSelectors.row,
+          });
+          return snapshot.rows.every(
+            (row) => row.mountCount === 1 && row.loadingMountCount === 0,
+          );
+        })
+        .toBe(true);
+      await observer.settle();
+      const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+        repository,
+        productionRowSelector: githubSelectors.row,
+      });
+      const verdict = evaluateLiveCanary({
+        repository,
+        dom,
+        api: observer.snapshot(),
+      });
 
-    expect(verdict.ok).toBe(false);
-    expect(dom.activeFailureBannerCount).toBe(1);
-    expect(verdict.failures.map((failure) => failure.code)).toEqual(
-      expect.arrayContaining(["api-server-error", "reviews-unavailable"]),
-    );
+      expect(verdict).toMatchObject({
+        ok: true,
+        terminal: { success: 1, empty: 1, loading: 0, failure: 0 },
+      });
+      expect(verdict.samples).toHaveLength(2);
+      expect(dom.activeFailureBannerCount).toBe(0);
+      expect(observer.snapshot().apiRequestsWithAuthorization).toBe(0);
+    });
   });
-});
+
+  test(`packaged canary oracle rejects list success with failed review detail (${layout})`, async () => {
+    await withExtension(async (context) => {
+      const observer = createCanaryResponseObserver({ repository });
+      context.on("request", (request) => observer.observeRequest(request));
+      context.on("response", (response) => observer.observeResponse(response));
+      await routePullList(context, ["42"], layout);
+      await routeMetadata(context, [metadata(42, ["alice"])]);
+      await context.route(`${apiBase}/pulls/42/reviews**`, async (route) => {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ message: "fixture failure" }),
+        });
+      });
+
+      const page = await context.newPage();
+      await page.goto(pullListUrl);
+      await expect
+        .poll(async () => {
+          const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
+            repository,
+            productionRowSelector: githubSelectors.row,
+          });
+          return snapshot.rows[0]?.loadingMountCount ?? 1;
+        })
+        .toBe(0);
+      await expect
+        .poll(async () => {
+          const snapshot = await page.evaluate(collectLiveCanaryDomSnapshot, {
+            repository,
+            productionRowSelector: githubSelectors.row,
+          });
+          return snapshot.activeFailureBannerCount;
+        })
+        .toBe(1);
+      await observer.settle();
+      const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+        repository,
+        productionRowSelector: githubSelectors.row,
+      });
+      const verdict = evaluateLiveCanary({
+        repository,
+        dom,
+        api: observer.snapshot(),
+      });
+
+      expect(verdict.ok).toBe(false);
+      expect(dom.activeFailureBannerCount).toBe(1);
+      expect(verdict.failures.map((failure) => failure.code)).toEqual(
+        expect.arrayContaining(["api-server-error", "reviews-unavailable"]),
+      );
+    });
+  });
+}
 
 test("packaged canary rejects a selector-drift zero-row list with an unmatched PR link", async () => {
   await withExtension(async (context) => {
@@ -371,17 +371,23 @@ test("packaged canary drops eight slow FIFO rows after same-document navigation"
           .every((number) => startedReviews.includes(number)),
       )
       .toBe(true);
-    expect(startedReviews.filter((number) => oldNumbers.includes(number))).toEqual(
-      oldNumbers.slice(0, 4),
-    );
+    expect(
+      startedReviews.filter((number) => oldNumbers.includes(number)),
+    ).toEqual(oldNumbers.slice(0, 4));
     for (const release of lateOldReleases.splice(0)) release();
-    await expect.poll(() => settledReviews.filter((number) =>
-      oldNumbers.includes(number),
-    )).toEqual(oldNumbers.slice(0, 4));
+    await expect
+      .poll(() =>
+        settledReviews.filter((number) => oldNumbers.includes(number)),
+      )
+      .toEqual(oldNumbers.slice(0, 4));
 
-    await expect.poll(() => startedReviews.filter((number) =>
-      nextNumbers.includes(number),
-    ).length).toBe(8);
+    await expect
+      .poll(
+        () =>
+          startedReviews.filter((number) => nextNumbers.includes(number))
+            .length,
+      )
+      .toBe(8);
     await expectCurrentCanary(page, observer, nextNumbers);
     expect(
       await page.locator('a.ghpsr-avatar[title*="@reviewer-"]').count(),
@@ -408,17 +414,23 @@ test("packaged canary drops eight slow FIFO rows after same-document navigation"
         html: createPullListFixtureHtml(oldNumbers, repository),
       },
     );
-    await expect.poll(() => startedReviews.filter((number) =>
-      oldNumbers.includes(number),
-    ).length).toBe(8);
+    await expect
+      .poll(
+        () =>
+          startedReviews.filter((number) => oldNumbers.includes(number)).length,
+      )
+      .toBe(8);
     await expect(page.locator("#issue_1 .ghpsr-status")).toHaveCount(1);
     await expect(
       page.locator('#issue_1 a.ghpsr-avatar[title*="@reviewer-1"]'),
     ).toHaveCount(0);
     for (const release of freshOldReleases.splice(0)) release();
-    await expect.poll(() => startedReviews.filter((number) =>
-      oldNumbers.includes(number),
-    ).length).toBe(12);
+    await expect
+      .poll(
+        () =>
+          startedReviews.filter((number) => oldNumbers.includes(number)).length,
+      )
+      .toBe(12);
     for (const release of freshOldReleases.splice(0)) release();
     await expectCurrentCanary(page, observer, oldNumbers);
   });
@@ -432,7 +444,9 @@ test("packaged canary does not dispatch a queued review after its row is removed
     await routePullList(context, pullNumbers);
     await routeMetadata(
       context,
-      pullNumbers.map((number) => metadata(Number(number), [`reviewer-${number}`])),
+      pullNumbers.map((number) =>
+        metadata(Number(number), [`reviewer-${number}`]),
+      ),
     );
     await context.route(
       new RegExp(`^${apiBase}/pulls/(\\d+)/reviews`),
@@ -458,7 +472,9 @@ test("packaged canary does not dispatch a queued review after its row is removed
     await page.locator("#issue_46").evaluate((row) => row.remove());
     for (const release of slowReleases.splice(0)) release();
 
-    await expect(page.locator("[data-ghpsr-root] a.ghpsr-avatar")).toHaveCount(4);
+    await expect(page.locator("[data-ghpsr-root] a.ghpsr-avatar")).toHaveCount(
+      4,
+    );
     expect(startedReviews).toEqual(pullNumbers.slice(0, 4));
   });
 });
@@ -484,95 +500,117 @@ test("packaged canary keeps a current duplicate consumer on one shared review re
     const page = await context.newPage();
     await page.goto(pullListUrl);
     await expect.poll(() => reviewRequests).toBe(1);
-    await page.locator("#issue_42").first().evaluate((row) => row.remove());
+    await page
+      .locator("#issue_42")
+      .first()
+      .evaluate((row) => row.remove());
     releaseReview?.();
 
-    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(1);
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
     await expect(page.locator("[data-ghpsr-root]")).toHaveCount(1);
     expect(reviewRequests).toBe(1);
   });
 });
 
-test("packaged canary recovers one mount per current row across pagination, back, forward, and filter navigation", async () => {
-  await withExtension(async (context) => {
-    const initialUrl = `${pullListUrl}?q=is%3Apr`;
-    const pageTwoUrl = `${pullListUrl}?q=is%3Apr&page=2`;
-    const closedUrl = `${pullListUrl}?q=is%3Apr+is%3Aclosed`;
-    const observer = createCanaryResponseObserver({ repository });
-    context.on("request", (request) => observer.observeRequest(request));
-    context.on("response", (response) => observer.observeResponse(response));
-    await routeNavigablePullLists(context, {
-      [initialUrl]: createPullListFixtureHtml(["42", "43"], repository, {
-        paginationHref: pageTwoUrl,
-        filterHref: closedUrl,
-        hiddenFilterHref: closedUrl,
-        disabledFilterHref: closedUrl,
-      }),
-      [pageTwoUrl]: createPullListFixtureHtml(["44", "45"], repository),
-      [closedUrl]: createPullListFixtureHtml(["46", "47"], repository),
+for (const layout of ["classic", "ListView"] as const) {
+  test(`packaged canary recovers one mount per current row across pagination, back, forward, and filter navigation (${layout})`, async () => {
+    await withExtension(async (context) => {
+      const initialUrl = `${pullListUrl}?q=is%3Apr`;
+      const pageTwoUrl = `${pullListUrl}?q=is%3Apr&page=2`;
+      const closedUrl = `${pullListUrl}?q=is%3Apr+is%3Aclosed`;
+      const observer = createCanaryResponseObserver({ repository });
+      context.on("request", (request) => observer.observeRequest(request));
+      context.on("response", (response) => observer.observeResponse(response));
+      await routeNavigablePullLists(context, {
+        [initialUrl]: createPullListFixtureHtml(
+          ["42", "43"],
+          repository,
+          {
+            paginationHref: pageTwoUrl,
+            filterHref: closedUrl,
+            hiddenFilterHref: closedUrl,
+            disabledFilterHref: closedUrl,
+          },
+          layout,
+        ),
+        [pageTwoUrl]: createPullListFixtureHtml(
+          ["44", "45"],
+          repository,
+          {},
+          layout,
+        ),
+        [closedUrl]: createPullListFixtureHtml(
+          ["46", "47"],
+          repository,
+          {},
+          layout,
+        ),
+      });
+      await routeMetadata(
+        context,
+        [42, 43, 44, 45, 46, 47].map((number) =>
+          metadata(number, number % 2 === 0 ? ["alice"] : []),
+        ),
+      );
+      await routeReviews(context, {
+        "42": [],
+        "43": [],
+        "44": [],
+        "45": [],
+        "46": [],
+        "47": [],
+      });
+
+      const page = await context.newPage();
+      await page.goto(initialUrl);
+      await expectCurrentCanary(page, observer, ["42", "43"]);
+
+      const initialDocument = await page.evaluateHandle(() => document);
+      const pagination = page.locator("a[data-fixture-pagination]");
+      await expect(pagination).toHaveAttribute("href", pageTwoUrl);
+      await Promise.all([page.waitForURL(pageTwoUrl), pagination.click()]);
+      expect(await documentWasMaintained(initialDocument)).toBe(false);
+      await initialDocument.dispose();
+      await expectCurrentCanary(page, observer, ["44", "45"]);
+
+      const pageTwoDocument = await page.evaluateHandle(() => document);
+      await Promise.all([page.waitForURL(initialUrl), page.goBack()]);
+      expect(await documentWasMaintained(pageTwoDocument)).toBe(false);
+      await pageTwoDocument.dispose();
+      await expectCurrentCanary(page, observer, ["42", "43"]);
+
+      const restoredDocument = await page.evaluateHandle(() => document);
+      await Promise.all([page.waitForURL(pageTwoUrl), page.goForward()]);
+      expect(await documentWasMaintained(restoredDocument)).toBe(false);
+      await restoredDocument.dispose();
+      await expectCurrentCanary(page, observer, ["44", "45"]);
+
+      const forwardDocument = await page.evaluateHandle(() => document);
+      await Promise.all([page.waitForURL(initialUrl), page.goBack()]);
+      expect(await documentWasMaintained(forwardDocument)).toBe(false);
+      await forwardDocument.dispose();
+      await expectCurrentCanary(page, observer, ["42", "43"]);
+
+      const restoredAgainDocument = await page.evaluateHandle(() => document);
+      const filter = await findNativePullListLink(
+        page,
+        repository,
+        isClosedPullListFilter,
+        "required-filter-link-unavailable",
+      );
+      await expect(filter.locator).toHaveAttribute("href", closedUrl);
+      await expect(filter.locator).toHaveAttribute("data-fixture-filter", "");
+      await expect(filter.locator).toBeVisible();
+      await Promise.all([page.waitForURL(closedUrl), filter.locator.click()]);
+      expect(await documentWasMaintained(restoredAgainDocument)).toBe(false);
+      await restoredAgainDocument.dispose();
+      await expectCurrentCanary(page, observer, ["46", "47"]);
+      expect(observer.snapshot().apiRequestsWithAuthorization).toBe(0);
     });
-    await routeMetadata(
-      context,
-      [42, 43, 44, 45, 46, 47].map((number) =>
-        metadata(number, number % 2 === 0 ? ["alice"] : []),
-      ),
-    );
-    await routeReviews(context, {
-      "42": [],
-      "43": [],
-      "44": [],
-      "45": [],
-      "46": [],
-      "47": [],
-    });
-
-    const page = await context.newPage();
-    await page.goto(initialUrl);
-    await expectCurrentCanary(page, observer, ["42", "43"]);
-
-    const initialDocument = await page.evaluateHandle(() => document);
-    const pagination = page.locator("a[data-fixture-pagination]");
-    await expect(pagination).toHaveAttribute("href", pageTwoUrl);
-    await Promise.all([page.waitForURL(pageTwoUrl), pagination.click()]);
-    expect(await documentWasMaintained(initialDocument)).toBe(false);
-    await initialDocument.dispose();
-    await expectCurrentCanary(page, observer, ["44", "45"]);
-
-    const pageTwoDocument = await page.evaluateHandle(() => document);
-    await Promise.all([page.waitForURL(initialUrl), page.goBack()]);
-    expect(await documentWasMaintained(pageTwoDocument)).toBe(false);
-    await pageTwoDocument.dispose();
-    await expectCurrentCanary(page, observer, ["42", "43"]);
-
-    const restoredDocument = await page.evaluateHandle(() => document);
-    await Promise.all([page.waitForURL(pageTwoUrl), page.goForward()]);
-    expect(await documentWasMaintained(restoredDocument)).toBe(false);
-    await restoredDocument.dispose();
-    await expectCurrentCanary(page, observer, ["44", "45"]);
-
-    const forwardDocument = await page.evaluateHandle(() => document);
-    await Promise.all([page.waitForURL(initialUrl), page.goBack()]);
-    expect(await documentWasMaintained(forwardDocument)).toBe(false);
-    await forwardDocument.dispose();
-    await expectCurrentCanary(page, observer, ["42", "43"]);
-
-    const restoredAgainDocument = await page.evaluateHandle(() => document);
-    const filter = await findNativePullListLink(
-      page,
-      repository,
-      isClosedPullListFilter,
-      "required-filter-link-unavailable",
-    );
-    await expect(filter.locator).toHaveAttribute("href", closedUrl);
-    await expect(filter.locator).toHaveAttribute("data-fixture-filter", "");
-    await expect(filter.locator).toBeVisible();
-    await Promise.all([page.waitForURL(closedUrl), filter.locator.click()]);
-    expect(await documentWasMaintained(restoredAgainDocument)).toBe(false);
-    await restoredAgainDocument.dispose();
-    await expectCurrentCanary(page, observer, ["46", "47"]);
-    expect(observer.snapshot().apiRequestsWithAuthorization).toBe(0);
   });
-});
+}
 
 test("native-link selection rejects an all-hidden Closed filter with typed evidence", async () => {
   await withExtension(async (context) => {
@@ -647,12 +685,13 @@ async function closeInstallPage(context: BrowserContext): Promise<void> {
 async function routePullList(
   context: BrowserContext,
   pullNumbers: readonly string[],
+  layout: "classic" | "ListView" = "classic",
 ): Promise<void> {
   await context.route(pullListUrl, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "text/html",
-      body: createPullListFixtureHtml(pullNumbers, repository),
+      body: createPullListFixtureHtml(pullNumbers, repository, {}, layout),
     });
   });
 }

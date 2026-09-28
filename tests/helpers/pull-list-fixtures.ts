@@ -23,10 +23,19 @@ export function createPullListFixtureHtml(
     hiddenFilterHref?: string;
     disabledFilterHref?: string;
   } = {},
+  layout: "classic" | "ListView" = "classic",
 ): string {
   const rows = pullNumbers
-    .map(
-      (pullNumber) => `
+    .map((pullNumber) =>
+      layout === "ListView"
+        ? `
+        <li class="PullsListItem-module__listItem__fixture">
+          <div data-listview-item-title-container="true">
+            <h4><a data-testid="listitem-title-link" href="/${route.owner}/${route.repo}/pull/${pullNumber}">Pull request #${pullNumber}</a></h4>
+          </div>
+          <div class="PullsListItem-module__description__fixture">#${pullNumber} opened by ${route.owner}</div>
+        </li>`
+        : `
         <div class="js-issue-row" id="issue_${pullNumber}">
           <a class="Link--primary" href="/${route.owner}/${route.repo}/pull/${pullNumber}">
             Pull request #${pullNumber}
@@ -45,8 +54,9 @@ export function createPullListFixtureHtml(
       <head><meta charset="UTF-8"><title>Pull list fixture</title></head>
       <body>
         <main>
-          <div class="js-navigation-container js-active-navigation-container">
+          ${layout === "ListView" ? '<ul role="list" data-listview-component="items-list">' : '<div class="js-navigation-container js-active-navigation-container">'}
             ${rows}
+          ${layout === "ListView" ? "</ul><div>" : ""}
             ${
               navigation.paginationHref == null
                 ? ""
