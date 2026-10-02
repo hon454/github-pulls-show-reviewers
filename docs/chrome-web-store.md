@@ -75,6 +75,9 @@ for reproducibility and visual review.
   after checkout, before the source's install, build, or tests run. The later
   check in `prepare` remains.
 - Package runs save a checked Chrome zip artifact; `dry-run` and `status` do not build/package.
+- CWS writes for one item are serialized in a single non-cancelling queue.
+  Explicit `skip` and `dry-run` dispatches use a separate `cws-check-` queue and
+  `status` its own, so a non-mutating run cannot replace a pending release.
 - New-version push-tag runs upload and submit through CWS API v2, with normal
   review and automatic publication after approval, then attach the zip to a
   GitHub Release. The event type must be `push` for implicit CWS publication.
