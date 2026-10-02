@@ -41,9 +41,7 @@ describe("initiateDeviceFlow", () => {
       .mockResolvedValueOnce(jsonResponse(fixture("device-code-init.json")));
     const result = await initiateDeviceFlow({ clientId: "Iv1.test" });
     expect(result.userCode).toBe("WDJB-MJHT");
-    expect(result.deviceCode).toBe(
-      "3584d83530557fdd1f46af8289938c8ef79f9dc5",
-    );
+    expect(result.deviceCode).toBe("3584d83530557fdd1f46af8289938c8ef79f9dc5");
     expect(result.interval).toBe(5);
     expect(result.expiresIn).toBe(900);
     expect(result.verificationUri).toBe("https://github.com/login/device");
@@ -117,7 +115,9 @@ describe("pollForAccessToken", () => {
   it("throws a terminal DeviceFlowError for expired_token", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(jsonResponse(fixture("access-token-expired.json")))
-      .mockResolvedValueOnce(jsonResponse(fixture("access-token-expired.json")));
+      .mockResolvedValueOnce(
+        jsonResponse(fixture("access-token-expired.json")),
+      );
     await expect(
       pollForAccessToken({ clientId: "Iv1.test", deviceCode: "abc" }),
     ).rejects.toBeInstanceOf(DeviceFlowError);

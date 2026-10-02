@@ -457,7 +457,10 @@ function requireNavigationEvidence(
   if (!condition) throw new NavigationEvidenceError(code);
 }
 
-function navigationFailureFor(error: unknown, phase: string): CanaryFailure | undefined {
+function navigationFailureFor(
+  error: unknown,
+  phase: string,
+): CanaryFailure | undefined {
   if (error instanceof NavigationEvidenceError) return error.failure;
   if (!/^navigation:[ABCD]$/.test(phase)) return undefined;
   return {
