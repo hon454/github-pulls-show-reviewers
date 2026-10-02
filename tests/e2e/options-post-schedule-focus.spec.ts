@@ -41,11 +41,13 @@ test("does not restore focus after external pointer intent precedes the pending 
             }
             post(...args);
           };
-          channel.port2.postMessage = interceptedPost as typeof channel.port2.postMessage;
+          channel.port2.postMessage =
+            interceptedPost as typeof channel.port2.postMessage;
           return channel as unknown as InterceptedMessageChannel;
         }
       }
-      window.MessageChannel = InterceptedMessageChannel as unknown as typeof MessageChannel;
+      window.MessageChannel =
+        InterceptedMessageChannel as unknown as typeof MessageChannel;
       Object.assign(window, {
         __holdReactScheduler: () => (hold = true),
         __flushReactSchedulerTask: () => held.shift()?.(),
@@ -97,46 +99,52 @@ test("does not restore focus after external pointer intent precedes the pending 
       (await context.waitForEvent("serviceworker"));
     const url = `chrome-extension://${new URL(worker.url()).host}/options.html`;
     await expect
-      .poll(() => context.pages().find((page) => page.url() === url)?.url())
+      .poll(() =>
+        context
+          .pages()
+          .find((page) => page.url() === url)
+          ?.url(),
+      )
       .toBe(url);
     const page = context.pages().find((item) => item.url() === url)!;
     await page.getByTestId("accounts-add").click();
     await expect(page.getByTestId("device-user-code")).toBeVisible();
     await page.getByRole("button", { name: "Copy", exact: true }).focus();
     await page.evaluate(() =>
-      (window as unknown as { __holdReactScheduler(): void })
-        .__holdReactScheduler(),
+      (
+        window as unknown as { __holdReactScheduler(): void }
+      ).__holdReactScheduler(),
     );
     releaseUser();
     await expect
       .poll(() =>
-        page.evaluate(
-          () =>
-            (
-              window as unknown as { __heldReactSchedulerTasks(): number }
-            ).__heldReactSchedulerTasks(),
+        page.evaluate(() =>
+          (
+            window as unknown as { __heldReactSchedulerTasks(): number }
+          ).__heldReactSchedulerTasks(),
         ),
       )
       .toBeGreaterThan(0);
     await page.evaluate(() =>
-      (window as unknown as { __flushReactSchedulerTask(): void })
-        .__flushReactSchedulerTask(),
+      (
+        window as unknown as { __flushReactSchedulerTask(): void }
+      ).__flushReactSchedulerTask(),
     );
     await expect(page.getByTestId("accounts-add")).toBeVisible();
     await expect
       .poll(() =>
-        page.evaluate(
-          () =>
-            (
-              window as unknown as { __heldReactSchedulerTasks(): number }
-            ).__heldReactSchedulerTasks(),
+        page.evaluate(() =>
+          (
+            window as unknown as { __heldReactSchedulerTasks(): number }
+          ).__heldReactSchedulerTasks(),
         ),
       )
       .toBeGreaterThan(0);
     await page.locator(".options-intro").dispatchEvent("pointerdown");
     await page.evaluate(() =>
-      (window as unknown as { __flushReactSchedulerTask(): void })
-        .__flushReactSchedulerTask(),
+      (
+        window as unknown as { __flushReactSchedulerTask(): void }
+      ).__flushReactSchedulerTask(),
     );
     await page.waitForTimeout(50);
     await expect(page.locator("body")).toBeFocused();

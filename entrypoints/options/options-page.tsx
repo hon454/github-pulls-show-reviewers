@@ -103,10 +103,11 @@ export function OptionsPage({
 
   useEffect(() => {
     if (showAddPanel || focusRestorationIntent === null) return;
-    if (focusIntentGeneration.current === focusRestorationIntent && (
-      document.activeElement === document.body ||
-      !document.activeElement?.isConnected
-    )) {
+    if (
+      focusIntentGeneration.current === focusRestorationIntent &&
+      (document.activeElement === document.body ||
+        !document.activeElement?.isConnected)
+    ) {
       const target = openingControl.current;
       (target?.isConnected ? target : addAccountButton.current)?.focus();
     }

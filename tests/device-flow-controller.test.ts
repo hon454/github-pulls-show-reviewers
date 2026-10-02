@@ -32,9 +32,7 @@ let harness: ReturnType<typeof createUIBridgeHarness>;
 let upsertAccountByLoginMock: MockInstance<
   typeof accountMutations.upsertAccountByLogin
 >;
-let removeAccountMock: MockInstance<
-  typeof accountMutations.removeAccount
->;
+let removeAccountMock: MockInstance<typeof accountMutations.removeAccount>;
 
 const auth = await import("../src/github/auth");
 

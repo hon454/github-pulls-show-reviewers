@@ -19,18 +19,18 @@ Format:
 
 ## Types
 
-| Type | Use for |
-| --- | --- |
-| `feat` | User-facing functionality or behavior change |
-| `fix` | Bug fix that changes observable behavior |
-| `refactor` | Internal restructuring with no behavior change |
-| `docs` | Documentation-only changes |
-| `test` | Test-only changes (no production code change) |
-| `chore` | Tooling, config, and repository maintenance |
-| `perf` | Performance improvement with no behavior change |
-| `build` | Build system, dependencies, bundler, release packaging |
-| `ops` | CI, release workflows, infrastructure |
-| `style` | Formatting, whitespace, lint-only (no logic change) |
+| Type       | Use for                                                |
+| ---------- | ------------------------------------------------------ |
+| `feat`     | User-facing functionality or behavior change           |
+| `fix`      | Bug fix that changes observable behavior               |
+| `refactor` | Internal restructuring with no behavior change         |
+| `docs`     | Documentation-only changes                             |
+| `test`     | Test-only changes (no production code change)          |
+| `chore`    | Tooling, config, and repository maintenance            |
+| `perf`     | Performance improvement with no behavior change        |
+| `build`    | Build system, dependencies, bundler, release packaging |
+| `ops`      | CI, release workflows, infrastructure                  |
+| `style`    | Formatting, whitespace, lint-only (no logic change)    |
 
 Pick the type that most accurately describes the change. Branch prefixes
 (see [Branch naming](../../CONTRIBUTING.md#branch-naming) in

@@ -67,7 +67,17 @@ for reproducibility and visual review.
   - Push a version tag such as `v1.0.0`
   - Run the workflow manually with `workflow_dispatch`, optionally targeting an existing tag such as `v1.0.0`
 - The workflow installs Playwright Chromium, runs `pnpm verify:release`, and then packages with `pnpm zip:checked`.
+- Every workflow action is pinned to a full commit SHA with a version comment,
+  and the release checkouts set `persist-credentials: false`. Update a pin only
+  through a reviewed pull request; never replace a SHA with a mutable tag.
+- For `publish`, `upload-only`, and `submit-existing`, the `trust` phase checks
+  that the workflow and source commits are reachable from `origin/main` right
+  after checkout, before the source's install, build, or tests run. The later
+  check in `prepare` remains.
 - Package runs save a checked Chrome zip artifact; `dry-run` and `status` do not build/package.
+- CWS writes for one item are serialized in a single non-cancelling queue.
+  Explicit `skip` and `dry-run` dispatches use a separate `cws-check-` queue and
+  `status` its own, so a non-mutating run cannot replace a pending release.
 - New-version push-tag runs upload and submit through CWS API v2, with normal
   review and automatic publication after approval, then attach the zip to a
   GitHub Release. The event type must be `push` for implicit CWS publication.
@@ -95,9 +105,43 @@ gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
   --ref main -f tag=v1.15.0 -f chrome_web_store=skip
 ```
 
-This example skips CWS writes but can refresh the existing GitHub Release. For
-credential-only checks before integration, use the exact reviewed branch as the
-control ref with `chrome_web_store=dry-run`; see the [handoff](./cws-agent-handoff.md).
+This example skips CWS writes but can refresh the existing GitHub Release.
+Credential-only checks also run from `main` with `chrome_web_store=dry-run`; see
+the [handoff](./cws-agent-handoff.md). Other branches cannot run this workflow
+(see [Server-side enforcement](#server-side-enforcement)).
+
+### Server-side enforcement
+
+The release scripts require workflow and source commits to be reachable from
+`origin/main`, but those scripts are loaded from the dispatched ref. GitHub
+repository settings enforce the same trust root independently of that code:
+
+- **`main protection` ruleset.** Changes reach `main` only through a pull
+  request with passing `lint-and-test` and `e2e` checks. Force-pushes and
+  deletion are blocked. No approving review is required because the repository
+  has one maintainer, and there is no bypass list.
+- **`release tags` ruleset.** Existing `v*` tags cannot be updated or deleted.
+  No bypass list.
+- **`release tag creation` ruleset.** Only the repository admin role can create
+  a `v*` tag.
+- **`chrome-web-store` environment.** `CWS_SERVICE_ACCOUNT_PRIVATE_KEY` is an
+  environment secret, not a repository secret. The environment's deployment
+  policy admits the `main` branch and `v*` tags only, and both `release.yml`
+  jobs declare it. A dispatch from any other branch is rejected by GitHub
+  before a step runs, so an edited copy of the release scripts never receives
+  the key.
+
+Decision recorded for #228 (2026-10-02): the earlier allowance to run the
+credential-only `dry-run` on a reviewed PR branch before merge is withdrawn.
+The same key served that run, so a branch could receive it with modified
+scripts. `dry-run`, `status`, and `skip` dispatches now use `--ref main`. A
+change to the publish steps or submission dependency is verified by a `dry-run`
+on `main` after merge and before the next tag.
+
+An admin token can still edit rulesets and the environment. These rules stop
+accidental direct pushes, moved tags, and branch dispatches; they are not a
+defense against a deliberate administrator. Never disable, bypass, or loosen
+them to unblock a task.
 
 ### Ordinary package status and listing reuse
 
@@ -211,7 +255,7 @@ Required GitHub Actions configuration:
 - Repository variable `CWS_PUBLISHER_ID`: the owning publisher ID.
 - Repository variable `CWS_SERVICE_ACCOUNT_CLIENT_EMAIL`: the linked service
   account's email address.
-- Repository secret `CWS_SERVICE_ACCOUNT_PRIVATE_KEY`: the `private_key` value
+- `chrome-web-store` environment secret `CWS_SERVICE_ACCOUNT_PRIVATE_KEY`: the `private_key` value
   from that service account's JSON credential, including its PEM header,
   footer, and line breaks.
 
@@ -237,13 +281,14 @@ service-account credential, publisher linkage, submission dependency, or
 workflow authentication logic changes. A dry run checks both the SDK's upload
 authentication and the publish-existing adapter's Google authentication without
 uploading a package, changing the store submission, or creating a GitHub Release.
-After independent review, it may run on that exact PR branch before merge; the
-main-ancestry mutation restriction does not apply to credential-only checks.
+It runs from `main` only: the `chrome-web-store` environment does not release
+the key to other branches (see [Server-side enforcement](#server-side-enforcement)).
 
 Rotate the service-account key in this order:
 
 1. Create a replacement JSON key for the same linked service account.
-2. Replace the `CWS_SERVICE_ACCOUNT_PRIVATE_KEY` GitHub Actions secret with the
+2. Replace the `CWS_SERVICE_ACCOUNT_PRIVATE_KEY` secret in the
+   `chrome-web-store` environment with the
    new JSON credential's `private_key` value without printing, downloading into
    the repository, or logging it. Confirm
    `CWS_SERVICE_ACCOUNT_CLIENT_EMAIL` still names the same account.

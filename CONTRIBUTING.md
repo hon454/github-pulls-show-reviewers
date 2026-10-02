@@ -7,7 +7,10 @@ product rules and architecture expectations before proposing changes.
 
 ## Prerequisites
 
-- Node.js 22.12+ (WXT 0.21 requires Node 22; Vite 8 requires 22.12+)
+- Node.js 22.12+ (WXT 0.21 requires Node 22; Vite 8 requires 22.12+).
+  Workflows run the exact version in [`.node-version`](./.node-version);
+  bump that file deliberately, because the release scripts rely on
+  `--experimental-strip-types`.
 - `pnpm` 10.x (see the `packageManager` field in `package.json`)
 - Playwright Chromium (optional — only needed for `pnpm test:e2e`)
 
@@ -106,8 +109,9 @@ change-to-document map, follow the
 
 ## Testing
 
-For routine changes, `pnpm lint`, `pnpm typecheck`, and
-`pnpm test` are the minimum expected signals. Before tagging a
+For routine changes, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and
+`pnpm test` are the minimum expected signals. CI fails on unformatted files;
+run `pnpm format` to fix them. Before tagging a
 release, run `pnpm verify:release`, which chains
 `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e`
 as a single gate. PR CI runs the same four signals in parallel
@@ -156,23 +160,54 @@ failures, and captured evidence.
 
 ## Dependency audits
 
-The
-[`dependency-audit`](./.github/workflows/dependency-audit.yml) workflow
-runs `pnpm audit --audit-level moderate` on a weekly schedule (Mondays
-09:00 UTC) and on demand via `workflow_dispatch`. The job fails when a
-moderate-or-higher advisory appears, surfacing a notification to the
-maintainer. There is no automated dependency PR bot; the workflow is
-intentionally noise-light.
+Three signals cover dependency vulnerabilities:
 
-When the workflow fails:
+- **Dependabot alerts and security updates** are enabled in repository
+  settings. They are the primary advisory signal and open a pull request when
+  a patched version exists.
+- The [`dependency-audit`](./.github/workflows/dependency-audit.yml) workflow
+  runs weekly (Mondays 09:00 UTC) and on demand via `workflow_dispatch`.
+  `pnpm audit --prod --audit-level moderate` is the hard gate: a
+  moderate-or-higher advisory in the production graph fails the job and
+  notifies the maintainer. The full graph, including development tools, is
+  audited in a second report-only step that writes its output to the run
+  summary and raises a warning annotation without failing the job. This keeps
+  dev-tool noise from leaving the schedule permanently red, which previously
+  led GitHub to disable the workflow for inactivity.
+- [`.github/dependabot.yml`](./.github/dependabot.yml) opens grouped weekly
+  version-update pull requests for npm (`production`, `development`, and
+  `release-tooling` groups) and GitHub Actions.
+
+When the production gate fails or a Dependabot alert opens:
 
 1. Investigate the advisory locally with `pnpm audit`.
-2. Bump the affected dependency or transitive override.
+2. Bump the affected dependency, refresh the transitive lockfile entry with
+   `pnpm update <package> --depth Infinity`, or add a `pnpm.overrides` entry
+   when no in-range patched version resolves.
 3. Run `pnpm verify:release` before pushing the fix.
 
-As of 2026-09-10, both `pnpm audit --audit-level moderate` and
+Treat a full-graph warning the same way, without release urgency. Do not let
+it sit: clear it in the next maintenance change.
+
+When reviewing Dependabot pull requests:
+
+- A `release-tooling` update (`publish-browser-extension` or
+  `google-auth-library`) changes the Chrome Web Store submission dependency.
+  Treat it as a release change and run the credential-only `dry-run` from the
+  reviewed PR branch before merging, as required by
+  [AGENTS.md](./AGENTS.md#chrome-web-store-release-safety).
+- `wxt`, `vite`, `vitest`, and `@vitest/coverage-v8` are pinned to exact
+  versions for the reasons below. Recheck those notes and both audits before
+  accepting a bump.
+- Dependabot pull requests must pass the same CI checks as any other change.
+
+As of 2026-10-02, both `pnpm audit --audit-level moderate` and
 `pnpm audit --prod --audit-level moderate` report zero findings on the locked
-graph. Vitest and its V8 coverage provider remain pinned to `4.1.11`, which
+graph, after refreshing the transitive `brace-expansion` entries to `1.1.21`
+and `5.0.12`
+([GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p),
+[GHSA-q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr)).
+Vitest and its V8 coverage provider remain pinned to `4.1.11`, which
 fixes [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9).
 
 WXT is pinned to `0.21.4`, with Vite `8.2.2` now an explicit development peer.
@@ -196,7 +231,7 @@ Production Chrome builds still use `.output/chrome-mv3`. The project keeps its
 previous `noUncheckedIndexedAccess: false` setting explicitly while adopting the
 other generated WXT TypeScript defaults, avoiding an unrelated repository-wide
 indexed-access migration. `strict` and `exactOptionalPropertyTypes` remain enabled.
-The audit workflow still checks the full graph and does not suppress advisories.
+The audit workflow still reports the full graph and does not suppress advisories.
 
 If a finding is a known false positive, document the rationale in the
 fix commit instead of suppressing the workflow.

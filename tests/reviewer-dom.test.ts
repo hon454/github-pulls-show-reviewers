@@ -608,9 +608,9 @@ describe("five-locale reviewer presentation", () => {
                   t("reviewers_aria", { login, state: label }),
                 );
                 expect(link.href).toBe(entries[0].href);
-                expect(link.querySelector(".ghpsr-pill-name")?.textContent).toBe(
-                  showReviewerName ? `@${login}` : undefined,
-                );
+                expect(
+                  link.querySelector(".ghpsr-pill-name")?.textContent,
+                ).toBe(showReviewerName ? `@${login}` : undefined);
                 const ringTone = requested
                   ? "requested"
                   : key.replace("_", "-");
@@ -633,11 +633,7 @@ describe("five-locale reviewer presentation", () => {
                 );
                 expect(
                   root.querySelector(".ghpsr-badge--refresh") != null,
-                ).toBe(
-                  expectsBadge &&
-                    requested &&
-                    state !== "COMMENTED",
-                );
+                ).toBe(expectsBadge && requested && state !== "COMMENTED");
               }
             }
           }

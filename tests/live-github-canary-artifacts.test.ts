@@ -130,11 +130,10 @@ describe("live canary diagnostics artifact", () => {
       expect(JSON.parse(await readFile(catchPath, "utf8"))).toEqual(
         catchDiagnostics,
       );
-      expect(attach).toHaveBeenNthCalledWith(
-        1,
-        "canary-navigation-C.json",
-        { path: stagePath, contentType: "application/json" },
-      );
+      expect(attach).toHaveBeenNthCalledWith(1, "canary-navigation-C.json", {
+        path: stagePath,
+        contentType: "application/json",
+      });
       expect(attach).toHaveBeenNthCalledWith(
         2,
         "canary-navigation-C-failure.json",

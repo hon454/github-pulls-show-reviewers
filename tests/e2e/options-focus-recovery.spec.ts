@@ -9,7 +9,9 @@ test("restores the add-account fallback after completion removes focused Copy", 
   browserName,
 }) => {
   expect(browserName).toBe("chromium");
-  const profile = await mkdtemp(path.join(os.tmpdir(), "ghpsr-focus-recovery-"));
+  const profile = await mkdtemp(
+    path.join(os.tmpdir(), "ghpsr-focus-recovery-"),
+  );
   const context = await chromium.launchPersistentContext(profile, {
     channel: "chromium",
     args: [
@@ -63,7 +65,12 @@ test("restores the add-account fallback after completion removes focused Copy", 
       (await context.waitForEvent("serviceworker"));
     const url = `chrome-extension://${new URL(worker.url()).host}/options.html`;
     await expect
-      .poll(() => context.pages().find((page) => page.url() === url)?.url())
+      .poll(() =>
+        context
+          .pages()
+          .find((page) => page.url() === url)
+          ?.url(),
+      )
       .toBe(url);
     const page = context.pages().find((item) => item.url() === url)!;
     await page.getByTestId("accounts-add").click();

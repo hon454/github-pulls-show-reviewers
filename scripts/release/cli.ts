@@ -177,6 +177,15 @@ async function status() {
   );
 }
 
+function trust() {
+  requireCondition(
+    ["publish", "upload-only", "submit-existing"].includes(plan.action),
+    "The early trust check applies only to CWS mutations.",
+  );
+  trustCommit(required("RELEASE_WORKFLOW_SHA"));
+  trustCommit(git("-C", sourceDir, "rev-parse", "HEAD"));
+}
+
 async function prepare() {
   const sourceSha = git("-C", sourceDir, "rev-parse", "HEAD");
   parse(shaSchema, sourceSha, "release source SHA");
@@ -401,7 +410,8 @@ try {
     console.log(
       "Credential-only verification succeeded for the SDK and publish-existing adapter; no upload, publish or GitHub Release was attempted.",
     );
-  } else if (phase === "prepare") await prepare();
+  } else if (phase === "trust") trust();
+  else if (phase === "prepare") await prepare();
   else if (phase === "record") await record();
   else if (phase === "execute") await execute();
   else throw new ReleaseError("Unknown release phase.");
