@@ -249,6 +249,40 @@ esac
       );
     }
   });
+  it("rejects untrusted commits and non-mutating actions in the early trust phase", async () => {
+    const run = (inputs: Record<string, string>, ref: string) =>
+      runProcess(
+        process.execPath,
+        [
+          "--experimental-strip-types",
+          path.join(projectRoot, "scripts/release/cli.ts"),
+          "trust",
+        ],
+        {
+          cwd: projectRoot,
+          env: {
+            ...process.env,
+            GITHUB_EVENT_NAME: "workflow_dispatch",
+            GITHUB_REF: ref,
+            RELEASE_WORKFLOW_SHA: "a".repeat(40),
+            RELEASE_INPUTS_JSON: JSON.stringify(inputs),
+          },
+        },
+      );
+    const skipped = await run({ chrome_web_store: "skip" }, "refs/heads/main");
+    expect(skipped.code).toBe(1);
+    expect(skipped.stderr).toContain(
+      "The early trust check applies only to CWS mutations.",
+    );
+    const untrusted = await run(
+      { chrome_web_store: "publish" },
+      "refs/tags/v1.16.0",
+    );
+    expect(untrusted.code).toBe(1);
+    expect(untrusted.stderr).toContain(
+      "must be reachable from freshly fetched origin/main before CWS mutation",
+    );
+  });
   it("isolates status into a read-only workflow job without extension lifecycle scripts", async () => {
     const workflow = await readFile(
       path.join(projectRoot, ".github/workflows/release.yml"),
