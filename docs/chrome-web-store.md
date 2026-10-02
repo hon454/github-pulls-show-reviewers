@@ -210,6 +210,32 @@ artifacts retain receipts and packages for 90 days; finish the handoff and tag
 within that window. Expired, missing, or inconsistent evidence stops reuse for
 an explicit recovery decision.
 
+#### Receipt history beyond 90 days
+
+Completed receipts age out of the history; they are not kept forever.
+
+- **Observed API behavior (2026-10-02):** GitHub's artifact list endpoints omit
+  expired artifacts. A 14-day artifact created on 2026-09-14 was absent from the
+  run-level, repository-level, and name-filtered lists, and none of the 95
+  listed artifacts reported `expired: true`. The hours immediately after expiry
+  were not observed, so the reader also handles an entry that is still listed
+  as expired.
+- **Omitted pair:** the run is simply no longer in the history. Later releases
+  proceed; the first receipts from 2026-09-04 leave the history on 2026-12-03.
+- **Listed, fully expired completed pair** (one intent and one result, both
+  expired): treated like an omitted pair and logged.
+- **Expired intent without a result, or a pair where only one artifact
+  expired:** the run stops for explicit recovery. This is unreadable evidence
+  of an operation, not an empty history.
+- **In-flight handoffs are unchanged.** An aged-out upload receipt cannot
+  satisfy `submit-existing` or tag reuse: the prior receipt is missing, and a
+  pending or published version without a confirmed receipt still fails as
+  `unverified-version`. Expired checked packages still stop reuse.
+
+Age-out also removes an old _uncertain_ receipt once GitHub drops it. Resolve
+uncertain or outstanding receipts within the retention window; live CWS API
+status remains the check that applies after that.
+
 The implementation uses the public `publish-browser-extension` upload option
 `skipSubmitReview: true` (CLI equivalent `--chrome-skip-submit-review`). It does
 not use `--chrome-skip-review`. The SDK always uploads in `submit()`, so
