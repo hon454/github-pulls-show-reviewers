@@ -223,7 +223,7 @@ describe("useDeviceFlowController", () => {
       result.current.start();
     });
     await act(async () => {
-      result.current.cancel();
+      void result.current.cancel();
     });
     expect(result.current.state.phase).toBe("idle");
   });
@@ -240,7 +240,7 @@ describe("useDeviceFlowController", () => {
         }) => void)
       | null = null;
     (
-      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>
+      auth.initiateDeviceFlow as unknown as MockInstance<() => Promise<unknown>>
     ).mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -256,7 +256,7 @@ describe("useDeviceFlowController", () => {
       result.current.start();
     });
     await act(async () => {
-      result.current.cancel();
+      void result.current.cancel();
     });
     await act(async () => {
       resolveInit?.({
@@ -299,7 +299,9 @@ describe("useDeviceFlowController", () => {
       refreshTokenExpiresAt: 2_000_000,
     });
     (
-      auth.fetchAuthenticatedUser as unknown as ReturnType<typeof vi.fn>
+      auth.fetchAuthenticatedUser as unknown as MockInstance<
+        () => Promise<unknown>
+      >
     ).mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -327,7 +329,7 @@ describe("useDeviceFlowController", () => {
     expect(result.current.state.phase).toBe("fetching_installations");
 
     await act(async () => {
-      result.current.cancel();
+      void result.current.cancel();
     });
     await act(async () => {
       resolveUser?.({ login: "hon454", avatarUrl: null });
@@ -478,7 +480,7 @@ describe("attempt ownership with transports that ignore abort", () => {
         .signal!;
       vi.mocked(auth.initiateDeviceFlow).mockResolvedValue(attemptInit("new"));
       await act(async () => {
-        result.current.cancel();
+        void result.current.cancel();
         result.current.start();
       });
       const waiting = result.current.state;
@@ -562,7 +564,7 @@ describe("attempt ownership with transports that ignore abort", () => {
           await act(async () => {
             if (lifetime === "unmount") unmount();
             else {
-              if (lifetime !== "restart") result.current.cancel();
+              if (lifetime !== "restart") void result.current.cancel();
               if (lifetime !== "cancel") result.current.start();
             }
           });

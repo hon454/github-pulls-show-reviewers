@@ -131,7 +131,7 @@ export function OptionsPage({
   // from a user-driven click handler, never from a useEffect that
   // StrictMode double-invokes.
   const controller = useDeviceFlowController({
-    onConnected: handleConnected,
+    onConnected: () => void handleConnected(),
   });
 
   const openAddPanel = (control: HTMLElement) => {
