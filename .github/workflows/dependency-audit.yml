@@ -6,6 +6,9 @@ on:
     - cron: "0 9 * * 1"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -18,11 +21,31 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Fail only on moderate-or-higher advisories so transitive low-severity
-      # noise does not page the maintainer. The job runs on a schedule and
-      # surfaces failures via GitHub Actions notifications, with no automated
-      # PRs.
-      - name: pnpm audit (moderate+)
-        run: pnpm audit --audit-level moderate
+      # `pnpm audit` reads pnpm-lock.yaml directly, so no install is needed.
+      #
+      # Hard gate: advisories in the production graph (what ships in the
+      # packaged extension) fail the job and notify the maintainer.
+      - name: pnpm audit --prod (moderate+, blocking)
+        run: pnpm audit --prod --audit-level moderate
+      # Report only: the full graph includes development tools. Findings are
+      # written to the run summary and a warning annotation, but never fail the
+      # job, so dev-tool noise cannot leave the schedule permanently red and
+      # get the workflow disabled again.
+      - name: pnpm audit (full graph, moderate+, report only)
+        if: ${{ !cancelled() }}
+        run: |
+          set +e
+          output="$(pnpm audit --audit-level moderate 2>&1)"
+          status=$?
+          set -e
+          {
+            echo "## Full dependency audit (report only)"
+            echo
+            echo '```text'
+            echo "$output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$output"
+          if [ "$status" -ne 0 ]; then
+            echo "::warning title=Development dependency advisories::pnpm audit reports moderate-or-higher advisories outside the production graph. See the run summary and CONTRIBUTING.md#dependency-audits."
+          fi
