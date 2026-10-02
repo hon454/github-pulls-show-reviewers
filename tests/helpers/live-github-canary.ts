@@ -8,15 +8,10 @@ export type CanaryRepository = {
 };
 
 export type CanaryCollectionCompleteness =
-  | "complete"
-  | "truncated"
-  | "unavailable";
+  "complete" | "truncated" | "unavailable";
 
 export type CanaryReviewState =
-  | "APPROVED"
-  | "CHANGES_REQUESTED"
-  | "COMMENTED"
-  | "DISMISSED";
+  "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED";
 
 export type CanaryPullMetadata = {
   pullNumber: string;
@@ -59,10 +54,7 @@ export type CanaryRateLimit = {
 };
 
 export type CanaryEndpointKind =
-  | "pull-list"
-  | "pull"
-  | "reviews"
-  | "issue-events";
+  "pull-list" | "pull" | "reviews" | "issue-events";
 
 export type CanaryEndpointObservation = {
   kind: CanaryEndpointKind;

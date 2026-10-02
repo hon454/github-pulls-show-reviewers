@@ -16,6 +16,13 @@ updates:
     commit-message:
       prefix: build
       include: scope
+    # Every ignore entry names the issue that tracks its removal
+    # (CONTRIBUTING.md#dependency-audits). Security updates are not affected.
+    ignore:
+      # typescript-eslint does not support TypeScript 7 yet. Remove with #271.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
     groups:
       # Chrome Web Store submission dependencies. A bump here is a release
       # change: run the credential-only `dry-run` before merging (AGENTS.md).

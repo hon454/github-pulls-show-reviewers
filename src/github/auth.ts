@@ -342,9 +342,7 @@ function createAuthHeaders(token: string): Headers {
 }
 
 type AuthPaginationTarget =
-  | { kind: "none" }
-  | { kind: "valid"; url: string }
-  | { kind: "invalid" };
+  { kind: "none" } | { kind: "valid"; url: string } | { kind: "invalid" };
 
 type LinkHeaderEntry = {
   target: string;

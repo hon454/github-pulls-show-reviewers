@@ -3,16 +3,10 @@ export type GitHubAuthContext = {
 };
 
 export type PullReviewerSummaryStatus =
-  | "ok"
-  | "no-coverage"
-  | "network-error"
-  | "rate-limited";
+  "ok" | "no-coverage" | "network-error" | "rate-limited";
 
 export type ReviewState =
-  | "APPROVED"
-  | "CHANGES_REQUESTED"
-  | "COMMENTED"
-  | "DISMISSED";
+  "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED";
 
 export type ReviewerUser = { login: string; avatarUrl: string | null };
 
@@ -97,10 +91,7 @@ export type RepositoryValidationResult =
     } & RepositoryValidationFailureEvidence);
 
 export type GitHubEndpointName =
-  | "pull"
-  | "reviews"
-  | "issue-events"
-  | "pulls-list";
+  "pull" | "reviews" | "issue-events" | "pulls-list";
 
 export type GitHubEndpointDescriptor = {
   name: GitHubEndpointName;
@@ -137,11 +128,7 @@ export class GitHubPullRequestEndpointsError extends Error {
 export class GitHubApiTransportError extends Error {
   constructor(
     public readonly kind:
-      | "network"
-      | "schema"
-      | "cancellation"
-      | "timeout"
-      | "unknown",
+      "network" | "schema" | "cancellation" | "timeout" | "unknown",
     public readonly endpoint: GitHubEndpointDescriptor,
   ) {
     super(`GitHub endpoint ${kind} failure.`);

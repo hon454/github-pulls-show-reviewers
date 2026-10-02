@@ -9,8 +9,7 @@ import {
 // Runtime responses contain only a non-secret revision. Callers reread storage
 // before retrying; a removed account must never fall back to a returned token.
 export type RefreshOutcome =
-  | { ok: true; generation: string }
-  | { ok: false; terminal: boolean };
+  { ok: true; generation: string } | { ok: false; terminal: boolean };
 
 export type RefreshCoordinator = {
   refreshAccountToken(
