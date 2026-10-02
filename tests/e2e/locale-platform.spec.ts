@@ -115,6 +115,9 @@ test("cross-tab language switches retain device code, diagnostic input and a sin
     const { page, url } = await installedOptions(context);
     const second = await context.newPage();
     await second.goto(url);
+    // Keep the measured tab in front. A tab hidden behind `second` renders
+    // slowly on CI and pushed this test into its 30s budget (#230).
+    await page.bringToFront();
     await page
       .getByTestId("diagnostics-repo")
       .fill("owner/long-repository-input-preserved");

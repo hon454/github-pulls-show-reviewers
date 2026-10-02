@@ -3,6 +3,11 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests/e2e",
   retries: process.env.CI ? 1 : 0,
+  // CI also writes JSON so scripts/report-e2e-flaky.mjs can surface tests that
+  // only passed on retry. Kept outside test-results/ (the uploaded evidence).
+  reporter: process.env.CI
+    ? [["dot"], ["json", { outputFile: "playwright-report/e2e-results.json" }]]
+    : "list",
   use: {
     headless: true,
     trace: "on-first-retry",

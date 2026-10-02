@@ -227,6 +227,24 @@ export class GitHubProvenance {
       );
       requireCondition(pair.results.length <= 1, "Ambiguous receipt results.");
     }
+    // GitHub normally drops expired artifacts from this list, so receipts
+    // older than the 90-day retention silently leave the history. If a list
+    // still shows an expired pair, treat it the same way, but only when the
+    // whole completed pair expired. An expired intent without a result, or a
+    // partly expired pair, is unreadable evidence of an operation: fail closed.
+    for (const [runId, pair] of runs) {
+      const artifacts = [...pair.intents, ...pair.results];
+      if (!artifacts.some((artifact) => artifact.expired)) continue;
+      requireCondition(
+        pair.results.length === 1 &&
+          artifacts.every((artifact) => artifact.expired),
+        "An expired provenance artifact belongs to an incomplete or partly retained receipt run; stop for explicit recovery.",
+      );
+      runs.delete(runId);
+      console.log(
+        `Receipt run ${runId} is past artifact retention; its expired intent/result pair is no longer part of the history.`,
+      );
+    }
     const history: HistoryEntry[] = [];
     for (const pair of runs.values()) {
       const artifact = pair.intents[0]!;

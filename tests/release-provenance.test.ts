@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { GitHubProvenance } from "../scripts/release/provenance.ts";
 import { executeRelease } from "../scripts/release/engine.ts";
+import { selectPriorReceipt } from "../scripts/release/readiness.ts";
 import type { Receipt } from "../scripts/release/policy.ts";
 
 const repository = "hon454/github-pulls-show-reviewers";
@@ -207,6 +208,59 @@ describe("durable receipt provenance", () => {
     );
     await expect(github.restorePackage(receipt)).rejects.toThrow(
       "provenance mismatch",
+    );
+  });
+  it("drops a fully expired completed pair but keeps readable history", async () => {
+    const github = new GitHubProvenance(repository, "fake-token", vi.fn());
+    const old = (id: number, name: string) => ({
+      ...artifact,
+      id,
+      name,
+      expired: true,
+      workflow_run: { ...artifact.workflow_run, id: 90 },
+    });
+    vi.spyOn(github, "artifacts").mockImplementation(async (name) =>
+      name.startsWith("cws-intent") ? [old(1, name), artifact] : [old(2, name)],
+    );
+    const download = vi
+      .spyOn(github, "download")
+      .mockResolvedValue(Buffer.from(JSON.stringify(receipt)));
+    vi.spyOn(github, "verifyRun").mockResolvedValue();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const history = await github.history(receipt.itemId, "200");
+    expect(history).toEqual([{ receipt, complete: false }]);
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(download).toHaveBeenCalledWith(artifact, "intent.json");
+  });
+  it("fails closed for an expired intent without a result or a partly expired pair", async () => {
+    const expiredIntent = { ...artifact, expired: true };
+    const result = { ...artifact, id: 12, name: "cws-result" };
+    for (const [intents, results] of [
+      [[expiredIntent], []],
+      [[expiredIntent], [result]],
+      [[artifact], [{ ...result, expired: true }]],
+    ]) {
+      const github = new GitHubProvenance(repository, "fake-token", vi.fn());
+      vi.spyOn(github, "artifacts").mockImplementation(async (name) =>
+        name.startsWith("cws-intent") ? intents : results,
+      );
+      const download = vi.spyOn(github, "download");
+      await expect(github.history(receipt.itemId, "200")).rejects.toThrow(
+        "incomplete or partly retained receipt run",
+      );
+      expect(download).not.toHaveBeenCalled();
+    }
+  });
+  it("does not let an aged-out upload receipt satisfy a later submit-existing", async () => {
+    const github = new GitHubProvenance(repository, "fake-token", vi.fn());
+    vi.spyOn(github, "artifacts").mockResolvedValue([
+      { ...artifact, expired: true },
+    ]);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const history = await github.history(receipt.itemId, "200");
+    expect(history).toEqual([]);
+    expect(() => selectPriorReceipt(receipt, history, receipt.runId)).toThrow(
+      "Missing or ambiguous original upload receipt",
     );
   });
   it("stops before reading expired or digest-less artifacts", async () => {
