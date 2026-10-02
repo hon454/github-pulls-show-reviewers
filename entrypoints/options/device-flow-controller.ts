@@ -153,30 +153,32 @@ export function useDeviceFlowController(input: {
       if (!isCurrent(attempt)) return;
       attempt.flowId = waiting.flowId;
       attempt.timer = window.setTimeout(
-        async () => {
-          attempt.timer = null;
-          if (!isCurrent(attempt)) return;
-          if (Date.now() >= waiting.expiresAt) {
-            setState({ phase: "expired" });
-            void cancelRequest(attempt).catch(() => undefined);
-            return;
-          }
-          try {
-            const progress = await requestCapability(
-              {
-                type: "pollDeviceFlow",
-                attemptId: attempt.id,
-                flowId: waiting.flowId,
-              },
-              deviceFlowProgressSchema,
-            );
+        () => {
+          void (async () => {
+            attempt.timer = null;
             if (!isCurrent(attempt)) return;
-            apply(attempt, progress);
-            if (progress.phase === "waiting") schedule(progress);
-          } catch {
-            if (isCurrent(attempt))
-              setState({ phase: "fatal", code: "network_error" });
-          }
+            if (Date.now() >= waiting.expiresAt) {
+              setState({ phase: "expired" });
+              void cancelRequest(attempt).catch(() => undefined);
+              return;
+            }
+            try {
+              const progress = await requestCapability(
+                {
+                  type: "pollDeviceFlow",
+                  attemptId: attempt.id,
+                  flowId: waiting.flowId,
+                },
+                deviceFlowProgressSchema,
+              );
+              if (!isCurrent(attempt)) return;
+              apply(attempt, progress);
+              if (progress.phase === "waiting") schedule(progress);
+            } catch {
+              if (isCurrent(attempt))
+                setState({ phase: "fatal", code: "network_error" });
+            }
+          })();
         },
         Math.max(
           1,
