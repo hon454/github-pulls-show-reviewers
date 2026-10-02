@@ -49,6 +49,7 @@ env:
 jobs:
   status:
     if: github.event_name == 'workflow_dispatch' && inputs.chrome_web_store == 'status'
+    timeout-minutes: 15
     # Observations must never replace a pending mutation in the item queue.
     concurrency:
       group: cws-status-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
@@ -71,7 +72,7 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: git fetch origin main
@@ -93,9 +94,13 @@ jobs:
 
   package:
     if: github.event_name != 'workflow_dispatch' || inputs.chrome_web_store != 'status'
+    # Generous: a timeout during a CWS write would leave an uncertain receipt.
+    timeout-minutes: 60
     # Preserve the existing item key across control refs and workflow versions.
+    # Explicit skip/dry-run dispatches never write to CWS, so they queue in
+    # their own `cws-check-` group and cannot replace a pending mutation.
     concurrency:
-      group: cws-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
+      group: cws-${{ github.event_name == 'workflow_dispatch' && contains(fromJSON('["skip","dry-run"]'), inputs.chrome_web_store) && 'check-' || '' }}${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -120,7 +125,7 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
