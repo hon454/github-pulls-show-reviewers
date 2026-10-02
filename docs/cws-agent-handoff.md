@@ -28,13 +28,15 @@ This matrix applies only when the selected **control ref contains the updated
 workflow**. GitHub executes workflow code from `--ref`; old tags are immutable
 snapshots, so `--ref v1.15.0` still runs the legacy publish condition and is not
 safe for skip/dry-run. Do not dispatch a legacy workflow ref or move old tags.
+Manual dispatches use `--ref main`: the `chrome-web-store` environment rejects
+every other branch ([server-side enforcement](./chrome-web-store.md#server-side-enforcement)).
 
 | Event/input                                                     | CWS behavior                                                                                    | GitHub Release                              |
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | Push a new `v<version>` tag                                     | Checked upload, then normal review/automatic publication                                        | Create/refresh after success                |
 | Push a tag for an exact staged source already pending/published | Verify original receipt, artifact and current state; no CWS write                               | Create/refresh using original zip           |
-| Dispatch `skip` on a branch or tag                              | No CWS access                                                                                   | Only if an existing version tag is selected |
-| Dispatch `dry-run` on a branch or tag                           | Authenticate both supported clients, read status only                                           | Never                                       |
+| Dispatch `skip` on `main` or a tag                              | No CWS access                                                                                   | Only if an existing version tag is selected |
+| Dispatch `dry-run` on `main` or a tag                           | Authenticate both supported clients, read status only                                           | Never                                       |
 | Dispatch `status` with exact source SHA/version                 | Read API status and trusted receipts; save sanitized JSON and Actions Summary; no build/package | Never                                       |
 | Dispatch `publish`                                              | Checked upload + submit, or verified already-pending/published no-op                            | Only if an existing version tag is selected |
 | Dispatch `upload-only`                                          | Checked upload only                                                                             | Never                                       |
@@ -56,9 +58,8 @@ gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
 ```
 
 This skips CWS but may refresh the GitHub Release for that existing tag. For
-credential-only checks, use updated `main` after integration or the exact
-reviewed branch before integration, as in the next example; do not use an old
-tag as the workflow control ref.
+credential-only checks, use updated `main` after integration, as in the next
+example; do not use an old tag as the workflow control ref.
 
 ## Read-only release status
 
@@ -68,8 +69,8 @@ gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
   -f source_sha="$SOURCE_SHA" -f expected_version="$VERSION"
 ```
 
-Use only updated control refs; a reviewed implementation branch can validate
-status before merge. `receipt_run_id` is an optional original-upload selector.
+Use only updated `main` as the control ref; other branches cannot run this
+workflow. `receipt_run_id` is an optional original-upload selector.
 Do not set `tag` or `listing_evidence`. Read `cws-status-RUN_ID/status.json` and
 Actions Summary for published versus submitted revisions, unknown draft facts,
 async/policy state, provenance, listing routing and next actions. A timestamped
@@ -84,7 +85,7 @@ package/release `route`; reuse does not mean that listing edits are complete.
 ## Credential-only rehearsal
 
 When a credential/linkage/dependency/publish change requires this check, use
-updated main below, or an exact independently reviewed PR branch before merge:
+updated main after merge:
 
 ```bash
 gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
@@ -93,9 +94,9 @@ gh workflow run release.yml --repo hon454/github-pulls-show-reviewers \
 
 Record the resulting run URL, head SHA, and successful **Check Chrome Web Store
 credentials** step. Confirm source checkout, package build, CWS execution and
-GitHub Release steps were skipped. Branch dry-run is supported before merge; it
-does not require the mutation-only main ancestry gate. Use `--ref main` after
-integration. Never read/print credential values, OAuth tokens, headers, or raw
+GitHub Release steps were skipped. Branch dry-run is not available: the
+`chrome-web-store` environment releases the key to `main` and `v*` tags only.
+Never read/print credential values, OAuth tokens, headers, or raw
 API errors. The private key remains the directly masked Actions secret.
 
 ## 1. Upload the reviewed package

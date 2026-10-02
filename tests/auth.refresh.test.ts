@@ -33,7 +33,9 @@ describe("refreshAccessToken", () => {
   it("posts grant_type=refresh_token and returns rotated tokens with absolute expiries", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse(fixture("refresh-token-success.json")));
+      .mockResolvedValueOnce(
+        jsonResponse(fixture("refresh-token-success.json")),
+      );
 
     const result = await refreshAccessToken({
       clientId: "Iv1.test",

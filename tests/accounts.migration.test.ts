@@ -4,17 +4,21 @@ type StorageShape = Record<string, unknown>;
 
 function createBrowserMock() {
   let storage: StorageShape = {};
-  const get = vi.fn(async (key?: string | string[] | Record<string, unknown>) => {
-    if (typeof key === "string") {
-      return key in storage ? { [key]: storage[key] } : {};
-    }
-    if (Array.isArray(key)) {
-      return Object.fromEntries(
-        key.filter((entry) => entry in storage).map((entry) => [entry, storage[entry]]),
-      );
-    }
-    return { ...storage };
-  });
+  const get = vi.fn(
+    async (key?: string | string[] | Record<string, unknown>) => {
+      if (typeof key === "string") {
+        return key in storage ? { [key]: storage[key] } : {};
+      }
+      if (Array.isArray(key)) {
+        return Object.fromEntries(
+          key
+            .filter((entry) => entry in storage)
+            .map((entry) => [entry, storage[entry]]),
+        );
+      }
+      return { ...storage };
+    },
+  );
   const set = vi.fn(async (items: StorageShape) => {
     storage = { ...storage, ...items };
   });
@@ -63,7 +67,8 @@ describe("settings migration", () => {
       ],
     });
 
-    const { getSettings, accountMutations } = await import("../src/storage/accounts");
+    const { getSettings, accountMutations } =
+      await import("../src/storage/accounts");
     await accountMutations.initialize();
     const settings = await getSettings();
 
@@ -88,7 +93,10 @@ describe("settings migration", () => {
 
   it("returns an empty v4 settings shape when storage is empty", async () => {
     const { getSettings } = await import("../src/storage/accounts");
-    await expect(getSettings()).resolves.toEqual({ version: 4, accountIds: [] });
+    await expect(getSettings()).resolves.toEqual({
+      version: 4,
+      accountIds: [],
+    });
   });
 
   it("loads a v4 shape unchanged", async () => {
@@ -117,8 +125,12 @@ describe("settings migration", () => {
       },
     });
 
-    const { getSettings, listAccounts } = await import("../src/storage/accounts");
-    await expect(getSettings()).resolves.toEqual({ version: 4, accountIds: ["acc-1"] });
+    const { getSettings, listAccounts } =
+      await import("../src/storage/accounts");
+    await expect(getSettings()).resolves.toEqual({
+      version: 4,
+      accountIds: ["acc-1"],
+    });
     const [account] = await listAccounts();
     expect(account.refreshToken).toBe("ghr_x");
   });
@@ -126,9 +138,8 @@ describe("settings migration", () => {
 
 describe("updateAccountTokens", () => {
   it("replaces the four token fields without touching invalidation state", async () => {
-    const { addAccount, updateAccountTokens, listAccounts } = await import(
-      "../src/storage/accounts"
-    );
+    const { addAccount, updateAccountTokens, listAccounts } =
+      await import("../src/storage/accounts");
 
     await addAccount({
       id: "acc-1",
@@ -164,7 +175,8 @@ describe("updateAccountTokens", () => {
   });
 
   it("updates only the targeted account key", async () => {
-    const { addAccount, updateAccountTokens } = await import("../src/storage/accounts");
+    const { addAccount, updateAccountTokens } =
+      await import("../src/storage/accounts");
 
     await addAccount({
       id: "acc-1",

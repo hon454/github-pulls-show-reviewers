@@ -28,9 +28,7 @@ describe("github-app config", () => {
     vi.stubGlobal("__PROD__", true);
 
     const mod = await import("../src/config/github-app");
-    expect(() => mod.getGitHubAppConfig()).toThrow(
-      /WXT_GITHUB_APP_CLIENT_ID/,
-    );
+    expect(() => mod.getGitHubAppConfig()).toThrow(/WXT_GITHUB_APP_CLIENT_ID/);
   });
 
   it("falls back to sensible dev defaults when the globals are undefined", async () => {

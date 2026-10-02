@@ -1088,9 +1088,9 @@ describe("OptionsPage", () => {
       await Promise.resolve();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    const copy = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
-      (button) => button.textContent?.trim() === "Copy",
-    );
+    const copy = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.trim() === "Copy");
     expect(copy).toBeDefined();
     copy!.focus();
     expect(document.activeElement).toBe(copy);
@@ -1213,7 +1213,9 @@ describe("OptionsPage", () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 1120));
     });
-    expect(document.querySelector('[data-testid="accounts-add"]')).not.toBeNull();
+    expect(
+      document.querySelector('[data-testid="accounts-add"]'),
+    ).not.toBeNull();
     expect(document.activeElement).toBe(document.body);
   });
 
