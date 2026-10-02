@@ -154,6 +154,15 @@ failures, and captured evidence.
 
 - Prettier and ESLint are authoritative for formatting and lint.
 - TypeScript runs in strict mode.
+- ESLint runs type-aware promise rules (`no-floating-promises`,
+  `no-misused-promises`, `await-thenable`). Await a promise or handle its
+  rejection; mark an intentional fire-and-forget call with an explicit `void`.
+- `entrypoints/options/**` is linted with `react-hooks/rules-of-hooks` and
+  `react-hooks/exhaustive-deps`. The plugin's React Compiler rules are not
+  enabled because the project does not use the compiler.
+- `noUncheckedIndexedAccess` stays off. A trial on 2026-10-02 for #233 produced
+  239 type errors in 50 files (17 in `src/` and `entrypoints/`, 222 in
+  `tests/`). Adopting it is a separate change, not a drive-by.
 - Follow the `Implementation Guidelines` section in
   [`AGENTS.md`](./AGENTS.md#implementation-guidelines) for patterns
   specific to this codebase.
