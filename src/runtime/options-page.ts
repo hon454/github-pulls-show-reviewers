@@ -1,8 +1,10 @@
 import { z } from "zod";
 
-export const openOptionsPageMessageSchema = z.object({
-  type: z.literal("openOptionsPage"),
-}).strict();
+export const openOptionsPageMessageSchema = z
+  .object({
+    type: z.literal("openOptionsPage"),
+  })
+  .strict();
 
 export type OpenOptionsPageMessage = z.infer<
   typeof openOptionsPageMessageSchema

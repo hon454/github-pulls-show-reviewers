@@ -49,6 +49,7 @@ env:
 jobs:
   status:
     if: github.event_name == 'workflow_dispatch' && inputs.chrome_web_store == 'status'
+    timeout-minutes: 15
     # Observations must never replace a pending mutation in the item queue.
     concurrency:
       group: cws-status-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
@@ -66,14 +67,15 @@ jobs:
       CHROME_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
       CHROME_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.workflow_sha }}
           fetch-depth: 0
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: git fetch origin main
@@ -85,7 +87,7 @@ jobs:
           CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_PRIVATE_KEY }}
       - name: Save sanitized status report
         if: always() && hashFiles('.release/status.json') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cws-status-${{ github.run_id }}
           path: .release/status.json
@@ -95,9 +97,13 @@ jobs:
 
   package:
     if: github.event_name != 'workflow_dispatch' || inputs.chrome_web_store != 'status'
+    # Generous: a timeout during a CWS write would leave an uncertain receipt.
+    timeout-minutes: 60
     # Preserve the existing item key across control refs and workflow versions.
+    # Explicit skip/dry-run dispatches never write to CWS, so they queue in
+    # their own `cws-check-` group and cannot replace a pending mutation.
     concurrency:
-      group: cws-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
+      group: cws-${{ github.event_name == 'workflow_dispatch' && contains(fromJSON('["skip","dry-run"]'), inputs.chrome_web_store) && 'check-' || '' }}${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
       cancel-in-progress: false
     permissions:
       contents: write
@@ -115,15 +121,16 @@ jobs:
       CHROME_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
     steps:
       # Keep control code separate from the explicitly selected package source.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.workflow_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 22
+          node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
 
@@ -139,13 +146,19 @@ jobs:
           CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CWS_SERVICE_ACCOUNT_PRIVATE_KEY }}
 
       - if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ steps.action.outputs.source_ref }}
           path: release-source
           fetch-depth: 0
+          persist-credentials: false
       - if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: git fetch origin main --tags
+      # Refuse an untrusted workflow or source commit before its install,
+      # build and test code runs. `prepare` repeats this check later.
+      - name: Verify trusted commits before running source code
+        if: contains(fromJSON('["publish","upload-only","submit-existing"]'), steps.action.outputs.action)
+        run: node --experimental-strip-types scripts/release/cli.ts trust
       - if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         run: pnpm install --frozen-lockfile
         working-directory: release-source
@@ -166,7 +179,7 @@ jobs:
         working-directory: release-source
       - name: Save packaged E2E evidence
         if: ${{ !cancelled() && (steps.verification.outcome == 'success' || steps.verification.outcome == 'failure') }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-e2e-${{ github.run_id }}-${{ github.run_attempt }}
           path: release-source/test-results/
@@ -187,7 +200,7 @@ jobs:
       - name: Save checked package
         if: steps.action.outputs.action != 'dry-run' && steps.action.outputs.action != 'status'
         id: package_artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: chrome-package-${{ github.run_id }}
           path: ${{ steps.package_meta.outputs.zip }}
@@ -205,7 +218,7 @@ jobs:
       - name: Save durable CWS intent
         if: contains(fromJSON('["publish","upload-only","submit-existing"]'), steps.action.outputs.action)
         id: intent_artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cws-intent-${{ vars.CWS_EXTENSION_ID }}
           path: .release/intent.json
@@ -223,7 +236,7 @@ jobs:
 
       - name: Save CWS result even on uncertain failure
         if: always() && hashFiles('.release/result.json') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cws-result-${{ vars.CWS_EXTENSION_ID }}
           path: .release/result.json
@@ -233,7 +246,7 @@ jobs:
 
       - name: Save listing-ready handoff
         if: always() && hashFiles('.release/listing-evidence.json') != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cws-listing-ready-${{ github.run_id }}
           path: .release/listing-evidence.json
@@ -241,14 +254,14 @@ jobs:
           retention-days: 90
 
       - if: steps.action.outputs.action != 'status' && steps.package_meta.outputs.create_release == 'true' && steps.package_meta.outputs.has_notes == 'true'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.package_meta.outputs.tag }}
           files: ${{ steps.package_meta.outputs.zip }}
           body_path: ${{ steps.package_meta.outputs.notes_path }}
 
       - if: steps.action.outputs.action != 'status' && steps.package_meta.outputs.create_release == 'true' && steps.package_meta.outputs.has_notes != 'true'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ steps.package_meta.outputs.tag }}
           files: ${{ steps.package_meta.outputs.zip }}
