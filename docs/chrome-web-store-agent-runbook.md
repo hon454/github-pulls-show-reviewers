@@ -26,8 +26,8 @@ materials and the [store notes](./chrome-web-store.md) own configuration.
 
 ### Read-only status report
 
-Use a control ref containing the updated workflow. A reviewed implementation
-branch can validate this read-only action before merge; the observed source and
+Use updated `main` as the control ref; the `chrome-web-store` environment
+rejects other branches. The observed source and
 all trusted receipt commits must be reachable from freshly fetched `origin/main`.
 
 ```bash
