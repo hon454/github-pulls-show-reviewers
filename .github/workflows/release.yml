@@ -54,6 +54,9 @@ jobs:
       group: cws-status-${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    # Deployment policy admits only `main` and `v*` tags, so a branch-edited
+    # copy of this workflow or its release scripts never receives the CWS key.
+    environment: chrome-web-store
     permissions:
       contents: read
       actions: read
@@ -100,6 +103,8 @@ jobs:
       contents: write
       actions: read
     runs-on: ubuntu-latest
+    # Same policy as the status job: `main` and `v*` tags only.
+    environment: chrome-web-store
     env:
       RELEASE_INPUTS_JSON: ${{ toJSON(inputs) }}
       RELEASE_WORKFLOW_SHA: ${{ github.workflow_sha }}
