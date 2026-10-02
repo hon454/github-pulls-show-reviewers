@@ -261,7 +261,11 @@ upload. Compare the sanitized receipts, not raw credential-bearing logs.
 
 `.release/prepared.json` and `.release/downloads/<artifact-id>.zip` are internal
 runner files, not named handoff artifacts. Artifacts retain for 90 days; preserve
-active receipts and finish staging/tagging before expiry. A local evidence copy
+active receipts and finish staging/tagging before expiry. Completed receipts
+older than 90 days leave the history without blocking later releases; an
+expired intent without a result, or a partly expired pair, stops for recovery
+(see [receipt history beyond 90 days](./chrome-web-store.md#receipt-history-beyond-90-days)).
+Resolve uncertain receipts before they age out. A local evidence copy
 does not bypass the workflow's requirement for live trusted Actions artifacts.
 
 Check `schemaVersion: 1`, repository, workflow path/SHA, source/version,
