@@ -67,6 +67,13 @@ for reproducibility and visual review.
   - Push a version tag such as `v1.0.0`
   - Run the workflow manually with `workflow_dispatch`, optionally targeting an existing tag such as `v1.0.0`
 - The workflow installs Playwright Chromium, runs `pnpm verify:release`, and then packages with `pnpm zip:checked`.
+- Every workflow action is pinned to a full commit SHA with a version comment,
+  and the release checkouts set `persist-credentials: false`. Update a pin only
+  through a reviewed pull request; never replace a SHA with a mutable tag.
+- For `publish`, `upload-only`, and `submit-existing`, the `trust` phase checks
+  that the workflow and source commits are reachable from `origin/main` right
+  after checkout, before the source's install, build, or tests run. The later
+  check in `prepare` remains.
 - Package runs save a checked Chrome zip artifact; `dry-run` and `status` do not build/package.
 - New-version push-tag runs upload and submit through CWS API v2, with normal
   review and automatic publication after approval, then attach the zip to a
