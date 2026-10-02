@@ -4,17 +4,21 @@ type StorageShape = Record<string, unknown>;
 
 function createBrowserMock() {
   let storage: StorageShape = {};
-  const get = vi.fn(async (key?: string | string[] | Record<string, unknown>) => {
-    if (typeof key === "string") {
-      return key in storage ? { [key]: storage[key] } : {};
-    }
-    if (Array.isArray(key)) {
-      return Object.fromEntries(
-        key.filter((entry) => entry in storage).map((entry) => [entry, storage[entry]]),
-      );
-    }
-    return { ...storage };
-  });
+  const get = vi.fn(
+    async (key?: string | string[] | Record<string, unknown>) => {
+      if (typeof key === "string") {
+        return key in storage ? { [key]: storage[key] } : {};
+      }
+      if (Array.isArray(key)) {
+        return Object.fromEntries(
+          key
+            .filter((entry) => entry in storage)
+            .map((entry) => [entry, storage[entry]]),
+        );
+      }
+      return { ...storage };
+    },
+  );
   const set = vi.fn(async (items: StorageShape) => {
     storage = { ...storage, ...items };
   });
@@ -74,7 +78,8 @@ describe("accounts storage", () => {
   });
 
   it("addAccount persists and listAccounts returns the account", async () => {
-    const { addAccount, listAccounts } = await import("../src/storage/accounts");
+    const { addAccount, listAccounts } =
+      await import("../src/storage/accounts");
     await addAccount({
       id: "acc-1",
       login: "hon454",
@@ -108,9 +113,8 @@ describe("accounts storage", () => {
   });
 
   it("removeAccount drops the matching id", async () => {
-    const { addAccount, removeAccount, listAccounts } = await import(
-      "../src/storage/accounts"
-    );
+    const { addAccount, removeAccount, listAccounts } =
+      await import("../src/storage/accounts");
     await addAccount({
       id: "acc-1",
       login: "hon454",
@@ -130,9 +134,8 @@ describe("accounts storage", () => {
   });
 
   it("replaceInstallations swaps installations and bumps refreshedAt", async () => {
-    const { addAccount, replaceInstallations, listAccounts } = await import(
-      "../src/storage/accounts"
-    );
+    const { addAccount, replaceInstallations, listAccounts } =
+      await import("../src/storage/accounts");
     await addAccount({
       id: "acc-1",
       login: "hon454",
@@ -162,9 +165,8 @@ describe("accounts storage", () => {
   });
 
   it("markAccountInvalidated sets the invalidation fields", async () => {
-    const { addAccount, markAccountInvalidated, listAccounts } = await import(
-      "../src/storage/accounts"
-    );
+    const { addAccount, markAccountInvalidated, listAccounts } =
+      await import("../src/storage/accounts");
     await addAccount({
       id: "acc-1",
       login: "hon454",
@@ -187,9 +189,7 @@ describe("accounts storage", () => {
 
   it("markAccountInvalidated warns and skips when the stored auth record is missing", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { markAccountInvalidated } = await import(
-      "../src/storage/accounts"
-    );
+    const { markAccountInvalidated } = await import("../src/storage/accounts");
     await markAccountInvalidated("missing-acc", "revoked");
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy.mock.calls[0][0]).toContain("missing-acc");
@@ -206,9 +206,7 @@ describe("accounts storage", () => {
         token: 123,
       },
     });
-    const { markAccountInvalidated } = await import(
-      "../src/storage/accounts"
-    );
+    const { markAccountInvalidated } = await import("../src/storage/accounts");
     await markAccountInvalidated("bad-acc", "revoked");
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy.mock.calls[0][0]).toContain("bad-acc");
@@ -247,9 +245,8 @@ describe("accounts storage", () => {
   });
 
   it("upsertAccountByLogin replaces an existing invalidated account when login matches", async () => {
-    const { addAccount, upsertAccountByLogin, listAccounts } = await import(
-      "../src/storage/accounts"
-    );
+    const { addAccount, upsertAccountByLogin, listAccounts } =
+      await import("../src/storage/accounts");
 
     await addAccount({
       id: "acc-original",
@@ -301,9 +298,8 @@ describe("accounts storage", () => {
   });
 
   it("upsertAccountByLogin is case-insensitive on login", async () => {
-    const { addAccount, upsertAccountByLogin, listAccounts } = await import(
-      "../src/storage/accounts"
-    );
+    const { addAccount, upsertAccountByLogin, listAccounts } =
+      await import("../src/storage/accounts");
 
     await addAccount({
       id: "acc-mixed",
@@ -342,9 +338,8 @@ describe("accounts storage", () => {
   });
 
   it("upsertAccountByLogin appends when login is new", async () => {
-    const { addAccount, upsertAccountByLogin, listAccounts } = await import(
-      "../src/storage/accounts"
-    );
+    const { addAccount, upsertAccountByLogin, listAccounts } =
+      await import("../src/storage/accounts");
 
     await addAccount({
       id: "acc-existing",
@@ -384,9 +379,8 @@ describe("accounts storage", () => {
   });
 
   it("upsertAccountByLogin collapses duplicate matching logins into one record", async () => {
-    const { addAccount, upsertAccountByLogin, listAccounts } = await import(
-      "../src/storage/accounts"
-    );
+    const { addAccount, upsertAccountByLogin, listAccounts } =
+      await import("../src/storage/accounts");
 
     await addAccount({
       id: "acc-original",
@@ -508,7 +502,9 @@ describe("resolveAccountForRepo", () => {
             return {
               settings: {
                 version: 4,
-                accountIds: accounts.map((account) => (account as { id: string }).id),
+                accountIds: accounts.map(
+                  (account) => (account as { id: string }).id,
+                ),
               },
             };
           }
@@ -517,16 +513,16 @@ describe("resolveAccountForRepo", () => {
         if (Array.isArray(key)) {
           return Object.fromEntries(
             key
-              .filter((entry) =>
-                entry === "settings" || entry in storage,
-              )
+              .filter((entry) => entry === "settings" || entry in storage)
               .map((entry) =>
                 entry === "settings"
                   ? [
                       "settings",
                       {
                         version: 4,
-                        accountIds: accounts.map((account) => (account as { id: string }).id),
+                        accountIds: accounts.map(
+                          (account) => (account as { id: string }).id,
+                        ),
                       },
                     ]
                   : [entry, storage[entry]],
@@ -536,7 +532,9 @@ describe("resolveAccountForRepo", () => {
         return {
           settings: {
             version: 4,
-            accountIds: accounts.map((account) => (account as { id: string }).id),
+            accountIds: accounts.map(
+              (account) => (account as { id: string }).id,
+            ),
           },
           ...storage,
         };
@@ -667,16 +665,17 @@ describe("resolveAccountForRepo", () => {
         ],
       }),
     ]);
-    const { resolveAccountCoverageForRepo, resolveAccountForRepo } = await import(
-      "../src/storage/accounts"
-    );
+    const { resolveAccountCoverageForRepo, resolveAccountForRepo } =
+      await import("../src/storage/accounts");
     await expect(
       resolveAccountCoverageForRepo("cinev", "shotloom"),
     ).resolves.toMatchObject({
       status: "maybe-covered-truncated",
       account: { id: "acc" },
     });
-    await expect(resolveAccountForRepo("cinev", "shotloom")).resolves.toMatchObject({
+    await expect(
+      resolveAccountForRepo("cinev", "shotloom"),
+    ).resolves.toMatchObject({
       id: "acc",
     });
   });

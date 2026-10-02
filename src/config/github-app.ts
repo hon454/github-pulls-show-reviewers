@@ -29,7 +29,9 @@ export function getGitHubAppConfig(): GitHubAppConfig {
 
 export function readGitHubAppConfig(): GitHubAppConfigLookup {
   const rawClientId =
-    typeof __GITHUB_APP_CLIENT_ID__ === "string" ? __GITHUB_APP_CLIENT_ID__ : "";
+    typeof __GITHUB_APP_CLIENT_ID__ === "string"
+      ? __GITHUB_APP_CLIENT_ID__
+      : "";
   const rawSlug =
     typeof __GITHUB_APP_SLUG__ === "string" ? __GITHUB_APP_SLUG__ : "";
   const rawName =

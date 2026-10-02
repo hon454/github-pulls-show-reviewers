@@ -148,9 +148,7 @@ test("switches five reviewer locales during FIFO requests, preserves errors and 
       "https://github.com/hon454/github-pulls-show-reviewers/pulls",
     );
     await expect.poll(() => started.length).toBe(4);
-    const stateBadgePreference = options.getByTestId(
-      "prefs-show-state-badge",
-    );
+    const stateBadgePreference = options.getByTestId("prefs-show-state-badge");
     // This controlled input commits through the background RPC. Playwright's
     // `uncheck()` requires an immediate DOM change, which races that commit.
     await stateBadgePreference.click();

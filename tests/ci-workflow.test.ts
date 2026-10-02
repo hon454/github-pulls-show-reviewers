@@ -75,6 +75,43 @@ describe("live GitHub DOM canary workflow", () => {
   });
 });
 
+describe("workflow guards", () => {
+  it("bounds every job, restricts the token and reads the pinned Node version", async () => {
+    const files = (await readdir(workflowDir)).filter((name) =>
+      name.endsWith(".yml"),
+    );
+    for (const file of files) {
+      const workflow = await readFile(path.join(workflowDir, file), "utf8");
+      const jobs = workflow.split("\njobs:\n")[1]!;
+      const jobCount = jobs.match(/^ {2}[\w-]+:$/gm)!.length;
+      expect(jobs.match(/^ {4}timeout-minutes: \d+$/gm), file).toHaveLength(
+        jobCount,
+      );
+      expect(workflow, file).toMatch(/^permissions:\n {2}contents: read$/m);
+      expect(workflow, file).not.toMatch(/node-version: /);
+      expect(workflow, file).toContain("node-version-file: .node-version");
+    }
+    expect(
+      await readFile(path.join(projectRoot, ".node-version"), "utf8"),
+    ).toMatch(/^22\.\d+\.\d+\n$/);
+  });
+
+  it("checks formatting and cancels only superseded pull-request runs", async () => {
+    const workflow = await readFile(path.join(workflowDir, "ci.yml"), "utf8");
+    expect(workflow).toContain("- run: pnpm format:check");
+    expect(workflow).toContain(
+      "group: ci-${{ github.event.pull_request.number || github.sha }}",
+    );
+    expect(workflow).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+    );
+    const manifest = JSON.parse(
+      await readFile(path.join(projectRoot, "package.json"), "utf8"),
+    ) as { scripts: Record<string, string> };
+    expect(manifest.scripts["format:check"]).toBe("prettier --check .");
+  });
+});
+
 describe("workflow supply-chain pinning", () => {
   it("pins every action to a full commit SHA with a version comment", async () => {
     const files = (await readdir(workflowDir)).filter((name) =>

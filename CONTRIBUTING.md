@@ -7,7 +7,10 @@ product rules and architecture expectations before proposing changes.
 
 ## Prerequisites
 
-- Node.js 22.12+ (WXT 0.21 requires Node 22; Vite 8 requires 22.12+)
+- Node.js 22.12+ (WXT 0.21 requires Node 22; Vite 8 requires 22.12+).
+  Workflows run the exact version in [`.node-version`](./.node-version);
+  bump that file deliberately, because the release scripts rely on
+  `--experimental-strip-types`.
 - `pnpm` 10.x (see the `packageManager` field in `package.json`)
 - Playwright Chromium (optional — only needed for `pnpm test:e2e`)
 
@@ -106,8 +109,9 @@ change-to-document map, follow the
 
 ## Testing
 
-For routine changes, `pnpm lint`, `pnpm typecheck`, and
-`pnpm test` are the minimum expected signals. Before tagging a
+For routine changes, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and
+`pnpm test` are the minimum expected signals. CI fails on unformatted files;
+run `pnpm format` to fix them. Before tagging a
 release, run `pnpm verify:release`, which chains
 `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e`
 as a single gate. PR CI runs the same four signals in parallel

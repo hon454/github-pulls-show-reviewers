@@ -10,7 +10,11 @@ import {
   type BrowserContext,
   type Page,
 } from "@playwright/test";
-import { resolveLocale, toLanguageTag, SUPPORTED_LOCALES } from "../../src/i18n/locale.ts";
+import {
+  resolveLocale,
+  toLanguageTag,
+  SUPPORTED_LOCALES,
+} from "../../src/i18n/locale.ts";
 
 const extension = path.resolve(".output/chrome-mv3");
 const output = process.argv[2];
@@ -37,12 +41,14 @@ async function chromeLanguage(page: Page) {
             getUILanguage(): string;
             getMessage(key: string, values?: string[]): string;
           };
-          runtime: { getManifest(): {
-            name: string;
-            description: string;
-            current_locale: string;
-            action: { default_title: string };
-          } };
+          runtime: {
+            getManifest(): {
+              name: string;
+              description: string;
+              current_locale: string;
+              action: { default_title: string };
+            };
+          };
           action: { getTitle(details: object): Promise<string> };
         };
       }
@@ -108,27 +114,31 @@ try {
   // Chromium's fallback for unsupported desired locales.
   const metadataLocale = native.manifest.current_locale;
   const messageLocale = metadataLocale;
-  const nativeMessages = await page.evaluate((keys) => {
-    const api = (
-      globalThis as unknown as {
-        chrome: {
-          i18n: { getMessage(key: string, values: string[]): string };
-        };
-      }
-    ).chrome;
-    return Object.fromEntries(
-      keys.map((key) => [
-        key,
-        api.i18n.getMessage(key, ["ARG1", "ARG2", "ARG3"]),
-      ]),
-    );
-  }, Object.keys(catalog("en")));
+  const nativeMessages = await page.evaluate(
+    (keys) => {
+      const api = (
+        globalThis as unknown as {
+          chrome: {
+            i18n: { getMessage(key: string, values: string[]): string };
+          };
+        }
+      ).chrome;
+      return Object.fromEntries(
+        keys.map((key) => [
+          key,
+          api.i18n.getMessage(key, ["ARG1", "ARG2", "ARG3"]),
+        ]),
+      );
+    },
+    Object.keys(catalog("en")),
+  );
   const observation = {
     execution: "standalone-node-subprocess",
     platform: process.platform,
     languageEnvironment: Object.fromEntries(
       ["LANG", "LANGUAGE", "LC_ALL", "LC_MESSAGES"].map((key) => [
-        key, process.env[key] ?? null,
+        key,
+        process.env[key] ?? null,
       ]),
     ),
     requestedFlag: "ko",
@@ -142,7 +152,9 @@ try {
   // Preserve raw observations even if a later contract fails. CI retains this
   // output file; also emit the non-sensitive fixture data for quick log triage.
   await writeFile(output, JSON.stringify(observation, null, 2));
-  process.stdout.write(`Native locale observation: ${JSON.stringify(observation)}\n`);
+  process.stdout.write(
+    `Native locale observation: ${JSON.stringify(observation)}\n`,
+  );
   expect(SUPPORTED_LOCALES).toContain(metadataLocale);
   const messages = catalog(messageLocale);
   const metadata = catalog(metadataLocale);
@@ -192,12 +204,15 @@ try {
   await context.route("https://**/*", (route) => route.abort());
   // Let Chrome own options-page navigation on restart as well. A direct goto
   // raced another Chrome-owned navigation to the same options URL in review.
-  const restartedWorker = context.serviceWorkers()[0] ??
+  const restartedWorker =
+    context.serviceWorkers()[0] ??
     (await context.waitForEvent("serviceworker"));
   await restartedWorker.evaluate(async () => {
-    const api = (globalThis as unknown as {
-      chrome: { runtime: { openOptionsPage(): Promise<void> } };
-    }).chrome;
+    const api = (
+      globalThis as unknown as {
+        chrome: { runtime: { openOptionsPage(): Promise<void> } };
+      }
+    ).chrome;
     await api.runtime.openOptionsPage();
   });
   const { page: restored } = await installedOptions(context);

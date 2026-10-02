@@ -21,6 +21,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e:build": "WXT_GITHUB_APP_CLIENT_ID=TESTING_CLIENT_ID WXT_GITHUB_APP_SLUG=test-app pnpm build",

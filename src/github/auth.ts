@@ -575,7 +575,10 @@ export async function fetchAuthenticatedUser(input: {
 }): Promise<AuthenticatedUser> {
   const response = await fetch(
     "https://api.github.com/user",
-    withOptionalSignal({ headers: createAuthHeaders(input.token) }, input.signal),
+    withOptionalSignal(
+      { headers: createAuthHeaders(input.token) },
+      input.signal,
+    ),
   );
   if (!response.ok) {
     throw new Error(`GET /user failed with status ${response.status}.`);

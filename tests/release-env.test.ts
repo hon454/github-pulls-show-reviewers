@@ -356,7 +356,11 @@ esac
     const itemKey =
       "${{ github.repository }}-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}";
     // The old workflow-level key must remain stable for writes on older refs.
-    expect(packageJob).toContain(`group: cws-${itemKey}\n`);
+    // Mutations evaluate to the unchanged `cws-<item key>`; only explicit
+    // skip/dry-run dispatches move to the separate `cws-check-` queue.
+    expect(packageJob).toContain(
+      `group: cws-\${{ github.event_name == 'workflow_dispatch' && contains(fromJSON('["skip","dry-run"]'), inputs.chrome_web_store) && 'check-' || '' }}${itemKey}\n`,
+    );
     expect(statusJob).toContain(`group: cws-status-${itemKey}\n`);
     for (const job of [packageJob, statusJob]) {
       expect(job).toContain("    concurrency:\n");

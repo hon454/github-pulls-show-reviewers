@@ -1228,54 +1228,54 @@ describe("fetchPullReviewerSummary", () => {
   it.each(['rel: "next"', 'rel=""', 'rel="  "'])(
     "preserves an unverified request when the Link relation is malformed as %s",
     async (relation) => {
-    vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                state: "APPROVED",
+                submitted_at: "2026-03-03T00:00:00Z",
+                user: { login: "alice", avatar_url: null },
+              },
+            ]),
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify([
+              {
+                event: "review_requested",
+                created_at: "2026-03-01T00:00:00Z",
+                requested_reviewer: { login: "alice", avatar_url: null },
+              },
+            ]),
             {
-              state: "APPROVED",
-              submitted_at: "2026-03-03T00:00:00Z",
-              user: { login: "alice", avatar_url: null },
+              headers: {
+                Link: `<https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?page=2>; ${relation}`,
+              },
             },
-          ]),
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify([
-            {
-              event: "review_requested",
-              created_at: "2026-03-01T00:00:00Z",
-              requested_reviewer: { login: "alice", avatar_url: null },
-            },
-          ]),
-          {
-            headers: {
-              Link: `<https://api.github.com/repos/hon454/github-pulls-show-reviewers/issues/42/events?page=2>; ${relation}`,
-            },
-          },
-        ),
-      );
+          ),
+        );
 
-    const summary = await fetchPullReviewerSummary({
-      owner: "hon454",
-      repo: "github-pulls-show-reviewers",
-      pullNumber: "42",
-      githubToken: null,
-      pullMetadata: {
-        number: "42",
-        authorLogin: "author",
-        requestedUsers: [{ login: "alice", avatarUrl: null }],
-        requestedTeams: [],
-      },
-    });
+      const summary = await fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+        },
+      });
 
-    expect(summary.requestedUsers).toEqual([
-      { login: "alice", avatarUrl: null },
-    ]);
-    expect(summary.reviewRequestEvidence).toEqual([
-      { login: "alice", status: "unverified" },
-    ]);
+      expect(summary.requestedUsers).toEqual([
+        { login: "alice", avatarUrl: null },
+      ]);
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "unverified" },
+      ]);
     },
   );
 
