@@ -141,9 +141,9 @@ Agents working in this repository should preserve that narrow product scope. Do 
   credentials and never builds, uploads, submits, or creates a GitHub Release.
   `publish`, `upload-only`, and `submit-existing` require intentional selection.
 - These guarantees apply only to control refs containing the updated workflow.
-  Never dispatch a legacy workflow with `--ref v1.15.0`. Use updated `main` or a
-  reviewed branch as the control ref and the separate `tag` input for old tags;
-  do not move existing tags to retrofit workflow changes.
+  Never dispatch a legacy workflow with `--ref v1.15.0`. Use updated `main` as
+  the control ref and the separate `tag` input for old tags; do not move
+  existing tags to retrofit workflow changes.
 - Both staging actions require an exact reviewed source SHA and expected
   manifest version. Neither creates a tag or GitHub Release. Follow
   `docs/cws-agent-handoff.md`; submit-existing also requires the original upload
@@ -154,10 +154,20 @@ Agents working in this repository should preserve that narrow product scope. Do 
   equality/local package.json. CWS status has no remote draft ZIP digest.
 - All CWS mutations require workflow/source commits reachable from freshly
   fetched origin/main and successful production preflight, release verification,
-  and checked packaging. A reviewed PR branch may run credential-only dry-run.
+  and checked packaging. Credential-only dry-run runs from `main` after merge.
   Do not rerun a mutating workflow attempt; start a new dispatch to inspect the
   earlier receipts. `submit:chrome` is the guarded workflow entrypoint, not a
   standalone publishing shortcut.
+- GitHub enforces the trust root server-side; see
+  [Server-side enforcement](docs/chrome-web-store.md#server-side-enforcement).
+  `main` requires a pull request with passing `lint-and-test` and `e2e` and
+  rejects force-pushes and deletion. `v*` tags cannot be updated or deleted and
+  only repository admins can create them. Both `release.yml` jobs run in the
+  `chrome-web-store` environment, which holds `CWS_SERVICE_ACCOUNT_PRIVATE_KEY`
+  and admits only `main` and `v*` tags, so no `release.yml` dispatch from
+  another branch can run. These rules add to the script checks above and
+  replace none of them. Never disable, bypass, or loosen a ruleset or the
+  environment policy to unblock a task; ask the maintainer.
 - Run the credential-only `dry-run` after changing Chrome Web Store
   credentials, service-account linkage, the submission dependency, or the
   publish steps in `release.yml`.
