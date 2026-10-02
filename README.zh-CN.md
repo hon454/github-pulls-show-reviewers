@@ -12,7 +12,7 @@
 
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.5 发布说明](./docs/releases/v1.18.5.md)（英文）：独立验证 classic 和 ListView 页面中的审阅者信息，并于每周一 06:17 UTC 运行真实 GitHub Canary 检查，同时保留手动运行。
+[v1.18.6 发布说明](./docs/releases/v1.18.6.md)（英文）：加强了仓库和发布运维，新增依赖项漏洞监控、服务器端发布规则，并将工作流 Action 固定到提交 SHA，同时更新了 React 和 Zod 运行时依赖项。扩展程序的行为没有变化。
 
 ## 主要功能
 

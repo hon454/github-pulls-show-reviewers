@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.5 release notes](./docs/releases/v1.18.5.md) (English): independently verify reviewers on classic and ListView pages, and run the live GitHub canary weekly on Mondays at 06:17 UTC with manual checks retained.
+[v1.18.6 release notes](./docs/releases/v1.18.6.md) (English): harden repository and release operations with dependency vulnerability monitoring, server-side release rules and workflow actions pinned to commit SHAs, and update the React and Zod runtime dependencies. Extension behavior is unchanged.
 
 ## What It Does
 

@@ -27,9 +27,11 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
-The current package target is [v1.18.5](./releases/v1.18.5.md). Its capture
-source hashes are refreshed for the package-version-only change after comparing
-all capture inputs. Existing rendering provenance and all 15 image bytes are
+The current package target is [v1.18.6](./releases/v1.18.6.md). Its capture
+source hashes are refreshed for the version, dependency, and source-layout
+changes. On one machine, all 15 screenshots regenerated from the `v1.18.5` tag
+and from the v1.18.6 source were byte-identical, so the changes do not alter
+rendering. Existing rendering provenance and all 15 committed image bytes are
 retained; no new screenshot capture or dashboard save is claimed or needed.
 
 The [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) remains
