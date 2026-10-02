@@ -8,8 +8,7 @@ import {
 } from "../storage/accounts";
 
 export type InstallationRefreshOutcome =
-  | { ok: true }
-  | { ok: false; reason: "no-account" | "invalidated" | "failed" };
+  { ok: true } | { ok: false; reason: "no-account" | "invalidated" | "failed" };
 
 export type InstallationRefreshService = {
   refreshAccountInstallations(

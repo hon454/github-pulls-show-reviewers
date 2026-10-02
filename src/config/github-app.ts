@@ -10,8 +10,7 @@ export type GitHubAppConfig = {
 };
 
 export type GitHubAppConfigLookup =
-  | { ok: true; config: GitHubAppConfig }
-  | { ok: false; message: string };
+  { ok: true; config: GitHubAppConfig } | { ok: false; message: string };
 
 const DEV_DEFAULTS: GitHubAppConfig = {
   clientId: "Iv1.devclientdev",

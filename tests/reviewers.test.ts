@@ -1133,11 +1133,9 @@ describe("bootReviewerListPage", () => {
 
     let fallbackMetadataCalls = 0;
     let resolveFirstFallbackMetadata:
-      | ((response: Record<string, unknown>) => void)
-      | null = null;
+      ((response: Record<string, unknown>) => void) | null = null;
     let resolveSecondFallbackMetadata:
-      | ((response: Record<string, unknown>) => void)
-      | null = null;
+      ((response: Record<string, unknown>) => void) | null = null;
 
     runtimeSendMessageMock.mockImplementation(
       (message: { type?: string; accountId?: string | null }) => {
@@ -2158,8 +2156,7 @@ describe("bootReviewerListPage", () => {
         );
       } else {
         const invalidate = ctx.onInvalidated.mock.calls[0]?.[0] as
-          | (() => void)
-          | undefined;
+          (() => void) | undefined;
         expect(invalidate).toBeTypeOf("function");
         invalidate!();
       }
@@ -2614,8 +2611,7 @@ describe("bootReviewerListPage", () => {
         getRegisteredListener(ctx, "wxt:locationchange")?.();
       } else {
         const invalidate = ctx.onInvalidated.mock.calls[0]?.[0] as
-          | (() => void)
-          | undefined;
+          (() => void) | undefined;
         invalidate?.();
       }
       await flushMicrotasks();

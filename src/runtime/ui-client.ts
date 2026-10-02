@@ -24,8 +24,7 @@ export async function requestCapability<T extends z.ZodType>(
   const parsed = capabilityResponseSchema(schema).safeParse(raw);
   if (!parsed.success) throw new Error("invalid_capability_response");
   const result = parsed.data as
-    | { ok: true; data: z.output<T> }
-    | { ok: false; error: string };
+    { ok: true; data: z.output<T> } | { ok: false; error: string };
   if (!result.ok) throw new Error(result.error);
   return result.data;
 }

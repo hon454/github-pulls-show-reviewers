@@ -24,8 +24,7 @@ export async function findNativePullListLink(
   repository: CanaryRepository,
   predicate: (url: URL) => boolean,
   failureCode:
-    | "required-pagination-link-unavailable"
-    | "required-filter-link-unavailable",
+    "required-pagination-link-unavailable" | "required-filter-link-unavailable",
 ): Promise<{ url: string; locator: Locator }> {
   const links = page.locator("main a[href]");
   const count = await links.count();
