@@ -228,6 +228,19 @@ When reviewing Dependabot pull requests:
   accepting a bump.
 - Dependabot pull requests must pass the same CI checks as any other change.
 
+Deferred updates are tracked as GitHub issues, not in a separate debt list.
+An `ignore` entry in `dependabot.yml` is allowed only when:
+
+- its comment names an open issue (`Remove with #123`) that states why the
+  update is blocked and the condition for removing the entry;
+- it is as narrow as possible (one dependency, one update type), so patch,
+  minor, and security updates keep flowing;
+- where the blocker can be detected mechanically, a test fails once it is
+  gone. `tests/dependabot-config.test.ts` does this for the TypeScript 7
+  ignore: it fails when the installed `typescript-eslint` accepts TypeScript 7.
+
+Remove the entry, its test, and close the issue in the same pull request.
+
 As of 2026-10-02, both `pnpm audit --audit-level moderate` and
 `pnpm audit --prod --audit-level moderate` report zero findings on the locked
 graph, after refreshing the transitive `brace-expansion` entries to `1.1.21`
