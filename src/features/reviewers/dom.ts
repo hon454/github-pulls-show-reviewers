@@ -14,17 +14,9 @@ const STYLE_ATTRIBUTE = "data-ghpsr-style";
 const RENDERED_ATTRIBUTE = "data-ghpsr-rendered";
 
 type RingTone =
-  | "requested"
-  | "approved"
-  | "changes-requested"
-  | "commented"
-  | "dismissed";
+  "requested" | "approved" | "changes-requested" | "commented" | "dismissed";
 type BadgeIcon =
-  | "approved"
-  | "changes-requested"
-  | "commented"
-  | "dismissed"
-  | "refresh";
+  "approved" | "changes-requested" | "commented" | "dismissed" | "refresh";
 
 type ReviewerDisplay = {
   ringTone: RingTone;

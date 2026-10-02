@@ -552,10 +552,7 @@ describe("five-locale reviewer presentation", () => {
       for (const requested of [false, true]) {
         for (const state of states) {
           const key = state.toLowerCase() as
-            | "approved"
-            | "changes_requested"
-            | "commented"
-            | "dismissed";
+            "approved" | "changes_requested" | "commented" | "dismissed";
           const evidenceStatuses =
             requested && state !== "COMMENTED"
               ? (["confirmed", "unverified"] as const)

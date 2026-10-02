@@ -40,8 +40,7 @@ export type RefreshAccountInstallationsMessage = z.infer<
 >;
 
 export type RefreshAccountInstallationsResponse =
-  | InstallationRefreshOutcome
-  | undefined;
+  InstallationRefreshOutcome | undefined;
 
 export function isRefreshAccountInstallationsMessage(
   value: unknown,

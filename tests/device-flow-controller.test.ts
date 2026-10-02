@@ -276,8 +276,7 @@ describe("useDeviceFlowController", () => {
 
   it("does not connect after canceling during installation fetch", async () => {
     let resolveUser:
-      | ((value: { login: string; avatarUrl: null }) => void)
-      | null = null;
+      ((value: { login: string; avatarUrl: null }) => void) | null = null;
     (
       auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>
     ).mockResolvedValue({

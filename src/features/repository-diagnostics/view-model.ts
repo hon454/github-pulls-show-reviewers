@@ -10,10 +10,7 @@ import type {
 import type { AccountSummary as Account } from "../../runtime/ui-contract";
 
 export type RepositoryDiagnosticTone =
-  | "neutral"
-  | "success"
-  | "warning"
-  | "error";
+  "neutral" | "success" | "warning" | "error";
 export type RepositoryDiagnosticField = {
   label: string;
   value: string;

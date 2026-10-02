@@ -696,8 +696,7 @@ for (const schemaVersion of [3, 4])
               }
             | undefined;
           const settings = data.settings as
-            | { version?: number; accountIds?: string[] }
-            | undefined;
+            { version?: number; accountIds?: string[] } | undefined;
           return {
             version: settings?.version,
             ids: settings?.accountIds,

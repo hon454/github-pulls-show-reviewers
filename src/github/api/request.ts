@@ -195,9 +195,7 @@ export function parseNextPageUrl(
 }
 
 type NextPageInspection =
-  | { status: "none" }
-  | { status: "invalid" }
-  | { status: "valid"; url: string };
+  { status: "none" } | { status: "invalid" } | { status: "valid"; url: string };
 
 function inspectNextPageUrl(
   linkHeader: string | null,

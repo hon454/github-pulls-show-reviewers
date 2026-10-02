@@ -101,11 +101,7 @@ export type ReviewerFetchErrorEnvelope = {
   status: number | null;
   failures?: ReviewerFetchFailure[] | undefined;
   discoveryOutcome?:
-    | "interrupted"
-    | "retired"
-    | "unavailable"
-    | "exhausted"
-    | undefined;
+    "interrupted" | "retired" | "unavailable" | "exhausted" | undefined;
 };
 
 export type FetchPullReviewerSummaryResponse =

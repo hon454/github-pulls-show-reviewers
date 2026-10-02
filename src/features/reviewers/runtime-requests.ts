@@ -183,8 +183,7 @@ function unwrapReviewerMetadataBatchResponse(
 /** Starts only when the scheduler actually dispatches the RPC. */
 async function sendReviewerRequest(
   message:
-    | FetchPullReviewerSummaryMessage
-    | FetchPullReviewerMetadataBatchMessage,
+    FetchPullReviewerSummaryMessage | FetchPullReviewerMetadataBatchMessage,
   signal: AbortSignal,
 ): Promise<unknown> {
   const deadline = createReviewerDeadline(REVIEWER_DEADLINES.rpc, signal);
