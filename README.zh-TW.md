@@ -12,7 +12,7 @@
 
 ![GitHub PR 清單內的審查者標籤與審查狀態徽章](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.5 版本說明](./docs/releases/v1.18.5.md)（英文）：獨立驗證 classic 與 ListView 頁面中的審查者資訊，並於每週一 06:17 UTC 執行實際 GitHub Canary 檢查，同時保留手動執行。
+[v1.18.6 版本說明](./docs/releases/v1.18.6.md)（英文）：強化儲存庫與發布維運，新增相依套件弱點監控、伺服器端發布規則，並將工作流程 Action 固定至提交 SHA，同時更新 React 與 Zod 執行階段相依套件。擴充功能的行為沒有變更。
 
 ## 主要功能
 

@@ -12,7 +12,7 @@
 
 ![리뷰어 칩과 리뷰 상태 배지가 표시된 GitHub PR 목록](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.5 릴리스 노트](./docs/releases/v1.18.5.md)(영어): classic·ListView 페이지의 리뷰어를 독립적으로 검증하며, 실제 GitHub Canary를 매주 월요일 06:17 UTC(한국시간 15:17)에 실행합니다. 수동 실행도 유지합니다.
+[v1.18.6 릴리스 노트](./docs/releases/v1.18.6.md)(영어): 저장소와 릴리스 운영을 강화했습니다. 의존성 취약점 모니터링, 서버 측 릴리스 규칙, 커밋 SHA로 고정한 워크플로 액션을 추가하고 React와 Zod 런타임 의존성을 업데이트했습니다. 확장 프로그램 동작은 변경되지 않았습니다.
 
 ## 주요 기능
 

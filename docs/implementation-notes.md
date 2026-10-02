@@ -9,6 +9,10 @@ oracle compatibility and weekly live monitoring. The [canary runbook](./live-git
 defines independent classic/ListView row and reviewer checks, native navigation,
 and evidence retention. Extension runtime behavior is unchanged.
 
+The [v1.18.6 release notes](./releases/v1.18.6.md) cover repository and
+release hardening. Reviewer behavior, permissions, storage and authentication
+are unchanged; the packaged React and Zod runtime dependencies are updated.
+
 ## Development toolchain
 
 WXT `0.21.4` uses the explicit Vite `8.2.2` peer and requires Node.js 22.12+
