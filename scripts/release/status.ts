@@ -104,7 +104,7 @@ export async function observeRelease(input: {
     "listing assessment",
   );
   let status: StoreStatus | undefined;
-  let history: HistoryEntry[] = [];
+  let history: HistoryEntry[];
   let prior: Receipt | undefined;
   const blockers: StatusReport["blockers"] = [];
   let route: StatusReport["route"] = "blocked";

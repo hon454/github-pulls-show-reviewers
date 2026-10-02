@@ -73,7 +73,7 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
   const page = await context.newPage();
   let phase = "service-worker";
   let documentResponse = { status: null as number | null };
-  let previousUrl: string | null = null;
+  let previousUrl: string | null;
   let navigation: CanaryNavigationObservation | undefined;
 
   try {
