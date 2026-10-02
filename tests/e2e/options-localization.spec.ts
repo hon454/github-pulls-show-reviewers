@@ -98,6 +98,9 @@ test("keeps options state across tabs and readable actions in five languages at 
     await first.reload();
     const second = await context.newPage();
     await second.goto(url);
+    // Keep the measured tab in front. A tab hidden behind `second` renders
+    // slowly on CI and pushed this test into its 30s budget (#230).
+    await first.bringToFront();
     await first
       .getByTestId("diagnostics-repo")
       .fill("long-owner/repository-input-must-survive");
