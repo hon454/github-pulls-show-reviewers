@@ -141,6 +141,24 @@ before retention expires. Only fixture test output is uploaded: never write
 credentials, real account data, browser profiles, or arbitrary workspace files
 into `test-results/`.
 
+### Flaky E2E tests
+
+A test that fails and then passes on its single CI retry is flaky. The CI
+`e2e` job writes a Playwright JSON report and the **Report flaky E2E tests**
+step lists every such test in the run summary with a warning annotation.
+
+Flaky tests do not fail CI or release verification (`failOnFlakyTests` stays
+off). Decision recorded for #230 on 2026-10-02: `pnpm verify:release` runs the
+same suite after a release tag already exists, and that attempt cannot be
+rerun, so failing on a flake would turn a transient runner problem into manual
+release recovery. Treat a flaky warning as a defect to root-cause from the
+retry trace, not as noise; revisit this decision if warnings are ignored.
+
+Multi-tab specs must call `bringToFront()` on the page they measure or
+screenshot. A tab hidden behind a later `context.newPage()` renders several
+times slower on CI runners, which is what pushed the two localization specs
+past the 30-second test timeout.
+
 The weekly [live GitHub DOM canary](./docs/live-github-dom-canary.md)
 checks production GitHub markup separately. It is diagnostic and is not part
 of the blocking pull-request gate; use its runbook for ownership, transient

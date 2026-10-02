@@ -51,3 +51,6 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Report flaky E2E tests
+        if: ${{ !cancelled() && (steps.e2e.outcome == 'success' || steps.e2e.outcome == 'failure') }}
+        run: node scripts/report-e2e-flaky.mjs playwright-report/e2e-results.json
