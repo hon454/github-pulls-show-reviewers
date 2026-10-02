@@ -1,0 +1,50 @@
+# Grouped weekly version updates. Security alerts and security updates are
+# enabled separately in repository settings.
+# See CONTRIBUTING.md#dependency-audits before merging any of these PRs.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      # Chrome Web Store submission dependencies. A bump here is a release
+      # change: run the credential-only `dry-run` before merging (AGENTS.md).
+      release-tooling:
+        patterns:
+          - publish-browser-extension
+          - google-auth-library
+      production:
+        dependency-type: production
+      development:
+        dependency-type: development
+        exclude-patterns:
+          - publish-browser-extension
+          - google-auth-library
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: ops
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - "*"
