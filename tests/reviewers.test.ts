@@ -3044,7 +3044,8 @@ describe("settled reviewer request ownership", () => {
       mutateRows("dedupe old request");
       await flushMicrotasks();
       if (trigger === "route")
-        getRegisteredListener(ctx, "wxt:locationchange")!();
+        // A same-URL render is the forced route refresh.
+        getRegisteredListener(ctx, "turbo:render")!();
       else
         publishFixtureChange!(
           {
@@ -3558,6 +3559,158 @@ describe("reviewer asynchronous presentation ownership", () => {
   });
 });
 
+describe("navigation refresh ordering", () => {
+  const summary: PullReviewerSummary = {
+    status: "ok",
+    requestedUsers: [{ login: "alice", avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [],
+  };
+
+  async function bootSettledList() {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) =>
+      Promise.resolve(
+        message.type === "fetchPullReviewerMetadataBatch"
+          ? { ok: true, metadata: [] }
+          : { ok: true, summary },
+      ),
+    );
+    const generations: number[] = [];
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    const ctx = makeCtx();
+    bootReviewerListPage(ctx, {
+      onOutcomes: (snapshot) => generations.push(snapshot.generation),
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+    const pollTick = ctx.setInterval.mock.calls[0]![0] as () => void;
+    return {
+      ctx,
+      pollTick,
+      latestGeneration: () => Math.max(...generations),
+      requests: () => runtimeSendMessageMock.mock.calls.length,
+    };
+  }
+
+  it("ignores a location change that has not committed yet", async () => {
+    const { ctx, latestGeneration, requests } = await bootSettledList();
+    const before = requests();
+
+    // The Navigation API reports a navigation before the URL changes.
+    getRegisteredListener(ctx, "wxt:locationchange")!();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(requests()).toBe(before);
+    expect(latestGeneration()).toBe(0);
+  });
+
+  it("issues no requests for the list being left once the URL commits", async () => {
+    const { ctx, latestGeneration, requests } = await bootSettledList();
+    const before = requests();
+
+    getRegisteredListener(ctx, "wxt:locationchange")!();
+    window.history.pushState({}, "", "/cinev/shotloom/pull/42");
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(requests()).toBe(before);
+    expect(latestGeneration()).toBe(1);
+  });
+
+  it("treats popstate without a URL change as no navigation", async () => {
+    const { ctx, latestGeneration, requests } = await bootSettledList();
+    const before = requests();
+
+    getRegisteredListener(ctx, "popstate")!();
+    await flushMicrotasks();
+
+    expect(requests()).toBe(before);
+    expect(latestGeneration()).toBe(0);
+  });
+
+  it("allocates one generation for a location change followed by a render burst", async () => {
+    const { ctx, latestGeneration } = await bootSettledList();
+
+    getRegisteredListener(ctx, "wxt:locationchange")!();
+    window.history.pushState({}, "", "/cinev/shotloom/pulls?page=2");
+    await flushMicrotasks();
+    getRegisteredListener(ctx, "turbo:render")!();
+    getRegisteredListener(ctx, "pjax:end")!();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(latestGeneration()).toBe(1);
+    expect(beginRepositoryDiscoveryMock).toHaveBeenCalledTimes(2);
+    // The surviving row revalidates once, for the committed page.
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
+  });
+
+  it("coalesces a same-URL render burst into one generation", async () => {
+    const { ctx, latestGeneration } = await bootSettledList();
+
+    getRegisteredListener(ctx, "turbo:render")!();
+    getRegisteredListener(ctx, "pjax:end")!();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(latestGeneration()).toBe(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
+  });
+
+  it("does not reprocess rows of the list being left before the next list settles", async () => {
+    const { ctx, pollTick, latestGeneration, requests } =
+      await bootSettledList();
+    const before = requests();
+
+    getRegisteredListener(ctx, "wxt:locationchange")!();
+    window.history.pushState({}, "", "/cinev/shotloom/pulls?page=2");
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // The old rows are still in the DOM until GitHub renders the next page.
+    expect(latestGeneration()).toBe(1);
+    expect(requests()).toBe(before);
+
+    // Rows that GitHub leaves in place are picked up after a full interval.
+    pollTick();
+    await flushMicrotasks();
+    expect(requests()).toBe(before);
+    pollTick();
+    await flushMicrotasks();
+    await flushMicrotasks();
+    expect(latestGeneration()).toBe(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
+  });
+
+  it("processes rows rendered for the next list without waiting for the settle tick", async () => {
+    const { ctx, latestGeneration } = await bootSettledList();
+
+    getRegisteredListener(ctx, "wxt:locationchange")!();
+    window.history.pushState({}, "", "/cinev/shotloom/pulls?page=2");
+    await flushMicrotasks();
+    const fixtureDocument = new DOMParser().parseFromString(
+      createPullListFixtureHtml(["77"], { owner: "cinev", repo: "shotloom" }),
+      "text/html",
+    );
+    document.body.innerHTML = fixtureDocument.body.innerHTML;
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(latestGeneration()).toBe(1);
+    expect(
+      getRuntimeMessages("fetchPullReviewerSummary").map(
+        (message) => message.pullNumber,
+      ),
+    ).toEqual(["42", "77"]);
+  });
+});
+
 describe("render-only reviewer display events", () => {
   const summary: PullReviewerSummary = {
     status: "ok",
@@ -3881,6 +4034,7 @@ describe("render-only reviewer locale events", () => {
       expect(uiListeners.size).toBe(2);
       window.history.replaceState({}, "", "/cinev/shotloom/issues");
       getRegisteredListener(ctx, "wxt:locationchange")!();
+      await Promise.resolve();
       expect(uiListeners.size).toBe(1);
       pendingTeardowns.forEach((fn) => fn());
       expect(uiListeners.size).toBe(0);
@@ -4050,6 +4204,8 @@ describe("render-only reviewer locale events", () => {
         immediate = true;
         window.history.replaceState({}, "", "/cinev/shotloom/pulls");
         getRegisteredListener(ctx, "wxt:locationchange")!();
+        // GitHub renders the list again; surviving rows are reprocessed then.
+        getRegisteredListener(ctx, "turbo:render")!();
         await flushMicrotasks();
         await flushMicrotasks();
         expect(started().slice(5)).toEqual(numbers);

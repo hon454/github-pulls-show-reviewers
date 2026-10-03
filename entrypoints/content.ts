@@ -100,7 +100,12 @@ export default defineContentScript({
     syncRouteFeatures();
     ctx.onInvalidated(disposeUIClient);
 
-    ctx.addEventListener(window, "wxt:locationchange", syncRouteFeatures);
+    // `wxt:locationchange` fires before the URL commits; read it afterwards.
+    ctx.addEventListener(window, "wxt:locationchange", () =>
+      queueMicrotask(() => {
+        if (!ctx.isInvalid) syncRouteFeatures();
+      }),
+    );
     ctx.addEventListener(window, "popstate", syncRouteFeatures);
     ctx.addEventListener(document, "turbo:render", syncRouteFeatures);
     ctx.addEventListener(document, "pjax:end", syncRouteFeatures);

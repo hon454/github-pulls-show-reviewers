@@ -185,9 +185,12 @@ function replaceMetadata(number: string): void {
     .forEach((node) => node.remove());
   native.replaceWith(replacement);
 }
+// A Turbo navigation: the location change is reported, the URL commits, and
+// GitHub renders the next page.
 function refresh(path = pathname): void {
-  window.history.replaceState({}, "", path);
   window.dispatchEvent(new Event("wxt:locationchange"));
+  window.history.replaceState({}, "", path);
+  document.dispatchEvent(new Event("turbo:render"));
 }
 async function boot(): Promise<void> {
   // Observe the real coordinator's publications without replacing any feature

@@ -59,6 +59,9 @@ import { createAbortAwareRequestScheduler } from "./request-scheduler";
 import { buildReviewers } from "./view-model";
 
 export const REVIEWER_SUMMARY_CONCURRENCY_LIMIT = 4;
+// Poll ticks to wait before reprocessing rows that survive a URL change. Two
+// ticks guarantee at least one full interval for GitHub to replace the list.
+const NAVIGATION_SETTLE_TICKS = 2;
 // Survives controller remounts in this document. Only explicit page lifecycle
 // invalidation allocates the next generation; rows/locale/TTL cannot allocate it.
 const pageSession = crypto.randomUUID();
@@ -543,11 +546,13 @@ export function bootReviewerListPage(
     );
   }
 
-  function refreshRoute(force = false): void {
-    const nextHref = window.location.href;
-    if (!force && nextHref === currentHref) return;
+  // Several events can report one navigation. Only `applyRouteChange`
+  // allocates a page generation for them, once per navigation.
+  let settleTicksLeft = 0;
+  let renderHandled = false;
 
-    currentHref = nextHref;
+  function applyRouteChange(): void {
+    currentHref = window.location.href;
     const previousRoute = currentRoute;
     currentRoute = parsePullListRoute(window.location.pathname);
     abortInflightRequests();
@@ -565,8 +570,46 @@ export function bootReviewerListPage(
         currentRoute.repo,
       );
     }
+  }
 
+  /** URL-driven refresh: a committed location change, popstate or the poll. */
+  function refreshLocation(): void {
+    if (disposed || window.location.href === currentHref) return;
+    applyRouteChange();
+    // The DOM may still show the page being left, so its rows are not
+    // reprocessed here. Rows GitHub renders for the new page are processed as
+    // they are added; rows it leaves in place wait for a render event or for
+    // one full poll interval.
+    settleTicksLeft = currentRoute == null ? 0 : NAVIGATION_SETTLE_TICKS;
+  }
+
+  /** Render-driven refresh: the DOM now belongs to the current URL. */
+  function refreshRendered(): void {
+    if (disposed) return;
+    const navigated = window.location.href !== currentHref;
+    if (!navigated && renderHandled) return;
+    // A render that completes an already counted navigation reuses its
+    // generation; a same-URL render is a revalidation trigger of its own.
+    if (navigated || settleTicksLeft === 0) applyRouteChange();
+    settleTicksLeft = 0;
+    if (!renderHandled) {
+      // GitHub can dispatch more than one render event for the same render.
+      renderHandled = true;
+      queueMicrotask(() => {
+        renderHandled = false;
+      });
+    }
     rowLifecycle.processRows();
+  }
+
+  function pollRoute(): void {
+    if (disposed) return;
+    if (window.location.href !== currentHref) {
+      refreshLocation();
+      return;
+    }
+    if (settleTicksLeft > 0 && --settleTicksLeft === 0)
+      rowLifecycle.processRows();
   }
 
   const observer = rowLifecycle.observe();
@@ -580,10 +623,14 @@ export function bootReviewerListPage(
     rowLifecycle.processRows();
   }
 
-  ctx.addEventListener(window, "wxt:locationchange", () => refreshRoute(true));
-  ctx.addEventListener(window, "popstate", () => refreshRoute(true));
-  ctx.addEventListener(document, "turbo:render", () => refreshRoute(true));
-  ctx.addEventListener(document, "pjax:end", () => refreshRoute(true));
+  // WXT dispatches `wxt:locationchange` from the Navigation API's `navigate`
+  // event, which fires before the URL commits. Read the location afterwards.
+  ctx.addEventListener(window, "wxt:locationchange", () =>
+    queueMicrotask(refreshLocation),
+  );
+  ctx.addEventListener(window, "popstate", refreshLocation);
+  ctx.addEventListener(document, "turbo:render", refreshRendered);
+  ctx.addEventListener(document, "pjax:end", refreshRendered);
 
   const unsubscribeState = getUIClient().subscribe(({ snapshot, previous }) => {
     if (disposed) return;
@@ -616,7 +663,7 @@ export function bootReviewerListPage(
     .read()
     .then(hydrate, () => undefined);
 
-  ctx.setInterval(() => refreshRoute(), 1000);
+  ctx.setInterval(pollRoute, 1000);
   ctx.onInvalidated(() => {
     disposed = true;
     observer.disconnect();

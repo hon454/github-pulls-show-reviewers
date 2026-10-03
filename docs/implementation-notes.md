@@ -281,8 +281,28 @@ fingerprint work by 59 of 60 calculations.
 can change through either form. Added rows are processed directly, while
 changed metadata invalidates and processes its existing row once. Reviewer
 roots and volatile relative-time elements remain excluded from fingerprint
-input, and `wxt:locationchange`, `popstate`, `turbo:render`, and `pjax:end`
-continue to force route refreshes.
+input.
+
+Route refreshes follow the committed URL, and one navigation allocates one page
+generation:
+
+- `wxt:locationchange` comes from the Navigation API's `navigate` event, which
+  fires before the URL commits (WXT 0.21.4). The entrypoint and the controller
+  read `window.location` in a microtask instead, after the page's `pushState`
+  call has returned. `wxt:locationchange`, `popstate` and the one-second poll
+  are href comparisons: an unchanged URL is not a navigation.
+- A committed URL change updates the route, aborts in-flight work and marks or
+  clears caches, but does not reprocess the rows currently in the DOM. They may
+  belong to the page being left; GitHub's React navigations commit the URL
+  before rendering and dispatch no `turbo:render`. Rows rendered for the new
+  page are processed as the observer sees them. Rows GitHub leaves in place are
+  reprocessed on the second poll tick after the change, which guarantees one
+  full interval.
+- `turbo:render` and `pjax:end` mean the DOM belongs to the current URL and
+  process rows immediately. A render that completes an already counted
+  navigation reuses its generation, and repeated render events for one render
+  are coalesced. A render with an unchanged URL and no pending navigation is
+  still a revalidation trigger with its own generation.
 
 An unchanged fingerprint does not by itself prove that the extension mount
 survived. The lifecycle separately remembers rows that previously had a mount.
