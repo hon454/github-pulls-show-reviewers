@@ -179,16 +179,23 @@ for shared-consumer and token-refresh ownership.
 7. For ambiguous user reviewers that appear in both `requested_reviewers` and
    the latest non-`COMMENTED` review set (`APPROVED`, `CHANGES_REQUESTED`, or
    `DISMISSED`), read up to two pages of the pull request's issue events and
-   compare ordering. The collector distinguishes a complete traversal from a
-   two-page truncation or unavailable response; malformed, unsafe, or cyclic
-   next links are not complete evidence. A valid `review_requested` timestamp
-   later than the latest valid completed-review timestamp confirms the request,
-   even when a later page is unavailable or remains beyond the budget. Remove
-   the requested marker only when a complete traversal proves that the latest
-   valid request is no later than the latest valid completed review. A missing
-   event, failed or truncated traversal, or missing/invalid comparison timestamp
-   leaves the requested marker in place as unverified evidence. Page-navigation
-   cancellation still aborts the lookup instead of producing a summary.
+   compare ordering. GitHub returns issue events oldest first, so when the
+   first response's validated `rel="last"` link lies beyond its `rel="next"`
+   link (more than two pages), the second request reads that newest page
+   instead of page two; otherwise the lookup follows `rel="next"`. The collector
+   distinguishes a complete traversal from a truncation or unavailable
+   response; malformed, unsafe, or cyclic links are not complete evidence. A
+   valid `review_requested` timestamp later than the latest valid
+   completed-review timestamp confirms the request, even when other pages are
+   unavailable or were skipped. Remove the requested marker only when the
+   reviewer's latest valid request is known and is no later than the latest
+   valid completed review. That request is known after a complete traversal, or
+   when it was read from a newest page that has no successor, because a request
+   on the final page cannot be superseded by one in skipped older pages. A
+   missing event, failed or truncated traversal without such a newest-page
+   request, or missing/invalid comparison timestamp leaves the requested marker
+   in place as unverified evidence. Page-navigation cancellation still aborts
+   the lookup instead of producing a summary.
 8. Render a single `Reviewers` section inline in the PR row metadata area. The
    mount lives in an extension-owned `inline-flex` metadata container instead
    of GitHub's `d-none d-md-inline-flex` wrapper. Standard desktop placement and
@@ -413,8 +420,9 @@ uses the existing bounded revalidation path.
   existing summary slot. Repository discovery is shared outside the row queue,
   so waiting rows cannot deadlock by reserving all four slots for a new probe.
 - Issue-event requests are targeted to ambiguous requested+completed reviewer
-  overlaps only, and follow at most two GitHub API issue-event pages
-  (`REVIEW_REQUEST_EVENT_PAGE_BUDGET`). Rows whose requested users do not
+  overlaps only, and read at most two GitHub API issue-event pages
+  (`REVIEW_REQUEST_EVENT_PAGE_BUDGET`): the first page, then either the next
+  page or, past two pages, the newest page. Rows whose requested users do not
   overlap a latest non-`COMMENTED` review keep the lower-volume pull metadata
   plus reviews path. Complete, truncated, and unavailable collection outcomes
   carry the directly observed valid events into login-specific evidence. An

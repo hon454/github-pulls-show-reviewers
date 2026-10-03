@@ -199,11 +199,37 @@ export function parseNextPageUrl(
   return result.status === "valid" ? result.url : null;
 }
 
+/**
+ * Returns the validated `rel="last"` URL only when it is a page beyond the
+ * validated `rel="next"` one and addresses the same repository path, i.e. the
+ * collection spans more than two pages. Null means "follow next as usual".
+ */
+export function parseSkippedLastPageUrl(
+  linkHeader: string | null,
+  expectedPathname: string,
+): string | null {
+  const next = inspectPageLink(linkHeader, "next", expectedPathname);
+  const last = inspectPageLink(linkHeader, "last", expectedPathname);
+  if (next.status !== "valid" || last.status !== "valid") return null;
+  if (next.url === last.url) return null;
+  return new URL(next.url).pathname === new URL(last.url).pathname
+    ? last.url
+    : null;
+}
+
 type NextPageInspection =
   { status: "none" } | { status: "invalid" } | { status: "valid"; url: string };
 
 function inspectNextPageUrl(
   linkHeader: string | null,
+  expectedPathname?: string,
+): NextPageInspection {
+  return inspectPageLink(linkHeader, "next", expectedPathname);
+}
+
+function inspectPageLink(
+  linkHeader: string | null,
+  relationName: "next" | "last",
   expectedPathname?: string,
 ): NextPageInspection {
   if (linkHeader == null) {
@@ -235,7 +261,7 @@ function inspectNextPageUrl(
     }
 
     const rels = relationValue.split(/\s+/);
-    if (rels.includes("next")) {
+    if (rels.includes(relationName)) {
       if (
         expectedPathname != null &&
         !isExpectedGitHubApiUrl(match[1], expectedPathname)
@@ -247,7 +273,9 @@ function inspectNextPageUrl(
   }
 
   return hasMalformedRelation ||
-    /\brel\s*=\s*"?[^",;]*\bnext\b/i.test(linkHeader)
+    new RegExp(`\\brel\\s*=\\s*"?[^",;]*\\b${relationName}\\b`, "i").test(
+      linkHeader,
+    )
     ? { status: "invalid" }
     : { status: "none" };
 }
