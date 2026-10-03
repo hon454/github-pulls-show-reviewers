@@ -361,6 +361,14 @@ uses the existing bounded revalidation path.
   `pull + reviews` REST path. This fallback is intentional: it preserves
   reviewer visibility for older filtered/search results without making the
   shared no-token metadata discovery unbounded.
+- The batch is validated one pull at a time. A pull that fails validation is
+  left out of the result but still counts as seen, so it neither fails the
+  other pulls nor extends pagination; its row uses the per-row
+  `pull + reviews` path. A page whose body is not a list ends the batch with
+  the pulls parsed so far. Access, rate-limit, timeout and transport failures
+  still fail the batch and keep the row-fallback suppression described above.
+- GitHub documents a pull request's `user` as nullable. Such a pull is valid
+  and has no author login, so no completed review is excluded as the author's.
 - The content script de-duplicates in-flight row fetches, caches each pull
   request summary for the active page session with freshness metadata, and
   caches the page-level metadata result per `owner/repo/account` and visible

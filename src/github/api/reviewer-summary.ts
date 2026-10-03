@@ -11,7 +11,7 @@ import {
   reviewRequestEventsSchema,
   reviewsSchema,
   type GitHubPull,
-  type GitHubPullReviewerMetadata,
+  type GitHubPullReviewerMetadataItem,
   type GitHubReview,
   type GitHubReviewRequestEvent,
 } from "./schemas";
@@ -248,18 +248,31 @@ export async function fetchPullReviewerMetadataBatch(input: {
   }
 
   const targets = new Set(input.targetPullNumbers ?? []);
-  const pulls = await collectGitHubApiPages<GitHubPullReviewerMetadata>({
-    firstResponse: response,
-    endpoint,
-    headers,
-    schema: pullReviewerMetadataListSchema,
-    pageBudget: PULL_METADATA_BATCH_PAGE_BUDGET,
-    hasEnough: (collected) =>
-      targets.size === 0 || hasAllTargetPulls(collected, targets),
-    ...(input.signal == null ? {} : { signal: input.signal }),
-  });
+  const pulls =
+    await collectGitHubApiPagesDetailed<GitHubPullReviewerMetadataItem>({
+      firstResponse: response,
+      endpoint,
+      headers,
+      schema: pullReviewerMetadataListSchema,
+      pageBudget: PULL_METADATA_BATCH_PAGE_BUDGET,
+      hasEnough: (collected) =>
+        targets.size === 0 || hasAllTargetPulls(collected, targets),
+      ...(input.signal == null ? {} : { signal: input.signal }),
+    });
+  // The batch only saves each row its own pull request. A page that fails
+  // validation proves access, so keep what parsed and let uncovered rows use
+  // their per-row path. Access, rate-limit and transport failures still fail.
+  if (
+    pulls.status === "unavailable" &&
+    !(pulls.error instanceof GitHubApiSchemaError)
+  )
+    throw pulls.error;
 
-  return pulls.map((pull) => toPullReviewerMetadata(String(pull.number), pull));
+  return pulls.items.flatMap((pull) =>
+    "malformed" in pull
+      ? []
+      : [toPullReviewerMetadata(String(pull.number), pull)],
+  );
 }
 
 function buildPullReviewerSummary(
@@ -541,7 +554,7 @@ function toPullReviewerMetadata(
 ): PullReviewerMetadata {
   return {
     number: pullNumber,
-    authorLogin: pull.user.login,
+    authorLogin: pull.user?.login ?? null,
     requestedUsers: pull.requested_reviewers.map((reviewer) => ({
       login: reviewer.login,
       avatarUrl: normalizeAvatarUrl(reviewer.avatar_url),
@@ -551,7 +564,7 @@ function toPullReviewerMetadata(
 }
 
 function hasAllTargetPulls(
-  pulls: GitHubPullReviewerMetadata[],
+  pulls: GitHubPullReviewerMetadataItem[],
   targets: Set<string>,
 ): boolean {
   const pullNumbers = new Set(pulls.map((pull) => String(pull.number)));

@@ -200,24 +200,32 @@ describe("production repository account service", () => {
     [403, { message: "You have exceeded a secondary rate limit" }, {}],
     [500, {}, {}],
     [502, {}, {}],
-    [200, { invalid: "schema" }, {}],
-  ])(
-    "stops on HTTP/schema evidence %s %j %j",
-    async (status, body, headers) => {
-      await add("A");
-      await add("B");
-      const http = mockHttp(
-        () => new Response(JSON.stringify(body), { status, headers }),
-      );
-      const discovery = await begin();
-      const result = await failure(
-        service.metadata(owner, discovery, signal()),
-      );
-      expect(result.envelope.failures).not.toHaveLength(0);
-      await failure(service.metadata(owner, discovery, signal()));
-      expect(http.calls.map((call) => call.account)).toEqual(["A"]);
-    },
-  );
+  ])("stops on HTTP evidence %s %j %j", async (status, body, headers) => {
+    await add("A");
+    await add("B");
+    const http = mockHttp(
+      () => new Response(JSON.stringify(body), { status, headers }),
+    );
+    const discovery = await begin();
+    const result = await failure(service.metadata(owner, discovery, signal()));
+    expect(result.envelope.failures).not.toHaveLength(0);
+    await failure(service.metadata(owner, discovery, signal()));
+    expect(http.calls.map((call) => call.account)).toEqual(["A"]);
+  });
+
+  it("treats an unparseable 2xx pull list as proven access without page metadata", async () => {
+    await add("A");
+    await add("B");
+    const http = mockHttp(() => json({ invalid: "schema" }));
+    const discovery = await begin();
+    const result = await service.metadata(owner, discovery, signal());
+    // Rows fall back to their own pull request under the same account; the
+    // schema failure neither stops the discovery nor cycles to account B.
+    expect(result.account?.id).toBe("A");
+    expect(result.metadata).toEqual([]);
+    await service.metadata(owner, discovery, signal());
+    expect(http.calls.map((call) => call.account)).toEqual(["A"]);
+  });
 
   it("stops on network failure without cycling, including worker restoration", async () => {
     await add("A");

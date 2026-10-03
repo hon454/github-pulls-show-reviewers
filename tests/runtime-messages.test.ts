@@ -42,6 +42,25 @@ describe("reviewer fetch runtime message schemas", () => {
     expect(isFetchPullReviewerSummaryMessage(message)).toBe(true);
   });
 
+  it("accepts pull metadata whose author account is null", () => {
+    const message = {
+      type: "fetchPullReviewerSummary",
+      requestId: "req-1",
+      owner: "cinev",
+      repo: "shotloom",
+      pullNumber: "42",
+      accountId: null,
+      pullMetadata: {
+        number: "42",
+        authorLogin: null,
+        requestedUsers: [],
+        requestedTeams: [],
+      },
+    };
+
+    expect(isFetchPullReviewerSummaryMessage(message)).toBe(true);
+  });
+
   it("rejects malformed nested pull metadata through the fetch-summary guard", () => {
     const message = {
       type: "fetchPullReviewerSummary",

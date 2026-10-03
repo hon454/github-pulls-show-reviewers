@@ -29,7 +29,7 @@ const reviewerUserMessageSchema = z.object({
 
 const pullReviewerMetadataMessageSchema = z.object({
   number: nonEmptyStringSchema,
-  authorLogin: nonEmptyStringSchema,
+  authorLogin: nonEmptyStringSchema.nullable(),
   requestedUsers: z.array(reviewerUserMessageSchema),
   requestedTeams: z.array(z.string()),
 }) satisfies z.ZodType<PullReviewerMetadata>;
