@@ -804,6 +804,21 @@ it is not a live private-repository permission check.
   snapshot/port client with worker epoch and monotonic revision. Stale initial
   reads, delayed RPC results and callbacks from disconnected workers are ignored.
   Teardown releases subscriptions; reconnect hydrates fresh state without pings.
+- An idle port does not keep an MV3 worker alive: Chrome stops the worker after
+  about thirty seconds and drops its ports. The options page re-establishes its
+  port after 500 ms, as before. A content document does not, because a timed
+  reconnect from every open GitHub tab woke the worker again in a loop (measured
+  on 2026-10-03 with one idle pull-list tab: stopped at about 31 s, restarted
+  about 0.5 s later, every cycle). A content document re-establishes a dropped
+  port only when background announces a change, when a read needs a snapshot,
+  or when the document becomes visible.
+- After a storage change that alters what content documents see (preferences,
+  or the account access and discovery revisions), background sends
+  `UI_STATE_CHANGED` to open `https://github.com/*` tabs with `tabs.sendMessage`.
+  The message carries no state. A visible document reconnects and receives the
+  validated snapshot over its port; a hidden one ignores it and reconnects when
+  it becomes visible. Token rotation that keeps an account's access identity is
+  not announced.
   The reviewer page starts row work on its first valid read or subscription
   snapshot, including recovery after an initial read failure. A late initial
   read cannot replace preferences already delivered by the subscription.

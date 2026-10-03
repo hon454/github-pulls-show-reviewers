@@ -705,6 +705,87 @@ test("widening the content match to every github.com page adds no permission war
   });
 });
 
+test("an idle pull-list tab leaves a stopped worker stopped and still receives later state changes", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-single-row.html"),
+      "utf8",
+    );
+    await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, []);
+    await routePullApi(context, "42", {
+      user: { login: "hon454" },
+      requested_reviewers: [{ login: "alice" }],
+      requested_teams: [],
+    });
+    await routeReviewsApi(context, "42", []);
+
+    const page = await context.newPage();
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+
+    const workerUrl = context.serviceWorkers()[0]!.url();
+    const cdp = await context.newCDPSession(page);
+    const versions = new Map<
+      string,
+      { versionId: string; scriptURL: string; runningStatus: string }
+    >();
+    cdp.on("ServiceWorker.workerVersionUpdated", ({ versions: updates }) => {
+      for (const version of updates) versions.set(version.versionId, version);
+    });
+    await cdp.send("ServiceWorker.enable");
+    const workerVersion = () =>
+      [...versions.values()].find((value) => value.scriptURL === workerUrl);
+    const stopWorker = async () => {
+      await expect.poll(() => workerVersion()?.runningStatus).toBe("running");
+      await cdp.send("ServiceWorker.stopWorker", {
+        versionId: workerVersion()!.versionId,
+      });
+      await expect.poll(() => workerVersion()?.runningStatus).toBe("stopped");
+    };
+
+    // Chrome stops an idle MV3 worker after about thirty seconds, which drops
+    // the page's port. The page must not bring the worker back by itself.
+    // The install-time options page can still be open; it keeps a reconnecting
+    // port of its own and would restart the worker.
+    for (const open of context.pages())
+      if (open.url().startsWith("chrome-extension://")) await open.close();
+    await stopWorker();
+    await page.waitForTimeout(3000);
+    expect(workerVersion()?.runningStatus).toBe("stopped");
+
+    // An options page keeps its own reconnecting port and restarts the worker.
+    const options = await context.newPage();
+    await options.goto(
+      `chrome-extension://${new URL(workerUrl).host}/options.html`,
+    );
+    await page.bringToFront();
+    await stopWorker();
+    await expect.poll(() => workerVersion()?.runningStatus).toBe("running");
+
+    // The pull list is visible and has no port now. Background announces the
+    // change; the page reconnects and renders it without a reload.
+    await expect(page.locator("a.ghpsr-pill")).toHaveCount(0);
+    await options.evaluate(() =>
+      (
+        globalThis as unknown as {
+          chrome: {
+            runtime: { sendMessage(message: object): Promise<unknown> };
+          };
+        }
+      ).chrome.runtime.sendMessage({
+        type: "patchPreferences",
+        patch: { showReviewerName: true },
+      }),
+    );
+    await expect(page.locator("a.ghpsr-pill")).toHaveCount(1);
+  });
+});
+
 test("clears metadata-missing reviewer slots silently when reviewer fetch fails", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(

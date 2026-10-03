@@ -1,4 +1,5 @@
-import { disposeUIClient } from "../src/runtime/ui-client";
+import { disposeUIClient, wakeUIClient } from "../src/runtime/ui-client";
+import { UI_STATE_CHANGED } from "../src/runtime/ui-contract";
 import { DISCOVERY_DOCUMENT_PROBE } from "../src/runtime/repository-discovery";
 import {
   bootAccessBanner,
@@ -26,19 +27,19 @@ export default defineContentScript({
   matches: ["https://github.com/*"],
   runAt: "document_idle",
   main(ctx) {
-    const documentProbe: Parameters<
+    const onBackgroundMessage: Parameters<
       typeof browser.runtime.onMessage.addListener
     >[0] = (message, sender, reply) => {
-      if (
-        sender.id === browser.runtime.id &&
-        message?.type === DISCOVERY_DOCUMENT_PROBE
-      )
+      if (sender.id !== browser.runtime.id) return undefined;
+      if (message?.type === DISCOVERY_DOCUMENT_PROBE)
         reply({ alive: !ctx.isInvalid });
+      // This document keeps no port while idle; reconnect to read the change.
+      else if (message?.type === UI_STATE_CHANGED) wakeUIClient();
       return undefined;
     };
-    browser.runtime.onMessage?.addListener(documentProbe);
+    browser.runtime.onMessage?.addListener(onBackgroundMessage);
     ctx.onInvalidated(() =>
-      browser.runtime.onMessage?.removeListener(documentProbe),
+      browser.runtime.onMessage?.removeListener(onBackgroundMessage),
     );
     let aggregator: AccessBannerHandle | null = null;
     let reviewerListBooted = false;

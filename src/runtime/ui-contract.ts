@@ -58,6 +58,12 @@ export const uiSnapshotSchema = z.strictObject({
 });
 export type UISnapshot = z.infer<typeof uiSnapshotSchema>;
 export const UI_STATE_PORT = "ghpsr:ui-state:v1";
+/**
+ * Background → content announcement that the content-visible state changed.
+ * It carries no state: the document re-establishes its port and receives the
+ * validated snapshot there.
+ */
+export const UI_STATE_CHANGED = "ghpsr:ui-state-changed:v1";
 export const flowErrorCodeSchema = z.enum([
   "device_flow_disabled",
   "unsupported_grant_type",
