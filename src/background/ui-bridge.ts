@@ -11,7 +11,7 @@ import type { ReviewerFetchService } from "./reviewer-fetch";
 import { createUIStateService } from "./ui-state";
 import {
   identifyUIContext,
-  ownsRepository,
+  ownsCommittedRepository,
   type UIContext,
   type UISender,
 } from "./ui-sender";
@@ -181,7 +181,7 @@ export function createUIBridge(input: {
           return forbidden();
         if (
           "owner" in request &&
-          !ownsRepository(context, request.owner, request.repo)
+          !(await ownsCommittedRepository(context, request.owner, request.repo))
         )
           return forbidden();
         switch (request.type) {
@@ -229,7 +229,11 @@ export function createUIBridge(input: {
               const repository = request.repository;
               if (
                 !repository ||
-                !ownsRepository(context, repository.owner, repository.repo)
+                !(await ownsCommittedRepository(
+                  context,
+                  repository.owner,
+                  repository.repo,
+                ))
               )
                 return forbidden();
               const account = await accountMutations.getAccountById(
@@ -325,7 +329,13 @@ export function createUIBridge(input: {
       }
       const summary = fetchPullReviewerSummaryMessageSchema.safeParse(message);
       if (summary.success && context.kind === "content") {
-        if (!ownsRepository(context, summary.data.owner, summary.data.repo))
+        if (
+          !(await ownsCommittedRepository(
+            context,
+            summary.data.owner,
+            summary.data.repo,
+          ))
+        )
           return forbidden();
         if (!summary.data.discoveryId)
           return { ok: false, error: "unavailable" };
@@ -352,7 +362,13 @@ export function createUIBridge(input: {
       const metadata =
         fetchPullReviewerMetadataBatchMessageSchema.safeParse(message);
       if (metadata.success && context.kind === "content") {
-        if (!ownsRepository(context, metadata.data.owner, metadata.data.repo))
+        if (
+          !(await ownsCommittedRepository(
+            context,
+            metadata.data.owner,
+            metadata.data.repo,
+          ))
+        )
           return forbidden();
         if (!metadata.data.discoveryId)
           return { ok: false, error: "unavailable" };

@@ -55,6 +55,13 @@ Options requires the extension's exact `/options.html` URL. Content requires a
 top-level `https://github.com` tab, and repository operations must match that
 sender's owner/repository path. Missing/unrecognized contexts fail closed.
 
+Amendment (2026-10-03, #282): Chrome's `sender.url` stays at the URL a content
+document was loaded with and does not follow same-document navigation, which is
+how GitHub moves between pages. The repository match therefore accepts either
+the sender URL or the URL the sender's tab has committed, read by background
+through `tabs.get`. The tab URL is browser-supplied like the sender URL, the
+sender must still be that tab's top frame, and the check still fails closed.
+
 | Caller  | Allowed operations                                                                                                                                                                              |
 | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Options | Safe account/preferences snapshot, preference patch, account resolution, local removal, installation refresh, matched/anonymous diagnostics, own device-flow start/poll/cancel, open options    |

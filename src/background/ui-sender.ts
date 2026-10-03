@@ -59,3 +59,30 @@ export function ownsRepository(
     segments[2]?.toLowerCase() === repo.toLowerCase()
   );
 }
+
+/**
+ * Chrome keeps reporting the URL a content document was loaded with in
+ * `sender.url`; it does not follow `history.pushState`. GitHub navigates within
+ * the document, so a pull list reached that way is not named by the sender
+ * URL. Before refusing, check the URL the sender's tab has committed. Only a
+ * top-frame content sender reaches this, so that URL belongs to its document.
+ */
+export async function ownsCommittedRepository(
+  context: UIContext,
+  owner: string,
+  repo: string,
+): Promise<boolean> {
+  if (ownsRepository(context, owner, repo)) return true;
+  if (context.kind !== "content" || context.tabId === undefined) return false;
+  try {
+    const tab = await browser.tabs?.get?.(context.tabId);
+    if (!tab?.url) return false;
+    const url = new URL(tab.url);
+    return (
+      url.origin === "https://github.com" &&
+      ownsRepository({ ...context, url }, owner, repo)
+    );
+  } catch {
+    return false;
+  }
+}

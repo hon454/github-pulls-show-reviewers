@@ -103,6 +103,105 @@ describe("real token-free background capability bridge", () => {
     content.dispose();
   });
 
+  describe("content documents after a same-document navigation", () => {
+    // Chrome keeps reporting the URL a document was loaded with in
+    // `sender.url`; it does not follow history.pushState.
+    const staleSender = () => ({
+      ...contentSender(),
+      url: "https://github.com/notifications",
+    });
+    const showTab = (url: string | undefined) =>
+      harness.browserMock.tabs.get.mockResolvedValue({
+        discarded: false,
+        frozen: false,
+        ...(url === undefined ? {} : { url }),
+      } as never);
+    const resolveOctoRepo = () =>
+      harness.send(
+        { type: "resolveAccount", owner: "octo", repo: "repo" },
+        staleSender(),
+      );
+
+    it("authorizes a request for the repository the tab now shows", async () => {
+      await add();
+      showTab("https://github.com/octo/repo/pulls?q=is%3Aopen");
+
+      expect(await resolveOctoRepo()).toMatchObject({
+        ok: true,
+        data: { id: "acc-1" },
+      });
+      expect(harness.browserMock.tabs.get).toHaveBeenCalledWith(2);
+    });
+
+    it("admits discovery and reviewer fetches for the repository the tab now shows", async () => {
+      await add();
+      showTab("https://github.com/octo/repo/pulls");
+
+      const discovery = (await harness.send(
+        {
+          type: "beginRepositoryDiscovery",
+          owner: "octo",
+          repo: "repo",
+          pageSession: "page-session",
+          generation: 1,
+        },
+        staleSender(),
+      )) as { ok: boolean; data: { id: string } };
+      expect(discovery.ok).toBe(true);
+      const reply = await harness.send(
+        {
+          type: "fetchPullReviewerMetadataBatch",
+          requestId: "request-1",
+          owner: "octo",
+          repo: "repo",
+          accountId: null,
+          discoveryId: discovery.data.id,
+          targetPullNumbers: [],
+        },
+        staleSender(),
+      );
+      expect(reply).not.toEqual({ ok: false, error: "forbidden" });
+    });
+
+    it.each([
+      ["another repository", "https://github.com/octo/other/pulls"],
+      ["a non-repository page", "https://github.com/notifications"],
+      ["another origin", "https://evil.example/octo/repo/pulls"],
+      ["an unreadable URL", undefined],
+    ])("refuses when the tab shows %s", async (_label, tabUrl) => {
+      await add();
+      showTab(tabUrl);
+
+      expect(await resolveOctoRepo()).toEqual({
+        ok: false,
+        error: "forbidden",
+      });
+    });
+
+    it("refuses when the tab can no longer be read", async () => {
+      await add();
+      harness.browserMock.tabs.get.mockRejectedValue(new Error("No tab"));
+
+      expect(await resolveOctoRepo()).toEqual({
+        ok: false,
+        error: "forbidden",
+      });
+    });
+
+    it("does not read the tab when the load URL already names the repository", async () => {
+      await add();
+      harness.browserMock.tabs.get.mockClear();
+
+      expect(
+        await harness.send(
+          { type: "resolveAccount", owner: "octo", repo: "repo" },
+          contentSender(),
+        ),
+      ).toMatchObject({ ok: true });
+      expect(harness.browserMock.tabs.get).not.toHaveBeenCalled();
+    });
+  });
+
   it.each([
     "startDeviceFlow",
     "pollDeviceFlow",
