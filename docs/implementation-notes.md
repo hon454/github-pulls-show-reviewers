@@ -212,6 +212,8 @@ for shared-consumer and token-refresh ownership.
    keep reviewer metadata visible without forcing GitHub's hidden row metadata
    back into view. Repeated processing moves an existing mount into that
    container and removes duplicate roots. Each reviewer is an avatar chip.
+   Avatars on `avatars.githubusercontent.com` are requested at 48px (`s=48`),
+   twice the largest 24px slot; other avatar hosts are used as returned.
    Requested reviewers keep the blue requested ring. Completed reviewers show
    a ring and badge derived from one `(isRequested, state)` mapping. Review
    selection prefers the latest non-`COMMENTED` review for a reviewer, falling
@@ -291,6 +293,11 @@ can change through either form. Added rows are processed directly, while
 changed metadata invalidates and processes its existing row once. Reviewer
 roots and volatile relative-time elements remain excluded from fingerprint
 input.
+
+The body-wide observer runs only while the route is a repository pull list.
+Leaving the list disconnects it, which matters now that the content script
+loads on every `github.com` page; returning reconnects it as part of the route
+refresh below, which also reprocesses the rows already present.
 
 Route refreshes follow the committed URL, and one navigation allocates one page
 generation:
@@ -529,6 +536,16 @@ guidance. Reprocessing on an account change, meaningful GitHub row mutation, or
 navigation can also retry; no timer, polling or quota-reset-triggered retry is
 scheduled. Locale and display preference changes only reformat presentation,
 without changing generations, outcomes, caches, dismissal or request order.
+
+When a reviewer summary fails with an exhausted primary rate limit (zero
+remaining and a reset time), the controller stops dispatching for that account
+within the current page generation until the reset time. Rows still queued
+behind the four in-flight requests, and rows reprocessed before the reset,
+settle with the same recorded failure and send neither a summary nor a metadata
+request. The banner therefore aggregates one failure identity. Secondary limits
+and responses without a quota snapshot do not start this hold. A new generation
+(navigation or account change) clears it and tries again, and so does a row
+event after the reset time; nothing is retried automatically.
 
 ## Credential generation and background account commits
 

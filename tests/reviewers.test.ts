@@ -9,6 +9,7 @@ import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import type { Locale } from "../src/i18n";
 import type { PullReviewerSummary } from "../src/github/api";
+import type { ReviewerOutcomeSnapshot } from "../src/features/reviewers/outcomes";
 import type { Account } from "../src/storage/accounts";
 import type * as PreferencesModule from "../src/runtime/preferences";
 import { createUIPresentationFixtures } from "./helpers/ui-presentation-fixtures";
@@ -3556,6 +3557,163 @@ describe("reviewer asynchronous presentation ownership", () => {
     for (const number of ["43", "44", "45", "46"]) completions.get(number)!();
     await flushMicrotasks();
     expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(5);
+  });
+});
+
+describe("primary rate limit exhaustion", () => {
+  const numbers = ["42", "43", "44", "45", "46", "47", "48", "49"];
+  const summary: PullReviewerSummary = {
+    status: "ok",
+    requestedUsers: [{ login: "alice", avatarUrl: null }],
+    requestedTeams: [],
+    completedReviews: [],
+  };
+
+  function rateLimited(rateLimit?: {
+    remaining: number;
+    resetAt: number | null;
+  }) {
+    return {
+      ok: false,
+      error: {
+        kind: "github-api" as const,
+        status: 403,
+        failures: [
+          {
+            status: 403,
+            endpoint: null,
+            rateLimited: true,
+            ...(rateLimit == null
+              ? {}
+              : {
+                  rateLimit: { limit: 60, resource: "core", ...rateLimit },
+                }),
+          },
+        ],
+      },
+    };
+  }
+
+  async function bootEightRows(summaryReply: () => unknown) {
+    installPullListFixture(numbers);
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) =>
+      Promise.resolve(
+        message.type === "fetchPullReviewerMetadataBatch"
+          ? { ok: true, metadata: [] }
+          : summaryReply(),
+      ),
+    );
+    let latest: ReviewerOutcomeSnapshot | undefined;
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    const ctx = makeCtx();
+    bootReviewerListPage(ctx, {
+      onOutcomes: (snapshot) => {
+        latest = snapshot;
+      },
+    });
+    for (let index = 0; index < 6; index += 1) await flushMicrotasks();
+    return {
+      ctx,
+      started: () =>
+        getRuntimeMessages("fetchPullReviewerSummary").map(
+          (message) => message.pullNumber,
+        ),
+      outcomes: () => latest!.rows.map(({ outcome }) => outcome),
+    };
+  }
+
+  const inTenMinutes = () => Math.floor(Date.now() / 1000) + 600;
+
+  it("settles queued rows with the same failure instead of dispatching them", async () => {
+    const reset = inTenMinutes();
+    const { started, outcomes } = await bootEightRows(() =>
+      rateLimited({ remaining: 0, resetAt: reset }),
+    );
+
+    // Four rows were already in flight when the first reply arrived.
+    expect(started()).toEqual(numbers.slice(0, 4));
+    const settled = outcomes();
+    expect(settled.map(({ status }) => status)).toEqual(
+      numbers.map(() => "failure"),
+    );
+    const queuedFailures = new Set(
+      settled
+        .slice(4)
+        .map((outcome) => (outcome.status === "failure" ? outcome.failure : 0)),
+    );
+    expect(queuedFailures.size).toBe(1);
+    expect(document.querySelector(".ghpsr-status")).toBeNull();
+  });
+
+  it("keeps skipping dispatch when rows are reprocessed before the reset", async () => {
+    const { started } = await bootEightRows(() =>
+      rateLimited({ remaining: 0, resetAt: inTenMinutes() }),
+    );
+    expect(started()).toHaveLength(4);
+
+    document
+      .querySelectorAll(".issue-meta-section")
+      .forEach((meta) => meta.append(document.createTextNode(" edited")));
+    for (let index = 0; index < 4; index += 1) await flushMicrotasks();
+
+    expect(started()).toHaveLength(4);
+    expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
+      1,
+    );
+  });
+
+  it("dispatches again once the reset time has passed", async () => {
+    let reply: () => unknown = () =>
+      rateLimited({ remaining: 0, resetAt: Math.floor(Date.now() / 1000) + 1 });
+    const { started } = await bootEightRows(() => reply());
+    expect(started()).toHaveLength(4);
+
+    const now = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 5_000);
+    reply = () => ({ ok: true, summary });
+    document
+      .querySelectorAll(".issue-meta-section")
+      .forEach((meta) => meta.append(document.createTextNode(" edited")));
+    for (let index = 0; index < 6; index += 1) await flushMicrotasks();
+    now.mockRestore();
+
+    expect(started()).toHaveLength(12);
+    expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(8);
+  });
+
+  it("dispatches again for the next page generation", async () => {
+    let reply: () => unknown = () =>
+      rateLimited({ remaining: 0, resetAt: inTenMinutes() });
+    const { ctx, started } = await bootEightRows(() => reply());
+    expect(started()).toHaveLength(4);
+
+    reply = () => ({ ok: true, summary });
+    getRegisteredListener(ctx, "turbo:render")!();
+    for (let index = 0; index < 6; index += 1) await flushMicrotasks();
+
+    expect(started()).toHaveLength(12);
+  });
+
+  it.each([
+    ["a secondary limit without a quota snapshot", undefined],
+    ["a limit with requests remaining", { remaining: 3, resetAt: 1 }],
+    [
+      "an exhausted quota without a reset time",
+      { remaining: 0, resetAt: null },
+    ],
+  ])("keeps dispatching queued rows after %s", async (_label, rateLimit) => {
+    const { started } = await bootEightRows(() =>
+      rateLimited(
+        rateLimit == null
+          ? undefined
+          : {
+              ...rateLimit,
+              resetAt: rateLimit.resetAt === 1 ? inTenMinutes() : null,
+            },
+      ),
+    );
+
+    expect(started()).toEqual(numbers);
   });
 });
 

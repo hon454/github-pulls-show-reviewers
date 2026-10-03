@@ -377,6 +377,21 @@ function createUserNode(
   return link;
 }
 
+// Twice the largest 24px slot, for high-density displays.
+const AVATAR_REQUEST_SIZE = 48;
+
+/** GitHub serves the full-size image unless its avatar host is given `s`. */
+function sizeGitHubAvatarUrl(avatarUrl: string): string {
+  try {
+    const url = new URL(avatarUrl);
+    if (url.hostname !== "avatars.githubusercontent.com") return avatarUrl;
+    url.searchParams.set("s", String(AVATAR_REQUEST_SIZE));
+    return url.toString();
+  } catch {
+    return avatarUrl;
+  }
+}
+
 function attachAvatarImage(
   container: HTMLElement,
   entry: Extract<ReviewerEntry, { kind: "user" }>,
@@ -388,7 +403,10 @@ function attachAvatarImage(
   img.setAttribute("loading", "lazy");
   img.setAttribute("width", String(size));
   img.setAttribute("height", String(size));
-  img.src = entry.avatarUrl ?? `https://github.com/${entry.login}.png?size=48`;
+  img.src =
+    entry.avatarUrl == null
+      ? `https://github.com/${entry.login}.png?size=${AVATAR_REQUEST_SIZE}`
+      : sizeGitHubAvatarUrl(entry.avatarUrl);
   img.addEventListener("error", () => {
     const initials = document.createElement("span");
     initials.className = "ghpsr-initials";

@@ -17,6 +17,8 @@ export type ReviewerRowLifecycle = {
   processRows(root?: ParentNode): void;
   clearFingerprints(): void;
   observe(): MutationObserver;
+  /** Starts or stops observing to match the current route. */
+  syncObservation(): void;
 };
 
 /** Optional local work counters for deterministic tests; no data is emitted. */
@@ -87,8 +89,33 @@ export function createReviewerRowLifecycle(input: {
     processRow(row);
   }
 
+  let observer: MutationObserver | undefined;
+  let observing = false;
+
+  // The observer covers the whole body, so it only runs on pull-list routes.
+  // Leaving the list drops pending records; rows present on return are picked
+  // up by the route refresh that calls this.
+  function syncObservation(): void {
+    if (observer == null) return;
+    const shouldObserve = input.getRoute() != null;
+    if (shouldObserve === observing) return;
+    observing = shouldObserve;
+    if (!shouldObserve) {
+      observer.disconnect();
+      return;
+    }
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: [...githubSelectors.observedRowAttributes],
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
+
   function observe(): MutationObserver {
-    const observer = new MutationObserver((mutations) => {
+    observer = new MutationObserver((mutations) => {
+      if (input.getRoute() == null) return;
       input.diagnostics?.onObserverCallback?.(mutations.length);
       const addedRows = new Set<Element>();
       const mutatedRows = new Set<Element>();
@@ -149,13 +176,8 @@ export function createReviewerRowLifecycle(input: {
       }
     });
 
-    observer.observe(document.body, {
-      attributes: true,
-      attributeFilter: [...githubSelectors.observedRowAttributes],
-      childList: true,
-      characterData: true,
-      subtree: true,
-    });
+    observing = false;
+    syncObservation();
     return observer;
   }
 
@@ -167,6 +189,7 @@ export function createReviewerRowLifecycle(input: {
       rowsWithReviewerMounts.clear();
     },
     observe,
+    syncObservation,
   };
 }
 
