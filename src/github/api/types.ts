@@ -19,7 +19,8 @@ export type ReviewRequestEvidence = {
 
 export type PullReviewerMetadata = {
   number: string;
-  authorLogin: string;
+  // Null when GitHub reports no author account; no review is excluded then.
+  authorLogin: string | null;
   requestedUsers: ReviewerUser[];
   requestedTeams: string[];
 };
