@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createBannerAggregator,
   formatBannerMessage,
+  type BannerAggregator,
   type BannerFailure,
+  type BannerFailureInfo,
+  type BannerKind,
 } from "../src/features/access-banner/aggregator";
 
 const TEST_REPO = { owner: "cinev", name: "shotloom" } as const;
@@ -22,6 +25,24 @@ afterEach(() => {
   vi.resetModules();
   vi.unstubAllGlobals();
 });
+
+/**
+ * Adds one failure the way the content script publishes them: as the complete
+ * set of failures for the page generation.
+ */
+const reportedFailures = new WeakMap<object, BannerFailure[]>();
+function reportFailure(
+  aggregator: Pick<BannerAggregator, "reconcile">,
+  kind: BannerKind,
+  info?: BannerFailureInfo,
+): void {
+  const failures = [
+    ...(reportedFailures.get(aggregator) ?? []),
+    info == null ? { kind } : { kind, info },
+  ];
+  reportedFailures.set(aggregator, failures);
+  aggregator.reconcile({ generation: 0, pending: false, failures });
+}
 
 describe("bannerAggregator", () => {
   it("starts with current=null and carries the repo", () => {
@@ -45,9 +66,9 @@ describe("bannerAggregator", () => {
     aggregator.subscribe(listener);
     listener.mockClear();
 
-    aggregator.reportFailure("signin-required");
-    aggregator.reportFailure("signin-required");
-    aggregator.reportFailure("signin-required");
+    reportFailure(aggregator, "signin-required");
+    reportFailure(aggregator, "signin-required");
+    reportFailure(aggregator, "signin-required");
 
     expect(aggregator.getState().current).toBe("signin-required");
     expect(listener).toHaveBeenCalledTimes(1);
@@ -58,8 +79,8 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    aggregator.reportFailure("signin-required");
-    aggregator.reportFailure("auth-expired");
+    reportFailure(aggregator, "signin-required");
+    reportFailure(aggregator, "auth-expired");
     expect(aggregator.getState().current).toBe("auth-expired");
   });
 
@@ -68,8 +89,8 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    aggregator.reportFailure("auth-expired");
-    aggregator.reportFailure("signin-required");
+    reportFailure(aggregator, "auth-expired");
+    reportFailure(aggregator, "signin-required");
     expect(aggregator.getState().current).toBe("auth-expired");
   });
 
@@ -87,8 +108,8 @@ describe("bannerAggregator", () => {
         pathname: `/cinev/shotloom/pulls?case=${i}`,
         repo: TEST_REPO,
       });
-      aggregator.reportFailure(order[i]);
-      aggregator.reportFailure(order[i + 1]);
+      reportFailure(aggregator, order[i]);
+      reportFailure(aggregator, order[i + 1]);
       expect(aggregator.getState().current).toBe(order[i + 1]);
     }
   });
@@ -107,7 +128,7 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    first.reportFailure("signin-required");
+    reportFailure(first, "signin-required");
     first.dismiss();
     expect(first.getState().dismissed).toBe(true);
 
@@ -115,7 +136,7 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    second.reportFailure("signin-required");
+    reportFailure(second, "signin-required");
     expect(second.getState().dismissed).toBe(true);
   });
 
@@ -124,14 +145,14 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    a.reportFailure("signin-required");
+    reportFailure(a, "signin-required");
     a.dismiss();
 
     const b = createBannerAggregator({
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    b.reportFailure("auth-expired");
+    reportFailure(b, "auth-expired");
     expect(b.getState().dismissed).toBe(false);
   });
 
@@ -146,7 +167,7 @@ describe("bannerAggregator", () => {
       resource: "core",
       resetAt: 1_700_000_300,
     };
-    aggregator.reportFailure("auth-rate-limit", { rateLimit: snapshot });
+    reportFailure(aggregator, "auth-rate-limit", { rateLimit: snapshot });
     expect(aggregator.getState()).toMatchObject({
       current: "auth-rate-limit",
       rateLimit: snapshot,
@@ -158,7 +179,7 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    aggregator.reportFailure("auth-expired", {
+    reportFailure(aggregator, "auth-expired", {
       rateLimit: { limit: 1, remaining: 0, resource: null, resetAt: null },
     });
     expect(aggregator.getState().rateLimit).toBeUndefined();
@@ -169,7 +190,7 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    aggregator.reportFailure("auth-rate-limit");
+    reportFailure(aggregator, "auth-rate-limit");
     expect(aggregator.getState().rateLimit).toBeUndefined();
     const snapshot = {
       limit: 5000,
@@ -177,7 +198,7 @@ describe("bannerAggregator", () => {
       resource: "core",
       resetAt: 1_700_000_300,
     };
-    aggregator.reportFailure("auth-rate-limit", { rateLimit: snapshot });
+    reportFailure(aggregator, "auth-rate-limit", { rateLimit: snapshot });
     expect(aggregator.getState().rateLimit).toEqual(snapshot);
   });
 
@@ -198,8 +219,8 @@ describe("bannerAggregator", () => {
       resource: "core",
       resetAt: 1_700_001_000,
     };
-    aggregator.reportFailure("auth-rate-limit", { rateLimit: first });
-    aggregator.reportFailure("auth-rate-limit", { rateLimit: second });
+    reportFailure(aggregator, "auth-rate-limit", { rateLimit: first });
+    reportFailure(aggregator, "auth-rate-limit", { rateLimit: second });
     expect(aggregator.getState().rateLimit).toEqual(first);
   });
 
@@ -208,7 +229,7 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    aggregator.reportFailure("auth-rate-limit", {
+    reportFailure(aggregator, "auth-rate-limit", {
       rateLimit: {
         limit: 5000,
         remaining: 0,
@@ -216,7 +237,7 @@ describe("bannerAggregator", () => {
         resetAt: 1_700_000_300,
       },
     });
-    aggregator.reportFailure("auth-expired");
+    reportFailure(aggregator, "auth-expired");
     expect(aggregator.getState().rateLimit).toBeUndefined();
   });
 
@@ -225,16 +246,16 @@ describe("bannerAggregator", () => {
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    seed.reportFailure("auth-expired");
+    reportFailure(seed, "auth-expired");
     seed.dismiss();
 
     const fresh = createBannerAggregator({
       pathname: "/cinev/shotloom/pulls",
       repo: TEST_REPO,
     });
-    fresh.reportFailure("signin-required");
+    reportFailure(fresh, "signin-required");
     expect(fresh.getState().dismissed).toBe(false);
-    fresh.reportFailure("auth-expired");
+    reportFailure(fresh, "auth-expired");
     expect(fresh.getState().current).toBe("auth-expired");
     expect(fresh.getState().dismissed).toBe(true);
   });
@@ -653,7 +674,7 @@ describe("bootAccessBanner", () => {
     `;
 
     const { handle } = await bootOnPullList();
-    handle.reportFailure("signin-required");
+    reportFailure(handle, "signin-required");
 
     const banner = document.querySelector("[data-ghpsr-banner]");
     const toolbar = document.querySelector("#toolbar");
@@ -669,7 +690,7 @@ describe("bootAccessBanner", () => {
     `;
 
     const { handle } = await bootOnPullList();
-    handle.reportFailure("signin-required");
+    reportFailure(handle, "signin-required");
 
     const banner = document.querySelector("[data-ghpsr-banner]");
     const subnav = document.querySelector("#subnav");
@@ -681,7 +702,7 @@ describe("bootAccessBanner", () => {
     document.body.innerHTML = `<main id="main"><div id="content"></div></main><footer></footer>`;
 
     const { handle } = await bootOnPullList();
-    handle.reportFailure("signin-required");
+    reportFailure(handle, "signin-required");
 
     const banner = document.querySelector("[data-ghpsr-banner]");
     const main = document.querySelector("#main");
@@ -809,7 +830,7 @@ describe("bootAccessBanner", () => {
     const { handle } = await bootOnPullList();
     expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
 
-    handle.reportFailure("app-uncovered");
+    reportFailure(handle, "app-uncovered");
 
     const banner = document.querySelector("[data-ghpsr-banner]");
     const link = banner?.querySelector("a");
@@ -825,7 +846,7 @@ describe("bootAccessBanner", () => {
     const sendMessage = vi.fn(async () => ({ ok: true }));
 
     const { handle } = await bootOnPullList({ sendMessage });
-    handle.reportFailure("auth-expired");
+    reportFailure(handle, "auth-expired");
     document
       .querySelector<HTMLAnchorElement>("[data-ghpsr-banner] a")!
       .dispatchEvent(
@@ -839,13 +860,13 @@ describe("bootAccessBanner", () => {
     document.body.innerHTML = `<main id="main"></main>`;
 
     const { handle } = await bootOnPullList();
-    handle.reportFailure("signin-required");
+    reportFailure(handle, "signin-required");
     expect(document.querySelector("[data-ghpsr-banner]")).not.toBeNull();
 
     handle.teardown();
     expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
 
-    handle.reportFailure("auth-expired");
+    reportFailure(handle, "auth-expired");
     expect(document.querySelector("[data-ghpsr-banner]")).toBeNull();
   });
 
@@ -853,7 +874,7 @@ describe("bootAccessBanner", () => {
     document.body.innerHTML = `<main id="main"></main>`;
 
     const { handle, ctx, invalidationCallbacks } = await bootOnPullList();
-    handle.reportFailure("signin-required");
+    reportFailure(handle, "signin-required");
     expect(document.querySelector("[data-ghpsr-banner]")).not.toBeNull();
     expect(ctx.onInvalidated).toHaveBeenCalledTimes(1);
 
@@ -1164,7 +1185,7 @@ describe("localized banner states", () => {
     document.body.innerHTML = "<main></main>";
     const { bootAccessBanner } = await import("../src/features/access-banner");
     const handle = bootAccessBanner({ onInvalidated: vi.fn() } as never)!;
-    handle.reportFailure("signin-required");
+    reportFailure(handle, "signin-required");
     const state = handle.getState();
     const prefs = {
       version: 1,

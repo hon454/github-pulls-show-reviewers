@@ -16,7 +16,6 @@ const PAGE_METADATA_FRESH_MS = 10_000;
 export type PageMetadataFailure = {
   account: Account | null;
   error: unknown;
-  reported: boolean;
   suppressRowFallback: boolean;
 };
 export type PageMetadataResult = {
@@ -164,7 +163,7 @@ export function createPageMetadataCoordinator(input: {
           extractReviewerFetchFailures(error).some(
             (failure) => failure.kind === "timeout",
           ))
-          ? { account: used, error, reported: false, suppressRowFallback: true }
+          ? { account: used, error, suppressRowFallback: true }
           : null,
       account: used,
     };

@@ -9,6 +9,7 @@ import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import type { Locale } from "../src/i18n";
 import type { PullReviewerSummary } from "../src/github/api";
+import { parsePullListRoute } from "../src/github/routes";
 import type { ReviewerOutcomeSnapshot } from "../src/features/reviewers/outcomes";
 import type { Account } from "../src/storage/accounts";
 import type * as PreferencesModule from "../src/runtime/preferences";
@@ -135,6 +136,32 @@ function safeFixtureAccount(account: { id: string; login: string }) {
     invalidatedReason: null,
     installations: [],
     installationsRefreshedAt: 1,
+  };
+}
+
+/**
+ * Row failures as production observes them: through `onOutcomes`. Each failure
+ * identity is reported once, in arrival order, so a page-level failure shared
+ * by several rows counts as one failure.
+ */
+function observeRowFailures() {
+  const seen = new WeakSet<object>();
+  const rowFailure = vi.fn();
+  return {
+    rowFailure,
+    onOutcomes(snapshot: ReviewerOutcomeSnapshot): void {
+      const route = parsePullListRoute(snapshot.pathname);
+      for (const { outcome } of snapshot.rows) {
+        if (outcome.status !== "failure" || seen.has(outcome.failure)) continue;
+        seen.add(outcome.failure);
+        rowFailure({
+          owner: route?.owner,
+          repo: route?.repo,
+          account: outcome.failure.account,
+          error: outcome.failure.error,
+        });
+      }
+    },
   };
 }
 
@@ -302,15 +329,15 @@ describe("bootReviewerListPage", () => {
       });
     });
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
 
     await flushMicrotasks();
     await flushMicrotasks();
 
     expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
-    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(rowFailure).not.toHaveBeenCalled();
   });
 
   it("retries repository discovery on a later row event after a transient rejection", async () => {
@@ -392,17 +419,17 @@ describe("bootReviewerListPage", () => {
       return Promise.resolve({ ok: false, error: schemaError });
     });
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
 
     await flushMicrotasks();
     await flushMicrotasks();
 
     expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
     expect(document.querySelector(".ghpsr-status--error")).toBeNull();
-    expect(onRowFailure).toHaveBeenCalledTimes(1);
-    expect(onRowFailure).toHaveBeenCalledWith({
+    expect(rowFailure).toHaveBeenCalledTimes(1);
+    expect(rowFailure).toHaveBeenCalledWith({
       owner: "cinev",
       repo: "shotloom",
       account: null,
@@ -447,16 +474,16 @@ describe("bootReviewerListPage", () => {
     });
     markReviewerCacheStale(cacheKey);
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
 
     await flushMicrotasks();
     await flushMicrotasks();
 
     expect(document.body.textContent).toContain("@alice");
     expect(document.body.textContent).not.toContain("Loading reviewers");
-    expect(onRowFailure).toHaveBeenCalledTimes(1);
+    expect(rowFailure).toHaveBeenCalledTimes(1);
   });
 
   it("rerenders on preferences change without refetching reviewer data", async () => {
@@ -681,9 +708,9 @@ describe("bootReviewerListPage", () => {
       },
     );
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
 
     await flushMicrotasks();
     await flushMicrotasks();
@@ -699,7 +726,7 @@ describe("bootReviewerListPage", () => {
         (message) => message.accountId,
       ),
     ).toEqual(["acc-owner"]);
-    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(rowFailure).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Reviewers:");
     expect(
       document.querySelector('a.ghpsr-avatar[title*="@alice"]'),
@@ -767,15 +794,15 @@ describe("bootReviewerListPage", () => {
       },
     );
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
 
     await flushMicrotasks();
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(onRowFailure).toHaveBeenCalledWith({
+    expect(rowFailure).toHaveBeenCalledWith({
       owner: "hon454",
       repo: "private-repo",
       account: expect.objectContaining({
@@ -872,9 +899,9 @@ describe("bootReviewerListPage", () => {
       },
     );
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
 
     await flushMicrotasks();
     await flushMicrotasks();
@@ -890,7 +917,7 @@ describe("bootReviewerListPage", () => {
         (message) => message.accountId,
       ),
     ).toEqual(["acc-owner", "acc-owner"]);
-    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(rowFailure).not.toHaveBeenCalled();
   });
 
   it("requests page-level pull metadata once and reuses it for matching row summaries", async () => {
@@ -1146,9 +1173,9 @@ describe("bootReviewerListPage", () => {
       return Promise.resolve(undefined);
     });
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
 
     await flushMicrotasks();
     await flushMicrotasks();
@@ -1158,8 +1185,8 @@ describe("bootReviewerListPage", () => {
       1,
     );
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
-    expect(onRowFailure).toHaveBeenCalledTimes(1);
-    expect(onRowFailure).toHaveBeenCalledWith({
+    expect(rowFailure).toHaveBeenCalledTimes(1);
+    expect(rowFailure).toHaveBeenCalledWith({
       owner: "cinev",
       repo: "shotloom",
       account: null,
@@ -1233,9 +1260,9 @@ describe("bootReviewerListPage", () => {
       },
     );
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
 
     await flushMicrotasks();
     await flushMicrotasks();
@@ -1287,7 +1314,7 @@ describe("bootReviewerListPage", () => {
     await flushMicrotasks();
     await flushMicrotasks();
 
-    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(rowFailure).not.toHaveBeenCalled();
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
   });
 
@@ -1898,9 +1925,9 @@ describe("bootReviewerListPage", () => {
         return summaryRequest.promise;
       return Promise.resolve();
     });
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
     await flushMicrotasks();
     await flushMicrotasks();
 
@@ -1944,7 +1971,7 @@ describe("bootReviewerListPage", () => {
     expect(
       document.querySelector('a.ghpsr-avatar[title*="@alice"]'),
     ).not.toBeNull();
-    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(rowFailure).not.toHaveBeenCalled();
   });
 
   it("repairs an empty cached mount without starting more reviewer work", async () => {
@@ -2208,11 +2235,11 @@ describe("bootReviewerListPage", () => {
         .mockImplementationOnce(() => staleResolution.promise)
         .mockImplementation(() => freshResolution.promise);
       runtimeSendMessageMock.mockResolvedValue(undefined);
-      const onRowFailure = vi.fn();
+      const { onOutcomes, rowFailure } = observeRowFailures();
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
       const ctx = makeCtx();
-      bootReviewerListPage(ctx, { onRowFailure });
+      bootReviewerListPage(ctx, { onOutcomes });
       await flushMicrotasks();
 
       expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(1);
@@ -2251,7 +2278,7 @@ describe("bootReviewerListPage", () => {
       expect(
         getReviewerCacheEntry(buildReviewerCacheKey("cinev", "shotloom", "42")),
       ).toBeUndefined();
-      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(rowFailure).not.toHaveBeenCalled();
       expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
     },
   );
@@ -2279,10 +2306,10 @@ describe("bootReviewerListPage", () => {
       }
       return Promise.resolve(undefined);
     });
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
     const ctx = makeCtx();
-    bootReviewerListPage(ctx, { onRowFailure });
+    bootReviewerListPage(ctx, { onOutcomes });
     await flushMicrotasks();
     await flushMicrotasks();
 
@@ -2312,7 +2339,7 @@ describe("bootReviewerListPage", () => {
     expect(
       getReviewerCacheEntry(buildReviewerCacheKey("cinev", "shotloom", "42")),
     ).toBeUndefined();
-    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(rowFailure).not.toHaveBeenCalled();
     expect(document.querySelector("a.ghpsr-avatar")).toBeNull();
   });
 
@@ -2384,9 +2411,9 @@ describe("bootReviewerListPage", () => {
       },
     );
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
     await flushMicrotasks();
     await flushMicrotasks();
     await flushMicrotasks();
@@ -2414,7 +2441,7 @@ describe("bootReviewerListPage", () => {
     );
     expect(peakConcurrency).toBe(4);
     expect(activeCount).toBe(0);
-    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(rowFailure).not.toHaveBeenCalled();
   });
 
   it("does not start queued summary work after an account-change invalidation", async () => {
@@ -2437,9 +2464,9 @@ describe("bootReviewerListPage", () => {
       return new Promise<void>(() => undefined);
     });
 
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
     await flushMicrotasks();
     await flushMicrotasks();
     await flushMicrotasks();
@@ -2467,7 +2494,7 @@ describe("bootReviewerListPage", () => {
       1,
     );
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(4);
-    expect(onRowFailure).not.toHaveBeenCalled();
+    expect(rowFailure).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -2805,10 +2832,10 @@ describe("settled reviewer request ownership", () => {
         cache.setCachedReviewerSummary(key, summary);
         cache.markReviewerCacheStale(key);
       }
-      const onRowFailure = vi.fn();
+      const { onOutcomes, rowFailure } = observeRowFailures();
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
-      bootReviewerListPage(makeCtx(), { onRowFailure });
+      bootReviewerListPage(makeCtx(), { onOutcomes });
       await flushMicrotasks();
       const oldRow = document.querySelector("#issue_42")!;
       const replacement = oldRow.cloneNode(true) as Element;
@@ -2852,7 +2879,7 @@ describe("settled reviewer request ownership", () => {
       expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(
         summaryCalls,
       );
-      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      expect(rowFailure).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -2873,10 +2900,10 @@ describe("settled reviewer request ownership", () => {
             : first.promise;
         return Promise.resolve({ ok: true, summary });
       });
-      const onRowFailure = vi.fn();
+      const { onOutcomes, rowFailure } = observeRowFailures();
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
-      bootReviewerListPage(makeCtx(), { onRowFailure });
+      bootReviewerListPage(makeCtx(), { onOutcomes });
       await flushMicrotasks();
       mutateRows("pending mutation");
       await flushMicrotasks();
@@ -2887,7 +2914,7 @@ describe("settled reviewer request ownership", () => {
       first.resolve(failure(status));
       await flushMicrotasks();
       expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
-      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      expect(rowFailure).toHaveBeenCalledTimes(1);
       document
         .querySelectorAll(".ghpsr-root")
         .forEach((root) => expect(root.textContent).toBe(""));
@@ -2907,7 +2934,7 @@ describe("settled reviewer request ownership", () => {
         1,
       );
       expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
-      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      expect(rowFailure).toHaveBeenCalledTimes(1);
 
       recovered = true;
       const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
@@ -2949,9 +2976,9 @@ describe("settled reviewer request ownership", () => {
             },
       ),
     );
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
     await flushMicrotasks();
     expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
     metadataFails = true;
@@ -2959,7 +2986,7 @@ describe("settled reviewer request ownership", () => {
     await flushMicrotasks();
     expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
-    expect(onRowFailure).toHaveBeenCalledTimes(1);
+    expect(rowFailure).toHaveBeenCalledTimes(1);
     metadataFails = false;
     empty = true;
     mutateRows("empty recovery");
@@ -2969,7 +2996,7 @@ describe("settled reviewer request ownership", () => {
     );
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
     expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
-    expect(onRowFailure).toHaveBeenCalledTimes(1);
+    expect(rowFailure).toHaveBeenCalledTimes(1);
   });
 
   it.each(["account", "metadata fallback", "summary fallback"])(
@@ -2989,13 +3016,13 @@ describe("settled reviewer request ownership", () => {
           ? Promise.reject(error)
           : Promise.resolve({ ok: true, summary });
       });
-      const onRowFailure = vi.fn();
+      const { onOutcomes, rowFailure } = observeRowFailures();
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
-      bootReviewerListPage(makeCtx(), { onRowFailure });
+      bootReviewerListPage(makeCtx(), { onOutcomes });
       await flushMicrotasks();
       await flushMicrotasks();
-      expect(onRowFailure).toHaveBeenCalledExactlyOnceWith({
+      expect(rowFailure).toHaveBeenCalledExactlyOnceWith({
         owner: "cinev",
         repo: "shotloom",
         account: null,
@@ -3011,7 +3038,7 @@ describe("settled reviewer request ownership", () => {
       await flushMicrotasks();
       expect(document.querySelector("a.ghpsr-avatar")).not.toBeNull();
       expect(document.querySelector(".ghpsr-status")).toBeNull();
-      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      expect(rowFailure).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -3035,12 +3062,12 @@ describe("settled reviewer request ownership", () => {
             : { ok: true, summary },
         ),
       );
-      const onRowFailure = vi.fn();
+      const { onOutcomes, rowFailure } = observeRowFailures();
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
       const cache = await import("../src/cache/reviewer-cache");
       const ctx = makeCtx();
-      bootReviewerListPage(ctx, { onRowFailure });
+      bootReviewerListPage(ctx, { onOutcomes });
       await flushMicrotasks();
       mutateRows("dedupe old request");
       await flushMicrotasks();
@@ -3071,7 +3098,7 @@ describe("settled reviewer request ownership", () => {
           cache.buildReviewerCacheKey("cinev", "shotloom", "42"),
         ),
       ).toBeUndefined();
-      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(rowFailure).not.toHaveBeenCalled();
       replacement.resolve(null);
       await flushMicrotasks();
       await flushMicrotasks();
@@ -3079,7 +3106,7 @@ describe("settled reviewer request ownership", () => {
       // pending, so it must complete one follow-up after the old owner settles.
       expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(2);
       expect(document.querySelectorAll("a.ghpsr-avatar")).toHaveLength(1);
-      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(rowFailure).not.toHaveBeenCalled();
     },
   );
 });
@@ -3214,9 +3241,9 @@ describe("row changes during pending summaries", () => {
         ? Promise.resolve({ ok: true, metadata: [] })
         : failed.promise,
     );
-    const onRowFailure = vi.fn();
+    const { onOutcomes, rowFailure } = observeRowFailures();
     const { bootReviewerListPage } = await import("../src/features/reviewers");
-    bootReviewerListPage(makeCtx(), { onRowFailure });
+    bootReviewerListPage(makeCtx(), { onOutcomes });
     await flushMicrotasks();
     changeNativeMetadata(" changed during failure");
     await flushMicrotasks();
@@ -3224,7 +3251,7 @@ describe("row changes during pending summaries", () => {
     await flushMicrotasks();
     await flushMicrotasks();
     expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
-    expect(onRowFailure).toHaveBeenCalledTimes(1);
+    expect(rowFailure).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -3400,8 +3427,8 @@ describe("reviewer asynchronous presentation ownership", () => {
       const cache = await import("../src/cache/reviewer-cache");
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
-      const onRowFailure = vi.fn();
-      bootReviewerListPage(makeCtx(), { onRowFailure });
+      const { onOutcomes, rowFailure } = observeRowFailures();
+      bootReviewerListPage(makeCtx(), { onOutcomes });
       await flushMicrotasks();
       const row = document.querySelector("#issue_42")!;
       const parent = row.parentElement!;
@@ -3425,7 +3452,7 @@ describe("reviewer asynchronous presentation ownership", () => {
         ),
       ).toBeUndefined();
       expect(row.querySelector("a.ghpsr-avatar")).toBeNull();
-      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(rowFailure).not.toHaveBeenCalled();
       parent.append(row);
       await flushMicrotasks();
       await flushMicrotasks();
@@ -3471,8 +3498,8 @@ describe("reviewer asynchronous presentation ownership", () => {
       const cache = await import("../src/cache/reviewer-cache");
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
-      const onRowFailure = vi.fn();
-      bootReviewerListPage(makeCtx(), { onRowFailure });
+      const { onOutcomes, rowFailure } = observeRowFailures();
+      bootReviewerListPage(makeCtx(), { onOutcomes });
       await flushMicrotasks();
       const started = () =>
         getRuntimeMessages("fetchPullReviewerSummary").map((m) => m.pullNumber);
@@ -3515,7 +3542,7 @@ describe("reviewer asynchronous presentation ownership", () => {
       expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
         1,
       );
-      expect(onRowFailure).not.toHaveBeenCalled();
+      expect(rowFailure).not.toHaveBeenCalled();
       expect(peak).toBeLessThanOrEqual(4);
       expect(active).toBe(0);
     },
@@ -3952,8 +3979,8 @@ describe("render-only reviewer display events", () => {
       const cache = await import("../src/cache/reviewer-cache");
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
-      const onRowFailure = vi.fn();
-      bootReviewerListPage(makeCtx(), { onRowFailure });
+      const { onOutcomes, rowFailure } = observeRowFailures();
+      bootReviewerListPage(makeCtx(), { onOutcomes });
       await flushMicrotasks();
       await flushMicrotasks();
       const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
@@ -3965,7 +3992,7 @@ describe("render-only reviewer display events", () => {
       const calls = runtimeSendMessageMock.mock.calls.length;
       const accounts = resolveAccountForRepoMock.mock.calls.length;
       const preferencesReads = getPreferencesMock.mock.calls.length;
-      const failures = onRowFailure.mock.calls.length;
+      const failures = rowFailure.mock.calls.length;
       now += 60_000;
       let previous = initialPreferences;
       for (const next of [
@@ -3978,7 +4005,7 @@ describe("render-only reviewer display events", () => {
         expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
         expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
         expect(getPreferencesMock).toHaveBeenCalledTimes(preferencesReads);
-        expect(onRowFailure).toHaveBeenCalledTimes(failures);
+        expect(rowFailure).toHaveBeenCalledTimes(failures);
         expect(cache.getReviewerCacheEntry(key)).toBe(cached);
         expect(document.querySelector(".ghpsr-status")).toBeNull();
       }
@@ -4145,9 +4172,9 @@ describe("render-only reviewer locale events", () => {
       const cache = await import("../src/cache/reviewer-cache");
       const lifecycle = await import("../src/features/reviewers/row-lifecycle");
       const fingerprint = vi.spyOn(lifecycle, "createReviewerRowLifecycle");
-      const onRowFailure = vi.fn();
+      const { onOutcomes, rowFailure } = observeRowFailures();
       const ctx = makeCtx();
-      bootReviewerListPage(ctx, { onRowFailure });
+      bootReviewerListPage(ctx, { onOutcomes });
       await flushMicrotasks();
       await flushMicrotasks();
       const key = cache.buildReviewerCacheKey("cinev", "shotloom", "42");
@@ -4157,7 +4184,7 @@ describe("render-only reviewer locale events", () => {
       const calls = runtimeSendMessageMock.mock.calls.length;
       const accounts = resolveAccountForRepoMock.mock.calls.length;
       const prefs = getPreferencesMock.mock.calls.length;
-      const failures = onRowFailure.mock.calls.length;
+      const failures = rowFailure.mock.calls.length;
       const process = vi.spyOn(
         fingerprint.mock.results[0].value,
         "processRows",
@@ -4181,7 +4208,7 @@ describe("render-only reviewer locale events", () => {
         expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
         expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accounts);
         expect(getPreferencesMock).toHaveBeenCalledTimes(prefs);
-        expect(onRowFailure).toHaveBeenCalledTimes(failures);
+        expect(rowFailure).toHaveBeenCalledTimes(failures);
         expect(process).not.toHaveBeenCalled();
       }
       expect(document.documentElement.lang).toBe(initialHtmlLang);
@@ -4302,19 +4329,19 @@ describe("render-only reviewer locale events", () => {
           );
         },
       );
-      const onRowFailure = vi.fn();
+      const { onOutcomes, rowFailure } = observeRowFailures();
       const { bootReviewerListPage } =
         await import("../src/features/reviewers");
       const { createTranslator, toLanguageTag } = await import("../src/i18n");
       const ctx = makeCtx();
-      bootReviewerListPage(ctx, { onRowFailure });
+      bootReviewerListPage(ctx, { onOutcomes });
       await flushMicrotasks();
       await flushMicrotasks();
       expect(getRuntimeMessages("fetchPullReviewerMetadataBatch")).toHaveLength(
         1,
       );
       expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
-      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      expect(rowFailure).toHaveBeenCalledTimes(1);
       metadataFails = false;
       // Leave row 42 failed while seven rows explicitly reprocess and recover.
       document
@@ -4335,7 +4362,7 @@ describe("render-only reviewer locale events", () => {
         await switchLanguage(locale);
         expect(runtimeSendMessageMock).toHaveBeenCalledTimes(calls);
         expect(resolveAccountForRepoMock).toHaveBeenCalledTimes(accountCalls);
-        expect(onRowFailure).toHaveBeenCalledTimes(1);
+        expect(rowFailure).toHaveBeenCalledTimes(1);
         const roots = [
           ...document.querySelectorAll<HTMLElement>(".ghpsr-root"),
         ];
@@ -4382,7 +4409,7 @@ describe("render-only reviewer locale events", () => {
       expect(peak).toBe(4);
       expect(active).toBe(0);
       expect(document.querySelector(".ghpsr-status")).toBeNull();
-      expect(onRowFailure).toHaveBeenCalledTimes(1);
+      expect(rowFailure).toHaveBeenCalledTimes(1);
     },
   );
 

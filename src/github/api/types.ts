@@ -2,8 +2,8 @@ export type GitHubAuthContext = {
   githubToken: string | null;
 };
 
-export type PullReviewerSummaryStatus =
-  "ok" | "no-coverage" | "network-error" | "rate-limited";
+// Failures travel as errors, so a summary that exists is always "ok".
+export type PullReviewerSummaryStatus = "ok";
 
 export type ReviewState =
   "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED";

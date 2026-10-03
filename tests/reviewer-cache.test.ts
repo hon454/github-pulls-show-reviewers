@@ -6,7 +6,6 @@ import {
   __setReviewerCacheMaxEntriesForTesting,
   buildReviewerCacheKey,
   clearReviewerCache,
-  getCachedReviewerSummary,
   getReviewerCacheEntry,
   isReviewerCacheEntryFresh,
   markReviewerCacheStale,
@@ -33,7 +32,7 @@ describe("reviewer cache", () => {
   it("stores and returns summaries by key", () => {
     const key = buildReviewerCacheKey("cinev", "shotloom", "1");
     setCachedReviewerSummary(key, summary("alice"));
-    const got = getCachedReviewerSummary(key);
+    const got = getReviewerCacheEntry(key)?.summary;
     expect(got?.requestedUsers[0].login).toBe("alice");
   });
 
@@ -44,7 +43,7 @@ describe("reviewer cache", () => {
       reviewRequestEvidence: [{ login: "alice", status: "unverified" }],
     });
 
-    expect(getCachedReviewerSummary(key)?.reviewRequestEvidence).toEqual([
+    expect(getReviewerCacheEntry(key)?.summary?.reviewRequestEvidence).toEqual([
       { login: "alice", status: "unverified" },
     ]);
   });
@@ -57,9 +56,13 @@ describe("reviewer cache", () => {
     setCachedReviewerSummary(a, summary("a"));
     setCachedReviewerSummary(b, summary("b"));
     setCachedReviewerSummary(c, summary("c"));
-    expect(getCachedReviewerSummary(a)).toBeUndefined();
-    expect(getCachedReviewerSummary(b)?.requestedUsers[0].login).toBe("b");
-    expect(getCachedReviewerSummary(c)?.requestedUsers[0].login).toBe("c");
+    expect(getReviewerCacheEntry(a)?.summary).toBeUndefined();
+    expect(getReviewerCacheEntry(b)?.summary?.requestedUsers[0].login).toBe(
+      "b",
+    );
+    expect(getReviewerCacheEntry(c)?.summary?.requestedUsers[0].login).toBe(
+      "c",
+    );
   });
 
   it("promotes a read entry so the next eviction targets a cold key", () => {
@@ -70,11 +73,17 @@ describe("reviewer cache", () => {
     setCachedReviewerSummary(a, summary("a"));
     setCachedReviewerSummary(b, summary("b"));
     // Touch `a` so it becomes most-recently-used; `b` is now the coldest.
-    expect(getCachedReviewerSummary(a)?.requestedUsers[0].login).toBe("a");
+    expect(getReviewerCacheEntry(a)?.summary?.requestedUsers[0].login).toBe(
+      "a",
+    );
     setCachedReviewerSummary(c, summary("c"));
-    expect(getCachedReviewerSummary(b)).toBeUndefined();
-    expect(getCachedReviewerSummary(a)?.requestedUsers[0].login).toBe("a");
-    expect(getCachedReviewerSummary(c)?.requestedUsers[0].login).toBe("c");
+    expect(getReviewerCacheEntry(b)?.summary).toBeUndefined();
+    expect(getReviewerCacheEntry(a)?.summary?.requestedUsers[0].login).toBe(
+      "a",
+    );
+    expect(getReviewerCacheEntry(c)?.summary?.requestedUsers[0].login).toBe(
+      "c",
+    );
   });
 
   it("overwrites an existing entry without growing beyond the bound", () => {
@@ -84,8 +93,12 @@ describe("reviewer cache", () => {
     setCachedReviewerSummary(a, summary("a"));
     setCachedReviewerSummary(b, summary("b"));
     setCachedReviewerSummary(a, summary("a2"));
-    expect(getCachedReviewerSummary(a)?.requestedUsers[0].login).toBe("a2");
-    expect(getCachedReviewerSummary(b)?.requestedUsers[0].login).toBe("b");
+    expect(getReviewerCacheEntry(a)?.summary?.requestedUsers[0].login).toBe(
+      "a2",
+    );
+    expect(getReviewerCacheEntry(b)?.summary?.requestedUsers[0].login).toBe(
+      "b",
+    );
   });
 
   it("tracks freshness without changing the summary getter contract", () => {
@@ -93,7 +106,7 @@ describe("reviewer cache", () => {
     const fetchedAt = 1_000;
     setCachedReviewerSummary(key, summary("alice"), { fetchedAt });
 
-    expect(getCachedReviewerSummary(key)?.requestedUsers[0].login).toBe(
+    expect(getReviewerCacheEntry(key)?.summary?.requestedUsers[0].login).toBe(
       "alice",
     );
 

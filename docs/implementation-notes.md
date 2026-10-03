@@ -108,7 +108,12 @@ for shared-consumer and token-refresh ownership.
   `page-metadata.ts` owns the short-lived page metadata cache and in-flight
   request deduplication, `row-lifecycle.ts` owns row fingerprints and GitHub DOM
   mutation handling, `fallback-account.ts` owns page-session fallback resolution
-  reuse, and `runtime-requests.ts` owns cancelable background messaging.
+  reuse, `runtime-requests.ts` owns cancelable background messaging, and
+  `request-registry.ts` owns per-pull request identity: the in-flight request,
+  its consumers, its invalidated/succeeded flags, and the last owner kept to
+  reject delayed renders. Row results leave the controller only through
+  `onOutcomes`; a summary that exists always has status `ok`, because failures
+  travel as errors.
 - The facades intentionally export only the pre-existing application contracts.
   Focused boundary tests exercise pagination validation and budgets, metadata
   freshness and fallback behavior, fallback lookup deduplication, cancelable

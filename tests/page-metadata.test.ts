@@ -283,7 +283,6 @@ describe("page metadata coordinator", () => {
     expect(result.failure).toEqual({
       account: null,
       error,
-      reported: false,
       suppressRowFallback: true,
     });
   });
