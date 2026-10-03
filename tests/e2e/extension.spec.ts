@@ -507,6 +507,51 @@ test("renders reviewer chips after a same-repository GitHub rerender", async () 
   });
 });
 
+test("issues no reviewer requests for a list that a pushState navigation is leaving", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-single-row.html"),
+      "utf8",
+    );
+    await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, []);
+    await routePullApi(context, "42", {
+      user: { login: "hon454" },
+      requested_reviewers: [{ login: "alice" }],
+      requested_teams: [],
+    });
+    await routeReviewsApi(context, "42", []);
+    const apiRequests: string[] = [];
+    context.on("request", (request) => {
+      if (request.url().startsWith("https://api.github.com/"))
+        apiRequests.push(request.url());
+    });
+
+    const page = await context.newPage();
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+    const settled = apiRequests.length;
+
+    // Chrome reports this navigation to the content script before the URL
+    // commits, and GitHub's React navigations dispatch no turbo:render.
+    await page.evaluate(() =>
+      window.history.pushState(
+        {},
+        "",
+        "/hon454/github-pulls-show-reviewers/pull/42",
+      ),
+    );
+    // Longer than the controller's one-second route poll.
+    await page.waitForTimeout(1500);
+
+    expect(apiRequests.slice(settled)).toEqual([]);
+  });
+});
+
 test("renders reviewers after a soft navigation from another repository", async () => {
   await withExtensionContext(async (context) => {
     const listHtml = await readFile(
