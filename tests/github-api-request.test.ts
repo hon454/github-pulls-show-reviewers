@@ -53,6 +53,54 @@ describe("GitHub API request helpers", () => {
     ).toBeNull();
   });
 
+  it("accepts next links that address the repository by numeric id", () => {
+    const expectedPath = endpoint.path;
+    const byId =
+      "https://api.github.com/repositories/20580498/pulls/42/reviews?per_page=100&page=2";
+
+    expect(parseNextPageUrl(`<${byId}>; rel="next"`, expectedPath)).toBe(byId);
+    for (const rejected of [
+      "https://api.github.com/repositories/20580498/issues/42/events?page=2",
+      "https://api.github.com/repositories/20580498/pulls/42/reviews/extra?page=2",
+      "https://api.github.com/repositories/acme/pulls/42/reviews?page=2",
+      "https://api.github.com/repositories/20580498/1/pulls/42/reviews?page=2",
+      "https://example.com/repositories/20580498/pulls/42/reviews?page=2",
+      "https://user:secret@api.github.com/repositories/20580498/pulls/42/reviews?page=2",
+    ]) {
+      expect(parseNextPageUrl(`<${rejected}>; rel="next"`, expectedPath)).toBe(
+        null,
+      );
+    }
+  });
+
+  it("does not follow a next link that switches to another repository id", async () => {
+    const schema = z.array(z.object({ id: z.number() }));
+    const pageTwo =
+      "https://api.github.com/repositories/1/pulls/42/reviews?page=2";
+    const otherRepository =
+      "https://api.github.com/repositories/2/pulls/42/reviews?page=3";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify([{ id: 2 }]), {
+        headers: { Link: `<${otherRepository}>; rel="next"` },
+      }),
+    );
+
+    await expect(
+      collectGitHubApiPagesDetailed({
+        firstResponse: new Response(JSON.stringify([{ id: 1 }]), {
+          headers: { Link: `<${pageTwo}>; rel="next"` },
+        }),
+        endpoint,
+        headers: createGitHubHeaders("ghu_example"),
+        schema,
+      }),
+    ).resolves.toEqual({
+      items: [{ id: 1 }, { id: 2 }],
+      status: "truncated",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("stops pagination at the caller-provided page budget", async () => {
     const pageTwo = `https://api.github.com${endpoint.path}?page=2`;
     const pageThree = `https://api.github.com${endpoint.path}?page=3`;

@@ -121,6 +121,7 @@ export async function collectGitHubApiPagesDetailed<T>(params: {
 }): Promise<GitHubApiPageCollection<T>> {
   const collected: T[] = [];
   const expectedPathname = params.endpoint.path.split("?")[0];
+  let followedPathname: string | null = null;
   const visitedPageUrls = new Set<string>();
   if (params.firstResponse.url !== "") {
     visitedPageUrls.add(params.firstResponse.url);
@@ -157,13 +158,17 @@ export async function collectGitHubApiPagesDetailed<T>(params: {
     if (nextPage.status === "invalid") {
       return { items: collected, status: "truncated" };
     }
+    // Later links must keep addressing the repository the first one named.
+    const nextPathname = new URL(nextPage.url).pathname;
     if (
       (params.pageBudget != null && pageCount >= params.pageBudget) ||
-      visitedPageUrls.has(nextPage.url)
+      visitedPageUrls.has(nextPage.url) ||
+      (followedPathname != null && nextPathname !== followedPathname)
     ) {
       return { items: collected, status: "truncated" };
     }
     visitedPageUrls.add(nextPage.url);
+    followedPathname = nextPathname;
 
     try {
       response = await fetchGitHubApiResponse(
@@ -257,12 +262,27 @@ function isExpectedGitHubApiUrl(
       parsed.origin === "https://api.github.com" &&
       parsed.username === "" &&
       parsed.password === "" &&
-      parsed.pathname === expectedPathname &&
+      isExpectedResourcePath(parsed.pathname, expectedPathname) &&
       parsed.hash === ""
     );
   } catch {
     return false;
   }
+}
+
+// GitHub writes pagination links as `/repositories/{id}/...` even when the
+// request used `/repos/{owner}/{repo}/...`. Accept that form only for the same
+// resource suffix; the id itself cannot be checked without another request.
+function isExpectedResourcePath(
+  pathname: string,
+  expectedPathname: string,
+): boolean {
+  if (pathname === expectedPathname) return true;
+  const expectedResource = /^\/repos\/[^/]+\/[^/]+(\/.+)$/.exec(
+    expectedPathname,
+  )?.[1];
+  const linkedResource = /^\/repositories\/\d+(\/.+)$/.exec(pathname)?.[1];
+  return expectedResource != null && linkedResource === expectedResource;
 }
 
 function readRateLimitSnapshot(response: Response): GitHubRateLimitSnapshot {
