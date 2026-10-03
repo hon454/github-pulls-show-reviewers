@@ -12,7 +12,7 @@
 
 ![GitHub PR 清單內的審查者標籤與審查狀態徽章](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.6 版本說明](./docs/releases/v1.18.6.md)（英文）：強化儲存庫與發布維運，新增相依套件弱點監控、伺服器端發布規則，並將工作流程 Action 固定至提交 SHA，同時更新 React 與 Zod 執行階段相依套件。擴充功能的行為沒有變更。
+[v1.18.7 版本說明](./docs/releases/v1.18.7.md)（英文）：從 GitHub 的任何頁面透過頁面內導覽進入 PR 清單時，審查者都能穩定顯示。修正審查或事件紀錄較長的 Pull Request 的審查狀態，在 GitHub 的 Preview 版面配置中將存取提示橫幅顯示在清單上方，並減少閒置 GitHub 分頁的背景活動。
 
 ## 主要功能
 

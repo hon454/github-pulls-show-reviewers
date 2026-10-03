@@ -27,12 +27,13 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
-The current package target is [v1.18.6](./releases/v1.18.6.md). Its capture
-source hashes are refreshed for the version, dependency, and source-layout
-changes. On one machine, all 15 screenshots regenerated from the `v1.18.5` tag
-and from the v1.18.6 source were byte-identical, so the changes do not alter
-rendering. Existing rendering provenance and all 15 committed image bytes are
-retained; no new screenshot capture or dashboard save is claimed or needed.
+The current package target is [v1.18.7](./releases/v1.18.7.md). Its capture
+source hashes are refreshed for the version, development-dependency, and
+reviewer runtime changes. On one machine, all 15 screenshots regenerated from
+the `v1.18.6` tag and from the v1.18.7 source were byte-identical, so the
+changes do not alter the captured scenes. Existing rendering provenance and all
+15 committed image bytes are retained; no new screenshot capture or dashboard
+save is claimed or needed.
 
 The [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) remains
 historical local preparation, not a CWS receipt or saved-listing attestation.
