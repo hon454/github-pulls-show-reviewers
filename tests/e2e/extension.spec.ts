@@ -507,6 +507,51 @@ test("renders reviewer chips after a same-repository GitHub rerender", async () 
   });
 });
 
+test("renders reviewers after a soft navigation from another repository", async () => {
+  await withExtensionContext(async (context) => {
+    const listHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-single-row.html"),
+      "utf8",
+    );
+    // Chrome keeps reporting this load URL as the message sender's URL after
+    // the document navigates to the pull list below.
+    await context.route(
+      "https://github.com/hon454/another-repository",
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/html",
+          body: "<!doctype html><html><body><main>Code</main></body></html>",
+        });
+      },
+    );
+    await routePullListApi(context, []);
+    await routePullApi(context, "42", {
+      user: { login: "hon454" },
+      requested_reviewers: [{ login: "alice" }],
+      requested_teams: [],
+    });
+    await routeReviewsApi(context, "42", []);
+
+    const page = await context.newPage();
+    await page.goto("https://github.com/hon454/another-repository");
+    await page.evaluate((html) => {
+      const next = new DOMParser().parseFromString(html, "text/html");
+      window.history.pushState(
+        {},
+        "",
+        "/hon454/github-pulls-show-reviewers/pulls",
+      );
+      document.body.replaceChildren(...next.body.childNodes);
+      document.dispatchEvent(new Event("turbo:render", { bubbles: true }));
+    }, listHtml);
+
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+  });
+});
+
 test("clears metadata-missing reviewer slots silently when reviewer fetch fails", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(

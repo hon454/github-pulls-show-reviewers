@@ -746,6 +746,14 @@ it is not a live private-repository permission check.
   recognized options/content URL. Flows belong to their options document.
   Content cannot invoke login/removal/diagnostics/preference writes; its
   repository-bound resolution/refresh capabilities preserve existing self-healing.
+- A content document may only ask about the repository it shows. Chrome keeps
+  reporting the URL a document was loaded with in `sender.url` and does not
+  follow `history.pushState`, while GitHub navigates within the document. When
+  the sender URL does not name the requested repository, the bridge reads the
+  URL the sender's tab has committed (`tabs.get`, covered by the existing
+  `https://github.com/*` host permission) and requires it to be on
+  `https://github.com` and to name that repository. An unreadable tab, another
+  origin or another repository is refused.
 - Background alone receives raw storage changes. Both UIs share a validated
   snapshot/port client with worker epoch and monotonic revision. Stale initial
   reads, delayed RPC results and callbacks from disconnected workers are ignored.
