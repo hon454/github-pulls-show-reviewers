@@ -965,6 +965,189 @@ describe("fetchPullReviewerSummary", () => {
     );
   });
 
+  describe("issue events spanning more than two pages", () => {
+    const eventsBase =
+      "https://api.github.com/repositories/20580498/issues/42/events?per_page=100";
+    const pagedLink = `<${eventsBase}&page=2>; rel="next", <${eventsBase}&page=5>; rel="last"`;
+
+    function mockReviewThenEvents(
+      reviewState: string,
+      ...eventResponses: Response[]
+    ) {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: reviewState,
+              submitted_at: "2026-05-07T02:03:16Z",
+              user: { login: "alice", avatar_url: null },
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+      for (const response of eventResponses)
+        fetchMock.mockResolvedValueOnce(response);
+      return fetchMock;
+    }
+
+    function eventsPage(events: unknown[], link?: string) {
+      return new Response(JSON.stringify(events), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          ...(link == null ? {} : { Link: link }),
+        },
+      });
+    }
+
+    function requestFor(login: string, createdAt: string) {
+      return {
+        event: "review_requested",
+        created_at: createdAt,
+        requested_reviewer: { login, avatar_url: null },
+      };
+    }
+
+    function fetchAliceSummary() {
+      return fetchPullReviewerSummary({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        pullNumber: "42",
+        githubToken: null,
+        pullMetadata: {
+          number: "42",
+          authorLogin: "author",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+        },
+      });
+    }
+
+    it("spends the second request on the newest page and confirms a re-request found there", async () => {
+      const fetchMock = mockReviewThenEvents(
+        "APPROVED",
+        eventsPage([], pagedLink),
+        eventsPage([requestFor("alice", "2026-05-07T03:00:00Z")]),
+      );
+
+      const summary = await fetchAliceSummary();
+
+      expect(summary.requestedUsers).toEqual([
+        { login: "alice", avatarUrl: null },
+      ]);
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "confirmed" },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[2]?.[0]).toBe(`${eventsBase}&page=5`);
+    });
+
+    it("drops a stale requested entry when the newest page holds the reviewer's latest request", async () => {
+      const fetchMock = mockReviewThenEvents(
+        "APPROVED",
+        eventsPage([], pagedLink),
+        eventsPage([requestFor("alice", "2026-05-07T01:00:00Z")]),
+      );
+
+      const summary = await fetchAliceSummary();
+
+      expect(summary.requestedUsers).toEqual([]);
+      expect(summary.reviewRequestEvidence).toBeUndefined();
+      expect(fetchMock.mock.calls[2]?.[0]).toBe(`${eventsBase}&page=5`);
+    });
+
+    it("keeps an unverified request when the newest page has no request for the reviewer", async () => {
+      const fetchMock = mockReviewThenEvents(
+        "APPROVED",
+        // An old request on the first page may have been superseded by one in
+        // the unread middle pages, so it cannot drop the entry.
+        eventsPage([requestFor("alice", "2026-05-07T01:00:00Z")], pagedLink),
+        eventsPage([requestFor("bob", "2026-05-07T03:00:00Z")]),
+      );
+
+      const summary = await fetchAliceSummary();
+
+      expect(summary.requestedUsers).toEqual([
+        { login: "alice", avatarUrl: null },
+      ]);
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "unverified" },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    it("does not treat a newest page that gained a successor as the latest evidence", async () => {
+      const fetchMock = mockReviewThenEvents(
+        "APPROVED",
+        eventsPage([], pagedLink),
+        eventsPage(
+          [requestFor("alice", "2026-05-07T01:00:00Z")],
+          `<${eventsBase}&page=6>; rel="next"`,
+        ),
+      );
+
+      const summary = await fetchAliceSummary();
+
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "unverified" },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[2]?.[0]).toBe(`${eventsBase}&page=5`);
+    });
+
+    it("keeps an unverified request when the newest page fails", async () => {
+      const fetchMock = mockReviewThenEvents(
+        "APPROVED",
+        eventsPage([], pagedLink),
+        new Response(JSON.stringify({ message: "Server Error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      const summary = await fetchAliceSummary();
+
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "unverified" },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[2]?.[0]).toBe(`${eventsBase}&page=5`);
+    });
+
+    it.each([
+      [
+        "another origin",
+        "https://example.com/repositories/20580498/issues/42/events?per_page=100&page=5",
+      ],
+      [
+        "another resource",
+        "https://api.github.com/repositories/20580498/issues/43/events?per_page=100&page=5",
+      ],
+      [
+        "another repository id",
+        "https://api.github.com/repositories/1/issues/42/events?per_page=100&page=5",
+      ],
+    ])("follows next instead of a last link on %s", async (_label, lastUrl) => {
+      const fetchMock = mockReviewThenEvents(
+        "APPROVED",
+        eventsPage(
+          [],
+          `<${eventsBase}&page=2>; rel="next", <${lastUrl}>; rel="last"`,
+        ),
+        eventsPage([], `<${eventsBase}&page=3>; rel="next"`),
+      );
+
+      const summary = await fetchAliceSummary();
+
+      expect(summary.reviewRequestEvidence).toEqual([
+        { login: "alice", status: "unverified" },
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[2]?.[0]).toBe(`${eventsBase}&page=2`);
+    });
+  });
+
   it("preserves an unverified request when the confirming issue event is beyond the lookup bound", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")

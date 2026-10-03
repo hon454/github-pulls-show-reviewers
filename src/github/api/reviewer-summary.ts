@@ -21,7 +21,9 @@ import {
   createGitHubApiErrorFromResponse,
   createGitHubHeaders,
   fetchGitHubApiResponse,
+  parseSkippedLastPageUrl,
   readGitHubResponseJson,
+  type GitHubApiPageCollection,
 } from "./request";
 import {
   GitHubApiSchemaError,
@@ -61,6 +63,9 @@ type LatestReviewEvidence = {
 type ReviewRequestEventLookup = {
   status: "complete" | "truncated" | "unavailable";
   latestValidRequestByLogin: Map<string, string>;
+  // Logins whose request on the newest page is their latest overall, even
+  // though older pages were skipped.
+  newestRequestKnownLogins?: Set<string>;
 };
 
 export async function fetchPullReviewerSummary(input: {
@@ -418,36 +423,94 @@ async function fetchLatestReviewRequestEventsForAmbiguousReviewers(params: {
       throw new GitHubPullRequestEndpointsError([failure]);
     }
 
-    // The collector retains earlier pages when a later request/body expires.
-    const result =
-      await collectGitHubApiPagesDetailed<GitHubReviewRequestEvent>({
-        firstResponse,
+    const targetLogins = new Set(ambiguousLogins);
+    const collect = (response: Response, pageBudget: number) =>
+      // The collector retains earlier pages when a later request/body expires.
+      collectGitHubApiPagesDetailed<GitHubReviewRequestEvent>({
+        firstResponse: response,
         endpoint,
         headers: params.headers,
         schema: reviewRequestEventsSchema,
-        pageBudget: REVIEW_REQUEST_EVENT_PAGE_BUDGET,
+        pageBudget,
         mapNextPageError: (error) =>
           new GitHubPullRequestEndpointsError([error]),
         signal: deadline.signal,
       });
+    const settle = (
+      result: GitHubApiPageCollection<GitHubReviewRequestEvent>,
+    ): void => {
+      // Only optional expiration may degrade; the mandatory owner still wins.
+      throwIfReviewerAborted(params.signal);
+      if (result.status !== "unavailable") return;
+      if (isAbortError(result.error)) throw result.error;
+      if (result.error instanceof GitHubApiSchemaError)
+        console.warn(result.error.message, result.error.issues);
+    };
 
-    // Only optional expiration may degrade; the mandatory owner still wins.
-    throwIfReviewerAborted(params.signal);
-    if (result.status === "unavailable" && isAbortError(result.error)) {
-      throw result.error;
+    // Events are returned oldest first and the deciding request is recent.
+    // Past two pages, spend the second request on the newest page instead.
+    const newestPageUrl = parseSkippedLastPageUrl(
+      firstResponse.headers.get("Link"),
+      endpoint.path,
+    );
+    if (newestPageUrl == null) {
+      const result = await collect(
+        firstResponse,
+        REVIEW_REQUEST_EVENT_PAGE_BUDGET,
+      );
+      settle(result);
+      return {
+        status: result.status,
+        latestValidRequestByLogin: selectLatestReviewRequestByLogin(
+          result.items,
+          targetLogins,
+        ),
+      };
     }
-    if (
-      result.status === "unavailable" &&
-      result.error instanceof GitHubApiSchemaError
-    ) {
-      console.warn(result.error.message, result.error.issues);
+
+    const oldest = await collect(firstResponse, 1);
+    settle(oldest);
+    let newest: GitHubApiPageCollection<GitHubReviewRequestEvent>;
+    try {
+      const newestResponse = await fetchGitHubApiResponse(
+        newestPageUrl,
+        params.headers,
+        deadline.signal,
+      );
+      const newestFailure = await createGitHubApiErrorFromResponse(
+        newestResponse,
+        endpoint,
+        deadline.signal,
+      );
+      if (newestFailure != null)
+        throw new GitHubPullRequestEndpointsError([newestFailure]);
+      newest = await collect(newestResponse, 1);
+    } catch (error) {
+      newest = { items: [], status: "unavailable", error };
     }
+    settle(newest);
+    const events = [...oldest.items, ...newest.items];
     return {
-      status: result.status,
+      status:
+        oldest.status === "unavailable" || newest.status === "unavailable"
+          ? "unavailable"
+          : "truncated",
       latestValidRequestByLogin: selectLatestReviewRequestByLogin(
-        result.items,
-        new Set(ambiguousLogins),
+        events,
+        targetLogins,
       ),
+      // A newest page without a successor ends the history: a request found
+      // there cannot be superseded by one in the skipped middle pages.
+      ...(newest.status === "complete"
+        ? {
+            newestRequestKnownLogins: new Set(
+              selectLatestReviewRequestByLogin(
+                newest.items,
+                targetLogins,
+              ).keys(),
+            ),
+          }
+        : {}),
     };
   } catch (error) {
     throwIfReviewerAborted(params.signal);
@@ -503,7 +566,8 @@ function resolveRequestedUsers(
     }
 
     if (
-      lookup?.status === "complete" &&
+      (lookup?.status === "complete" ||
+        lookup?.newestRequestKnownLogins?.has(user.login) === true) &&
       isValidTimestamp(latestRequest) &&
       isValidTimestamp(latestReview.submittedAt)
     ) {
