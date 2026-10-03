@@ -29,6 +29,27 @@ export const githubSelectors = {
     '[class*="PullsListItem-module__inlineChecksBadge"]',
     '[data-testid="checks-status-badge-button"]',
   ],
+  // Access-banner anchors, tried in order. Classic lists put the banner after
+  // the toolbar or subnav. The Preview ListView has neither, so the banner goes
+  // directly above the list container, which also holds the Open/Closed
+  // header. The container is found by its id suffix, then by its CSS-module
+  // name; if GitHub renames both, the banner goes above the bare list. `main`
+  // is the last resort and receives the banner as its first child; inserting
+  // after `</main>` would render the guidance below the whole page.
+  accessBannerAnchors: [
+    { selector: ".pr-toolbar", position: "afterend" },
+    { selector: ".subnav", position: "afterend" },
+    { selector: 'main [id$="-list-view-container"]', position: "beforebegin" },
+    {
+      selector: 'main [class*="ListView-module__container"]',
+      position: "beforebegin",
+    },
+    {
+      selector: '[data-listview-component="items-list"]',
+      position: "beforebegin",
+    },
+    { selector: "main", position: "afterbegin" },
+  ],
   observedRowAttributes: [
     "class",
     "href",

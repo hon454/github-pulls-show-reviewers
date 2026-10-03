@@ -1,5 +1,8 @@
 import type * as UIClientModule from "../src/runtime/ui-client";
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -395,7 +398,8 @@ describe("banner DOM", () => {
     const target = document.querySelector<HTMLElement>(".gh-header")!;
     const onOpenOptionsPage = vi.fn();
     return mountBanner({
-      insertAfter: target,
+      anchor: target,
+      position: "afterend",
       installUrl: "https://github.com/apps/test-app/installations/new",
       optionsPageUrl: "chrome-extension://ext-id/options.html",
       onOpenOptionsPage,
@@ -473,7 +477,8 @@ describe("banner DOM", () => {
     const target = document.querySelector<HTMLElement>(".gh-header")!;
     const onOpenOptionsPage = vi.fn();
     const banner = mountBanner({
-      insertAfter: target,
+      anchor: target,
+      position: "afterend",
       installUrl: "https://github.com/apps/test-app/installations/new",
       optionsPageUrl: "chrome-extension://ext-id/options.html",
       onOpenOptionsPage,
@@ -511,7 +516,8 @@ describe("banner DOM", () => {
     document.body.innerHTML = `<main><div class="gh-header"></div></main>`;
     const target = document.querySelector<HTMLElement>(".gh-header")!;
     const banner = mountBanner({
-      insertAfter: target,
+      anchor: target,
+      position: "afterend",
       installUrl: "https://github.com/apps/test-app/installations/new",
       optionsPageUrl: "chrome-extension://ext-id/options.html",
       reloadUrl: "https://github.com/cinev/shotloom/pulls",
@@ -671,8 +677,8 @@ describe("bootAccessBanner", () => {
     expect(banner?.previousElementSibling).toBe(subnav);
   });
 
-  it("falls back to main when toolbar and subnav targets are missing", async () => {
-    document.body.innerHTML = `<main id="main"></main>`;
+  it("falls back to the top of main when no list anchor exists", async () => {
+    document.body.innerHTML = `<main id="main"><div id="content"></div></main><footer></footer>`;
 
     const { handle } = await bootOnPullList();
     handle.reportFailure("signin-required");
@@ -680,7 +686,121 @@ describe("bootAccessBanner", () => {
     const banner = document.querySelector("[data-ghpsr-banner]");
     const main = document.querySelector("#main");
     expect(banner).not.toBeNull();
-    expect(banner?.previousElementSibling).toBe(main);
+    // Never after </main>: that renders the guidance below the whole page.
+    expect(main?.firstElementChild).toBe(banner);
+  });
+
+  function loadFixtureBody(name: string): void {
+    const fixture = new DOMParser().parseFromString(
+      readFileSync(path.join(process.cwd(), "tests/fixtures", name), "utf8"),
+      "text/html",
+    );
+    document.body.innerHTML = fixture.body.innerHTML;
+  }
+
+  const signinRequired = {
+    generation: 0,
+    pending: false,
+    failures: [{ kind: "signin-required" as const }],
+  };
+
+  it("places the banner after the subnav on the classic list fixture", async () => {
+    loadFixtureBody("github-pulls-classic-subnav.html");
+
+    const { handle } = await bootOnPullList();
+    handle.reconcile(signinRequired);
+
+    const banner = document.querySelector("[data-ghpsr-banner]");
+    expect(banner?.previousElementSibling).toBe(
+      document.querySelector(".subnav"),
+    );
+    expect(
+      banner?.nextElementSibling?.contains(
+        document.querySelector(".js-issue-row"),
+      ),
+    ).toBe(true);
+  });
+
+  it("places the banner directly above the Preview list container", async () => {
+    loadFixtureBody("github-pulls-preview-list-container.html");
+
+    const { handle } = await bootOnPullList();
+    handle.reconcile(signinRequired);
+
+    const banner = document.querySelector("[data-ghpsr-banner]");
+    const container = document.querySelector('[id$="-list-view-container"]');
+    expect(container).not.toBeNull();
+    expect(banner?.nextElementSibling).toBe(container);
+    expect(document.querySelector("main")?.contains(banner)).toBe(true);
+  });
+
+  it("finds the Preview list container by its CSS-module name when the id changes", async () => {
+    loadFixtureBody("github-pulls-preview-list-container.html");
+    const container = document.querySelector('[id$="-list-view-container"]')!;
+    container.id = "renamed";
+
+    const { handle } = await bootOnPullList();
+    handle.reconcile(signinRequired);
+
+    expect(
+      document.querySelector("[data-ghpsr-banner]")?.nextElementSibling,
+    ).toBe(container);
+  });
+
+  it.each([
+    "github-pulls-repository-preview.html",
+    "github-pulls-live-listview.html",
+  ])(
+    "places the banner inside main above the list on %s",
+    async (fixtureName) => {
+      loadFixtureBody(fixtureName);
+
+      const { handle } = await bootOnPullList();
+      handle.reconcile(signinRequired);
+
+      const banner = document.querySelector("[data-ghpsr-banner]");
+      expect(banner?.nextElementSibling).toBe(
+        document.querySelector('[data-listview-component="items-list"]'),
+      );
+      expect(document.querySelector("main")?.contains(banner)).toBe(true);
+    },
+  );
+
+  it("documents the banner anchor fallback order in the shared selectors", async () => {
+    const { githubSelectors } = await import("../src/github/selectors");
+    expect(githubSelectors.accessBannerAnchors).toEqual([
+      { selector: ".pr-toolbar", position: "afterend" },
+      { selector: ".subnav", position: "afterend" },
+      {
+        selector: 'main [id$="-list-view-container"]',
+        position: "beforebegin",
+      },
+      {
+        selector: 'main [class*="ListView-module__container"]',
+        position: "beforebegin",
+      },
+      {
+        selector: '[data-listview-component="items-list"]',
+        position: "beforebegin",
+      },
+      { selector: "main", position: "afterbegin" },
+    ]);
+  });
+
+  it("colors the banner with Primer variables instead of fixed light-theme values", async () => {
+    document.body.innerHTML = `<main id="main"></main>`;
+
+    const { handle } = await bootOnPullList();
+    handle.reconcile(signinRequired);
+
+    const banner = document.querySelector<HTMLElement>("[data-ghpsr-banner]")!;
+    expect(banner.classList.contains("ghpsr-banner")).toBe(true);
+    expect(banner.getAttribute("style") ?? "").not.toMatch(/#[0-9a-f]{3,8}/i);
+    const css =
+      document.head.querySelector("[data-ghpsr-banner-style]")?.textContent ??
+      "";
+    expect(css).toContain("background: var(--bgColor-accent-muted, #ddf4ff)");
+    expect(css).toContain("color: var(--fgColor-accent, #0969da)");
   });
 
   it("subscribes to banner state updates and renders the configured links", async () => {
@@ -928,7 +1048,8 @@ describe("localized banner states", () => {
       const t = createTranslator(locale);
       document.body.innerHTML = "<main></main>";
       const mount = mountBanner({
-        insertAfter: document.querySelector("main")!,
+        anchor: document.querySelector("main")!,
+        position: "afterend",
         installUrl: "https://github.com/apps/test/installations/new",
         optionsPageUrl: "chrome-extension://test/options.html",
         onDismiss: vi.fn(),

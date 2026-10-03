@@ -16,7 +16,22 @@ function ensureBannerStyles(): void {
   }
   const style = document.createElement("style");
   style.setAttribute(BANNER_STYLE_ATTRIBUTE, "true");
+  // Primer variables follow the active GitHub theme; the literals are the
+  // light-theme values, used only where the variables are undefined.
   style.textContent = `
+    .ghpsr-banner {
+      margin: 12px 0;
+      padding: 12px 16px;
+      border-radius: 6px;
+      background: var(--bgColor-accent-muted, #ddf4ff);
+      color: var(--fgColor-accent, #0969da);
+      display: flex;
+      flex-wrap: wrap;
+      overflow-wrap: anywhere;
+      gap: 12px;
+      align-items: center;
+      font-size: 13px;
+    }
     .ghpsr-banner-cta:focus-visible,
     .ghpsr-banner-dismiss:focus-visible {
       outline: 2px solid var(--fgColor-accent, #0969da);
@@ -26,6 +41,11 @@ function ensureBannerStyles(): void {
   `;
   document.head.append(style);
 }
+
+export type BannerAnchor = {
+  element: HTMLElement;
+  position: "afterend" | "beforebegin" | "afterbegin";
+};
 
 export type BannerMount = {
   isConnected(): boolean;
@@ -75,7 +95,8 @@ function ctaFor(
 }
 
 export function mountBanner(input: {
-  insertAfter: HTMLElement;
+  anchor: BannerAnchor["element"];
+  position: BannerAnchor["position"];
   installUrl: string;
   optionsPageUrl: string;
   reloadUrl?: string;
@@ -102,22 +123,10 @@ export function mountBanner(input: {
       element.setAttribute(BANNER_ATTRIBUTE, "true");
       element.setAttribute("role", "status");
       element.setAttribute("aria-live", "polite");
-      element.style.cssText = [
-        "margin: 12px 0",
-        "padding: 12px 16px",
-        "border-radius: 6px",
-        "background: #ddf4ff",
-        "color: #0969da",
-        "display: flex",
-        "flex-wrap: wrap",
-        "overflow-wrap: anywhere",
-        "gap: 12px",
-        "align-items: center",
-        "font-size: 13px",
-      ].join(";");
+      element.className = "ghpsr-banner";
     }
     if (!element.isConnected)
-      input.insertAfter.insertAdjacentElement("afterend", element);
+      input.anchor.insertAdjacentElement(input.position, element);
 
     element.replaceChildren();
     element.lang = locale.lang;
