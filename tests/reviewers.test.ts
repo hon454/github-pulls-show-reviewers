@@ -24,12 +24,16 @@ const getPreferencesMock = vi.fn();
 const runtimeSendMessageMock = vi.fn();
 // Presentation/scheduler tests mock the token-free background boundary. Real
 // discovery admission and HTTP live in repository-accounts/bridge DOM suites.
+type FixtureDiscoveryInput = {
+  owner: string;
+  repo: string;
+  pageSession: string;
+  generation: number;
+};
+const beginRepositoryDiscoveryMock = vi.fn();
 vi.mock("../src/runtime/repository-discovery", () => ({
-  beginRepositoryDiscovery: async (input: {
-    owner: string;
-    repo: string;
-    generation: number;
-  }) => ({ ...input, id: `fixture-discovery-${input.generation}` }),
+  beginRepositoryDiscovery: (input: FixtureDiscoveryInput) =>
+    beginRepositoryDiscoveryMock(input) as Promise<unknown>,
   retireRepositoryDiscovery: async () => null,
 }));
 const singleRowFixtureHtml = readFileSync(
@@ -185,6 +189,12 @@ beforeEach(() => {
   listAccountsMock.mockReset().mockResolvedValue([]);
   getPreferencesMock.mockReset();
   runtimeSendMessageMock.mockReset();
+  beginRepositoryDiscoveryMock
+    .mockReset()
+    .mockImplementation(async (input: FixtureDiscoveryInput) => ({
+      ...input,
+      id: `fixture-discovery-${input.generation}`,
+    }));
   getPreferencesMock.mockResolvedValue({
     version: 1,
     language: "auto",
@@ -300,6 +310,71 @@ describe("bootReviewerListPage", () => {
 
     expect(document.querySelector(".ghpsr-root")?.textContent).toBe("");
     expect(onRowFailure).not.toHaveBeenCalled();
+  });
+
+  it("retries repository discovery on a later row event after a transient rejection", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    beginRepositoryDiscoveryMock.mockRejectedValueOnce(
+      new Error("Could not establish connection."),
+    );
+    runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
+      if (message.type === "fetchPullReviewerMetadataBatch") {
+        return Promise.resolve({ ok: true, metadata: [] });
+      }
+      return Promise.resolve({
+        ok: true,
+        summary: {
+          status: "ok",
+          requestedUsers: [{ login: "alice", avatarUrl: null }],
+          requestedTeams: [],
+          completedReviews: [],
+        },
+      });
+    });
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(beginRepositoryDiscoveryMock).toHaveBeenCalledTimes(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
+
+    document.querySelector(".issue-meta-section")!.textContent =
+      "#42 opened by hon454 • Review required";
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // The retry reuses the admission identity; only navigation or an account
+    // change may allocate the next discovery generation.
+    expect(beginRepositoryDiscoveryMock).toHaveBeenCalledTimes(2);
+    expect(beginRepositoryDiscoveryMock.mock.calls[1]![0]).toEqual(
+      beginRepositoryDiscoveryMock.mock.calls[0]![0],
+    );
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(1);
+    expect(
+      document.querySelector('a.ghpsr-avatar[title*="@alice"]'),
+    ).not.toBeNull();
+  });
+
+  it("does not retry a rejected repository discovery without a row event", async () => {
+    resolveAccountForRepoMock.mockResolvedValue(null);
+    beginRepositoryDiscoveryMock.mockRejectedValue(
+      new Error("Could not establish connection."),
+    );
+    document.body.innerHTML = createPullListFixtureHtml(
+      REPRESENTATIVE_PULL_LIST_PULL_NUMBERS,
+    );
+
+    const { bootReviewerListPage } = await import("../src/features/reviewers");
+    bootReviewerListPage(makeCtx());
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // Rows of one pass share a single attempt; a rejection starts no loop.
+    expect(beginRepositoryDiscoveryMock).toHaveBeenCalledTimes(1);
+    expect(getRuntimeMessages("fetchPullReviewerSummary")).toHaveLength(0);
   });
 
   it("reports a cold unexpected failure while keeping row-level UI empty", async () => {

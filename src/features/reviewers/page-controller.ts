@@ -88,12 +88,20 @@ export function bootReviewerListPage(
   let discovery: Promise<RepositoryDiscovery> | undefined;
   let activeDiscoveryGeneration = ++discoveryGeneration;
   function getDiscovery(route: NonNullable<typeof currentRoute>) {
-    discovery ??= beginRepositoryDiscovery({
+    if (discovery) return discovery;
+    const attempt = beginRepositoryDiscovery({
       ...route,
       pageSession,
       generation: activeDiscoveryGeneration,
     });
-    return discovery;
+    discovery = attempt;
+    // A transient rejection must not poison the generation. Forget it so a
+    // later row event retries with the same admission identity; rows already
+    // waiting on this attempt still fail, and nothing retries on its own.
+    attempt.catch(() => {
+      if (discovery === attempt) discovery = undefined;
+    });
+    return attempt;
   }
   const mountOperations = new WeakMap<HTMLElement, object>();
   // Keep the last request identity after settlement to reject delayed renders.
