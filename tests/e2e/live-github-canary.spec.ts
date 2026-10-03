@@ -32,6 +32,7 @@ import {
   type CanaryRepository,
   type CanaryResponseObserver,
 } from "../helpers/live-github-canary";
+import { waitForInstallOptionsPage } from "../helpers/install-options-page";
 import {
   attachCanaryDiagnostics,
   attachCanaryTextArtifact,
@@ -81,6 +82,9 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
       context.serviceWorkers()[0] ??
       (await context.waitForEvent("serviceworker"));
     expect(serviceWorker.url()).toContain("chrome-extension://");
+    // The install-time options page may load into the canary's own blank tab.
+    const installPage = await waitForInstallOptionsPage(context);
+    if (installPage !== page) await installPage.close();
 
     phase = "navigation:A";
     navigation = {

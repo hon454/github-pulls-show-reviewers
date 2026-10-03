@@ -19,6 +19,7 @@ import {
   isClosedPullListFilter,
   type CanaryRepository,
 } from "../helpers/live-github-canary";
+import { closeInstallOptionsPage } from "../helpers/install-options-page";
 import { findNativePullListLink } from "../helpers/live-github-canary-navigation";
 import type { NavigationEvidenceError } from "../helpers/live-github-canary-navigation";
 import { createPullListFixtureHtml } from "../helpers/pull-list-fixtures";
@@ -748,26 +749,11 @@ async function withExtension(
       context.serviceWorkers()[0] ??
       (await context.waitForEvent("serviceworker"));
     expect(worker.url()).toContain("chrome-extension://");
-    await closeInstallPage(context);
+    await closeInstallOptionsPage(context);
     await run(context);
   } finally {
     await context.close();
   }
-}
-
-async function closeInstallPage(context: BrowserContext): Promise<void> {
-  const closePages = () =>
-    Promise.all(
-      context
-        .pages()
-        .filter((page) => page.url().startsWith("chrome-extension://"))
-        .map((page) => page.close().catch(() => undefined)),
-    );
-  await closePages();
-  await context
-    .waitForEvent("page", { timeout: 1_000 })
-    .then(async () => closePages())
-    .catch(() => undefined);
 }
 
 async function routePullList(
