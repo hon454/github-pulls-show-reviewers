@@ -43,6 +43,8 @@ export type CanaryPullEvidence = {
   reviewRequests: {
     completeness: CanaryCollectionCompleteness;
     items: CanaryReviewRequestEvent[];
+    /** Logins with a request on an observed page that has no successor. */
+    finalPageLogins: string[];
   };
 };
 
@@ -120,6 +122,11 @@ type ParsedEndpoint = {
   page: number;
 };
 
+type TargetEndpoint = ParsedEndpoint & {
+  /** Path below the repository, shared by both of GitHub's URL forms. */
+  resource: string;
+};
+
 type PageEvidence<T> = {
   page: number;
   hasNext: boolean;
@@ -172,6 +179,9 @@ export function createCanaryResponseObserver(input: {
   let apiRequestCount = 0;
   let apiRequestsWithAuthorization = 0;
   let targetApiResponseCount = 0;
+  // GitHub paginates through `/repositories/{id}/...`. The id is learned only
+  // from a response already attributed to the canary repository.
+  let repositoryId: string | null = null;
 
   const getPull = (pullNumber: string): PullAccumulator => {
     let pull = pulls.get(pullNumber);
@@ -204,13 +214,20 @@ export function createCanaryResponseObserver(input: {
     },
 
     observeResponse(response): void {
-      const endpoint = parseTargetApiEndpoint(response.url(), input.repository);
+      const endpoint = parseTargetApiEndpoint(
+        response.url(),
+        input.repository,
+        repositoryId,
+      );
       if (endpoint == null) return;
 
       targetApiResponseCount += 1;
       const headers = lowerCaseHeaders(response.headers());
+      repositoryId ??= readLinkedRepositoryId(headers.link, endpoint.resource);
       const observation: CanaryEndpointObservation = {
-        ...endpoint,
+        kind: endpoint.kind,
+        pullNumber: endpoint.pullNumber,
+        page: endpoint.page,
         status: response.status(),
         body: "pending",
         failure: null,
@@ -273,7 +290,10 @@ export function createCanaryResponseObserver(input: {
                     requestedTeams: [...pull.metadata.requestedTeams],
                   },
             reviews: summarizePages(pull.reviewPages, pull.reviewFailure),
-            reviewRequests: summarizePages(pull.eventPages, pull.eventFailure),
+            reviewRequests: {
+              ...summarizePages(pull.eventPages, pull.eventFailure),
+              finalPageLogins: readFinalPageLogins(pull.eventPages),
+            },
           })),
       };
     },
@@ -386,10 +406,22 @@ function summarizePages<T>(
   };
 }
 
+function readFinalPageLogins(
+  pages: Map<number, PageEvidence<CanaryReviewRequestEvent>>,
+): string[] {
+  const logins = new Set<string>();
+  for (const page of pages.values()) {
+    if (!page.linkValid || page.hasNext) continue;
+    for (const item of page.items) logins.add(item.login);
+  }
+  return [...logins];
+}
+
 function parseTargetApiEndpoint(
   value: string,
   repository: CanaryRepository,
-): ParsedEndpoint | null {
+  repositoryId: string | null,
+): TargetEndpoint | null {
   let url: URL;
   try {
     url = new URL(value);
@@ -397,33 +429,73 @@ function parseTargetApiEndpoint(
     return null;
   }
   if (!isGitHubApiUrl(url.href)) return null;
-  const owner = escapeRegExp(repository.owner);
-  const repo = escapeRegExp(repository.repo);
-  const base = `/repos/${owner}/${repo}`;
-  const flags = "i";
-  if (new RegExp(`^${base}/pulls/?$`, flags).test(url.pathname)) {
-    return { kind: "pull-list", pullNumber: null, page: readPage(url) };
-  }
-  let match = new RegExp(`^${base}/pulls/(\\d+)/reviews/?$`, flags).exec(
+  const resource = readRepositoryResource(
     url.pathname,
+    repository,
+    repositoryId,
   );
-  if (match != null) {
-    return { kind: "reviews", pullNumber: match[1], page: readPage(url) };
+  if (resource == null) return null;
+  const page = readPage(url);
+  if (/^\/pulls\/?$/i.test(resource)) {
+    return { kind: "pull-list", pullNumber: null, page, resource };
   }
-  match = new RegExp(`^${base}/issues/(\\d+)/events/?$`, flags).exec(
-    url.pathname,
-  );
+  let match = /^\/pulls\/(\d+)\/reviews\/?$/i.exec(resource);
   if (match != null) {
-    return {
-      kind: "issue-events",
-      pullNumber: match[1],
-      page: readPage(url),
-    };
+    return { kind: "reviews", pullNumber: match[1], page, resource };
   }
-  match = new RegExp(`^${base}/pulls/(\\d+)/?$`, flags).exec(url.pathname);
+  match = /^\/issues\/(\d+)\/events\/?$/i.exec(resource);
+  if (match != null) {
+    return { kind: "issue-events", pullNumber: match[1], page, resource };
+  }
+  match = /^\/pulls\/(\d+)\/?$/i.exec(resource);
   return match == null
     ? null
-    : { kind: "pull", pullNumber: match[1], page: readPage(url) };
+    : { kind: "pull", pullNumber: match[1], page, resource };
+}
+
+function readRepositoryResource(
+  pathname: string,
+  repository: CanaryRepository,
+  repositoryId: string | null,
+): string | null {
+  const owner = escapeRegExp(repository.owner);
+  const repo = escapeRegExp(repository.repo);
+  const named = new RegExp(`^/repos/${owner}/${repo}(/.*)$`, "i").exec(
+    pathname,
+  );
+  if (named != null) return named[1];
+  if (repositoryId == null) return null;
+  const prefix = `/repositories/${repositoryId}`;
+  return pathname.startsWith(`${prefix}/`)
+    ? pathname.slice(prefix.length)
+    : null;
+}
+
+/**
+ * Reads the repository id that every pagination link of an attributed response
+ * agrees on. A link to another origin, resource or id teaches nothing.
+ */
+function readLinkedRepositoryId(
+  link: string | undefined,
+  resource: string,
+): string | null {
+  if (link == null) return null;
+  let repositoryId: string | null = null;
+  for (const match of link.matchAll(/<([^>]+)>/g)) {
+    let url: URL;
+    try {
+      url = new URL(match[1]);
+    } catch {
+      return null;
+    }
+    if (!isGitHubApiUrl(url.href)) return null;
+    const linked = /^\/repositories\/(\d+)(\/.*)$/.exec(url.pathname);
+    if (linked == null) continue;
+    if (linked[2] !== resource) return null;
+    if (repositoryId != null && repositoryId !== linked[1]) return null;
+    repositoryId = linked[1];
+  }
+  return repositoryId;
 }
 
 function isGitHubApiUrl(value: string): boolean {
@@ -958,6 +1030,15 @@ export function deriveCanaryExpectedOutcome(
       latestRequests.set(login, event);
   }
 
+  // A request on a page without a successor ends the history for that
+  // reviewer, even when the extension skipped the pages before it.
+  const finalPageLogins = new Set(
+    evidence.reviewRequests.finalPageLogins.map((login) => login.toLowerCase()),
+  );
+  const isRequestHistoryDecisive = (login: string): boolean =>
+    evidence.reviewRequests.completeness === "complete" ||
+    finalPageLogins.has(login);
+
   const requested = new Set(
     evidence.metadata.requestedUsers.map((login) => login.toLowerCase()),
   );
@@ -966,7 +1047,7 @@ export function deriveCanaryExpectedOutcome(
     ...latestNonComment.keys(),
     ...latestComment.keys(),
   ]);
-  let hasAmbiguousRequest = false;
+  let hasUndecidedRequest = false;
   const users: CanaryExpectedReviewer[] = [];
   for (const login of logins) {
     const nonComment = latestNonComment.get(login) ?? null;
@@ -974,7 +1055,7 @@ export function deriveCanaryExpectedOutcome(
     let isRequested = requested.has(login);
     let requestEvidence: CanaryExpectedReviewer["requestEvidence"] = null;
     if (isRequested && nonComment != null) {
-      hasAmbiguousRequest = true;
+      if (!isRequestHistoryDecisive(login)) hasUndecidedRequest = true;
       const comparison = compareRequestToReview(
         latestRequests.get(login)?.createdAt ?? null,
         nonComment.submittedAt,
@@ -983,7 +1064,7 @@ export function deriveCanaryExpectedOutcome(
       else if (
         comparison === "not-after" &&
         !incomparableRequestLogins.has(login) &&
-        evidence.reviewRequests.completeness === "complete"
+        isRequestHistoryDecisive(login)
       ) {
         isRequested = false;
       } else requestEvidence = "unverified";
@@ -1030,9 +1111,7 @@ export function deriveCanaryExpectedOutcome(
   return {
     pullNumber: evidence.pullNumber,
     reviewers: [...users, ...teams],
-    completeForSampling:
-      !hasAmbiguousRequest ||
-      evidence.reviewRequests.completeness === "complete",
+    completeForSampling: !hasUndecidedRequest,
     unverifiable,
   };
 }
