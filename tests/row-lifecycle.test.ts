@@ -203,6 +203,44 @@ describe("reviewer row lifecycle", () => {
     expect(markPageMetadataStale).not.toHaveBeenCalled();
   });
 
+  it("does not observe mutations while the route is not a pull list and resumes on return", async () => {
+    let currentRoute: typeof route | null = null;
+    const processRow = vi.fn();
+    const onObserverCallback = vi.fn();
+    const lifecycle = createReviewerRowLifecycle({
+      getRoute: () => currentRoute,
+      processRow,
+      markPageMetadataStale: vi.fn(),
+      diagnostics: { onObserverCallback },
+    });
+    const observer = lifecycle.observe();
+    const addRow = (number: string) =>
+      document.body.insertAdjacentHTML(
+        "beforeend",
+        `<div class="js-issue-row" id="issue_${number}"><a class="Link--primary" href="/hon454/github-pulls-show-reviewers/pull/${number}">PR</a></div>`,
+      );
+
+    addRow("43");
+    await flushMutations();
+    expect(onObserverCallback).not.toHaveBeenCalled();
+    expect(processRow).not.toHaveBeenCalled();
+
+    currentRoute = route;
+    lifecycle.syncObservation();
+    addRow("44");
+    await flushMutations();
+    expect(onObserverCallback).toHaveBeenCalledTimes(1);
+    expect(processRow).toHaveBeenCalledTimes(1);
+
+    currentRoute = null;
+    lifecycle.syncObservation();
+    addRow("45");
+    await flushMutations();
+    expect(onObserverCallback).toHaveBeenCalledTimes(1);
+    expect(processRow).toHaveBeenCalledTimes(1);
+    observer.disconnect();
+  });
+
   it("measures deterministic work for unrelated mutation bursts", async () => {
     const fixtureDocument = new DOMParser().parseFromString(
       stressFixtureHtml,

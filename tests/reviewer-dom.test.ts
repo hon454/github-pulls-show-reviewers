@@ -62,6 +62,40 @@ describe("renderReviewers", () => {
     expect(labels[0].textContent).toBe("Reviewers:");
   });
 
+  it.each([
+    [
+      "adds a size to a GitHub avatar URL",
+      "https://avatars.githubusercontent.com/u/1?v=4",
+      "https://avatars.githubusercontent.com/u/1?v=4&s=48",
+    ],
+    [
+      "replaces an existing size",
+      "https://avatars.githubusercontent.com/u/1?s=460&v=4",
+      "https://avatars.githubusercontent.com/u/1?s=48&v=4",
+    ],
+    [
+      "leaves avatars on other hosts untouched",
+      "https://example.com/avatar.png?v=4",
+      "https://example.com/avatar.png?v=4",
+    ],
+  ])("%s", (_label, avatarUrl, expected) => {
+    const entries = buildReviewers(route, {
+      status: "ok",
+      requestedUsers: [{ login: "alice", avatarUrl }],
+      requestedTeams: [],
+      completedReviews: [],
+    });
+
+    renderReviewers(mount(), entries, {
+      showStateBadge: true,
+      showReviewerName: false,
+    });
+
+    expect(
+      document.querySelector<HTMLImageElement>("img.ghpsr-avatar-img")?.src,
+    ).toBe(expected);
+  });
+
   it("renders the avatar-only shape when showReviewerName is false", () => {
     const entries = buildReviewers(route, {
       status: "ok",

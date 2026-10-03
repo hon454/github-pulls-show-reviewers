@@ -115,6 +115,20 @@ export function isAbortError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * Epoch milliseconds at which an exhausted primary rate limit resets, or null
+ * when the failure is not one: secondary limits and responses without a quota
+ * snapshot carry no reset time to wait for.
+ */
+export function readPrimaryRateLimitReset(error: unknown): number | null {
+  for (const failure of extractReviewerFetchFailures(error)) {
+    const quota = failure.rateLimit;
+    if (failure.rateLimited && quota?.remaining === 0 && quota.resetAt != null)
+      return quota.resetAt * 1000;
+  }
+  return null;
+}
+
 export function shouldRetryWithFallbackAccount(error: unknown): boolean {
   const failures = extractReviewerFetchFailures(error);
   if (failures.some((failure) => failure.kind === "timeout")) return false;

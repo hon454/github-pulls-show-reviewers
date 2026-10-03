@@ -44,6 +44,7 @@ import {
 import { createFallbackAccountIntegration } from "./fallback-account";
 import {
   createReviewerOutcomeCoordinator,
+  type ReviewerFailure,
   type ReviewerOutcomeSnapshot,
 } from "./outcomes";
 import {
@@ -54,7 +55,11 @@ import {
   collectVisiblePullNumbers,
   createReviewerRowLifecycle,
 } from "./row-lifecycle";
-import { fetchReviewerSummary, isAbortError } from "./runtime-requests";
+import {
+  fetchReviewerSummary,
+  isAbortError,
+  readPrimaryRateLimitReset,
+} from "./runtime-requests";
 import { createAbortAwareRequestScheduler } from "./request-scheduler";
 import { buildReviewers } from "./view-model";
 
@@ -66,6 +71,11 @@ const NAVIGATION_SETTLE_TICKS = 2;
 // invalidation allocates the next generation; rows/locale/TTL cannot allocate it.
 const pageSession = crypto.randomUUID();
 let discoveryGeneration = 0;
+
+/** Thrown instead of dispatching a row while its account's quota is spent. */
+class QuotaBlockedSkip {
+  constructor(readonly failure: ReviewerFailure) {}
+}
 
 export type ReviewerBootOptions = {
   onOutcomes?: (snapshot: ReviewerOutcomeSnapshot) => void;
@@ -208,8 +218,33 @@ export function bootReviewerListPage(
     onRowsChanged: () => outcomes.reconcile(collectVisiblePullNumbers()),
   });
 
+  // After a primary rate limit is exhausted, later requests for the same
+  // account would only be rejected. Until the reset time, rows of the same
+  // generation settle with the recorded failure instead of being dispatched.
+  // Navigation and account changes allocate a new generation and try again.
+  let quotaBlock: {
+    generation: number;
+    accountId: string | null;
+    until: number;
+    failure: ReviewerFailure;
+  } | null = null;
+  function readQuotaBlock(
+    rowGeneration: number,
+    account: Account | null,
+  ): ReviewerFailure | null {
+    if (
+      quotaBlock == null ||
+      quotaBlock.generation !== rowGeneration ||
+      quotaBlock.accountId !== (account?.id ?? null) ||
+      Date.now() >= quotaBlock.until
+    )
+      return null;
+    return quotaBlock.failure;
+  }
+
   function abortInflightRequests(reopenDiscovery = true): void {
     generation += 1;
+    quotaBlock = null;
     if (reopenDiscovery) {
       const previousDiscovery = discovery;
       discovery = undefined;
@@ -380,6 +415,8 @@ export function bootReviewerListPage(
         if (!isRequestCurrent()) {
           return;
         }
+        const blocked = readQuotaBlock(rowGeneration, account);
+        if (blocked) throw new QuotaBlockedSkip(blocked);
         const metadataResult = await pageMetadata.get({
           route,
           account,
@@ -413,6 +450,8 @@ export function bootReviewerListPage(
         try {
           const summary = await reviewerSummaryScheduler.run(() => {
             if (!isRequestCurrent()) controller.abort();
+            const blocked = readQuotaBlock(rowGeneration, summaryAccount);
+            if (blocked) throw new QuotaBlockedSkip(blocked);
             return fetchReviewerSummary({
               account: summaryAccount,
               owner: route.owner,
@@ -448,40 +487,55 @@ export function bootReviewerListPage(
           if (isAbortError(error) || !isRequestCurrent()) {
             return;
           }
+          if (error instanceof QuotaBlockedSkip) throw error;
           const failureAccount =
             error instanceof ReviewerFetchRuntimeError &&
             error.account !== undefined
               ? error.account
               : actualSummaryAccount;
-          const failureError = error;
+          const failure: ReviewerFailure = { account: failureAccount, error };
+          const quotaReset = readPrimaryRateLimitReset(error);
+          if (quotaReset != null && rowGeneration === generation)
+            quotaBlock = {
+              generation: rowGeneration,
+              accountId: failureAccount?.id ?? null,
+              until: quotaReset,
+              failure,
+            };
           if (isOperationCurrent())
             clearReviewerMountWithoutCache(mount, cacheKey);
           outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
             status: "failure",
-            failure: { account: failureAccount, error: failureError },
+            failure,
           });
           options?.onRowFailure?.({
             owner: route.owner,
             repo: route.repo,
             account: failureAccount,
-            error: failureError,
+            error,
           });
         }
       } catch (error) {
         if (isAbortError(error) || !isRequestCurrent()) {
           return;
         }
+        // A skipped row shares the failure that exhausted the quota, so the
+        // banner aggregates one failure identity for all of them.
+        const failure: ReviewerFailure =
+          error instanceof QuotaBlockedSkip
+            ? error.failure
+            : { account, error };
         if (isOperationCurrent())
           clearReviewerMountWithoutCache(mount, cacheKey);
         outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
           status: "failure",
-          failure: { account, error },
+          failure,
         });
         options?.onRowFailure?.({
           owner: route.owner,
           repo: route.repo,
-          account,
-          error,
+          account: failure.account as Account | null,
+          error: failure.error,
         });
       } finally {
         const settledRequest = inflightRequests.get(cacheKey);
@@ -557,6 +611,7 @@ export function bootReviewerListPage(
     currentRoute = parsePullListRoute(window.location.pathname);
     abortInflightRequests();
     syncLocaleSubscription();
+    rowLifecycle.syncObservation();
 
     if (
       previousRoute?.owner !== currentRoute?.owner ||
