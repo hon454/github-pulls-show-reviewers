@@ -158,6 +158,51 @@ describe("isRateLimitError", () => {
 });
 
 describe("fetchPullReviewerSummary", () => {
+  it("counts every reviewer when the pull request author account is null", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            user: null,
+            requested_reviewers: [{ login: "alice", avatar_url: null }],
+            requested_teams: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              state: "APPROVED",
+              submitted_at: "2026-04-20T12:00:00Z",
+              user: { login: "bob" },
+            },
+            {
+              state: "COMMENTED",
+              submitted_at: "2026-04-20T12:05:00Z",
+              user: null,
+            },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    const summary = await fetchPullReviewerSummary({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      pullNumber: "42",
+      githubToken: null,
+    });
+
+    expect(summary).toEqual({
+      status: "ok",
+      requestedUsers: [{ login: "alice", avatarUrl: null }],
+      requestedTeams: [],
+      completedReviews: [{ login: "bob", avatarUrl: null, state: "APPROVED" }],
+    });
+  });
+
   it("skips the pull endpoint when page-level pull metadata is already available", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(
@@ -2167,6 +2212,195 @@ describe("fetchPullReviewerMetadataBatch", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(metadata.map((pull) => pull.number)).toEqual(["200"]);
+  });
+
+  it("keeps valid pulls when one item in the batch is malformed", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            number: 42,
+            user: { login: "hon454" },
+            requested_reviewers: [{ login: "alice", avatar_url: null }],
+            requested_teams: [],
+          },
+          {
+            number: 41,
+            user: { login: "octocat" },
+            requested_reviewers: "unexpected",
+            requested_teams: [],
+          },
+          {
+            number: 40,
+            user: { login: "octocat" },
+            requested_reviewers: [],
+            requested_teams: [{ slug: "platform" }],
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: null,
+      targetPullNumbers: ["42", "41", "40"],
+    });
+
+    expect(metadata).toEqual([
+      {
+        number: "42",
+        authorLogin: "hon454",
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+      },
+      {
+        number: "40",
+        authorLogin: "octocat",
+        requestedUsers: [],
+        requestedTeams: ["platform"],
+      },
+    ]);
+  });
+
+  it("does not read further pages to find a malformed target pull", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          { number: 41, user: { login: "octocat" }, requested_reviewers: 7 },
+        ]),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2>; rel="next"',
+          },
+        },
+      ),
+    );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: null,
+      targetPullNumbers: ["41"],
+    });
+
+    expect(metadata).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a pull whose author account is null", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            number: 42,
+            user: null,
+            requested_reviewers: [{ login: "alice", avatar_url: null }],
+            requested_teams: [],
+          },
+        ]),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: null,
+    });
+
+    expect(metadata).toEqual([
+      {
+        number: "42",
+        authorLogin: null,
+        requestedUsers: [{ login: "alice", avatarUrl: null }],
+        requestedTeams: [],
+      },
+    ]);
+  });
+
+  it("returns the pulls parsed so far when a later page body is not a list", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 200,
+              user: { login: "hon454" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2>; rel="next"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ unexpected: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+    const metadata = await fetchPullReviewerMetadataBatch({
+      owner: "hon454",
+      repo: "github-pulls-show-reviewers",
+      githubToken: null,
+      targetPullNumbers: ["200", "150"],
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(metadata.map((pull) => pull.number)).toEqual(["200"]);
+  });
+
+  it("still fails the batch when a later page is rate limited", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              number: 200,
+              user: { login: "hon454" },
+              requested_reviewers: [],
+              requested_teams: [],
+            },
+          ]),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              Link: '<https://api.github.com/repos/hon454/github-pulls-show-reviewers/pulls?per_page=100&state=all&page=2>; rel="next"',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+          status: 403,
+          headers: {
+            "Content-Type": "application/json",
+            "X-RateLimit-Remaining": "0",
+          },
+        }),
+      );
+
+    await expect(
+      fetchPullReviewerMetadataBatch({
+        owner: "hon454",
+        repo: "github-pulls-show-reviewers",
+        githubToken: null,
+        targetPullNumbers: ["200", "150"],
+      }),
+    ).rejects.toBeInstanceOf(GitHubApiError);
   });
 });
 
