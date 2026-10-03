@@ -142,6 +142,40 @@ describe("content entrypoint", () => {
       "/hon454/github-pulls-show-reviewers/pulls",
     );
     listeners.get("wxt:locationchange")?.forEach((listener) => listener());
+    await Promise.resolve();
+
+    expect(bootAccessBannerMock).toHaveBeenCalledTimes(1);
+    expect(bootReviewerListPageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("boots PR-list features when the location change is reported before the URL commits", async () => {
+    bootAccessBannerMock.mockReturnValue({
+      refreshMount: vi.fn(),
+      reconcile: vi.fn(),
+      teardown: vi.fn(),
+    });
+    const listeners = new Map<string, Listener[]>();
+    const ctx = {
+      onInvalidated: vi.fn(),
+      addEventListener: vi.fn(
+        (_target: EventTarget, event: string, listener: Listener) => {
+          listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+        },
+      ),
+    };
+    const { default: content } = await import("../entrypoints/content");
+    content.main(ctx as never);
+
+    // The Navigation API event fires first; pushState commits afterwards and
+    // no turbo:render follows on GitHub's React navigations.
+    listeners.get("wxt:locationchange")?.forEach((listener) => listener());
+    window.history.pushState(
+      {},
+      "",
+      "/hon454/github-pulls-show-reviewers/pulls",
+    );
+    expect(bootReviewerListPageMock).not.toHaveBeenCalled();
+    await Promise.resolve();
 
     expect(bootAccessBannerMock).toHaveBeenCalledTimes(1);
     expect(bootReviewerListPageMock).toHaveBeenCalledTimes(1);
@@ -524,9 +558,11 @@ it("shares one locale subscription across content features and releases it on ro
     expect(storageListeners.size).toBe(2);
     window.history.replaceState({}, "", "/org/repo/issues");
     routeListeners.get("wxt:locationchange")!.forEach((fn) => fn());
+    await Promise.resolve();
     expect(storageListeners.size).toBe(1);
     window.history.replaceState({}, "", "/org/repo/pulls");
     routeListeners.get("wxt:locationchange")!.forEach((fn) => fn());
+    await Promise.resolve();
     expect(storageListeners.size).toBe(2);
     invalidations.forEach((fn) => fn());
     expect(storageListeners.size).toBe(0);
