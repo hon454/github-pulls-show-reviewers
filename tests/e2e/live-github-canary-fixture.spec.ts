@@ -139,6 +139,94 @@ for (const layout of ["classic", "ListView"] as const) {
   });
 }
 
+test("packaged canary verifies reviews and requests read through repository-id pages", async () => {
+  await withExtension(async (context) => {
+    const observer = createCanaryResponseObserver({ repository });
+    context.on("request", (request) => observer.observeRequest(request));
+    context.on("response", (response) => observer.observeResponse(response));
+    await routePullList(context, ["42"]);
+    await routeMetadata(context, [metadata(42, ["alice"])]);
+    // GitHub names later pages by repository id, not by owner and name.
+    const idBase = "https://api.github.com/repositories/123";
+    const link = (resource: string, page: number, rel: string) =>
+      `<${idBase}/${resource}?per_page=100&page=${page}>; rel="${rel}"`;
+    const fulfillJson = (headers: Record<string, string>, body: object) => ({
+      status: 200,
+      contentType: "application/json",
+      headers,
+      body: JSON.stringify(body),
+    });
+    const approval = (login: string) => ({
+      state: "APPROVED",
+      submitted_at: "2026-09-02T00:00:00Z",
+      user: { login },
+    });
+    await context.route(`${apiBase}/pulls/42/reviews**`, (route) =>
+      route.fulfill(
+        fulfillJson({ link: link("pulls/42/reviews", 2, "next") }, [
+          approval("alice"),
+        ]),
+      ),
+    );
+    await context.route(`${idBase}/pulls/42/reviews**`, (route) =>
+      route.fulfill(fulfillJson({}, [approval("bob")])),
+    );
+    await context.route(`${apiBase}/issues/42/events**`, (route) =>
+      route.fulfill(
+        fulfillJson(
+          {
+            link: `${link("issues/42/events", 2, "next")}, ${link("issues/42/events", 5, "last")}`,
+          },
+          [],
+        ),
+      ),
+    );
+    const eventPages: string[] = [];
+    await context.route(`${idBase}/issues/42/events**`, (route) => {
+      eventPages.push(
+        new URL(route.request().url()).searchParams.get("page") ?? "",
+      );
+      return route.fulfill(
+        fulfillJson({ link: link("issues/42/events", 4, "prev") }, [
+          {
+            event: "review_requested",
+            created_at: "2026-09-01T00:00:00Z",
+            requested_reviewer: { login: "alice" },
+          },
+        ]),
+      );
+    });
+
+    const page = await context.newPage();
+    await page.goto(pullListUrl);
+    await expectCurrentCanary(page, observer, ["42"]);
+
+    const dom = await page.evaluate(collectLiveCanaryDomSnapshot, {
+      repository,
+      productionRowSelector: githubSelectors.row,
+    });
+    const api = observer.snapshot();
+    const verdict = evaluateLiveCanary({ repository, dom, api });
+    // The stale request for alice is on the newest page, so both reviewers
+    // are completed and the row is still eligible for detailed comparison.
+    expect(eventPages).toEqual(["5"]);
+    expect(api.pulls[0]).toMatchObject({
+      reviews: { completeness: "complete" },
+      reviewRequests: { completeness: "truncated", finalPageLogins: ["alice"] },
+    });
+    expect(verdict.samples).toEqual([
+      expect.objectContaining({
+        pullNumber: "42",
+        actual: [
+          expect.objectContaining({ qualifier: "reviewed-by:alice" }),
+          expect.objectContaining({ qualifier: "reviewed-by:bob" }),
+        ],
+      }),
+    ]);
+    expect(verdict).toMatchObject({ ok: true, failures: [] });
+  });
+});
+
 test("packaged canary rejects a selector-drift zero-row list with an unmatched PR link", async () => {
   await withExtension(async (context) => {
     const observer = createCanaryResponseObserver({ repository });
