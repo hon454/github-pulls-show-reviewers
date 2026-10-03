@@ -597,6 +597,114 @@ test("renders reviewers after a soft navigation from another repository", async 
   });
 });
 
+test("renders reviewers after a soft navigation from a single-segment entry page", async () => {
+  await withExtensionContext(async (context) => {
+    const listHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-single-row.html"),
+      "utf8",
+    );
+    // Chrome only injects when a document loads. /notifications, /pulls,
+    // /issues, / and /<user> are outside the former /*/* match.
+    await context.route("https://github.com/notifications", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "text/html",
+        body: "<!doctype html><html><body><main>Notifications</main></body></html>",
+      });
+    });
+    await routePullListApi(context, []);
+    await routePullApi(context, "42", {
+      user: { login: "hon454" },
+      requested_reviewers: [{ login: "alice" }],
+      requested_teams: [],
+    });
+    await routeReviewsApi(context, "42", []);
+    const apiRequests: string[] = [];
+    context.on("request", (request) => {
+      if (request.url().startsWith("https://api.github.com/"))
+        apiRequests.push(request.url());
+    });
+
+    const page = await context.newPage();
+    await page.goto("https://github.com/notifications");
+    // Longer than document_idle injection; the script must stay inert here.
+    await page.waitForTimeout(1000);
+    await expect(
+      page.locator("[data-ghpsr-root], [data-ghpsr-banner]"),
+    ).toHaveCount(0);
+    expect(apiRequests).toEqual([]);
+
+    await page.evaluate((html) => {
+      const next = new DOMParser().parseFromString(html, "text/html");
+      window.history.pushState(
+        {},
+        "",
+        "/hon454/github-pulls-show-reviewers/pulls",
+      );
+      document.body.replaceChildren(...next.body.childNodes);
+    }, listHtml);
+
+    await expect(page.locator('a.ghpsr-avatar[title*="@alice"]')).toHaveCount(
+      1,
+    );
+  });
+});
+
+test("widening the content match to every github.com page adds no permission warning", async () => {
+  await withExtensionContext(async (context) => {
+    const serviceWorker =
+      context.serviceWorkers()[0] ??
+      (await context.waitForEvent("serviceworker"));
+    const extensionId = new URL(serviceWorker.url()).host;
+    const page = await context.newPage();
+    await page.goto(`chrome-extension://${extensionId}/options.html`);
+
+    const warnings = await page.evaluate(async () => {
+      type Manifest = { content_scripts: Array<{ matches: string[] }> };
+      type WarningsByManifest = (manifest: string) => Promise<string[]>;
+      const api = (
+        globalThis as unknown as {
+          chrome: {
+            runtime: { getManifest(): Manifest };
+            management: Record<string, unknown>;
+          };
+        }
+      ).chrome;
+      // Callable without the "management" permission. Resolve it by shape:
+      // Chromium builds differ on "Warning" vs "Warnings" in the name.
+      const methodName = Object.keys(api.management).find((name) =>
+        /^getPermissionWarnings?ByManifest$/.test(name),
+      );
+      if (methodName == null)
+        throw new Error("permission warning API is unavailable");
+      const warningsFor = (candidate: Manifest) =>
+        (api.management[methodName] as WarningsByManifest).call(
+          api.management,
+          JSON.stringify(candidate),
+        );
+      const manifest = api.runtime.getManifest();
+      const withMatch = (match: string) =>
+        warningsFor({
+          ...manifest,
+          content_scripts: [
+            { ...manifest.content_scripts[0], matches: [match] },
+          ],
+        });
+      return {
+        packagedMatches: manifest.content_scripts[0]!.matches,
+        packaged: await warningsFor(manifest),
+        twoSegments: await withMatch("https://github.com/*/*"),
+        everyPage: await withMatch("https://github.com/*"),
+      };
+    });
+
+    expect(warnings.packagedMatches).toEqual(["https://github.com/*"]);
+    expect(warnings.twoSegments).toHaveLength(1);
+    expect(warnings.everyPage).toEqual(warnings.twoSegments);
+    expect(warnings.packaged).toEqual(warnings.twoSegments);
+  });
+});
+
 test("clears metadata-missing reviewer slots silently when reviewer fetch fails", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(

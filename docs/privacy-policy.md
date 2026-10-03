@@ -10,7 +10,7 @@ The public policy URL is
 
 ## What the extension accesses
 
-The extension runs on `https://github.com/*` pull request list pages and requests reviewer data from `https://api.github.com/*` through its background service worker. The background service worker also schedules a recurring `chrome.alarms` job to refresh GitHub App access tokens ahead of their expiry so that private-repository lookups keep working without requiring a fresh sign-in every eight hours.
+The extension's content script is loaded on `https://github.com/*` pages so that it is present when GitHub navigates to a pull request list without reloading the page. It reads page content and renders reviewer information only on repository pull request list pages, and requests reviewer data from `https://api.github.com/*` through its background service worker. The background service worker also schedules a recurring `chrome.alarms` job to refresh GitHub App access tokens ahead of their expiry so that private-repository lookups keep working without requiring a fresh sign-in every eight hours.
 
 To provide its reviewer visibility feature, the extension may access:
 

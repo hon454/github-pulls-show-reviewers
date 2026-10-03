@@ -39,6 +39,15 @@ evidence, separate full/production audit results, and TypeScript compatibility.
   OAuth HTTP, user/installation discovery and commits. Trusted session records
   restore waiting flows across worker suspension; interrupted exchanges offer
   a new code. Cancellation is acknowledged only before commit admission.
+- The content script matches `https://github.com/*`. Chrome injects a content
+  script only when a document loads, and GitHub navigates within the document,
+  so a tab first loaded at `/`, `/notifications`, `/pulls`, `/issues` or
+  `/<user>` needs the script already present when it reaches a repository pull
+  list. The script stays inert until then: it registers its route listeners and
+  the discovery document probe, and boots the reviewer and banner features only
+  on a `/{owner}/{repo}/pulls` route. `host_permissions` already covers this
+  pattern, so the wider match adds no permission warning; a packaged E2E test
+  compares Chrome's computed warnings for both patterns.
 - Content scripts detect PR rows and dispatch a `fetchPullReviewerSummary`
   message to the background service worker. The background resolves the
   covering account per repo via the cached installations and performs the
