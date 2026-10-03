@@ -107,10 +107,26 @@ function expectFailure(
 }
 
 describe("content entrypoint", () => {
-  it("keeps a broad content-script match so same-document PR-list navigation stays supported", async () => {
+  it("matches every github.com page so same-document PR-list navigation stays supported", async () => {
+    // Chrome does not inject on soft navigation. A tab first loaded at a
+    // single-segment path (/, /notifications, /pulls, /<user>) needs the script
+    // already present when it navigates into a repository pull list.
     const { default: content } = await import("../entrypoints/content");
-    expect(content.matches).toEqual(["https://github.com/*/*"]);
+    expect(content.matches).toEqual(["https://github.com/*"]);
   });
+
+  it.each(["/", "/notifications", "/pulls", "/issues", "/hon454"])(
+    "stays inert on the single-segment entry page %s",
+    async (pathname) => {
+      window.history.replaceState({}, "", pathname);
+      const ctx = { addEventListener: vi.fn(), onInvalidated: vi.fn() };
+      const { default: content } = await import("../entrypoints/content");
+      content.main(ctx as never);
+
+      expect(bootAccessBannerMock).not.toHaveBeenCalled();
+      expect(bootReviewerListPageMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("waits to boot PR-list features until navigation enters a PR list", async () => {
     const aggregator = {

@@ -18,7 +18,12 @@ import {
 } from "../src/runtime/reviewer-fetch";
 
 export default defineContentScript({
-  matches: ["https://github.com/*/*"],
+  // Chrome injects only when a document loads, and GitHub navigates within the
+  // document. Match every page so a tab first loaded at /, /notifications,
+  // /pulls or /<user> already has the script when it reaches a pull list.
+  // Features boot only on pull-list routes; `host_permissions` already covers
+  // this pattern, so it adds no permission warning.
+  matches: ["https://github.com/*"],
   runAt: "document_idle",
   main(ctx) {
     const documentProbe: Parameters<
