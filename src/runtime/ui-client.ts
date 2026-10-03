@@ -29,11 +29,41 @@ export async function requestCapability<T extends z.ZodType>(
   return result.data;
 }
 
-/** One client per document; no storage reads or raw storage event listeners. */
+type Visibility = {
+  isVisible(): boolean;
+  subscribe(listener: () => void): () => void;
+};
+
+const documentVisibility: Visibility = {
+  isVisible: () =>
+    typeof document === "undefined" || document.visibilityState !== "hidden",
+  subscribe(listener) {
+    if (typeof document === "undefined") return () => undefined;
+    const onChange = () => {
+      if (document.visibilityState !== "hidden") listener();
+    };
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  },
+};
+
+/**
+ * One client per document; no storage reads or raw storage event listeners.
+ *
+ * `reconnect: "always"` (the default, for the options page) re-establishes a
+ * dropped port after a short delay. `"on-demand"` is for content documents: an
+ * idle port does not keep an MV3 worker alive, so the worker stops, drops the
+ * port, and a timed reconnect from every open GitHub tab would wake it again
+ * in a loop. On demand, a dropped port is re-established only by `wake()`
+ * (background announces a state change), by a read, or when the document
+ * becomes visible.
+ */
 export function createUIClient(
   input: {
     connect?: () => Port;
     request?: typeof requestCapability;
+    reconnect?: "always" | "on-demand";
+    visibility?: Visibility;
   } = {},
 ) {
   const listeners = new Set<(change: UIChange) => void>();
@@ -53,6 +83,17 @@ export function createUIClient(
   let disposed = false;
   let unavailable = false;
   const request = input.request ?? requestCapability;
+  const onDemand = input.reconnect === "on-demand";
+  const visibility = input.visibility ?? documentVisibility;
+  let releaseVisibility: (() => void) | undefined;
+
+  function scheduleReconnect() {
+    if (onDemand || reconnectTimer || !listeners.size || disposed) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined;
+      connect();
+    }, 500);
+  }
 
   function fail() {
     unavailable = true;
@@ -111,13 +152,8 @@ export function createUIClient(
         disconnectPort = undefined;
         port = undefined;
         hydrated = false;
-        if (listeners.size && !disposed) {
-          // Reconnect only after a real disconnect. No pings/keepalive traffic.
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = undefined;
-            connect();
-          }, 500);
-        }
+        // Reconnect only after a real disconnect. No pings/keepalive traffic.
+        scheduleReconnect();
       };
       next.onMessage.addListener(onMessage);
       next.onDisconnect.addListener(onDisconnect);
@@ -127,12 +163,13 @@ export function createUIClient(
       };
     } catch {
       fail();
-      if (!reconnectTimer && listeners.size && !disposed)
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = undefined;
-          connect();
-        }, 500);
+      scheduleReconnect();
     }
+  }
+
+  /** Re-establishes a dropped port, unless the document is hidden. */
+  function wake() {
+    if (visibility.isVisible()) connect();
   }
 
   function stop() {
@@ -145,12 +182,15 @@ export function createUIClient(
     port = undefined;
     hydrated = false;
     old?.disconnect();
+    releaseVisibility?.();
+    releaseVisibility = undefined;
   }
 
   function subscribe(listener: (change: UIChange) => void) {
     if (disposed) throw new Error("ui_client_disposed");
     const notify = (change: UIChange) => listener(change);
     listeners.add(notify);
+    if (onDemand) releaseVisibility ??= visibility.subscribe(wake);
     connect();
     return () => {
       if (listeners.delete(notify) && listeners.size === 0) stop();
@@ -188,6 +228,7 @@ export function createUIClient(
   return {
     read,
     subscribe,
+    wake,
     subscribeFlows(
       listener: (attemptId: string, progress: DeviceFlowProgress) => void,
     ) {
@@ -232,7 +273,17 @@ export function createUIClient(
 
 let client: UIClient | undefined;
 export function getUIClient(): UIClient {
-  return (client ??= createUIClient());
+  // Only extension pages keep the timed reconnect; see `createUIClient`.
+  return (client ??= createUIClient({
+    reconnect:
+      globalThis.location?.protocol === "chrome-extension:"
+        ? "always"
+        : "on-demand",
+  }));
+}
+/** Background announced a state change. A no-op until a client exists. */
+export function wakeUIClient(): void {
+  client?.wake();
 }
 export function disposeUIClient(): void {
   client?.dispose();

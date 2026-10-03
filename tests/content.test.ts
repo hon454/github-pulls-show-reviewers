@@ -197,6 +197,62 @@ describe("content entrypoint", () => {
     expect(bootReviewerListPageMock).toHaveBeenCalledTimes(1);
   });
 
+  describe("background messages", () => {
+    type MessageListener = (
+      message: unknown,
+      sender: { id?: string },
+      reply: (value: unknown) => void,
+    ) => unknown;
+
+    async function bootWithWakeSpy() {
+      const wakeUIClient = vi.fn();
+      vi.doMock("../src/runtime/ui-client", async (importActual) => ({
+        ...(await importActual<typeof UIClientModule>()),
+        wakeUIClient,
+      }));
+      const addListener = vi.fn();
+      vi.stubGlobal("browser", {
+        runtime: {
+          id: "content-test",
+          onMessage: { addListener, removeListener: vi.fn() },
+        },
+      });
+      const { default: content } = await import("../entrypoints/content");
+      content.main({
+        addEventListener: vi.fn(),
+        onInvalidated: vi.fn(),
+      } as never);
+      vi.doUnmock("../src/runtime/ui-client");
+      return {
+        wakeUIClient,
+        listener: addListener.mock.calls[0]![0] as MessageListener,
+      };
+    }
+
+    it("wakes the UI client when background announces a state change", async () => {
+      const { UI_STATE_CHANGED } = await import("../src/runtime/ui-contract");
+      const { wakeUIClient, listener } = await bootWithWakeSpy();
+
+      listener({ type: UI_STATE_CHANGED }, { id: "content-test" }, vi.fn());
+
+      expect(wakeUIClient).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores a state-change announcement from another sender", async () => {
+      const { UI_STATE_CHANGED } = await import("../src/runtime/ui-contract");
+      const { wakeUIClient, listener } = await bootWithWakeSpy();
+
+      listener(
+        { type: UI_STATE_CHANGED },
+        { id: "another-extension" },
+        vi.fn(),
+      );
+      listener({ type: "something-else" }, { id: "content-test" }, vi.fn());
+
+      expect(wakeUIClient).not.toHaveBeenCalled();
+    });
+  });
+
   describe("onRowFailure banner classification", () => {
     function makeAggregator(): Aggregator {
       return {

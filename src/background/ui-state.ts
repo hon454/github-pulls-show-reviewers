@@ -14,6 +14,8 @@ export type UIContextKind = "options" | "content";
 export function createUIStateService(
   ensureReady: () => Promise<void>,
   onAccounts?: (accounts: Account[]) => void,
+  // Called after a storage change that altered what content documents see.
+  onContentStateChanged?: () => void,
 ) {
   const epoch = crypto.randomUUID();
   const subscribers = new Set<{
@@ -97,8 +99,24 @@ export function createUIStateService(
       area === "local" &&
       (isAccountsChange(changes) || isPreferencesChange(changes))
     ) {
+      const before = current;
       // Errors are reported by snapshot requests; never serialize storage errors.
-      void refresh().catch(() => undefined);
+      void refresh().then(
+        (after) => {
+          // Documents with a port already received this snapshot. Without an
+          // earlier snapshot the change cannot be ruled out, so announce it.
+          if (
+            before === undefined ||
+            JSON.stringify(forContext(before, "content")) !==
+              JSON.stringify({
+                ...forContext(after, "content"),
+                revision: before.revision,
+              })
+          )
+            onContentStateChanged?.();
+        },
+        () => undefined,
+      );
     }
   };
   browser.storage.onChanged.addListener(onChanged);

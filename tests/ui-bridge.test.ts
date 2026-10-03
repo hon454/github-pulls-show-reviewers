@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { accountMutations } from "../src/storage/accounts";
 import { DEFAULT_PREFERENCES } from "../src/shared/preferences";
+import { UI_STATE_CHANGED } from "../src/runtime/ui-contract";
 import { connectInput, json } from "./helpers/auth-harness";
 import {
   contentSender,
@@ -101,6 +102,106 @@ describe("real token-free background capability bridge", () => {
     stopB();
     options.dispose();
     content.dispose();
+  });
+
+  describe("announcing state changes to content documents without a port", () => {
+    // A content document does not keep or re-establish a port while idle. The
+    // announcement carries no state; the document reconnects and receives the
+    // validated snapshot over its port.
+    const announced = () =>
+      harness.browserMock.tabs.sendMessage.mock.calls.filter(
+        ([, message]) =>
+          (message as { type?: string }).type === UI_STATE_CHANGED,
+      );
+    const openGitHubTabs = () =>
+      harness.browserMock.tabs.query.mockResolvedValue([
+        { id: 2 },
+        { id: 3, discarded: true },
+        {},
+        { id: 5 },
+      ]);
+
+    it("announces a preference change to every live GitHub tab", async () => {
+      openGitHubTabs();
+      await harness.send({ type: "getUISnapshot" });
+      expect(announced()).toEqual([]);
+
+      await harness.send({
+        type: "patchPreferences",
+        patch: { showReviewerName: true },
+      });
+      await drain();
+
+      expect(harness.browserMock.tabs.query).toHaveBeenCalledWith({
+        url: "https://github.com/*",
+      });
+      expect(announced()).toEqual([
+        [2, { type: UI_STATE_CHANGED }],
+        [5, { type: UI_STATE_CHANGED }],
+      ]);
+    });
+
+    it("announces an account change", async () => {
+      openGitHubTabs();
+      await harness.send({ type: "getUISnapshot" });
+
+      await add();
+      // Snapshot reads queue behind the refresh that the change started.
+      await harness.send({ type: "getUISnapshot" });
+      await drain();
+
+      expect(announced().map(([tabId]) => tabId)).toEqual([2, 5]);
+    });
+
+    it("does not announce when only options-visible details change", async () => {
+      openGitHubTabs();
+      const account = await add();
+      await harness.send({ type: "getUISnapshot" });
+      await drain();
+      harness.browserMock.tabs.sendMessage.mockClear();
+
+      // Token rotation keeps the account's access identity.
+      await accountMutations.commitAuth(
+        account.id,
+        (await harness.client().read()).accounts![0].revision,
+        {
+          tokens: {
+            token: `${SENTINELS.access}-rotated`,
+            refreshToken: SENTINELS.refresh,
+            expiresAt: null,
+            refreshTokenExpiresAt: null,
+          },
+        },
+      );
+      await harness.send({ type: "getUISnapshot" });
+      await drain();
+
+      expect(announced()).toEqual([]);
+    });
+
+    it("survives tabs that cannot be listed or reached", async () => {
+      harness.browserMock.tabs.query.mockRejectedValue(new Error("no tabs"));
+      await harness.send({ type: "getUISnapshot" });
+      expect(
+        await harness.send({
+          type: "patchPreferences",
+          patch: { showReviewerName: true },
+        }),
+      ).toMatchObject({ ok: true });
+      await drain();
+
+      openGitHubTabs();
+      harness.browserMock.tabs.sendMessage.mockRejectedValue(
+        new Error("Receiving end does not exist"),
+      );
+      expect(
+        await harness.send({
+          type: "patchPreferences",
+          patch: { showReviewerName: false },
+        }),
+      ).toMatchObject({ ok: true });
+      await drain();
+    });
   });
 
   describe("content documents after a same-document navigation", () => {

@@ -19,6 +19,7 @@ import {
   accountSummarySchema,
   capabilityResponseSchema,
   deviceFlowProgressSchema,
+  UI_STATE_CHANGED,
   UI_STATE_PORT,
   uiRequestSchema,
   uiSnapshotSchema,
@@ -100,9 +101,28 @@ export function createUIBridge(input: {
         }
       }),
   });
+  // Content documents drop their port when the worker idles and do not
+  // reconnect on their own. Tell open GitHub tabs that their state changed;
+  // the message carries no state, and each document reads it over its port.
+  async function announceContentStateChange(): Promise<void> {
+    if (!browser.tabs?.query || !browser.tabs.sendMessage) return;
+    try {
+      const tabs = await browser.tabs.query({ url: "https://github.com/*" });
+      for (const tab of tabs) {
+        if (tab.id == null || tab.discarded) continue;
+        // A tab without the content script has no receiver.
+        void Promise.resolve(
+          browser.tabs.sendMessage(tab.id, { type: UI_STATE_CHANGED }),
+        ).catch(() => undefined);
+      }
+    } catch {
+      /* Unreadable tabs catch up when they become visible. */
+    }
+  }
   const state = createUIStateService(
     input.ensureReady,
     repositories.accountsChanged,
+    () => void announceContentStateChange(),
   );
   const discoveryOwner = (context: UIContext): DiscoveryOwner => ({
     documentId: context.documentId,

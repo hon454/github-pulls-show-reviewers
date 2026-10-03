@@ -120,6 +120,9 @@ export function createUIBridgeHarness(
     },
     tabs: {
       get: vi.fn(async () => ({ discarded: false, frozen: false })),
+      query: vi.fn(
+        async (): Promise<Array<{ id?: number; discarded?: boolean }>> => [],
+      ),
       sendMessage: vi.fn(
         async (
           _id: number,

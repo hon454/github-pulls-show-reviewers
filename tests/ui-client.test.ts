@@ -93,6 +93,113 @@ describe("UI client snapshot ordering and lifecycle", () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(connect).toHaveBeenCalledTimes(1);
   });
+  describe("on-demand reconnection for content documents", () => {
+    function setupOnDemand(visible = true) {
+      const visibility = {
+        visible,
+        listeners: new Set<() => void>(),
+        isVisible: () => visibility.visible,
+        subscribe(listener: () => void) {
+          visibility.listeners.add(listener);
+          return () => {
+            visibility.listeners.delete(listener);
+          };
+        },
+        show() {
+          visibility.visible = true;
+          for (const listener of [...visibility.listeners]) listener();
+        },
+      };
+      return {
+        ...setup({ reconnect: "on-demand", visibility }),
+        visibility,
+      };
+    }
+
+    it("does not reconnect on a timer after the worker drops the port", async () => {
+      const { a, connect, client } = setupOnDemand();
+      client.subscribe(() => {});
+      publish(a, snapshot());
+      a.onDisconnect.emit();
+
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      // An idle MV3 worker stops and drops every port. Reconnecting would wake
+      // it again from every open GitHub tab, about every thirty seconds.
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("re-establishes a dropped port when woken while visible", () => {
+      const { a, b, connect, client } = setupOnDemand();
+      const listener = vi.fn();
+      client.subscribe(listener);
+      publish(a, snapshot());
+      a.onDisconnect.emit();
+
+      client.wake();
+      publish(b, snapshot(1, "worker-2"));
+
+      expect(connect).toHaveBeenCalledTimes(2);
+      expect(listener).toHaveBeenLastCalledWith({
+        snapshot: snapshot(1, "worker-2"),
+        previous: snapshot(),
+      });
+    });
+
+    it("stays disconnected while hidden and reconnects when the document becomes visible", () => {
+      const { a, connect, client, visibility } = setupOnDemand();
+      client.subscribe(() => {});
+      publish(a, snapshot());
+      visibility.visible = false;
+      a.onDisconnect.emit();
+
+      client.wake();
+      expect(connect).toHaveBeenCalledTimes(1);
+
+      visibility.show();
+      expect(connect).toHaveBeenCalledTimes(2);
+    });
+
+    it("re-establishes a dropped port for a read", async () => {
+      const { a, b, connect, client } = setupOnDemand();
+      client.subscribe(() => {});
+      publish(a, snapshot());
+      a.onDisconnect.emit();
+
+      const reading = client.read();
+      publish(b, snapshot(3, "worker-2"));
+
+      expect(await reading).toEqual(snapshot(3, "worker-2"));
+      expect(connect).toHaveBeenCalledTimes(2);
+    });
+
+    it("does not open a second port while one is connected", () => {
+      const { a, connect, client, visibility } = setupOnDemand();
+      client.subscribe(() => {});
+      publish(a, snapshot());
+
+      client.wake();
+      visibility.show();
+
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+
+    it("needs a subscriber to reconnect and releases its visibility listener", () => {
+      const { a, connect, client, visibility } = setupOnDemand();
+      const release = client.subscribe(() => {});
+      publish(a, snapshot());
+      a.onDisconnect.emit();
+      release();
+
+      client.wake();
+      visibility.show();
+
+      expect(connect).toHaveBeenCalledTimes(1);
+      expect(visibility.listeners.size).toBe(0);
+    });
+  });
+
   it("reports invalid/unavailable events and rejects pending readers on disposal", async () => {
     const { a, client } = setup();
     client.subscribe(() => {});

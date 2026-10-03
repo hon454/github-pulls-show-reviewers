@@ -189,6 +189,16 @@ The reviewer page hydrates once from its first valid read or subscription
 snapshot. If the initial read fails, a later reconnect snapshot still starts row
 work; a delayed initial response cannot replace newer subscribed preferences.
 
+Amendment (2026-10-03, #236): the options page still re-establishes a dropped
+port after a short delay. A content document does not, because an idle port
+does not keep an MV3 worker alive and a timed reconnect from every GitHub tab
+restarted the worker about every thirty seconds. Content reconnects on demand:
+when background sends the stateless `UI_STATE_CHANGED` announcement after a
+content-visible storage change, when a read needs a snapshot, or when the
+document becomes visible. State still reaches content only as a validated
+snapshot over the port; sender authorization and the token-free boundary are
+unchanged.
+
 `patchPreferences` accepts only the existing optional language/display fields.
 The background preference owner serializes read/merge/write against the latest
 stored preferences. Different-field changes from two options pages preserve both;
