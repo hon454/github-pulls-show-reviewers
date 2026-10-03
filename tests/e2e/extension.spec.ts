@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { chromium, expect, test } from "@playwright/test";
 
+import { closeInstallOptionsPage } from "../helpers/install-options-page";
 import {
   createPullListFixtureHtml,
   REPRESENTATIVE_PULL_LIST_PULL_NUMBERS,
@@ -750,10 +751,6 @@ test("an idle pull-list tab leaves a stopped worker stopped and still receives l
 
     // Chrome stops an idle MV3 worker after about thirty seconds, which drops
     // the page's port. The page must not bring the worker back by itself.
-    // The install-time options page can still be open; it keeps a reconnecting
-    // port of its own and would restart the worker.
-    for (const open of context.pages())
-      if (open.url().startsWith("chrome-extension://")) await open.close();
     await stopWorker();
     await page.waitForTimeout(3000);
     expect(workerVersion()?.runningStatus).toBe("stopped");
@@ -1342,38 +1339,10 @@ async function withExtensionContext(
       context.serviceWorkers()[0] ??
       (await context.waitForEvent("serviceworker"));
     expect(serviceWorker.url()).toContain("chrome-extension://");
-    await settleExtensionInstallUi(context);
+    await closeInstallOptionsPage(context);
     await run(context);
   } finally {
     await context.close();
-  }
-}
-
-async function settleExtensionInstallUi(
-  context: Awaited<ReturnType<typeof chromium.launchPersistentContext>>,
-): Promise<void> {
-  const closeExtensionPages = async () => {
-    await Promise.all(
-      context
-        .pages()
-        .filter((page) => page.url().startsWith("chrome-extension://"))
-        .map(async (page) => {
-          await page.close().catch(() => {});
-        }),
-    );
-  };
-
-  await closeExtensionPages();
-
-  const maybeInstallPage = await context
-    .waitForEvent("page", {
-      timeout: 1_000,
-    })
-    .catch(() => null);
-
-  if (maybeInstallPage) {
-    await maybeInstallPage.waitForLoadState("domcontentloaded").catch(() => {});
-    await closeExtensionPages();
   }
 }
 
