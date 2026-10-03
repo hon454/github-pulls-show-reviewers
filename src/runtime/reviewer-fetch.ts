@@ -156,7 +156,7 @@ export const reviewerFetchErrorSchema = z.object({
     .optional(),
 });
 const pullReviewerSummarySchema = z.object({
-  status: z.enum(["ok", "no-coverage", "network-error", "rate-limited"]),
+  status: z.literal("ok"),
   requestedUsers: z.array(reviewerUserMessageSchema),
   requestedTeams: z.array(z.string()),
   completedReviews: z.array(

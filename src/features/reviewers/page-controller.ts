@@ -11,6 +11,7 @@ import type { ContentScriptContext } from "wxt/utils/content-script-context";
 
 import {
   buildReviewerCacheKey,
+  type CacheKey,
   clearReviewerCache,
   getReviewerCacheEntry,
   isReviewerCacheEntryFresh,
@@ -47,10 +48,7 @@ import {
   type ReviewerFailure,
   type ReviewerOutcomeSnapshot,
 } from "./outcomes";
-import {
-  createPageMetadataCoordinator,
-  type PageMetadataFailure,
-} from "./page-metadata";
+import { createPageMetadataCoordinator } from "./page-metadata";
 import {
   collectVisiblePullNumbers,
   createReviewerRowLifecycle,
@@ -60,6 +58,10 @@ import {
   isAbortError,
   readPrimaryRateLimitReset,
 } from "./runtime-requests";
+import {
+  createReviewerRequestRegistry,
+  type ReviewerRequest,
+} from "./request-registry";
 import { createAbortAwareRequestScheduler } from "./request-scheduler";
 import { buildReviewers } from "./view-model";
 
@@ -79,12 +81,6 @@ class QuotaBlockedSkip {
 
 export type ReviewerBootOptions = {
   onOutcomes?: (snapshot: ReviewerOutcomeSnapshot) => void;
-  onRowFailure?: (signal: {
-    owner: string;
-    repo: string;
-    account: Account | null;
-    error: unknown;
-  }) => void;
 };
 
 export function bootReviewerListPage(
@@ -116,17 +112,20 @@ export function bootReviewerListPage(
     });
     return attempt;
   }
-  const mountOperations = new WeakMap<HTMLElement, object>();
-  // Keep the last request identity after settlement to reject delayed renders.
-  const requestOwners = new Map<string, object>();
-  type InflightRequest = {
-    owner: object;
-    promise: Promise<void>;
-    controller: AbortController;
-    consumers: Map<HTMLElement, () => boolean>;
-    invalidated: boolean;
-    succeeded: boolean;
+  type Route = NonNullable<typeof currentRoute>;
+  /** One pass of one row through `processRow`. */
+  type RowWork = {
+    mount: HTMLElement;
+    route: Route;
+    pullNumber: string;
+    cacheKey: CacheKey;
+    generation: number;
+    isRowCurrent: () => boolean;
+    /** The row is current and this pass and its request still own the mount. */
+    isOperationCurrent: () => boolean;
   };
+  const mountOperations = new WeakMap<HTMLElement, object>();
+  const requests = createReviewerRequestRegistry();
   const localeStore = getLocaleStore();
   type Presentation =
     | { kind: "loading" }
@@ -185,7 +184,6 @@ export function bootReviewerListPage(
     }
   }
   syncLocaleSubscription();
-  const inflightRequests = new Map<string, InflightRequest>();
   let cachedPreferences: Promise<Preferences> | null = null;
   let latestDisplayPreferences: Preferences | null = null;
   const accountResolver = createSelfHealingAccountResolver();
@@ -211,10 +209,7 @@ export function bootReviewerListPage(
     getRoute: () => currentRoute,
     processRow,
     markPageMetadataStale: pageMetadata.markStale,
-    onMeaningfulChange: (cacheKey) => {
-      const request = inflightRequests.get(cacheKey);
-      if (request) request.invalidated = true;
-    },
+    onMeaningfulChange: requests.invalidate,
     onRowsChanged: () => outcomes.reconcile(collectVisiblePullNumbers()),
   });
 
@@ -253,11 +248,7 @@ export function bootReviewerListPage(
         ?.then((value) => retireRepositoryDiscovery(value.id))
         .catch(() => undefined);
     }
-    for (const request of inflightRequests.values()) {
-      request.controller.abort();
-    }
-    inflightRequests.clear();
-    requestOwners.clear();
+    requests.abortAll();
     pageMetadata.abortAndClear();
     resetOutcomes();
   }
@@ -286,25 +277,9 @@ export function bootReviewerListPage(
     renderPresentation(mount);
   }
 
-  function reportPageMetadataFailure(
-    route: NonNullable<typeof currentRoute>,
-    failure: PageMetadataFailure,
-  ): void {
-    if (failure.reported) {
-      return;
-    }
-    failure.reported = true;
-    options?.onRowFailure?.({
-      owner: route.owner,
-      repo: route.repo,
-      account: failure.account,
-      error: failure.error,
-    });
-  }
-
   async function processRow(row: Element): Promise<void> {
-    if (!hydrated || disposed) return;
-    if (disposed || currentRoute == null || !row.isConnected) return;
+    if (!hydrated || disposed || currentRoute == null || !row.isConnected)
+      return;
 
     const pullNumber = extractPullNumber(row);
     if (pullNumber == null) return;
@@ -314,7 +289,7 @@ export function bootReviewerListPage(
 
     const route = currentRoute;
     const cacheKey = buildReviewerCacheKey(route.owner, route.repo, pullNumber);
-    let requestOwner = requestOwners.get(cacheKey);
+    let requestOwner = requests.ownerOf(cacheKey);
     const rowGeneration = generation;
     const operation = {};
     mountOperations.set(mount, operation);
@@ -324,11 +299,19 @@ export function bootReviewerListPage(
       currentRoute === route &&
       row.isConnected &&
       extractPullNumber(row) === pullNumber;
-    const isOperationCurrent = () =>
-      isRowCurrent() &&
-      row.contains(mount) &&
-      mountOperations.get(mount) === operation &&
-      requestOwners.get(cacheKey) === requestOwner;
+    const work: RowWork = {
+      mount,
+      route,
+      pullNumber,
+      cacheKey,
+      generation: rowGeneration,
+      isRowCurrent,
+      isOperationCurrent: () =>
+        isRowCurrent() &&
+        row.contains(mount) &&
+        mountOperations.get(mount) === operation &&
+        requests.ownerOf(cacheKey) === requestOwner,
+    };
     rowLifecycle.recordFingerprint(row, pullNumber, route);
     const cachedEntry = getReviewerCacheEntry(cacheKey);
     if (cachedEntry == null || !isReviewerCacheEntryFresh(cachedEntry))
@@ -338,52 +321,19 @@ export function bootReviewerListPage(
         mount,
         route,
         cachedEntry.summary,
-        isOperationCurrent,
+        work.isOperationCurrent,
       );
-      if (!isOperationCurrent()) return;
+      if (!work.isOperationCurrent()) return;
       if (isReviewerCacheEntryFresh(cachedEntry)) {
         outcomes.cached(rowGeneration, pullNumber);
         return;
       }
     }
 
-    const existingRequest = inflightRequests.get(cacheKey);
+    const existingRequest = requests.get(cacheKey);
     if (existingRequest) {
       requestOwner = existingRequest.owner;
-      outcomes.begin(rowGeneration, pullNumber, existingRequest.owner);
-      existingRequest.consumers.set(mount, isRowCurrent);
-      const existingEntry = getReviewerCacheEntry(cacheKey);
-      if (existingEntry != null) {
-        await renderSummaryForMount(
-          mount,
-          route,
-          existingEntry.summary,
-          isOperationCurrent,
-        );
-        if (!isOperationCurrent()) return;
-      } else if (!mountHasRenderedChips(mount)) {
-        showLoading(mount);
-      }
-      try {
-        await existingRequest.promise;
-      } catch {
-        // The tracked request reports its own failure.
-      }
-      if (!isOperationCurrent() || existingRequest.controller.signal.aborted) {
-        return;
-      }
-      if (existingRequest.invalidated && existingRequest.succeeded) return;
-      const settledSummary = getReviewerCacheEntry(cacheKey)?.summary;
-      if (settledSummary == null) {
-        clearReviewerMountWithoutCache(mount, cacheKey);
-      } else {
-        await renderSummaryForMount(
-          mount,
-          route,
-          settledSummary,
-          isOperationCurrent,
-        );
-      }
+      await joinRequest(work, existingRequest);
       return;
     }
 
@@ -391,213 +341,217 @@ export function bootReviewerListPage(
       showLoading(mount);
     }
 
-    const controller = new AbortController();
-    requestOwner = {};
-    requestOwners.set(cacheKey, requestOwner);
-    const outcomeOwner = requestOwner;
-    outcomes.begin(rowGeneration, pullNumber, outcomeOwner);
-    let request: InflightRequest | null = null;
-    let completedSuccessfully = false;
-    const consumers = new Map([[mount, isRowCurrent]]);
-    // Data belongs to live rows, even if their presentation mounts were removed.
-    // A replacement row may still need the shared request after its owner left.
-    const isRequestCurrent = () =>
-      !controller.signal.aborted &&
-      request != null &&
-      inflightRequests.get(cacheKey) === request &&
-      [...consumers.values()].some((isCurrent) => isCurrent());
-    const promise = (async () => {
-      let account: Account | null = null;
-      try {
-        const repositoryDiscovery = await getDiscovery(route);
-        if (!isRequestCurrent()) return;
-        account = await accountResolver.resolveAccount(route.owner, route.repo);
-        if (!isRequestCurrent()) {
-          return;
-        }
-        const blocked = readQuotaBlock(rowGeneration, account);
-        if (blocked) throw new QuotaBlockedSkip(blocked);
-        const metadataResult = await pageMetadata.get({
-          route,
-          account,
-          targetPullNumbers: collectVisiblePullNumbers(),
-          signal: controller.signal,
-          discoveryId: repositoryDiscovery.id,
-        });
-        if (!isRequestCurrent()) {
-          return;
-        }
-        if (metadataResult.failure?.suppressRowFallback) {
-          outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
-            status: "failure",
-            failure: metadataResult.failure,
-          });
-          reportPageMetadataFailure(route, metadataResult.failure);
-          if (isOperationCurrent())
-            clearReviewerMountWithoutCache(mount, cacheKey);
-          return;
-        }
-        const pullMetadata = metadataResult.metadata.get(pullNumber);
-        const summaryAccount =
-          metadataResult.account === undefined
-            ? account
-            : metadataResult.account;
-        let actualSummaryAccount = summaryAccount;
-        if (!isRequestCurrent()) {
-          return;
-        }
-
-        try {
-          const summary = await reviewerSummaryScheduler.run(() => {
-            if (!isRequestCurrent()) controller.abort();
-            const blocked = readQuotaBlock(rowGeneration, summaryAccount);
-            if (blocked) throw new QuotaBlockedSkip(blocked);
-            return fetchReviewerSummary({
-              account: summaryAccount,
-              owner: route.owner,
-              repo: route.repo,
-              pullNumber,
-              signal: controller.signal,
-              discoveryId: repositoryDiscovery.id,
-              onAccount: (actual) => {
-                account = actual;
-                actualSummaryAccount = actual;
-              },
-              ...(pullMetadata == null ? {} : { pullMetadata }),
-            });
-          }, controller.signal);
-          if (!isRequestCurrent()) {
-            return;
-          }
-          setCachedReviewerSummary(cacheKey, summary, {
-            account: actualSummaryAccount,
-            discoveryId: repositoryDiscovery.id,
-          });
-          if (inflightRequests.get(cacheKey)?.invalidated)
-            markReviewerCacheStale(cacheKey);
-          completedSuccessfully = true;
-          const settledRequest = inflightRequests.get(cacheKey);
-          if (settledRequest?.owner === outcomeOwner)
-            settledRequest.succeeded = true;
-          if (!settledRequest?.invalidated)
-            outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
-              status: "success",
-            });
-        } catch (error) {
-          if (isAbortError(error) || !isRequestCurrent()) {
-            return;
-          }
-          if (error instanceof QuotaBlockedSkip) throw error;
-          const failureAccount =
-            error instanceof ReviewerFetchRuntimeError &&
-            error.account !== undefined
-              ? error.account
-              : actualSummaryAccount;
-          const failure: ReviewerFailure = { account: failureAccount, error };
-          const quotaReset = readPrimaryRateLimitReset(error);
-          if (quotaReset != null && rowGeneration === generation)
-            quotaBlock = {
-              generation: rowGeneration,
-              accountId: failureAccount?.id ?? null,
-              until: quotaReset,
-              failure,
-            };
-          if (isOperationCurrent())
-            clearReviewerMountWithoutCache(mount, cacheKey);
-          outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
-            status: "failure",
-            failure,
-          });
-          options?.onRowFailure?.({
-            owner: route.owner,
-            repo: route.repo,
-            account: failureAccount,
-            error,
-          });
-        }
-      } catch (error) {
-        if (isAbortError(error) || !isRequestCurrent()) {
-          return;
-        }
-        // A skipped row shares the failure that exhausted the quota, so the
-        // banner aggregates one failure identity for all of them.
-        const failure: ReviewerFailure =
-          error instanceof QuotaBlockedSkip
-            ? error.failure
-            : { account, error };
-        if (isOperationCurrent())
-          clearReviewerMountWithoutCache(mount, cacheKey);
-        outcomes.settle(rowGeneration, pullNumber, outcomeOwner, {
-          status: "failure",
-          failure,
-        });
-        options?.onRowFailure?.({
-          owner: route.owner,
-          repo: route.repo,
-          account: failure.account as Account | null,
-          error: failure.error,
-        });
-      } finally {
-        const settledRequest = inflightRequests.get(cacheKey);
-        if (settledRequest?.owner === outcomeOwner) {
-          inflightRequests.delete(cacheKey);
-          if (completedSuccessfully && settledRequest.invalidated) {
-            // The old result remains stale. Revalidate once after its slot and
-            // per-PR request ownership are released, using current page metadata.
-            const liveRows = [...settledRequest.consumers]
-              .filter(([, isCurrent]) => isCurrent())
-              .map(([consumerMount]) =>
-                consumerMount.closest(githubSelectors.row),
-              )
-              .filter((liveRow): liveRow is Element => liveRow != null);
-            void (async () => {
-              let attempted = false;
-              for (const liveRow of new Set(liveRows)) {
-                if (!liveRow.isConnected) continue;
-                // Another dirty follow-up may already own this PR. A failed
-                // attempt must not make duplicate consumers start a retry loop.
-                const entry = getReviewerCacheEntry(cacheKey);
-                if (
-                  attempted &&
-                  !inflightRequests.has(cacheKey) &&
-                  (entry == null || !isReviewerCacheEntryFresh(entry))
-                )
-                  break;
-                attempted = true;
-                await processRow(liveRow);
-              }
-            })();
-          }
-        }
-      }
-    })();
-    request = {
-      owner: outcomeOwner,
-      controller,
-      promise,
-      consumers,
-      invalidated: false,
-      succeeded: false,
-    };
-
-    inflightRequests.set(cacheKey, request);
+    const request = requests.start(cacheKey, mount, isRowCurrent);
+    requestOwner = request.owner;
+    outcomes.begin(rowGeneration, pullNumber, request.owner);
+    request.promise = runRequest(work, request);
     try {
       await request.promise;
     } catch {
-      // Errors are handled inside the async block.
+      // Errors are handled inside the request pipeline.
     }
 
-    if (!isOperationCurrent() || controller.signal.aborted) {
+    if (!work.isOperationCurrent() || request.controller.signal.aborted) {
       return;
     }
-    if (request.invalidated && completedSuccessfully) return;
+    if (request.invalidated && request.succeeded) return;
 
     await renderSummaryForMount(
       mount,
       route,
       getReviewerCacheEntry(cacheKey)?.summary,
-      isOperationCurrent,
+      work.isOperationCurrent,
     );
+  }
+
+  /** Attaches a row to the request another row already started for this PR. */
+  async function joinRequest(
+    work: RowWork,
+    existing: ReviewerRequest,
+  ): Promise<void> {
+    const { mount, route, cacheKey } = work;
+    outcomes.begin(work.generation, work.pullNumber, existing.owner);
+    requests.join(existing, mount, work.isRowCurrent);
+    const existingEntry = getReviewerCacheEntry(cacheKey);
+    if (existingEntry != null) {
+      await renderSummaryForMount(
+        mount,
+        route,
+        existingEntry.summary,
+        work.isOperationCurrent,
+      );
+      if (!work.isOperationCurrent()) return;
+    } else if (!mountHasRenderedChips(mount)) {
+      showLoading(mount);
+    }
+    try {
+      await existing.promise;
+    } catch {
+      // The tracked request reports its own failure.
+    }
+    if (!work.isOperationCurrent() || existing.controller.signal.aborted) {
+      return;
+    }
+    if (existing.invalidated && existing.succeeded) return;
+    const settledSummary = getReviewerCacheEntry(cacheKey)?.summary;
+    if (settledSummary == null) {
+      clearReviewerMountWithoutCache(mount, cacheKey);
+    } else {
+      await renderSummaryForMount(
+        mount,
+        route,
+        settledSummary,
+        work.isOperationCurrent,
+      );
+    }
+  }
+
+  /** Discovery, account, page metadata, then the scheduled summary fetch. */
+  async function runRequest(
+    work: RowWork,
+    request: ReviewerRequest,
+  ): Promise<void> {
+    const { mount, route, pullNumber, cacheKey } = work;
+    const rowGeneration = work.generation;
+    const { controller } = request;
+    const isRequestCurrent = () => requests.isCurrent(cacheKey, request);
+    const settleFailure = (failure: ReviewerFailure): void => {
+      if (work.isOperationCurrent())
+        clearReviewerMountWithoutCache(mount, cacheKey);
+      outcomes.settle(rowGeneration, pullNumber, request.owner, {
+        status: "failure",
+        failure,
+      });
+    };
+    let account: Account | null = null;
+    try {
+      const repositoryDiscovery = await getDiscovery(route);
+      if (!isRequestCurrent()) return;
+      account = await accountResolver.resolveAccount(route.owner, route.repo);
+      if (!isRequestCurrent()) {
+        return;
+      }
+      const blocked = readQuotaBlock(rowGeneration, account);
+      if (blocked) throw new QuotaBlockedSkip(blocked);
+      const metadataResult = await pageMetadata.get({
+        route,
+        account,
+        targetPullNumbers: collectVisiblePullNumbers(),
+        signal: controller.signal,
+        discoveryId: repositoryDiscovery.id,
+      });
+      if (!isRequestCurrent()) {
+        return;
+      }
+      if (metadataResult.failure?.suppressRowFallback) {
+        // One failure identity is shared by every row the batch suppressed.
+        settleFailure(metadataResult.failure);
+        return;
+      }
+      const pullMetadata = metadataResult.metadata.get(pullNumber);
+      const summaryAccount =
+        metadataResult.account === undefined ? account : metadataResult.account;
+      let actualSummaryAccount = summaryAccount;
+      if (!isRequestCurrent()) {
+        return;
+      }
+
+      try {
+        const summary = await reviewerSummaryScheduler.run(() => {
+          if (!isRequestCurrent()) controller.abort();
+          const blocked = readQuotaBlock(rowGeneration, summaryAccount);
+          if (blocked) throw new QuotaBlockedSkip(blocked);
+          return fetchReviewerSummary({
+            account: summaryAccount,
+            owner: route.owner,
+            repo: route.repo,
+            pullNumber,
+            signal: controller.signal,
+            discoveryId: repositoryDiscovery.id,
+            onAccount: (actual) => {
+              account = actual;
+              actualSummaryAccount = actual;
+            },
+            ...(pullMetadata == null ? {} : { pullMetadata }),
+          });
+        }, controller.signal);
+        if (!isRequestCurrent()) {
+          return;
+        }
+        setCachedReviewerSummary(cacheKey, summary);
+        if (request.invalidated) markReviewerCacheStale(cacheKey);
+        request.succeeded = true;
+        if (!request.invalidated)
+          outcomes.settle(rowGeneration, pullNumber, request.owner, {
+            status: "success",
+          });
+      } catch (error) {
+        if (isAbortError(error) || !isRequestCurrent()) {
+          return;
+        }
+        if (error instanceof QuotaBlockedSkip) throw error;
+        const failureAccount =
+          error instanceof ReviewerFetchRuntimeError &&
+          error.account !== undefined
+            ? error.account
+            : actualSummaryAccount;
+        const failure: ReviewerFailure = { account: failureAccount, error };
+        const quotaReset = readPrimaryRateLimitReset(error);
+        if (quotaReset != null && rowGeneration === generation)
+          quotaBlock = {
+            generation: rowGeneration,
+            accountId: failureAccount?.id ?? null,
+            until: quotaReset,
+            failure,
+          };
+        settleFailure(failure);
+      }
+    } catch (error) {
+      if (isAbortError(error) || !isRequestCurrent()) {
+        return;
+      }
+      // A skipped row shares the failure that exhausted the quota, so the
+      // banner aggregates one failure identity for all of them.
+      settleFailure(
+        error instanceof QuotaBlockedSkip ? error.failure : { account, error },
+      );
+    } finally {
+      if (
+        requests.release(cacheKey, request) &&
+        request.succeeded &&
+        request.invalidated
+      )
+        void revalidateLiveConsumers(cacheKey, request);
+    }
+  }
+
+  // The old result remains stale. Revalidate once after its slot and per-PR
+  // request ownership are released, using current page metadata.
+  async function revalidateLiveConsumers(
+    cacheKey: CacheKey,
+    request: ReviewerRequest,
+  ): Promise<void> {
+    const liveRows = new Set(
+      requests
+        .liveConsumers(request)
+        .map((consumerMount) => consumerMount.closest(githubSelectors.row))
+        .filter((liveRow): liveRow is Element => liveRow != null),
+    );
+    let attempted = false;
+    for (const liveRow of liveRows) {
+      if (!liveRow.isConnected) continue;
+      // Another dirty follow-up may already own this PR. A failed attempt must
+      // not make duplicate consumers start a retry loop.
+      const entry = getReviewerCacheEntry(cacheKey);
+      if (
+        attempted &&
+        requests.get(cacheKey) == null &&
+        (entry == null || !isReviewerCacheEntryFresh(entry))
+      )
+        break;
+      attempted = true;
+      await processRow(liveRow);
+    }
   }
 
   // Several events can report one navigation. Only `applyRouteChange`
@@ -730,7 +684,7 @@ export function bootReviewerListPage(
 
   function clearReviewerMountWithoutCache(
     mount: HTMLElement,
-    cacheKey: ReturnType<typeof buildReviewerCacheKey>,
+    cacheKey: CacheKey,
   ): void {
     if (getReviewerCacheEntry(cacheKey) != null) {
       return;

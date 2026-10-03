@@ -36,7 +36,6 @@ export type BannerState = {
 export type BannerAggregator = {
   getState(): BannerState;
   subscribe(listener: (state: BannerState) => void): () => void;
-  reportFailure(kind: BannerKind, info?: BannerFailureInfo): void;
   reconcile(result: {
     generation: number;
     pending: boolean;
@@ -98,28 +97,6 @@ export function createBannerAggregator(options: {
       return () => {
         listeners.delete(listener);
       };
-    },
-    reportFailure(kind, info) {
-      if (kind === current) {
-        // Same kind already active: keep the first non-empty rate-limit
-        // snapshot we received and avoid emitting a no-op.
-        if (rateLimit == null && info?.rateLimit != null) {
-          rateLimit = info.rateLimit;
-          emit();
-        }
-        return;
-      }
-      if (!isHigherPriority(kind, current)) {
-        return;
-      }
-      current = kind;
-      // Only carry rate-limit info on rate-limit kinds; clear it for others.
-      rateLimit =
-        kind === "auth-rate-limit" || kind === "unauth-rate-limit"
-          ? info?.rateLimit
-          : undefined;
-      dismissed = readDismissed(options.pathname, current);
-      emit();
     },
     reconcile(result) {
       if (result.generation < generation) return;
