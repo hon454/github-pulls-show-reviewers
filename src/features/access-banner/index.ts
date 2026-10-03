@@ -7,10 +7,11 @@ import {
   readGitHubAppConfig,
 } from "../../config/github-app";
 import { parsePullListRoute } from "../../github/routes";
+import { githubSelectors } from "../../github/selectors";
 import type { OpenOptionsPageMessage } from "../../runtime/options-page";
 
 import { createBannerAggregator, type BannerAggregator } from "./aggregator";
-import { mountBanner, type BannerMount } from "./dom";
+import { mountBanner, type BannerAnchor, type BannerMount } from "./dom";
 
 export type AccessBannerHandle = BannerAggregator & {
   refreshMount(): void;
@@ -50,32 +51,39 @@ export function bootAccessBanner(
   }
 
   let mount: BannerMount | null = null;
-  let mountTarget: HTMLElement | null = null;
+  let mountAnchor: BannerAnchor | null = null;
 
-  function ensureMountTarget(): HTMLElement | null {
+  function findAnchor(): BannerAnchor | null {
+    for (const { selector, position } of githubSelectors.accessBannerAnchors) {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (element != null) return { element, position };
+    }
+    return null;
+  }
+
+  function isSameAnchor(next: BannerAnchor | null): boolean {
     return (
-      document.querySelector<HTMLElement>(".pr-toolbar") ??
-      document.querySelector<HTMLElement>(".subnav") ??
-      document.querySelector<HTMLElement>("main") ??
-      null
+      next?.element === mountAnchor?.element &&
+      next?.position === mountAnchor?.position
     );
   }
 
   const localeStore = getLocaleStore();
   const render = () => {
     const state = aggregator.getState();
-    const target = ensureMountTarget();
-    if (target !== mountTarget) {
+    const anchor = findAnchor();
+    if (!isSameAnchor(anchor)) {
       mount?.teardown();
       mount = null;
-      mountTarget = target;
+      mountAnchor = anchor;
     }
     if (mount == null) {
-      if (target == null) {
+      if (anchor == null) {
         return;
       }
       mount = mountBanner({
-        insertAfter: target,
+        anchor: anchor.element,
+        position: anchor.position,
         installUrl,
         optionsPageUrl,
         onOpenOptionsPage: openOptionsPage,
@@ -102,7 +110,7 @@ export function bootAccessBanner(
     ...aggregator,
     refreshMount() {
       if (
-        mountTarget !== ensureMountTarget() ||
+        !isSameAnchor(findAnchor()) ||
         (mount != null && !mount.isConnected())
       )
         render();

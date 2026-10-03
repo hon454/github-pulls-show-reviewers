@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>GitHub Pulls Fixture (Preview ListView container)</title>
+  </head>
+  <!--
+    Structure of the live Preview pull list as observed on 2026-10-03
+    (github.com/kubernetes/kubernetes/pulls, signed out). The list has no
+    .pr-toolbar or .subnav; its container holds a visually hidden title, the
+    Open/Closed metadata header and the items list. CSS-module hashes are
+    replaced with "fixture".
+  -->
+  <body>
+    <main id="js-repo-pjax-container">
+      <react-app>
+        <div class="tmp-my-3">
+          <div style="display: contents">
+            <div
+              id="_R_fixture_-list-view-container"
+              class="ListView-module__container__fixture SharedListContainer-module__listContainer__fixture"
+            >
+              <h2 class="sr-only" id="_R_fixture_-list-view-container-title">
+                Pull requests list
+              </h2>
+              <div
+                id="_R_fixture_-list-view-metadata"
+                class="Metadata-module__container__fixture"
+              >
+                Open 1 Closed 0
+              </div>
+              <ul role="list" data-listview-component="items-list">
+                <li class="PullsListItem-module__listItem__fixture">
+                  <div data-listview-item-title-container="true">
+                    <h3>
+                      <a
+                        data-testid="listitem-title-link"
+                        href="/hon454/github-pulls-show-reviewers/pull/42"
+                        >Add reviewer chips</a
+                      >
+                    </h3>
+                  </div>
+                  <div class="PullsListItem-module__description__fixture">
+                    #42 opened by hon454
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <nav aria-label="Pagination"></nav>
+        </div>
+      </react-app>
+    </main>
+    <footer>Footer</footer>
+  </body>
+</html>

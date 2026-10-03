@@ -469,6 +469,24 @@ are published together, avoiding a transient recovery during a mutation batch.
 Banner dismissal is keyed by `pathname + kind`, so dismissing one kind on a page
 does not suppress a later, higher-priority kind on the same page.
 
+The banner's mount anchors live in `githubSelectors.accessBannerAnchors` and
+are tried in order:
+
+1. after `.pr-toolbar`, then after `.subnav` (classic lists);
+2. directly above the Preview ListView container, found by its
+   `-list-view-container` id suffix and then by its `ListView-module__container`
+   class name. This places the banner between the search field and the
+   Open/Closed header, the same position the subnav anchor gives on classic
+   lists;
+3. directly above the bare `data-listview-component="items-list"` list when the
+   container cannot be identified;
+4. as the first child of `main`. The banner is never inserted after `</main>`,
+   which would render it below the whole page.
+
+Banner colors use Primer variables (`--bgColor-accent-muted`,
+`--fgColor-accent`) with the light-theme values as fallbacks, so the banner
+follows GitHub's active theme like the reviewer chips.
+
 For rate-limit kinds (`auth-rate-limit`, `unauth-rate-limit`), the GitHub
 response's `x-ratelimit-limit / -remaining / -reset / -resource` headers ride
 with the failure envelope (`ReviewerFetchFailure.rateLimit`) into the

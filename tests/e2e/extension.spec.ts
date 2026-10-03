@@ -617,6 +617,39 @@ test("renders unauth-rate-limit banner with Sign in CTA when an unauthenticated 
   });
 });
 
+test("renders the access banner above the Preview list instead of below the page", async () => {
+  await withExtensionContext(async (context) => {
+    const fixtureHtml = await readFile(
+      path.join(fixturesDir, "github-pulls-preview-list-container.html"),
+      "utf8",
+    );
+
+    await routeFixturePage(context, fixtureHtml);
+    await routePullListApi(context, []);
+    await routePullApiError(context, "42", 404);
+    await routeReviewsApiError(context, "42", 404);
+
+    const page = await context.newPage();
+    await page.goto(
+      "https://github.com/hon454/github-pulls-show-reviewers/pulls",
+    );
+
+    const banner = page.locator("[data-ghpsr-banner]");
+    await expect(banner).toContainText("Sign in");
+    const bannerBox = await banner.boundingBox();
+    const listBox = await page
+      .locator('[data-listview-component="items-list"]')
+      .boundingBox();
+    const footerBox = await page.locator("footer").boundingBox();
+    expect(bannerBox).not.toBeNull();
+    expect(bannerBox!.y + bannerBox!.height).toBeLessThanOrEqual(listBox!.y);
+    expect(bannerBox!.y).toBeLessThan(footerBox!.y);
+    await expect(
+      page.locator("main").locator("[data-ghpsr-banner]"),
+    ).toHaveCount(1);
+  });
+});
+
 test("renders app-uncovered banner with Configure access CTA when a signed-in row hits a 404", async () => {
   await withExtensionContext(async (context) => {
     const fixtureHtml = await readFile(
