@@ -349,6 +349,13 @@ uses the existing bounded revalidation path.
   one `GET /repos/{owner}/{repo}/pulls/{n}/reviews?per_page=100` request per
   uncached visible row, with additional review pages followed only when GitHub
   returns review pagination links.
+- GitHub writes pagination `Link` URLs as
+  `https://api.github.com/repositories/{id}/...` even when the request used
+  `/repos/{owner}/{repo}/...`. A link is followed only on the
+  `https://api.github.com` origin, without credentials or a fragment, and only
+  when its path is the request path or the repository-id form with the same
+  resource suffix. Within one collection, a later link that names a different
+  repository path ends pagination as truncated.
 - If a successful metadata batch does not cover an older visible pull within
   the three-page budget, that row falls back to the original per-row
   `pull + reviews` REST path. This fallback is intentional: it preserves
