@@ -32,6 +32,13 @@ following before it passes:
   asynchronous body reads before evaluating the page and retains only pull
   numbers, public reviewer/team identifiers, review/request states, comparison
   timestamps, endpoint status, and rate-limit quota.
+- Responses are attributed to the canary repository by the
+  `/repos/<owner>/<repo>/` path. GitHub names later pages as
+  `/repositories/<id>/`, so the observer learns that id from the `Link` header
+  of a response it already attributes, and only when every repository-id link
+  in the header names the same id and the same resource. A repository-id
+  response seen before that, or for another id, is ignored. The id is used for
+  matching and is not part of the retained evidence.
 - At most three pull requests with complete evidence are compared in detail.
   The sample must contain at least one actual reviewer chip and includes a
   verified empty result when one is available. Pull numbers, reviewers, and
@@ -49,16 +56,21 @@ non-comment review over a `COMMENTED` review for the same user. It handles
 
 For a user who is both in current requested-reviewer metadata and has a
 non-comment review, requested state is removed only when the observed request
-event history is complete, both comparison timestamps are valid, and the
-latest request is not later than the latest non-comment review. A directly
+event history is decisive for that user, both comparison timestamps are valid,
+and the latest request is not later than the latest non-comment review. History
+is decisive when every page was observed, or when the user has a request on an
+observed final page (one without a next link): the extension reads the first
+and the newest page of a long history and skips the pages between them, and a
+request on the newest page cannot be superseded by a skipped one. A directly
 observed later request is confirmed even when history is truncated or
 unavailable. Partial, unavailable, missing-event, or date-incomparable evidence
 otherwise keeps the reviewer requested but unverified; the requested search
 link remains and the refresh badge must be absent. Legacy or missing evidence
-is never promoted to confirmed.
+is never promoted to confirmed. A pull request is eligible for detailed
+comparison only when every such user's history is decisive.
 
 This policy mirrors the public evidence contract without sharing production
-mapping code. Its fixed complete, truncated, unavailable, author,
+mapping code. Its fixed complete, truncated, final-page, unavailable, author,
 non-comment-priority, and timestamp cases run in ordinary Vitest.
 
 ## Failure and unverifiable outcomes
@@ -86,9 +98,9 @@ host rows without matching response evidence is also unverifiable, not empty.
 
 `tests/live-github-canary.test.ts` covers the independent oracle and failure
 matrix without a browser. `tests/e2e/live-github-canary-fixture.spec.ts` runs
-positive rendered/empty, negative detail-failure, and native-link
-pagination/back/forward/filter navigation scenarios in the packaged extension
-suite. The surrounding controller fixture also holds eight FIFO rows across a
+positive rendered/empty, negative detail-failure, repository-id pagination, and
+native-link pagination/back/forward/filter navigation scenarios in the packaged
+extension suite. The surrounding controller fixture also holds eight FIFO rows across a
 same-repository navigation and proves that late results cannot render or
 populate the former generation's cache.
 

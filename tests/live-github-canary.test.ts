@@ -599,6 +599,211 @@ describe("live canary response observer", () => {
     );
   });
 
+  it("reads later review pages from the repository-id path named by the Link header", async () => {
+    const observer = createCanaryResponseObserver({ repository });
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+        Promise.resolve([approval("alice")]),
+        200,
+        {
+          link: `${pageLink("pulls/42/reviews", 2, "next")}, ${pageLink("pulls/42/reviews", 2, "last")}`,
+        },
+      ),
+    );
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repositories/123/pulls/42/reviews?per_page=100&page=2",
+        Promise.resolve([approval("bob")]),
+        200,
+        { link: pageLink("pulls/42/reviews", 1, "prev") },
+      ),
+    );
+    await observer.settle();
+
+    const snapshot = observer.snapshot();
+    expect(snapshot.targetApiResponseCount).toBe(2);
+    expect(snapshot.endpoints.map((item) => [item.kind, item.page])).toEqual([
+      ["reviews", 1],
+      ["reviews", 2],
+    ]);
+    expect(snapshot.pulls[0].reviews).toMatchObject({
+      completeness: "complete",
+      items: [{ login: "alice" }, { login: "bob" }],
+    });
+  });
+
+  it("reads later pull-list pages from the learned repository-id path", async () => {
+    const observer = createCanaryResponseObserver({ repository });
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/pulls?state=all&per_page=100",
+        Promise.resolve([pull(42)]),
+        200,
+        { link: pageLink("pulls", 2, "next") },
+      ),
+    );
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repositories/123/pulls?state=all&per_page=100&page=2",
+        Promise.resolve([pull(43)]),
+      ),
+    );
+    await observer.settle();
+
+    expect(
+      observer.snapshot().pulls.map((item) => item.metadata?.pullNumber),
+    ).toEqual(["42", "43"]);
+  });
+
+  it("ignores a repository-id response it cannot attribute to the canary repository", async () => {
+    const observer = createCanaryResponseObserver({ repository });
+    const laterPage = (id: number) =>
+      response(
+        `https://api.github.com/repositories/${id}/pulls/42/reviews?per_page=100&page=2`,
+        Promise.resolve([approval("mallory")]),
+      );
+
+    // No attributable response has named a repository id yet.
+    observer.observeResponse(laterPage(123));
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+        Promise.resolve([approval("alice")]),
+        200,
+        { link: pageLink("pulls/42/reviews", 2, "next") },
+      ),
+    );
+    observer.observeResponse(laterPage(999));
+    await observer.settle();
+
+    const snapshot = observer.snapshot();
+    expect(snapshot.targetApiResponseCount).toBe(1);
+    expect(snapshot.pulls[0].reviews).toMatchObject({
+      completeness: "truncated",
+      items: [{ login: "alice" }],
+    });
+  });
+
+  it.each([
+    [
+      "another resource",
+      '<https://api.github.com/repositories/123/pulls/7/reviews?page=2>; rel="next"',
+    ],
+    [
+      "another origin",
+      '<https://example.com/repositories/123/pulls/42/reviews?page=2>; rel="next"',
+    ],
+    [
+      "conflicting repository ids",
+      `${pageLink("pulls/42/reviews", 2, "next")}, <https://api.github.com/repositories/999/pulls/42/reviews?page=9>; rel="last"`,
+    ],
+  ])(
+    "does not learn a repository id from a Link naming %s",
+    async (_name, link) => {
+      const observer = createCanaryResponseObserver({ repository });
+      observer.observeResponse(
+        response(
+          "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+          Promise.resolve([approval("alice")]),
+          200,
+          { link },
+        ),
+      );
+      observer.observeResponse(
+        response(
+          "https://api.github.com/repositories/123/pulls/42/reviews?per_page=100&page=2",
+          Promise.resolve([approval("mallory")]),
+        ),
+      );
+      await observer.settle();
+
+      expect(observer.snapshot().targetApiResponseCount).toBe(1);
+      expect(observer.snapshot().pulls[0].reviews.items).toEqual([
+        expect.objectContaining({ login: "alice" }),
+      ]);
+    },
+  );
+
+  it("records which reviewers have a request on the final page of a skipped event history", async () => {
+    const observer = createCanaryResponseObserver({ repository });
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/issues/42/events?per_page=100",
+        Promise.resolve([requested("alice", "2026-08-01T00:00:00Z")]),
+        200,
+        {
+          link: `${pageLink("issues/42/events", 2, "next")}, ${pageLink("issues/42/events", 5, "last")}`,
+        },
+      ),
+    );
+    await observer.settle();
+    expect(observer.snapshot().pulls[0].reviewRequests.finalPageLogins).toEqual(
+      [],
+    );
+
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repositories/123/issues/42/events?per_page=100&page=5",
+        Promise.resolve([requested("bob", "2026-09-01T00:00:00Z")]),
+        200,
+        {
+          link: `${pageLink("issues/42/events", 4, "prev")}, ${pageLink("issues/42/events", 1, "first")}`,
+        },
+      ),
+    );
+    await observer.settle();
+
+    expect(observer.snapshot().pulls[0].reviewRequests).toMatchObject({
+      completeness: "truncated",
+      items: [{ login: "alice" }, { login: "bob" }],
+      finalPageLogins: ["bob"],
+    });
+  });
+
+  it("verifies a row whose reviews continue on a repository-id page", async () => {
+    const observer = createCanaryResponseObserver({ repository });
+    observer.observeRequest({
+      url: () => "https://api.github.com/repos/octo/repo/pulls?per_page=100",
+      headers: () => ({}),
+    });
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/pulls?per_page=100",
+        Promise.resolve([pull(42, ["alice"]), pull(43)]),
+      ),
+    );
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/pulls/42/reviews?per_page=100",
+        Promise.resolve([]),
+        200,
+        { link: pageLink("pulls/42/reviews", 2, "next") },
+      ),
+    );
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repositories/123/pulls/42/reviews?per_page=100&page=2",
+        Promise.resolve([approval("bob")]),
+      ),
+    );
+    observer.observeResponse(
+      response(
+        "https://api.github.com/repos/octo/repo/pulls/43/reviews?per_page=100",
+        Promise.resolve([]),
+      ),
+    );
+    await observer.settle();
+
+    expect(
+      evaluateLiveCanary({
+        repository,
+        dom: positiveDom(),
+        api: observer.snapshot(),
+      }),
+    ).toMatchObject({ ok: true, failures: [] });
+  });
+
   it.each([
     '<https://api.github.com/repos/octo/repo/pulls/42/reviews?page=2>; rel: "next"',
     '<https://api.github.com/repos/octo/repo/pulls/42/reviews?page=2>; rel=""',
@@ -750,6 +955,51 @@ describe("independent reviewer expectation oracle", () => {
       requestEvidence: "confirmed",
       ring: "requested",
       badge: "refresh",
+      qualifier: "review-requested:alice",
+    });
+  });
+
+  it("removes a stale requested entry whose latest request is on the final page of a skipped history", () => {
+    const outcome = deriveCanaryExpectedOutcome(
+      pullEvidence({
+        requestedUsers: ["Alice"],
+        reviews: [review("alice", "APPROVED", "2026-09-02T00:00:00Z", 0)],
+        eventCompleteness: "truncated",
+        events: [requestEvent("alice", "2026-09-01T00:00:00Z", 0)],
+        finalPageLogins: ["alice"],
+      }),
+      repository,
+    );
+
+    expect(outcome.completeForSampling).toBe(true);
+    expect(outcome.reviewers[0]).toMatchObject({
+      requestEvidence: null,
+      ring: "approved",
+      badge: "approved",
+      qualifier: "reviewed-by:alice",
+    });
+  });
+
+  it("keeps requested unverified when the final page holds no request for that reviewer", () => {
+    const outcome = deriveCanaryExpectedOutcome(
+      pullEvidence({
+        requestedUsers: ["alice"],
+        reviews: [review("alice", "APPROVED", "2026-09-02T00:00:00Z", 0)],
+        eventCompleteness: "truncated",
+        events: [
+          requestEvent("alice", "2026-09-01T00:00:00Z", 0),
+          requestEvent("bob", "2026-09-03T00:00:00Z", 1),
+        ],
+        finalPageLogins: ["bob"],
+      }),
+      repository,
+    );
+
+    expect(outcome.completeForSampling).toBe(false);
+    expect(outcome.reviewers[0]).toMatchObject({
+      requestEvidence: "unverified",
+      ring: "requested",
+      badge: null,
       qualifier: "review-requested:alice",
     });
   });
@@ -1205,6 +1455,36 @@ function requestEvent(login: string, createdAt: string, index: number) {
   return { login, createdAt, index };
 }
 
+/** A pagination link in the repository-id form GitHub actually returns. */
+function pageLink(resource: string, page: number, rel: string): string {
+  return `<https://api.github.com/repositories/123/${resource}?per_page=100&page=${page}>; rel="${rel}"`;
+}
+
+function approval(login: string) {
+  return {
+    state: "APPROVED",
+    submitted_at: "2026-09-01T00:00:00Z",
+    user: { login },
+  };
+}
+
+function requested(login: string, createdAt: string) {
+  return {
+    event: "review_requested",
+    created_at: createdAt,
+    requested_reviewer: { login },
+  };
+}
+
+function pull(number: number, requestedReviewers: string[] = []) {
+  return {
+    number,
+    user: { login: "author" },
+    requested_reviewers: requestedReviewers.map((login) => ({ login })),
+    requested_teams: [],
+  };
+}
+
 function pullEvidence(
   input: {
     requestedUsers?: string[];
@@ -1212,6 +1492,7 @@ function pullEvidence(
     reviews?: CanaryPullEvidence["reviews"]["items"];
     eventCompleteness?: CanaryPullEvidence["reviewRequests"]["completeness"];
     events?: CanaryPullEvidence["reviewRequests"]["items"];
+    finalPageLogins?: string[];
   } = {},
 ): CanaryPullEvidence {
   return {
@@ -1226,6 +1507,7 @@ function pullEvidence(
     reviewRequests: {
       completeness: input.eventCompleteness ?? "unavailable",
       items: input.events ?? [],
+      finalPageLogins: input.finalPageLogins ?? [],
     },
   };
 }
