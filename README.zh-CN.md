@@ -12,7 +12,7 @@
 
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.6 发布说明](./docs/releases/v1.18.6.md)（英文）：加强了仓库和发布运维，新增依赖项漏洞监控、服务器端发布规则，并将工作流 Action 固定到提交 SHA，同时更新了 React 和 Zod 运行时依赖项。扩展程序的行为没有变化。
+[v1.18.7 发布说明](./docs/releases/v1.18.7.md)（英文）：从 GitHub 的任意页面通过页面内导航进入 PR 列表时，审阅者都能稳定显示。修正了审阅或事件记录较长的拉取请求的审阅状态，在 GitHub 的 Preview 布局中将访问提示横幅显示在列表上方，并减少了空闲 GitHub 标签页的后台活动。
 
 ## 主要功能
 

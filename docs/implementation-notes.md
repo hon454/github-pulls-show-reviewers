@@ -13,6 +13,12 @@ The [v1.18.6 release notes](./releases/v1.18.6.md) cover repository and
 release hardening. Reviewer behavior, permissions, storage and authentication
 are unchanged; the packaged React and Zod runtime dependencies are updated.
 
+The [v1.18.7 release notes](./releases/v1.18.7.md) cover reviewer runtime
+reliability: content-script injection on every `github.com` page, navigation
+refresh ordering, service-worker wake cycling, access-banner placement,
+pagination and re-request evidence, and metadata-batch tolerance. Permissions,
+storage and authentication are unchanged.
+
 ## Development toolchain
 
 WXT `0.21.4` uses the explicit Vite `8.2.2` peer and requires Node.js 22.12+

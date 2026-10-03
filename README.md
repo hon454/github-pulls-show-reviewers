@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.6 release notes](./docs/releases/v1.18.6.md) (English): harden repository and release operations with dependency vulnerability monitoring, server-side release rules and workflow actions pinned to commit SHAs, and update the React and Zod runtime dependencies. Extension behavior is unchanged.
+[v1.18.7 release notes](./docs/releases/v1.18.7.md) (English): show reviewers reliably after in-page navigation from any GitHub page, correct review states on pull requests with long review or event histories, place the access banner above the list on GitHub's Preview layout, and reduce background activity in idle GitHub tabs.
 
 ## What It Does
 
