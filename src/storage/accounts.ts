@@ -252,7 +252,7 @@ async function migrateAccounts(
 }
 
 // A worker restart always scans once, including records orphaned before this
-// cleanup existed. Index-changing commits request another scan so a failed
+// cleanup existed. A failed owner operation requests another scan so a failed
 // fragment deletion is retried before the next account mutation.
 let accountRecordCleanupPending = true;
 
@@ -275,12 +275,70 @@ async function cleanupOrphanedAccountRecords(
   accountRecordCleanupPending = false;
 }
 
+/** Revision of an account whose stored record this release cannot parse. */
+const QUARANTINED_GENERATION = "quarantined";
+
+/**
+ * Read-only projection of a registered account whose fragments fail to parse,
+ * for example after rolling back to a release that predates a schema or enum
+ * addition. The stored fragments stay untouched so a later release that can
+ * parse them restores the account; until then the account is presented as
+ * needing sign-in and never exposes or reuses its stored credentials.
+ */
+function quarantinedAccount(
+  accountId: string,
+  input: { profile: unknown; installations: unknown },
+): Account {
+  const profile =
+    input.profile != null && typeof input.profile === "object"
+      ? (input.profile as Record<string, unknown>)
+      : {};
+  const avatarUrl = accountProfileSchema.shape.avatarUrl.safeParse(
+    profile.avatarUrl,
+  );
+  const installations = accountInstallationsSchema.safeParse(
+    input.installations,
+  );
+  return {
+    id: accountId,
+    login:
+      typeof profile.login === "string" && profile.login.length > 0
+        ? profile.login
+        : accountId,
+    avatarUrl: avatarUrl.success ? avatarUrl.data : null,
+    createdAt:
+      typeof profile.createdAt === "number" &&
+      Number.isFinite(profile.createdAt)
+        ? profile.createdAt
+        : 0,
+    token: "",
+    credentialGeneration: QUARANTINED_GENERATION,
+    invalidated: true,
+    invalidatedReason: "unknown",
+    refreshToken: null,
+    expiresAt: null,
+    refreshTokenExpiresAt: null,
+    installations: installations.success
+      ? installations.data.installations
+      : [],
+    installationsRefreshedAt: installations.success
+      ? installations.data.installationsRefreshedAt
+      : 0,
+  };
+}
+
+/**
+ * Registered IDs fall into three groups. Parseable accounts are `validIds`.
+ * Unparseable records stay registered (quarantined) and are listed as
+ * invalidated. Only IDs with no stored fragment at all leave `retainedIds`.
+ */
 async function loadAccountsByIds(accountIds: string[]): Promise<{
   accounts: Account[];
   validIds: string[];
+  retainedIds: string[];
 }> {
   if (accountIds.length === 0) {
-    return { accounts: [], validIds: [] };
+    return { accounts: [], validIds: [], retainedIds: [] };
   }
 
   const result = await browser.storage.local.get(
@@ -289,20 +347,27 @@ async function loadAccountsByIds(accountIds: string[]): Promise<{
 
   const accounts: Account[] = [];
   const validIds: string[] = [];
+  const retainedIds: string[] = [];
   for (const accountId of new Set(accountIds)) {
-    const account = composeAccount({
+    const fragments = {
       profile: result[accountProfileKey(accountId)],
       auth: result[accountAuthKey(accountId)],
       installations: result[accountInstallationsKey(accountId)],
-    });
+    };
+    if (Object.values(fragments).every((fragment) => fragment === undefined)) {
+      continue;
+    }
+    const account = composeAccount(fragments);
+    retainedIds.push(accountId);
     if (account == null || account.id !== accountId) {
+      accounts.push(quarantinedAccount(accountId, fragments));
       continue;
     }
     accounts.push(account);
     validIds.push(accountId);
   }
 
-  return { accounts, validIds };
+  return { accounts, validIds, retainedIds };
 }
 
 // Queries are read-only in every extension context. Only the background commit
@@ -310,6 +375,8 @@ async function loadAccountsByIds(accountIds: string[]): Promise<{
 async function readRegistry(): Promise<{
   settings: ExtensionSettings;
   legacyAccounts?: Account[];
+  /** A stored index this release cannot parse, e.g. after a rollback. */
+  unrecognized?: true;
 }> {
   const result = await browser.storage.local.get(SETTINGS_KEY);
   const raw = result[SETTINGS_KEY];
@@ -338,7 +405,21 @@ async function readRegistry(): Promise<{
       legacyAccounts: accounts,
     };
   }
-  return { settings: EMPTY_SETTINGS };
+  return raw === undefined
+    ? { settings: EMPTY_SETTINGS }
+    : { settings: EMPTY_SETTINGS, unrecognized: true };
+}
+
+/** IDs that still have at least one stored account fragment. */
+async function storedAccountIds(): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const key of Object.keys(await browser.storage.local.get(null))) {
+    const prefix = ACCOUNT_RECORD_KEY_PREFIXES.find((candidate) =>
+      key.startsWith(candidate),
+    );
+    if (prefix != null) ids.add(key.slice(prefix.length));
+  }
+  return [...ids];
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {
@@ -371,6 +452,16 @@ async function initializeAccountsUnlocked(): Promise<void> {
   const registry = await readRegistry();
   let settings = registry.settings;
   const { legacyAccounts } = registry;
+  if (registry.unrecognized) {
+    // Treating an unreadable index as empty would delete every account's
+    // fragments as orphans. Rebuild the index from the stored records instead;
+    // unparseable ones are then quarantined like any other.
+    settings = { version: 4, accountIds: await storedAccountIds() };
+    console.warn(
+      "[accounts] stored account index could not be parsed; rebuilt it from stored account records.",
+    );
+    await writeSettings(settings);
+  }
   if (legacyAccounts) {
     settings = await migrateAccounts(
       legacyAccounts.map((account) => ({
@@ -379,8 +470,18 @@ async function initializeAccountsUnlocked(): Promise<void> {
       })),
     );
   }
-  const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
-  const migrations = accounts.filter((a) => a.credentialGeneration == null);
+  const { accounts, validIds, retainedIds } = await loadAccountsByIds(
+    settings.accountIds,
+  );
+  const quarantinedIds = retainedIds.filter((id) => !validIds.includes(id));
+  if (quarantinedIds.length > 0) {
+    console.warn(
+      `[accounts] ${quarantinedIds.length} stored account record(s) could not be parsed; kept unchanged and shown as needing sign-in.`,
+    );
+  }
+  const migrations = accounts.filter(
+    (a) => validIds.includes(a.id) && a.credentialGeneration == null,
+  );
   if (migrations.length > 0) {
     const keys = migrations.map((a) => accountAuthKey(a.id));
     const records = await browser.storage.local.get(keys);
@@ -401,29 +502,44 @@ async function initializeAccountsUnlocked(): Promise<void> {
       ),
     );
   }
-  if (validIds.length !== settings.accountIds.length) {
-    accountRecordCleanupPending = true;
-    await writeSettings({ version: 4, accountIds: validIds });
-    const removedIds = settings.accountIds.filter(
-      (id) => !validIds.includes(id),
-    );
-    if (removedIds.length > 0) {
-      await browser.storage.local.remove(
-        removedIds.flatMap(accountStorageKeys),
-      );
-    }
+  // Only IDs without any stored fragment leave the index; there is nothing
+  // left to delete for them. Unparseable records stay registered.
+  if (retainedIds.length !== settings.accountIds.length) {
+    await writeSettings({ version: 4, accountIds: retainedIds });
   }
-  await cleanupOrphanedAccountRecords(validIds);
+  await cleanupOrphanedAccountRecords(retainedIds);
 }
+
+// Initialization and repair run once per worker activation. Any failed owner
+// operation (a failed write or cleanup) clears this so the next commit
+// re-verifies the registry and rescans for orphaned fragments.
+let registryVerified = false;
 
 // Background-only commit boundary. Never hold it across HTTP. All callers use
 // this one queue, including initialization, identity resolution and auth CAS.
 // There is no account-lock acquisition inside a commit (one lock ordering).
 let commitTail: Promise<unknown> = Promise.resolve();
-function commit<T>(operation: () => Promise<T>): Promise<T> {
+function commit<T>(
+  operation: () => Promise<T>,
+  options: { reverify?: boolean } = {},
+): Promise<T> {
   const result = commitTail.then(async () => {
-    await initializeAccountsUnlocked();
-    return operation();
+    try {
+      if (
+        options.reverify === true ||
+        !registryVerified ||
+        accountRecordCleanupPending
+      ) {
+        registryVerified = false;
+        await initializeAccountsUnlocked();
+        registryVerified = true;
+      }
+      return await operation();
+    } catch (error) {
+      registryVerified = false;
+      accountRecordCleanupPending = true;
+      throw error;
+    }
   });
   commitTail = result.catch(() => undefined);
   return result;
@@ -504,7 +620,6 @@ async function upsertAccountByLoginUnlocked(input: {
           };
 
     // Preserve the retained account's position in the accountIds ordering.
-    if (duplicateIds.length > 0) accountRecordCleanupPending = true;
     await writeAccounts(nextSettings, [updated]);
     if (duplicateIds.length > 0) {
       await browser.storage.local.remove(
@@ -544,20 +659,25 @@ async function findAccountsByLogin(login: string): Promise<{
   matches: Account[];
 }> {
   let settings = await getSettings();
-  const { accounts, validIds } = await loadAccountsByIds(settings.accountIds);
-  if (validIds.length !== settings.accountIds.length) {
-    settings = { version: 4, accountIds: validIds };
-    accountRecordCleanupPending = true;
+  const { accounts, validIds, retainedIds } = await loadAccountsByIds(
+    settings.accountIds,
+  );
+  if (retainedIds.length !== settings.accountIds.length) {
+    settings = { version: 4, accountIds: retainedIds };
     await writeSettings(settings);
-    await cleanupOrphanedAccountRecords(validIds);
   }
 
   const normalized = login.toLowerCase();
+  // Prefer readable records over quarantined ones, then the earliest.
+  const unreadable = (account: Account) =>
+    validIds.includes(account.id) ? 0 : 1;
   return {
     settings,
     matches: accounts
       .filter((account) => account.login.toLowerCase() === normalized)
-      .sort((a, b) => a.createdAt - b.createdAt),
+      .sort(
+        (a, b) => unreadable(a) - unreadable(b) || a.createdAt - b.createdAt,
+      ),
   };
 }
 
@@ -567,7 +687,6 @@ async function removeAccountUnlocked(id: string): Promise<void> {
     version: 4,
     accountIds: settings.accountIds.filter((accountId) => accountId !== id),
   };
-  accountRecordCleanupPending = true;
   await writeSettings(next);
   await browser.storage.local.remove(accountStorageKeys(id));
 }
@@ -697,7 +816,8 @@ export const updateAccountTokens = (
 ): Promise<void> => commit(() => updateAccountTokensUnlocked(id, tokens));
 
 export const accountMutations = {
-  initialize: (): Promise<void> => commit(async () => {}),
+  /** Once per worker activation; always re-verifies the registry. */
+  initialize: (): Promise<void> => commit(async () => {}, { reverify: true }),
   listAccounts: (): Promise<Account[]> => commit(listAccounts),
   getAccountById: (id: string): Promise<Account | null> =>
     commit(() => getAccountById(id)),

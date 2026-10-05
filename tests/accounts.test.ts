@@ -629,7 +629,7 @@ describe("resolveAccountForRepo", () => {
     expect("repoFullNames" in account.installations[0]).toBe(false);
   });
 
-  it("rejects malformed canonical selected snapshots instead of treating them as legacy", async () => {
+  it("quarantines malformed canonical selected snapshots instead of treating them as legacy", async () => {
     await seedAccounts([
       makeAccount({
         installations: [
@@ -646,7 +646,13 @@ describe("resolveAccountForRepo", () => {
       }),
     ]);
     const { listAccounts } = await import("../src/storage/accounts");
-    await expect(listAccounts()).resolves.toEqual([]);
+    await expect(listAccounts()).resolves.toEqual([
+      expect.objectContaining({
+        invalidated: true,
+        token: "",
+        installations: [],
+      }),
+    ]);
   });
 
   it("reports maybe-covered-truncated for selected snapshots that ended before all repos were loaded", async () => {

@@ -51,6 +51,12 @@ service worker before invalidating an account.
   Conditional auth commits recheck revision and registry membership inside this
   queue. GitHub HTTP runs outside it, so another account can progress while one
   refresh is stalled. This boundary is reused by later account-boundary work.
+- Amendment (2026-10-05, #248): repair never deletes stored credentials it
+  cannot parse. An unreadable account record is kept unchanged and read as an
+  invalidated account with no credentials until the user signs in again or
+  removes it, and an unreadable index is rebuilt from the stored records. The
+  owner initializes once per worker activation and re-verifies after any failed
+  owner operation.
 
 Refresh outcomes are classified into two kinds:
 

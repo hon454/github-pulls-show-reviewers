@@ -565,10 +565,11 @@ describe("generation-aware refresh coordinator with real storage and HTTP parsin
         }),
       );
       let fragmentReads = 0;
-      // Initialization reads fragments first; hold the subsequent decision
-      // snapshot after storage captured it, then queue a real options commit.
+      // Initialization already ran during sign-in, so the first fragment read
+      // is the decision snapshot. Hold it after storage captured it, then
+      // queue a real options commit.
       const barrier = storage.pauseGet(
-        (keys) => Array.isArray(keys) && ++fragmentReads === 2,
+        (keys) => Array.isArray(keys) && ++fragmentReads === 1,
       );
       const recovery =
         kind === "expired"
