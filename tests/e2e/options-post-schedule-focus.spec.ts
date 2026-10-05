@@ -87,7 +87,9 @@ test("does not restore focus after external pointer intent precedes the pending 
         });
       } else if (endpoint === "/user") {
         await userResponse;
-        await route.fulfill({ json: { login: "octocat", avatar_url: null } });
+        await route.fulfill({
+          json: { id: 1, login: "octocat", avatar_url: null },
+        });
       } else if (endpoint === "/user/installations") {
         await route.fulfill({ json: { total_count: 0, installations: [] } });
       } else {

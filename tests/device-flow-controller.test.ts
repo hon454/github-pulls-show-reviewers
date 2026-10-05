@@ -98,6 +98,7 @@ describe("useDeviceFlowController", () => {
     (
       auth.fetchAuthenticatedUser as unknown as ReturnType<typeof vi.fn>
     ).mockResolvedValue({
+      userId: 1,
       login: "hon454",
       avatarUrl: null,
     });
@@ -439,9 +440,11 @@ describe("attempt ownership with transports that ignore abort", () => {
     vi.mocked(auth.pollForAccessToken)
       .mockReset()
       .mockResolvedValue(successfulPoll);
-    vi.mocked(auth.fetchAuthenticatedUser)
-      .mockReset()
-      .mockResolvedValue({ login: "canceled-user", avatarUrl: null });
+    vi.mocked(auth.fetchAuthenticatedUser).mockReset().mockResolvedValue({
+      userId: 1,
+      login: "canceled-user",
+      avatarUrl: null,
+    });
     vi.mocked(auth.fetchUserInstallations)
       .mockReset()
       .mockResolvedValue({ items: [selectedInstallation], truncated: false });
@@ -577,7 +580,7 @@ describe("attempt ownership with transports that ignore abort", () => {
                 {
                   initiation: attemptInit("old"),
                   poll: successfulPoll,
-                  user: { login: "canceled-user", avatarUrl: null },
+                  user: { userId: 1, login: "canceled-user", avatarUrl: null },
                   installations: {
                     items: [selectedInstallation],
                     truncated: false,

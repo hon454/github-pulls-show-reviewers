@@ -264,6 +264,7 @@ describe("accounts storage", () => {
     });
 
     const result = await upsertAccountByLogin({
+      userId: 1,
       login: "hon454",
       avatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
       token: "ghu_new",
@@ -317,6 +318,7 @@ describe("accounts storage", () => {
     });
 
     const result = await upsertAccountByLogin({
+      userId: 1,
       login: "hon454",
       avatarUrl: null,
       token: "ghu_new",
@@ -357,6 +359,7 @@ describe("accounts storage", () => {
     });
 
     const result = await upsertAccountByLogin({
+      userId: 1,
       login: "another-user",
       avatarUrl: null,
       token: "ghu_new",
@@ -412,6 +415,7 @@ describe("accounts storage", () => {
     });
 
     const result = await upsertAccountByLogin({
+      userId: 1,
       login: "hon454",
       avatarUrl: null,
       token: "ghu_new",

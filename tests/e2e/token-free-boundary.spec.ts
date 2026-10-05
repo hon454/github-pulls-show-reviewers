@@ -302,7 +302,9 @@ test("packaged sign-in, diagnostics, refresh and two-tab settings cross only a t
           },
         });
       if (url.pathname === "/user")
-        return route.fulfill({ json: { login: "octocat", avatar_url: null } });
+        return route.fulfill({
+          json: { id: 1, login: "octocat", avatar_url: null },
+        });
       if (url.pathname === "/user/installations")
         return route.fulfill({
           json: { total_count: 1, installations: [installation()] },
@@ -463,7 +465,9 @@ test("restarts the actual MV3 worker between polling ticks while retaining flow 
         });
       }
       if (url.pathname === "/user")
-        return route.fulfill({ json: { login: "restored", avatar_url: null } });
+        return route.fulfill({
+          json: { id: 1, login: "restored", avatar_url: null },
+        });
       if (url.pathname === "/user/installations")
         return route.fulfill({ json: { total_count: 0, installations: [] } });
       return route.abort();

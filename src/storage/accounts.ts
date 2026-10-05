@@ -77,8 +77,14 @@ export const installationSchema = z.union([
   legacySelectedInstallationSchema,
 ]);
 
+const githubUserIdSchema = z.number().int().positive();
+
 const accountProfileSchema = z.object({
   id: z.string(),
+  // Stable GitHub identity. Optional only for records written before it was
+  // stored; those are backfilled from the next /user response.
+  userId: githubUserIdSchema.optional(),
+  // Display field. GitHub logins can change after a rename.
   login: z.string(),
   avatarUrl: z.string().url().nullable(),
   createdAt: z.number(),
@@ -175,6 +181,7 @@ function decomposeAccount(account: Account) {
   return {
     profile: {
       id: account.id,
+      ...(account.userId != null ? { userId: account.userId } : {}),
       login: account.login,
       avatarUrl: account.avatarUrl,
       createdAt: account.createdAt,
@@ -296,11 +303,13 @@ function quarantinedAccount(
   const avatarUrl = accountProfileSchema.shape.avatarUrl.safeParse(
     profile.avatarUrl,
   );
+  const userId = githubUserIdSchema.safeParse(profile.userId);
   const installations = accountInstallationsSchema.safeParse(
     input.installations,
   );
   return {
     id: accountId,
+    ...(userId.success ? { userId: userId.data } : {}),
     login:
       typeof profile.login === "string" && profile.login.length > 0
         ? profile.login
@@ -560,21 +569,26 @@ async function addAccountUnlocked(account: Account): Promise<void> {
 }
 
 /**
- * Upsert an account by GitHub login (case-insensitive).
+ * Upsert an account by its numeric GitHub user id.
  *
- * If an account with the same login already exists, reuse its id and
- * createdAt but swap in the freshly obtained auth (token, refreshToken,
- * expiresAt, refreshTokenExpiresAt) and installations snapshot. The
- * invalidated flag is cleared so the account becomes active again. If
- * duplicate records already exist for the login, preserve the earliest
- * matching record and drop the extras.
+ * A record matches when it stores the same user id, or when it predates the
+ * stored id and has the same login (case-insensitive). Login is only a display
+ * field: a renamed user updates the existing record instead of creating a
+ * second one, and a different user who reuses a login gets a separate record.
  *
- * If no account matches the login, append as a new account.
+ * A match keeps its id and createdAt but swaps in the freshly obtained auth
+ * (token, refreshToken, expiresAt, refreshTokenExpiresAt), installations and
+ * profile, and stores the user id. The invalidated flag is cleared so the
+ * account becomes active again. If several records match, preserve the
+ * earliest one and drop the extras.
+ *
+ * If no account matches, append as a new account.
  *
  * Returns the resulting Account (either the updated existing one or the
  * newly appended one).
  */
 async function upsertAccountByLoginUnlocked(input: {
+  userId: number;
   login: string;
   avatarUrl: string | null;
   token: string;
@@ -586,14 +600,15 @@ async function upsertAccountByLoginUnlocked(input: {
   now: number;
   connectionAttemptId?: string;
 }): Promise<Account> {
-  const { settings, matches } = await findAccountsByLogin(input.login);
+  const { settings, matches } = await findAccountsByIdentity(input);
   const existing = matches[0] ?? null;
 
   if (existing != null) {
     const updated: Account = {
       ...existing,
-      // Keep id + createdAt. Refresh the login casing from the fresh
-      // GitHub profile so subsequent lookups match what GitHub returns.
+      // Keep id + createdAt. Refresh the login from the fresh GitHub profile;
+      // it may differ in casing or after a rename.
+      userId: input.userId,
       login: input.login,
       avatarUrl: input.avatarUrl,
       token: input.token,
@@ -633,6 +648,7 @@ async function upsertAccountByLoginUnlocked(input: {
     id: settings.accountIds.includes(input.newAccountId)
       ? crypto.randomUUID()
       : input.newAccountId,
+    userId: input.userId,
     login: input.login,
     avatarUrl: input.avatarUrl,
     createdAt: input.now,
@@ -654,8 +670,12 @@ async function upsertAccountByLoginUnlocked(input: {
   return account;
 }
 
-async function findAccountsByLogin(login: string): Promise<{
+async function findAccountsByIdentity(identity: {
+  userId: number;
+  login: string;
+}): Promise<{
   settings: ExtensionSettings;
+  accounts: Account[];
   matches: Account[];
 }> {
   let settings = await getSettings();
@@ -667,14 +687,19 @@ async function findAccountsByLogin(login: string): Promise<{
     await writeSettings(settings);
   }
 
-  const normalized = login.toLowerCase();
+  const normalized = identity.login.toLowerCase();
   // Prefer readable records over quarantined ones, then the earliest.
   const unreadable = (account: Account) =>
     validIds.includes(account.id) ? 0 : 1;
   return {
     settings,
+    accounts,
     matches: accounts
-      .filter((account) => account.login.toLowerCase() === normalized)
+      .filter((account) =>
+        account.userId != null
+          ? account.userId === identity.userId
+          : account.login.toLowerCase() === normalized,
+      )
       .sort(
         (a, b) => unreadable(a) - unreadable(b) || a.createdAt - b.createdAt,
       ),
@@ -689,6 +714,63 @@ async function removeAccountUnlocked(id: string): Promise<void> {
   };
   await writeSettings(next);
   await browser.storage.local.remove(accountStorageKeys(id));
+}
+
+export type AccountUserIdentity = {
+  userId: number;
+  login: string;
+  avatarUrl: string | null;
+};
+
+/**
+ * Store the user id from a later /user response on a record that predates it.
+ * Only the revision that made the request may commit, and an id already stored
+ * is never replaced. If another record already holds the id (the user renamed
+ * and signed in again before this backfill), the two are one GitHub user: the
+ * record with valid credentials is kept and the other one is dropped.
+ */
+async function backfillUserIdUnlocked(
+  accountId: string,
+  expectedGeneration: string,
+  user: AccountUserIdentity,
+): Promise<"committed" | "merged" | "skipped"> {
+  const { settings, accounts } = await findAccountsByIdentity(user);
+  const current = accounts.find((account) => account.id === accountId);
+  if (
+    current == null ||
+    current.invalidated ||
+    current.userId != null ||
+    credentialGeneration(current) !== expectedGeneration
+  )
+    return "skipped";
+
+  const holder = accounts.find(
+    (account) => account.id !== accountId && account.userId === user.userId,
+  );
+  const dropId = holder != null && !holder.invalidated ? accountId : holder?.id;
+  if (dropId != null) {
+    await writeSettings({
+      version: 4,
+      accountIds: settings.accountIds.filter((id) => id !== dropId),
+    });
+    await browser.storage.local.remove(accountStorageKeys(dropId));
+    if (dropId === accountId) return "merged";
+  }
+
+  const key = accountProfileKey(accountId);
+  const profile = accountProfileSchema.safeParse(
+    (await browser.storage.local.get(key))[key],
+  );
+  if (!profile.success) return "skipped";
+  await browser.storage.local.set({
+    [key]: {
+      ...profile.data,
+      userId: user.userId,
+      login: user.login,
+      avatarUrl: user.avatarUrl,
+    },
+  });
+  return "committed";
 }
 
 async function replaceInstallationsUnlocked(
@@ -824,6 +906,12 @@ export const accountMutations = {
   upsertAccountByLogin,
   removeAccount,
   replaceInstallations,
+  backfillUserId: (
+    id: string,
+    expectedGeneration: string,
+    user: AccountUserIdentity,
+  ): Promise<"committed" | "merged" | "skipped"> =>
+    commit(() => backfillUserIdUnlocked(id, expectedGeneration, user)),
   /** Return the current record, including when an obsolete commit is skipped. */
   commitAuth: (
     id: string,

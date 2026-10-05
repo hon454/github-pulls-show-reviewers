@@ -20,6 +20,7 @@ const {
   refreshAccountInstallationsMock,
   createInstallationRefreshServiceMock,
   getGitHubAppConfigMock,
+  backfillMissingUserIdsMock,
 } = vi.hoisted(() => ({
   refreshAccountTokenMock: vi.fn(),
   fetchPullReviewerSummaryMock: vi.fn(),
@@ -31,6 +32,7 @@ const {
   refreshAccountInstallationsMock: vi.fn(),
   createInstallationRefreshServiceMock: vi.fn(),
   getGitHubAppConfigMock: vi.fn(() => ({ clientId: "test-client-id" })),
+  backfillMissingUserIdsMock: vi.fn(async () => undefined),
 }));
 createRefreshCoordinatorMock.mockImplementation(() => ({
   refreshAccountToken: refreshAccountTokenMock,
@@ -91,6 +93,11 @@ vi.mock("../src/background/installation-refresh", () => ({
   createInstallationRefreshService: createInstallationRefreshServiceMock,
 }));
 
+vi.mock("../src/background/account-identity", () => ({
+  createAccountIdentityBackfill: () => ({
+    backfillMissingUserIds: backfillMissingUserIdsMock,
+  }),
+}));
 vi.mock("../src/config/github-app", () => ({
   getGitHubAppConfig: getGitHubAppConfigMock,
 }));
@@ -180,6 +187,7 @@ beforeEach(() => {
   createInstallationRefreshServiceMock.mockClear();
   getGitHubAppConfigMock.mockClear();
   alarmsCreateMock.mockClear();
+  backfillMissingUserIdsMock.mockClear();
   openOptionsPageMock.mockClear();
   capturedMessageListener = null;
   capturedAlarmListener = null;
@@ -984,6 +992,21 @@ describe("background proactive refresh wiring", () => {
 
     expect(listAccountsMock).not.toHaveBeenCalled();
     expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+    expect(backfillMissingUserIdsMock).not.toHaveBeenCalled();
+  });
+
+  it("backfills missing user ids after the proactive refresh pass", async () => {
+    listAccountsMock.mockResolvedValue([]);
+    await bootBackground();
+    if (capturedAlarmListener == null) {
+      throw new Error("background did not register an alarms.onAlarm listener");
+    }
+
+    capturedAlarmListener({ name: PROACTIVE_REFRESH_ALARM_NAME });
+    await vi.waitFor(() =>
+      expect(backfillMissingUserIdsMock).toHaveBeenCalledOnce(),
+    );
+    expect(listAccountsMock).toHaveBeenCalled();
   });
 
   it("invalidates accounts whose refresh token has already expired", async () => {

@@ -287,6 +287,7 @@ describe("fetchAuthenticatedUser", () => {
       jsonResponse(fixture("user.json")),
     );
     const user = await fetchAuthenticatedUser({ token: "ghu_abc" });
+    expect(user.userId).toBe(123);
     expect(user.login).toBe("hon454");
     expect(user.avatarUrl).toBe(
       "https://avatars.githubusercontent.com/u/123?v=4",
@@ -549,6 +550,15 @@ describe("auth schema diagnostics", () => {
   it("throws GitHubAuthSchemaError when /user payload is malformed", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       jsonResponse({ unexpected: true }),
+    );
+    await expect(
+      fetchAuthenticatedUser({ token: "ghu_abc" }),
+    ).rejects.toBeInstanceOf(GitHubAuthSchemaError);
+  });
+
+  it("throws GitHubAuthSchemaError when /user omits the numeric user id", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      jsonResponse({ login: "hon454", avatar_url: null }),
     );
     await expect(
       fetchAuthenticatedUser({ token: "ghu_abc" }),

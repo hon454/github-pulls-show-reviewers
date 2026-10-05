@@ -31,11 +31,20 @@ export async function settlesWithoutTimers(
   return settled;
 }
 
+/** Stable fixture GitHub user id: one per case-insensitive login. */
+export function fixtureUserId(login: string): number {
+  let hash = 0;
+  for (const character of login.toLowerCase())
+    hash = (hash * 31 + character.charCodeAt(0)) % 1_000_000_007;
+  return hash + 1;
+}
+
 export function connectInput(
   overrides: Partial<AccountConnectInput> = {},
 ): AccountConnectInput {
   return {
     login: "octocat",
+    userId: fixtureUserId(overrides.login ?? "octocat"),
     avatarUrl: null,
     token: "fixture-access-0",
     refreshToken: "fixture-refresh-0",
