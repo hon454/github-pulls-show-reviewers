@@ -729,7 +729,10 @@ event after the reset time; nothing is retried automatically.
 - Account installation-list pagination is stricter: if the account-level
   `/user/installations` list hits the local page ceiling while a `next` link
   still exists, the refresh fails without replacing the previous installation
-  snapshot because omitted installations cannot be tied to an owner.
+  snapshot because omitted installations cannot be tied to an owner. Sign-in is
+  the exception: it stores the installations loaded before the ceiling, so an
+  account with more installations than that can still connect. Owners beyond
+  the ceiling then resolve as uncovered.
 - `createSelfHealingAccountResolver` (`src/background/account-resolution.ts`)
   wraps resolution: a complete cached selected-installation miss checks stored
   same-owner candidates, requests the background installation service and reruns
@@ -853,6 +856,18 @@ it is not a live private-repository permission check.
   UI receives only user codes, verified links, interval/deadline and stable
   progress/error codes. The OAuth device code and access/refresh tokens stay
   in background. The existing Device Flow grant and permission scope are unchanged.
+- After the code exchange the issued tokens are already live at GitHub, so one
+  transient failure must not end the sign-in. `GET /user` and the installation
+  load each get up to three attempts, one and three seconds apart, for network
+  errors, 5xx, 429 and 403 secondary rate limits. Other failures, including a
+  401 or a schema mismatch, are not retried. Retries run outside the flow queue
+  and stop as soon as the attempt is cancelled, expired or superseded. If
+  `/user` still fails the attempt ends as before. Once `/user` succeeds the
+  account is committed even when its installations could not be loaded: a new
+  account starts with none, a reconnected account keeps its stored ones, and the
+  installation-refresh service then loads them outside the flow queue with its
+  own 401 recovery and generation-checked commit. Attempt isolation,
+  cancel/commit admission and secret scrubbing are unchanged.
 - The options sign-in panel keeps clipboard feedback as a stable status
   identifier plus its device-code generation, not as rendered prose. A pending
   copy disables only its matching **Copy** control. A successful, rejected, or

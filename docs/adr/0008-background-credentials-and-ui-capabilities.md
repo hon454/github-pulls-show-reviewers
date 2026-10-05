@@ -148,6 +148,12 @@ account. Completion returns the actual stored account ID. Account notifications
 follow the successful storage commit. Late results cannot close or advance a
 newer panel; language changes retain the controller and current callback.
 
+Amendment (2026-10-05, #244): after the exchange, `/user` and the installation
+load retry transient failures a bounded number of times, outside the flow
+queue. Once `/user` succeeds the account is committed even without its
+installations, which the installation-refresh service then loads; a truncated
+installation list signs in with the installations loaded so far.
+
 | Restored state                | Behavior                                                                                                                                            |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Waiting                       | Preserve flow ID, original deadline, slowdown interval and next eligible tick                                                                       |

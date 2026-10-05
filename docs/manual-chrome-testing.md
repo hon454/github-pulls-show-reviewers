@@ -180,7 +180,9 @@ Options should display only the user verification code/link and account identity
    The old session must request a new code explicitly. Already connected
    accounts and display/language preferences remain saved. An interrupted OAuth
    HTTP operation similarly offers a new code instead of replaying an uncertain
-   exchange. Unit tests separately cover pending commit recovery receipts.
+   exchange. Unit tests separately cover pending commit recovery receipts, and
+   `background-device-flow` covers transient `/user` and installation failures
+   after the exchange, retry cancellation and a truncated installation list.
 5. The packaged upgrade cases seed a tiny synthetic v3/v4 predecessor extension,
    close Chrome, replace its unpacked files and register the new bundle through
    Chrome's `Extensions.loadUnpacked` operation without uninstalling or clearing
