@@ -31,8 +31,8 @@ The current package target is [v1.18.8](./releases/v1.18.8.md). Its capture
 source hashes are refreshed for the version, development-dependency, manifest,
 and authentication and background changes. On one machine and with one
 Playwright Chromium build, all 15 screenshots regenerated from the `v1.18.7`
-tag and from the v1.18.8 source were byte-identical, so the changes do not
-alter the captured scenes. Existing rendering provenance and all 15 committed
+tag source built with the v1.18.8 lockfile and from the v1.18.8 source were
+byte-identical, so the changes do not alter the captured scenes. Existing rendering provenance and all 15 committed
 image bytes are retained; no new screenshot capture or dashboard save is
 claimed or needed.
 

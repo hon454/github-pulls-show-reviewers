@@ -12,7 +12,7 @@
 
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.8 发布说明](./docs/releases/v1.18.8.md)（英文）：GitHub、网络或本地存储出现暂时性故障时，登录和令牌刷新仍能继续。更改 GitHub 用户名后仍只保留一个账号，减少了传递给 GitHub 页面的账号信息，并且现在需要 Chrome 140 或更高版本。
+[v1.18.8 发布说明](./docs/releases/v1.18.8.md)（英文）：GitHub、网络或本地存储出现暂时性故障时，登录和令牌刷新仍能继续。更改 GitHub 用户名后仍只保留一个账号，减少了传递给 GitHub 页面中扩展脚本的账号信息，并且现在需要 Chrome 140 或更高版本。
 
 ## 主要功能
 
