@@ -7,8 +7,9 @@ product rules and architecture expectations before proposing changes.
 
 ## Prerequisites
 
-- Node.js 22.12+ (WXT 0.21 requires Node 22; Vite 8 requires 22.12+).
-  The jsdom `30.1.1` unit-test environment needs Node.js 22.22.2+ or 24.15+.
+- Node.js 22.12+ for `pnpm dev` and builds (WXT 0.21 requires Node 22;
+  Vite 8 requires 22.12+). Unit tests use jsdom 30, which needs Node.js
+  22.22.2+ (22.x), 24.15+ (24.x), or 26+; Node 23 and 25 are not supported.
   Workflows run the exact version in [`.node-version`](./.node-version);
   bump that file deliberately, because the release scripts rely on
   `--experimental-strip-types`.
@@ -247,10 +248,11 @@ As of 2026-10-05, both `pnpm audit --audit-level moderate` and
 graph. The only transitive `brace-expansion` entry is `5.0.12`, which is patched
 for [GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)
 and [GHSA-q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr).
-Vitest and its V8 coverage provider are pinned to `5.0.3`, outside the
-vulnerable ranges of
+Vitest and its V8 coverage provider are pinned to exactly `5.0.3` because
+`@vitest/coverage-v8@5.0.3` peers on `vitest` `5.0.3`; bump both together.
 [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)
-(fixed in `4.1.11` and `5.0.0-rc.2`).
+affects `vitest` and `@vitest/mocker` (fixed in `4.1.11` and `5.0.0-rc.2`);
+both resolve to `5.0.3`, outside the vulnerable ranges.
 
 WXT is pinned to `0.21.4`, with Vite `8.3.2` now an explicit development peer.
 The [official WXT migration guide](https://wxt.dev/guide/resources/upgrading)
