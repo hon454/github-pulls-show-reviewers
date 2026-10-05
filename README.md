@@ -116,8 +116,10 @@ The extension is built around the minimum access needed to show reviewer informa
 - Private repository support uses GitHub sign-in through the extension's GitHub App.
 - The GitHub App requests `Pull requests: Read` only.
 - OAuth, authenticated requests and credential storage belong to the background.
-  Content and options receive account summaries and user-facing sign-in progress,
-  without access tokens, refresh tokens or OAuth device-code secrets.
+  Options receives account summaries and user-facing sign-in progress. Content
+  receives only an opaque account ID, credential revision and validity flag, not
+  the account login, avatar or installation owners. Neither receives access
+  tokens, refresh tokens or OAuth device-code secrets.
 - Chrome blocks content-script access to local storage. The options boundary is
   enforced by the extension's application code; Chrome still treats options as a
   trusted extension page.
