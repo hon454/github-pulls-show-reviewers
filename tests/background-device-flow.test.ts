@@ -830,22 +830,21 @@ describe("background device flow after the token exchange", () => {
     expect(calls).toHaveLength(5);
   });
 
-  it("does not retry the installation refresh after the credentials changed", async () => {
+  // Signs in through a service whose installation load always fails, so the
+  // stub decides what the first post-sign-in refresh changes.
+  async function signInWithRefresh(
+    firstRefresh: (accountId: string) => Promise<void>,
+  ) {
     route("/user/installations", () => json({ message: "unavailable" }, 502));
+    const lookups = vi.spyOn(accountMutations, "getAccountById");
+    // Lookups made before the first refresh returned; the retry-time check
+    // is the next one.
+    let lookupsBeforeRetry = Number.POSITIVE_INFINITY;
     const refreshInstallations = vi.fn(async (accountId: string) => {
-      const account = await accountMutations.getAccountById(accountId);
-      await accountMutations.commitAuth(
-        accountId,
-        account!.credentialGeneration!,
-        {
-          tokens: {
-            token: "fixture-access-rotated",
-            refreshToken: null,
-            expiresAt: null,
-            refreshTokenExpiresAt: null,
-          },
-        },
-      );
+      if (refreshInstallations.mock.calls.length === 1) {
+        await firstRefresh(accountId);
+        lookupsBeforeRetry = lookups.mock.calls.length;
+      }
       return { ok: false };
     });
     const service = createDeviceFlowService({
@@ -859,13 +858,67 @@ describe("background device flow after the token exchange", () => {
     const init = await service.start("options-1", "attempt-direct");
     if (init.phase !== "waiting") throw new Error("expected waiting");
     tick(5);
-
     expect(
       await service.poll("options-1", "attempt-direct", init.flowId),
     ).toMatchObject({ phase: "connected" });
-    await drain();
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    const account = (await accountMutations.listAccounts())[0]!;
+    const retryChecked = () =>
+      vi.waitFor(() =>
+        expect(lookups.mock.calls.length).toBeGreaterThan(lookupsBeforeRetry),
+      );
+    return { account, retryChecked, refreshInstallations };
+  }
 
+  it("retries the installation refresh once while the credentials are unchanged", async () => {
+    const { refreshInstallations } = await signInWithRefresh(async () => {});
+
+    await vi.waitFor(() =>
+      expect(refreshInstallations).toHaveBeenCalledTimes(2),
+    );
+  });
+
+  it("does not retry the installation refresh after the credentials changed", async () => {
+    const { retryChecked, refreshInstallations } = await signInWithRefresh(
+      async (accountId) => {
+        const current = await accountMutations.getAccountById(accountId);
+        await accountMutations.commitAuth(
+          accountId,
+          current!.credentialGeneration!,
+          {
+            tokens: {
+              token: "fixture-access-rotated",
+              refreshToken: null,
+              expiresAt: null,
+              refreshTokenExpiresAt: null,
+            },
+          },
+        );
+      },
+    );
+
+    // The retry-time check reads the account, then decides not to refresh.
+    await retryChecked();
+    await drain();
+    expect(refreshInstallations).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry the installation refresh after installations were loaded", async () => {
+    const { retryChecked, refreshInstallations } = await signInWithRefresh(
+      async (accountId) => {
+        // Another load committed the installations after sign-in.
+        await accountMutations.replaceInstallations(accountId, [
+          {
+            id: 1,
+            account: { login: "org-1", type: "Organization", avatarUrl: null },
+            repositorySelection: "all",
+            repoSnapshot: null,
+          },
+        ]);
+      },
+    );
+
+    await retryChecked();
+    await drain();
     expect(refreshInstallations).toHaveBeenCalledTimes(1);
   });
 
@@ -930,7 +983,10 @@ describe("background device flow after the token exchange", () => {
 
     expect(await connect()).toMatchObject({ phase: "connected" });
     expect(signals.length).toBeGreaterThan(0);
-    for (const signal of signals) expect(signal.aborted).toBe(true);
+    // The post-sign-in refresh may still be starting its own requests.
+    await vi.waitFor(() =>
+      expect(signals.every((signal) => signal.aborted)).toBe(true),
+    );
   });
 
   it("does not accept a sign-in installation list with an invalid next link", async () => {

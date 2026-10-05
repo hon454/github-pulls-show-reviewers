@@ -692,9 +692,11 @@ export async function fetchUserInstallations(
     invalidLink: boolean;
   }
 > {
+  // `truncated` is true for either stop reason (page limit or invalid link).
+  // Installation loading reads `invalidLink` to tell the two apart.
   const results: ApiInstallation[] = [];
   const expectedPathname = "/user/installations";
-  let truncated = false;
+  let invalidLink = false;
   let url: string | null =
     "https://api.github.com/user/installations?per_page=100";
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
@@ -731,14 +733,14 @@ export async function fetchUserInstallations(
     if (nextTarget.kind === "valid") {
       url = nextTarget.url;
     } else {
-      truncated = nextTarget.kind === "invalid";
+      invalidLink = nextTarget.kind === "invalid";
       url = null;
     }
   }
   return {
     items: results,
-    truncated: truncated || url != null,
-    invalidLink: truncated,
+    truncated: invalidLink || url != null,
+    invalidLink,
   };
 }
 

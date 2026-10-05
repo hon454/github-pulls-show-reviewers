@@ -740,8 +740,9 @@ event after the reset time; nothing is retried automatically.
   same-owner candidates, requests the background installation service and reruns
   resolution. An account whose installations were never loaded
   (`installationsRefreshedAt` 0, after a sign-in that could not load them) is
-  always a candidate, once per page session. The content facade receives an `AccountSummary`, never a full
-  account. Repository context and installation owner restrict content refresh.
+  always a candidate, once per page session. The content facade receives an
+  `AccountSummary`, never a full account. Repository context and installation
+  owner restrict content refresh.
 - The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per account and credential generation. A skipped stale-generation commit returns the existing generic failure outcome. The service response does not include tokens; content has no direct local-storage access.
 - Each candidate is refreshed at most once per page session. Successful
   installation writes change the sanitized account/coverage digest; the content
@@ -870,13 +871,14 @@ it is not a live private-repository permission check.
   extended to at least two minutes ahead so these retries cannot expire tokens
   that are already live. If `/user` still fails the attempt ends as before.
   Once `/user` succeeds the account is committed even when its installations
-  could not be loaded: a new account starts with none (`installationsRefreshedAt`
-  0), a reconnected account keeps its stored ones. As soon as that commit
-  resolves, the installation-refresh service loads them outside both queues
-  with its own 401 recovery and generation-checked commit, and retries once
-  after 30 seconds if the credentials are still the committed ones. If the
-  worker stops first, the resolver's stale-candidate check above loads them on
-  the next pull list page. Attempt isolation, cancel/commit admission and secret
+  could not be loaded: a new account starts with none
+  (`installationsRefreshedAt` 0), a reconnected account keeps its stored ones.
+  As soon as that commit resolves, the installation-refresh service loads them
+  outside both queues with its own 401 recovery and generation-checked commit.
+  It retries once after 30 seconds if the credentials are still the committed
+  ones and no other load has stored installations since. If the worker stops
+  first, the resolver's stale-candidate check above loads them on the next pull
+  list page. Attempt isolation, cancel/commit admission and secret
   scrubbing are unchanged.
 - The options sign-in panel keeps clipboard feedback as a stable status
   identifier plus its device-code generation, not as rendered prose. A pending

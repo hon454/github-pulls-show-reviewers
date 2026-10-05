@@ -128,11 +128,12 @@ newer panel. Cancellation never rolls back or deletes a saved account.
    unblocked.
 2. In options, start **+ Add another account** and approve the code on GitHub.
    After a few seconds the panel must show the account as connected; its card
-   lists no installations yet. The worker console shows up to three blocked
-   installation requests and no sign-in error.
-3. Remove the blocking pattern. Within about 30 seconds, or after **Refresh
-   installations**, or on the next GitHub pull list page, the card lists the
-   account's installations. No second sign-in is needed.
+   lists no installations yet. The Network panel shows four blocked
+   installation requests (three sign-in attempts and one refresh right after
+   the commit), then one more about 30 seconds later, and no sign-in error.
+3. Remove the blocking pattern before that retry, or later use **Refresh
+   installations** or open the next GitHub pull list page; the card then lists
+   the account's installations. No second sign-in is needed.
 4. Repeat with `api.github.com/user` blocked and keep it blocked: the panel ends
    with the generic sign-in error after three attempts and no card is added.
    Unblock it within a few seconds on another run and confirm the sign-in

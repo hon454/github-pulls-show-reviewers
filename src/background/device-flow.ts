@@ -136,7 +136,9 @@ export function createDeviceFlowService(input: {
       if (
         current == null ||
         current.invalidated ||
-        credentialGeneration(current) !== revision
+        credentialGeneration(current) !== revision ||
+        // Another load (manual or self-healing) already stored them.
+        current.installationsRefreshedAt > account.installationsRefreshedAt
       )
         return;
       await refresh(account.id);
