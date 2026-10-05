@@ -62,6 +62,15 @@ Refresh outcomes are classified into two kinds:
   left valid and the row-level failure surfaces; rows self-heal on the next
   refresh attempt once GitHub recovers.
 
+Only the refresh HTTP exchange is classified this way. After a successful
+rotation, the old refresh token may already be retired, so a rejected storage
+commit is not a transient refresh failure. The coordinator retries the same
+generation-conditional commit a bounded number of times with the in-memory
+tokens, without new HTTP and outside the registry queue, while same-generation
+callers keep joining that rotation. If every attempt fails it rejects with
+`RefreshCommitError`; later same-generation invalidation still waits for that
+recovery to settle.
+
 Diagnostics requested by options use the same background retry-with-refresh path
 (`validateRepositoryAccessWithAccount`) so "Check matched account" mirrors
 runtime behavior — an expired access token is not reported as a failure while

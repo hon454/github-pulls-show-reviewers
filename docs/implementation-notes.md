@@ -604,6 +604,10 @@ event after the reset time; nothing is retried automatically.
   commit is queued. A later caller starts a new owner operation rather than
   inheriting a conditional commit that may already have been skipped.
   A successful rotation survives; a terminal failure retains `refresh_failed`.
+  A rejected storage commit after GitHub rotates credentials retries the same
+  generation-conditional commit with the in-memory tokens, a bounded number of
+  times and without new HTTP. Persistent failure rejects with
+  `RefreshCommitError` instead of a transient refresh outcome.
   If refresh is transient, a genuinely rejected still-current retry may retain
   the existing `revoked` outcome. Refresh completion and terminal failure
   use the same conditional commit, so old work cannot overwrite a newer sign-in
