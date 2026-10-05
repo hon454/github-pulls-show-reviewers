@@ -125,7 +125,7 @@ describe("background account orphan recovery", () => {
     expectKeys(old.id, true);
   });
 
-  it("recovers failed duplicate and malformed-record deletion after index repair", async () => {
+  it("recovers failed duplicate and orphan deletion while keeping an unparseable record", async () => {
     const { accountMutations, addAccount } =
       await import("../src/storage/accounts");
     const retained =
@@ -145,20 +145,30 @@ describe("background account orphan recovery", () => {
       "account:auth:broken": { malformed: true },
     });
     storage.local.remove.mockRejectedValueOnce(
-      new Error("repair cleanup failed"),
+      new Error("orphan cleanup failed"),
     );
     await expect(accountMutations.initialize()).rejects.toThrow(
-      "repair cleanup failed",
+      "orphan cleanup failed",
     );
 
     vi.resetModules();
     const restarted = await import("../src/storage/accounts");
     await restarted.accountMutations.initialize();
     expectKeys("duplicate", false);
-    expectKeys("broken", false);
     expectKeys(retained.id, true);
+    // Unparseable records are quarantined, never deleted as orphans.
+    expect(storage.snapshot()).toMatchObject({
+      "account:profile:broken": { malformed: true },
+      "account:auth:broken": { malformed: true },
+    });
     expect(
-      (await restarted.accountMutations.listAccounts()).map((a) => a.id),
-    ).toEqual([retained.id]);
+      (await restarted.accountMutations.listAccounts()).map((a) => [
+        a.id,
+        a.invalidated,
+      ]),
+    ).toEqual([
+      ["broken", true],
+      [retained.id, false],
+    ]);
   });
 });

@@ -109,8 +109,7 @@ describe("one background registry owner across connected flows", () => {
     await boot();
     await upsertAccountByLogin(connectInput());
     await storage.local.set({
-      settings: { version: 4, accountIds: ["acc-1", "broken"] },
-      "account:auth:broken": { malformed: true },
+      settings: { version: 4, accountIds: ["acc-1", "missing"] },
     });
     const barrier = storage.pauseGet((keys) => keys === "settings");
     const query = listAccounts();
@@ -127,11 +126,10 @@ describe("one background registry owner across connected flows", () => {
     await boot();
     await upsertAccountByLogin(connectInput());
     await storage.local.set({
-      settings: { version: 4, accountIds: ["acc-1", "broken"] },
-      "account:profile:broken": { malformed: true },
+      settings: { version: 4, accountIds: ["acc-1", "missing"] },
     });
     const barrier = storage.pauseSet();
-    const repair = accountMutations.listAccounts();
+    const repair = accountMutations.initialize();
     await barrier.entered.promise;
     const add = upsertAccountByLogin(
       connectInput({ login: "other", newAccountId: "acc-2" }),
