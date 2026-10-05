@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
+import {
+  createRefreshCoordinator,
+  RefreshCommitError,
+  ROTATION_COMMIT_ATTEMPTS,
+} from "../src/auth/refresh-coordinator";
+import { RefreshTokenError } from "../src/github/auth";
 import {
   accountMutations,
   credentialGeneration,
+  type Account,
 } from "../src/storage/accounts";
 import {
   connectInput,
@@ -260,6 +266,86 @@ describe("generation-aware refresh coordinator with real storage and HTTP parsin
     const current = await accountMutations.getAccountById(old.id);
     expect(current?.refreshToken === old.refreshToken).toBe(true);
     expect(current?.refreshTokenExpiresAt).toBe(999);
+  });
+
+  it("keeps rotated credentials when the storage write rejects once", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const generation = credentialGeneration(old);
+    const first = coordinator.refreshAccountToken(old.id, generation);
+    const request = await http.next();
+    const joined = coordinator.refreshAccountToken(old.id, generation);
+    const invalidation = coordinator.invalidateAccountToken(old.id, generation);
+    const writes = storage.local.set.mock.calls.length;
+    storage.local.set.mockRejectedValueOnce(new Error("storage-write-failure"));
+    request.response.resolve(rotated());
+    const [a, b] = await Promise.all([first, joined, invalidation]);
+    const current = (await accountMutations.getAccountById(old.id))!;
+    expect(a).toEqual({ ok: true, generation: credentialGeneration(current) });
+    expect(b).toEqual(a);
+    expect(credentialGeneration(current) !== generation).toBe(true);
+    expect(current.invalidated).toBe(false);
+    expect(current.token === "fixture-access-1").toBe(true);
+    expect(current.refreshToken === "fixture-refresh-1").toBe(true);
+    expect(storage.local.set.mock.calls.length - writes).toBe(2);
+    expect(http.requests.length).toBe(1);
+  });
+
+  it("reports a persistent post-rotation commit failure distinctly after bounded retries", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const generation = credentialGeneration(old);
+    const work = coordinator.refreshAccountToken(old.id, generation);
+    const request = await http.next();
+    const invalidation = coordinator.invalidateAccountToken(old.id, generation);
+    const writes = storage.local.set.mock.calls.length;
+    const failure = new Error("storage-write-failure");
+    for (let attempt = 0; attempt < ROTATION_COMMIT_ATTEMPTS; attempt += 1)
+      storage.local.set.mockRejectedValueOnce(failure);
+    request.response.resolve(rotated());
+    const error: unknown = await work.then(
+      () => null,
+      (reason: unknown) => reason,
+    );
+    expect(error).toBeInstanceOf(RefreshCommitError);
+    expect(error).not.toBeInstanceOf(RefreshTokenError);
+    expect((error as RefreshCommitError).cause).toBe(failure);
+    expect(storage.local.set.mock.calls.length - writes).toBe(
+      ROTATION_COMMIT_ATTEMPTS,
+    );
+    expect(http.requests.length).toBe(1);
+    // Same-generation invalidation still waits for, then follows, recovery.
+    await invalidation;
+    const current = (await accountMutations.getAccountById(old.id))!;
+    expect(credentialGeneration(current)).toBe(generation);
+    expect(current.token === "fixture-access-0").toBe(true);
+    expect(current.invalidatedReason).toBe("revoked");
+  });
+
+  it("keeps post-rotation commit retries conditional on the rotated generation", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const work = coordinator.refreshAccountToken(
+      old.id,
+      credentialGeneration(old),
+    );
+    const request = await http.next();
+    let signIn: Promise<Account> | undefined;
+    storage.local.set.mockImplementationOnce(async () => {
+      // Queued behind the failed commit and ahead of its retry.
+      signIn = accountMutations.upsertAccountByLogin(
+        connectInput({ token: "fixture-access-login" }),
+      );
+      throw new Error("storage-write-failure");
+    });
+    request.response.resolve(rotated());
+    const outcome = await work;
+    const signedIn = await signIn!;
+    expect(outcome).toEqual({
+      ok: true,
+      generation: credentialGeneration(signedIn),
+    });
+    const current = (await accountMutations.getAccountById(old.id))!;
+    expect(current.credentialGeneration).toBe(signedIn.credentialGeneration);
+    expect(current.token === "fixture-access-login").toBe(true);
+    expect(http.requests.length).toBe(1);
   });
 
   it.each(["success", "terminal"])(

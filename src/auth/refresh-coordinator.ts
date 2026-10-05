@@ -1,9 +1,14 @@
 import { PROACTIVE_REFRESH_THRESHOLD_MS } from "../config/proactive-refresh";
-import { refreshAccessToken, RefreshTokenError } from "../github/auth";
+import {
+  refreshAccessToken,
+  RefreshTokenError,
+  type RefreshTokenResult,
+} from "../github/auth";
 import {
   accountMutations,
   credentialGeneration,
   type Account,
+  type AccountTokens,
 } from "../storage/accounts";
 
 // Runtime responses contain only a non-secret revision. Callers reread storage
@@ -23,6 +28,29 @@ export type RefreshCoordinator = {
   ): Promise<void>;
   refreshAccountIfDue(accountId: string, now: number): Promise<RefreshOutcome>;
 };
+
+// After GitHub rotates credentials the stored refresh token may already be
+// retired, so the new tokens exist only in memory until committed. A storage
+// rejection is retried with those tokens, without HTTP, after each short delay.
+// Worker lifetime is still not guaranteed (ADR 0004/0005).
+const ROTATION_COMMIT_RETRY_DELAYS_MS = [50, 200] as const;
+export const ROTATION_COMMIT_ATTEMPTS =
+  ROTATION_COMMIT_RETRY_DELAYS_MS.length + 1;
+
+// A local persistence failure is not a refresh outcome: only the refresh HTTP
+// exchange is classified through RefreshTokenError as terminal or transient.
+export class RefreshCommitError extends Error {
+  constructor(
+    public readonly attempts: number,
+    options: { cause: unknown },
+  ) {
+    super(
+      `Rotated credentials were not committed after ${attempts} attempts.`,
+      options,
+    );
+    this.name = "RefreshCommitError";
+  }
+}
 
 function outcomeFor(account: Account | null): RefreshOutcome {
   return account != null && !account.invalidated
@@ -65,25 +93,38 @@ export function createRefreshCoordinator(input: {
     }
   >();
 
+  async function commitRotation(
+    accountId: string,
+    generation: string,
+    tokens: AccountTokens,
+  ): Promise<Account | null> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        // Each attempt is a separate generation-conditional owner commit, so a
+        // write that landed before its read failed, a newer sign-in or a removal
+        // makes the retry a no-op that reports current storage.
+        return await accountMutations.commitAuth(accountId, generation, {
+          tokens,
+        });
+      } catch (error) {
+        const delay = ROTATION_COMMIT_RETRY_DELAYS_MS[attempt - 1];
+        if (delay === undefined)
+          throw new RefreshCommitError(attempt, { cause: error });
+        // Waits stay outside the registry queue; same-generation callers keep
+        // joining this in-flight rotation instead of starting new HTTP.
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+
   async function rotate(account: Account): Promise<RefreshOutcome> {
     const generation = credentialGeneration(account);
+    let result: RefreshTokenResult;
     try {
-      const result = await refreshAccessToken({
+      result = await refreshAccessToken({
         clientId: input.getClientId(),
         refreshToken: account.refreshToken!,
       });
-      // Omitted rotation fields preserve the old refresh token and expiry.
-      return outcomeFor(
-        await accountMutations.commitAuth(account.id, generation, {
-          tokens: {
-            token: result.accessToken,
-            refreshToken: result.refreshToken ?? account.refreshToken,
-            expiresAt: result.expiresAt,
-            refreshTokenExpiresAt:
-              result.refreshTokenExpiresAt ?? account.refreshTokenExpiresAt,
-          },
-        }),
-      );
     } catch (error) {
       if (error instanceof RefreshTokenError && error.kind === "terminal") {
         return outcomeFor(
@@ -94,6 +135,16 @@ export function createRefreshCoordinator(input: {
       }
       return { ok: false, terminal: false };
     }
+    // Omitted rotation fields preserve the old refresh token and expiry.
+    return outcomeFor(
+      await commitRotation(account.id, generation, {
+        token: result.accessToken,
+        refreshToken: result.refreshToken ?? account.refreshToken,
+        expiresAt: result.expiresAt,
+        refreshTokenExpiresAt:
+          result.refreshTokenExpiresAt ?? account.refreshTokenExpiresAt,
+      }),
+    );
   }
 
   async function runRecovery(
@@ -235,8 +286,10 @@ export function createRefreshCoordinator(input: {
           // the current storage read, including for proactive recovery.
           await Promise.all(
             earlierRecoveries.map(async (item) => {
+              // Ordering needs only settlement: a recovery that rejected, such
+              // as a failed rotation commit, must not cancel this invalidation.
               if ((await item.generation) === failedGeneration)
-                await item.result;
+                await item.result.catch(() => undefined);
             }),
           );
           // This admission accepts callers only until its owner mutation is
