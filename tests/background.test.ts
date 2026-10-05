@@ -948,6 +948,20 @@ describe("background proactive refresh wiring", () => {
     );
   });
 
+  it("backfills missing user ids after an extension update, not on every boot", async () => {
+    await bootBackground();
+    await flushMicrotasks();
+    expect(backfillMissingUserIdsMock).not.toHaveBeenCalled();
+
+    vi.mocked(browser.runtime.onInstalled.addListener).mock.calls[0][0]({
+      reason: "update",
+    } as never);
+
+    await vi.waitFor(() =>
+      expect(backfillMissingUserIdsMock).toHaveBeenCalledOnce(),
+    );
+  });
+
   it("refreshes eligible accounts when the proactive alarm fires", async () => {
     const now = 1_700_000_000_000;
     vi.useFakeTimers({ toFake: ["Date"] });

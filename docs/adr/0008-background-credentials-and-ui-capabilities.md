@@ -20,9 +20,10 @@ Background owns OAuth initiation/polling, authenticated API requests, full
 accounts, legacy migration and credential writes. `accountMutations` remains
 the sole registry/init/repair/normalized-login identity and auth commit owner
 from #166. Device flow reuses it; it does not allocate a second canonical login
-identity. Amendment (2026-10-05, #246): that identity is the numeric GitHub user
-id; login is a display field, and records stored before the id was kept match by
-login until a later `/user` response backfills it. Network requests stay outside that short queue. The same
+identity. Amendment (2026-10-05, #246): that identity is the numeric GitHub
+user id and login is a display field. Records stored before the id existed match
+by login until a later `/user` response backfills it. Network requests stay
+outside that short queue. The same
 generation-aware refresh coordinator serves reviewer, diagnostics, installation
 and proactive-refresh operations.
 

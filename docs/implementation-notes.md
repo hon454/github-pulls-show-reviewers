@@ -588,16 +588,28 @@ event after the reset time; nothing is retried automatically.
   options-only local removal. Future account work must reuse this owner.
 - Account identity is the numeric GitHub user id from `GET /user`, stored in
   the profile fragment as `userId`; the login is a display field. Sign-in
-  updates the record with the same `userId`, so a renamed user keeps one card
-  and a different user who reuses a login gets a separate one. Records written
-  before the id was stored keep working without re-authentication and match by
-  case-insensitive login until backfilled. The proactive refresh alarm then asks
-  `/user` once per valid record without an id, outside the registry queue, and
-  `backfillUserId` stores it only under the revision that made the request and
-  never replaces a stored id. A failure changes nothing and the next alarm
-  retries. If the user renamed and signed in again before the backfill, the
-  backfill finds the record that already holds the id and keeps the one with
-  valid credentials, dropping the other.
+  updates the record with the same `userId`, so a renamed user keeps one card,
+  and a different user who reuses a login gets a separate card from any record
+  that already stores an id.
+- Records written before the id was stored keep working without
+  re-authentication. Until backfilled they still match a sign-in by
+  case-insensitive login, so a different user who now holds that login would
+  replace one. The update itself and each proactive refresh alarm therefore
+  ask `/user` once per valid record without an id, outside the registry queue,
+  with a 30-second deadline. `backfillUserId` stores the id, login and avatar
+  only under the revision that made the request and never replaces a stored id.
+  A failure changes nothing and the next pass retries; a 401 is not retried for
+  the same credentials in that worker. Invalidated records are not backfilled:
+  signing in again with the same login fixes them, and after a rename the old
+  card must be removed.
+- If the user renamed and signed in again before the backfill, the backfill
+  finds the readable record that already holds the id. When that record is
+  valid it is kept, gets the current login and avatar, and the record being
+  backfilled is dropped; an invalidated holder is dropped instead. The
+  background backfill never drops a quarantined record.
+- The login of a record that already stores its id is refreshed only by the next
+  sign-in, so after a rename the owner-login fallback uses the old login until
+  then.
 - The owner reconciles stored account-fragment keys against the repaired v4
   account index on its first initialization after each worker start. The
   initialized, clean registry is memoized for the rest of that activation, so
@@ -620,7 +632,8 @@ event after the reset time; nothing is retried automatically.
   sign-in again and removal, and re-signing in with the same user id (or, for a
   record without one, the same login) replaces it,
   preferring a readable duplicate when one exists. When the login itself is
-  unreadable, the card shows the account ID and only removal clears it. A later
+  unreadable but its user id is readable, signing in again still replaces it;
+  otherwise the card shows the account ID and only removal clears it. A later
   release that parses the record restores the account without sign-in.
 - A stored `settings` index that this release cannot parse is not treated as
   empty, which would delete every account record as an orphan. Initialization

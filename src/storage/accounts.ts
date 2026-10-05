@@ -574,7 +574,8 @@ async function addAccountUnlocked(account: Account): Promise<void> {
  * A record matches when it stores the same user id, or when it predates the
  * stored id and has the same login (case-insensitive). Login is only a display
  * field: a renamed user updates the existing record instead of creating a
- * second one, and a different user who reuses a login gets a separate record.
+ * second one, and a different user who reuses a login gets a separate record
+ * from every record that already stores an id.
  *
  * A match keeps its id and createdAt but swaps in the freshly obtained auth
  * (token, refreshToken, expiresAt, refreshTokenExpiresAt), installations and
@@ -676,6 +677,7 @@ async function findAccountsByIdentity(identity: {
 }): Promise<{
   settings: ExtensionSettings;
   accounts: Account[];
+  validIds: string[];
   matches: Account[];
 }> {
   let settings = await getSettings();
@@ -694,6 +696,7 @@ async function findAccountsByIdentity(identity: {
   return {
     settings,
     accounts,
+    validIds,
     matches: accounts
       .filter((account) =>
         account.userId != null
@@ -725,16 +728,18 @@ export type AccountUserIdentity = {
 /**
  * Store the user id from a later /user response on a record that predates it.
  * Only the revision that made the request may commit, and an id already stored
- * is never replaced. If another record already holds the id (the user renamed
- * and signed in again before this backfill), the two are one GitHub user: the
- * record with valid credentials is kept and the other one is dropped.
+ * is never replaced. If another readable record already holds the id (the user
+ * renamed and signed in again before this backfill), both are one GitHub user.
+ * A valid holder is kept and gets the current login and avatar, and this record
+ * is dropped; an invalidated holder is dropped instead. This background path
+ * never touches a quarantined record.
  */
 async function backfillUserIdUnlocked(
   accountId: string,
   expectedGeneration: string,
   user: AccountUserIdentity,
 ): Promise<"committed" | "merged" | "skipped"> {
-  const { settings, accounts } = await findAccountsByIdentity(user);
+  const { settings, accounts, validIds } = await findAccountsByIdentity(user);
   const current = accounts.find((account) => account.id === accountId);
   if (
     current == null ||
@@ -745,23 +750,37 @@ async function backfillUserIdUnlocked(
     return "skipped";
 
   const holder = accounts.find(
-    (account) => account.id !== accountId && account.userId === user.userId,
+    (account) =>
+      account.id !== accountId &&
+      account.userId === user.userId &&
+      validIds.includes(account.id),
   );
-  const dropId = holder != null && !holder.invalidated ? accountId : holder?.id;
+  const dropId = holder == null || holder.invalidated ? holder?.id : accountId;
   if (dropId != null) {
     await writeSettings({
       version: 4,
       accountIds: settings.accountIds.filter((id) => id !== dropId),
     });
     await browser.storage.local.remove(accountStorageKeys(dropId));
-    if (dropId === accountId) return "merged";
   }
+  if (holder != null && dropId === accountId) {
+    await writeProfileIdentity(holder.id, user);
+    return "merged";
+  }
+  return (await writeProfileIdentity(accountId, user))
+    ? "committed"
+    : "skipped";
+}
 
+async function writeProfileIdentity(
+  accountId: string,
+  user: AccountUserIdentity,
+): Promise<boolean> {
   const key = accountProfileKey(accountId);
   const profile = accountProfileSchema.safeParse(
     (await browser.storage.local.get(key))[key],
   );
-  if (!profile.success) return "skipped";
+  if (!profile.success) return false;
   await browser.storage.local.set({
     [key]: {
       ...profile.data,
@@ -770,7 +789,7 @@ async function backfillUserIdUnlocked(
       avatarUrl: user.avatarUrl,
     },
   });
-  return "committed";
+  return true;
 }
 
 async function replaceInstallationsUnlocked(

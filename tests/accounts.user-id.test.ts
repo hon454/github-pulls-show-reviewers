@@ -211,4 +211,130 @@ describe("records without a stored user id", () => {
       expect.objectContaining({ id: current.id, token: "fixture-access-new" }),
     ]);
   });
+
+  it("refresh the kept record's login and avatar when they merge", async () => {
+    const { accountMutations } = await load();
+    const keyed = await accountMutations.upsertAccountByLogin(
+      connectInput({ userId: 42, login: "older-name", newAccountId: "keyed" }),
+    );
+    const legacy = await accountMutations.upsertAccountByLogin(
+      connectInput({ login: "legacy-name", newAccountId: "legacy" }),
+    );
+    await stripUserId(legacy.id);
+
+    await accountMutations.backfillUserId(
+      legacy.id,
+      legacy.credentialGeneration!,
+      {
+        userId: 42,
+        login: "current-name",
+        avatarUrl: "https://avatars.githubusercontent.com/u/42",
+      },
+    );
+
+    expect(await accountMutations.getAccountById(keyed.id)).toMatchObject({
+      login: "current-name",
+      avatarUrl: "https://avatars.githubusercontent.com/u/42",
+      token: keyed.token,
+      credentialGeneration: keyed.credentialGeneration,
+    });
+  });
+
+  it("drop an invalidated record that holds the id and keep the valid one", async () => {
+    const { accountMutations, getSettings } = await load();
+    const revoked = await accountMutations.upsertAccountByLogin(
+      connectInput({ userId: 42, login: "new-name", newAccountId: "revoked" }),
+    );
+    await accountMutations.commitAuth(
+      revoked.id,
+      revoked.credentialGeneration!,
+      { invalidatedReason: "revoked" },
+    );
+    const legacy = await accountMutations.upsertAccountByLogin(
+      connectInput({ login: "old-name", newAccountId: "legacy" }),
+    );
+    await stripUserId(legacy.id);
+
+    const outcome = await accountMutations.backfillUserId(
+      legacy.id,
+      legacy.credentialGeneration!,
+      { userId: 42, login: "new-name", avatarUrl: null },
+    );
+
+    expect(outcome).toBe("committed");
+    expect((await getSettings()).accountIds).toEqual([legacy.id]);
+    for (const prefix of ["profile", "auth", "installations"]) {
+      expect(`account:${prefix}:${revoked.id}` in storage.snapshot()).toBe(
+        false,
+      );
+    }
+    expect(await accountMutations.getAccountById(legacy.id)).toMatchObject({
+      userId: 42,
+      login: "new-name",
+      token: legacy.token,
+      invalidated: false,
+    });
+  });
+
+  it("never drop a quarantined record that holds the id", async () => {
+    const { accountMutations, getSettings } = await load();
+    const quarantined = await accountMutations.upsertAccountByLogin(
+      connectInput({ userId: 42, login: "new-name", newAccountId: "unread" }),
+    );
+    await storage.local.set({
+      [`account:auth:${quarantined.id}`]: { unreadable: true },
+    });
+    const legacy = await accountMutations.upsertAccountByLogin(
+      connectInput({ login: "old-name", newAccountId: "legacy" }),
+    );
+    await stripUserId(legacy.id);
+
+    expect(
+      await accountMutations.backfillUserId(
+        legacy.id,
+        legacy.credentialGeneration!,
+        { userId: 42, login: "new-name", avatarUrl: null },
+      ),
+    ).toBe("committed");
+    expect((await getSettings()).accountIds).toEqual([
+      quarantined.id,
+      legacy.id,
+    ]);
+    expect(storage.snapshot()[`account:auth:${quarantined.id}`]).toEqual({
+      unreadable: true,
+    });
+  });
+
+  it("consolidate a keyed record and a login-only record on sign-in", async () => {
+    const { accountMutations, getSettings } = await load();
+    const keyed = await accountMutations.upsertAccountByLogin(
+      connectInput({ userId: 42, login: "bob", newAccountId: "keyed", now: 1 }),
+    );
+    const legacy = await accountMutations.upsertAccountByLogin(
+      connectInput({ login: "alice", newAccountId: "legacy", now: 2 }),
+    );
+    await stripUserId(legacy.id);
+
+    const signedIn = await accountMutations.upsertAccountByLogin(
+      connectInput({
+        userId: 42,
+        login: "alice",
+        token: "fixture-access-signed-in",
+        newAccountId: "unused",
+      }),
+    );
+
+    expect(signedIn.id).toBe(keyed.id);
+    expect((await getSettings()).accountIds).toEqual([keyed.id]);
+    for (const prefix of ["profile", "auth", "installations"]) {
+      expect(`account:${prefix}:${legacy.id}` in storage.snapshot()).toBe(
+        false,
+      );
+    }
+    expect(await accountMutations.getAccountById(keyed.id)).toMatchObject({
+      userId: 42,
+      login: "alice",
+      token: "fixture-access-signed-in",
+    });
+  });
 });

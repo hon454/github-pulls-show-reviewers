@@ -52,6 +52,11 @@ export default defineBackground(() => {
   });
 
   browser.runtime.onInstalled.addListener((details) => {
+    // Records from before the stored user id gain it right after the update.
+    if (details.reason === "update")
+      void ensureReady()
+        .then(() => identityBackfill.backfillMissingUserIds())
+        .catch(() => undefined);
     if (details.reason === "install") {
       browser.runtime.openOptionsPage().catch((error) => {
         console.error(

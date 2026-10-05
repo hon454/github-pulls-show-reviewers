@@ -32,9 +32,8 @@ To provide its reviewer visibility feature, the extension may access:
 - Connected accounts are stored locally in `browser.storage.local`. The
   `settings` key stores the account id list, and per-account records are split
   across `account:profile:*`, `account:auth:*`, and
-  `account:installations:*` keys. These records contain the numeric GitHub user
-  ID, the GitHub login,
-  avatar URL, creation timestamp, user-to-server access token, refresh token,
+  `account:installations:*` keys. These records contain the numeric GitHub
+  user ID, the GitHub login, avatar URL, creation timestamp, user-to-server access token, refresh token,
   token expiry timestamps, cached GitHub App installations, selected-repository
   snapshot names plus whether those snapshots were fully paginated,
   invalidation state, and an opaque credential revision used to reject stale

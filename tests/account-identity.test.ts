@@ -129,4 +129,23 @@ describe("account identity backfill", () => {
       (await accountMutations.getAccountById(legacy.id))?.userId,
     ).toBeUndefined();
   });
+
+  it("bounds each /user request with a deadline", async () => {
+    await seedLegacy();
+
+    await (await service()).backfillMissingUserIds();
+
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("does not repeat /user for credentials GitHub rejected in this worker", async () => {
+    await seedLegacy();
+    fetchMock.mockResolvedValueOnce(json({ message: "bad token" }, 401));
+    const backfill = await service();
+
+    await backfill.backfillMissingUserIds();
+    await backfill.backfillMissingUserIds();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
