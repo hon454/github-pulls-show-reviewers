@@ -12,7 +12,7 @@
 
 ![GitHub PR 列表中显示的审阅者标签和审阅状态徽标](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.7 发布说明](./docs/releases/v1.18.7.md)（英文）：从 GitHub 的任意页面通过页面内导航进入 PR 列表时，审阅者都能稳定显示。修正了审阅或事件记录较长的拉取请求的审阅状态，在 GitHub 的 Preview 布局中将访问提示横幅显示在列表上方，并减少了空闲 GitHub 标签页的后台活动。
+[v1.18.8 发布说明](./docs/releases/v1.18.8.md)（英文）：GitHub、网络或本地存储出现暂时性故障时，登录和令牌刷新仍能继续。更改 GitHub 用户名后仍只保留一个账号，减少了传递给 GitHub 页面中扩展脚本的账号信息，并且现在需要 Chrome 140 或更高版本。
 
 ## 主要功能
 

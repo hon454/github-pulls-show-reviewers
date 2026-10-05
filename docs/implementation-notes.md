@@ -19,6 +19,13 @@ refresh ordering, service-worker wake cycling, access-banner placement,
 pagination and re-request evidence, and metadata-batch tolerance. Permissions,
 storage and authentication are unchanged.
 
+The [v1.18.8 release notes](./releases/v1.18.8.md) cover authentication and
+background resilience: credential request timeouts, rotated-token commit
+retries, device-flow retries after the token exchange, accounts keyed on the
+GitHub user ID, quarantined unreadable account records, discovery-ledger
+probes outside the queue, and the content-scoped account projection. The
+manifest declares `minimum_chrome_version: "140"`; permissions are unchanged.
+
 ## Development toolchain
 
 WXT `0.21.4` uses the explicit Vite `8.3.2` peer and requires Node.js 22.12+

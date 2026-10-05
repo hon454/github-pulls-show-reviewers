@@ -27,13 +27,14 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
-The current package target is [v1.18.7](./releases/v1.18.7.md). Its capture
-source hashes are refreshed for the version, development-dependency, and
-reviewer runtime changes. On one machine, all 15 screenshots regenerated from
-the `v1.18.6` tag and from the v1.18.7 source were byte-identical, so the
-changes do not alter the captured scenes. Existing rendering provenance and all
-15 committed image bytes are retained; no new screenshot capture or dashboard
-save is claimed or needed.
+The current package target is [v1.18.8](./releases/v1.18.8.md). Its capture
+source hashes are refreshed for the version, development-dependency, manifest,
+and authentication and background changes. On one machine and with one
+Playwright Chromium build, all 15 screenshots regenerated from the `v1.18.7`
+tag source built with the v1.18.8 lockfile and from the v1.18.8 source were
+byte-identical, so the changes do not alter the captured scenes. Existing rendering provenance and all 15 committed
+image bytes are retained; no new screenshot capture or dashboard save is
+claimed or needed.
 
 The [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) remains
 historical local preparation, not a CWS receipt or saved-listing attestation.

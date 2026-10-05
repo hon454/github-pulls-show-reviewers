@@ -12,7 +12,7 @@
 
 ![GitHub PR 清單內的審查者標籤與審查狀態徽章](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.7 版本說明](./docs/releases/v1.18.7.md)（英文）：從 GitHub 的任何頁面透過頁面內導覽進入 PR 清單時，審查者都能穩定顯示。修正審查或事件紀錄較長的 Pull Request 的審查狀態，在 GitHub 的 Preview 版面配置中將存取提示橫幅顯示在清單上方，並減少閒置 GitHub 分頁的背景活動。
+[v1.18.8 版本說明](./docs/releases/v1.18.8.md)（英文）：GitHub、網路或本機儲存空間發生暫時性故障時，登入與權杖更新仍能持續運作。變更 GitHub 使用者名稱後仍只保留一個帳號，減少傳遞給 GitHub 頁面中擴充功能指令碼的帳號資訊，且現在需要 Chrome 140 或更新版本。
 
 ## 主要功能
 
