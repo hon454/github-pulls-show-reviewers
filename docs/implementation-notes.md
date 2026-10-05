@@ -581,11 +581,23 @@ event after the reset time; nothing is retried automatically.
   does not cancel/refetch reviewer work; credential changes and registry repair
   still invalidate the page's account-dependent data.
 - `accountMutations` in `src/storage/accounts.ts` is the background-only owner.
-  Its short commit queue rereads the registry before normalized-login upsert,
+  Its short commit queue rereads the registry before user-id upsert,
   duplicate consolidation, removal, initialization/repair and conditional auth
   writes. All registry and fragment writes share that queue. Background device
   flow commits through that owner, and `src/runtime/account-mutations.ts` exposes
   options-only local removal. Future account work must reuse this owner.
+- Account identity is the numeric GitHub user id from `GET /user`, stored in
+  the profile fragment as `userId`; the login is a display field. Sign-in
+  updates the record with the same `userId`, so a renamed user keeps one card
+  and a different user who reuses a login gets a separate one. Records written
+  before the id was stored keep working without re-authentication and match by
+  case-insensitive login until backfilled. The proactive refresh alarm then asks
+  `/user` once per valid record without an id, outside the registry queue, and
+  `backfillUserId` stores it only under the revision that made the request and
+  never replaces a stored id. A failure changes nothing and the next alarm
+  retries. If the user renamed and signed in again before the backfill, the
+  backfill finds the record that already holds the id and keeps the one with
+  valid credentials, dropping the other.
 - The owner reconciles stored account-fragment keys against the repaired v4
   account index on its first initialization after each worker start. The
   initialized, clean registry is memoized for the rest of that activation, so
@@ -605,7 +617,8 @@ event after the reset time; nothing is retried automatically.
   unchanged, and reads project it as an invalidated (`unknown`) account with no
   token, refresh token or connection receipt and the opaque revision
   `quarantined`. Auth and installation commits skip it, the options card offers
-  sign-in again and removal, and re-signing in with the same login replaces it,
+  sign-in again and removal, and re-signing in with the same user id (or, for a
+  record without one, the same login) replaces it,
   preferring a readable duplicate when one exists. When the login itself is
   unreadable, the card shows the account ID and only removal clears it. A later
   release that parses the record restores the account without sign-in.
@@ -844,7 +857,7 @@ it is not a live private-repository permission check.
   prevents later commit for that attempt. Already admitted writes return
   `committing`/`connected`; the UI waits for the outcome, without rollback or
   deleting an account. Completion returns the actual ID chosen by the existing
-  normalized-login registry owner. Late results cannot advance a newer panel.
+  user-id registry owner. Late results cannot advance a newer panel.
 - Trusted session records restore waiting flows with their original ID, deadline,
   slowdown interval and next allowed poll. Concurrent polls share a request and
   background enforces the interval. On `slow_down`, add at least five seconds.
