@@ -120,6 +120,29 @@ boundary: a successful cancel ACK forbids later commit; an already admitted
 write returns committing/completed instead. A stale callback cannot close a
 newer panel. Cancellation never rolls back or deletes a saved account.
 
+### Sign-in through a failing GitHub API after approval
+
+1. Open the extension's service-worker DevTools (`chrome://extensions` →
+   **service worker**), open the **Network** panel and add a request-blocking
+   pattern for `api.github.com/user/installations*`. Keep `api.github.com/user`
+   unblocked.
+2. In options, start **+ Add another account** and approve the code on GitHub.
+   After a few seconds the panel must show the account as connected; its card
+   lists no installations yet. The worker console shows up to three blocked
+   installation requests and no sign-in error.
+3. Remove the blocking pattern. Within about 30 seconds, or after **Refresh
+   installations**, or on the next GitHub pull list page, the card lists the
+   account's installations. No second sign-in is needed.
+4. Repeat with `api.github.com/user` blocked and keep it blocked: the panel ends
+   with the generic sign-in error after three attempts and no card is added.
+   Unblock it within a few seconds on another run and confirm the sign-in
+   completes. Cancel during a blocked retry must close the panel at once and add
+   no card.
+
+Keep the worker DevTools window open only for this scenario; it keeps the worker
+alive. Record the blocked patterns and request counts, never request headers or
+response bodies.
+
 ### Sign-in clipboard, keyboard, and status feedback
 
 Use an isolated Chrome profile and synthetic device-flow responses for this

@@ -726,17 +726,21 @@ event after the reset time; nothing is retried automatically.
   that issued the response. A malformed or rejected `next` target is never sent
   the OAuth header and leaves the result marked `truncated`, so an incomplete
   installation or selected-repository snapshot cannot be persisted as complete.
-- Account installation-list pagination is stricter: if the account-level
-  `/user/installations` list hits the local page ceiling while a `next` link
-  still exists, the refresh fails without replacing the previous installation
-  snapshot because omitted installations cannot be tied to an owner. Sign-in is
-  the exception: it stores the installations loaded before the ceiling, so an
-  account with more installations than that can still connect. Owners beyond
-  the ceiling then resolve as uncovered.
+- When the account-level `/user/installations` list hits the local page
+  ceiling (10 pages of 100) while a `next` link still exists, sign-in and
+  installation refresh both store the installations loaded before the ceiling,
+  so an account with more installations than that can connect and refresh.
+  Omitted installations cannot be tied to an owner, so owners beyond the ceiling
+  resolve as uncovered; nothing marks the stored list as partial. A rejected or
+  malformed `next` link is not a ceiling: it still fails sign-in's installation
+  load and every refresh without replacing the stored list. When one request of
+  an installation load fails, the load's other in-flight requests are aborted.
 - `createSelfHealingAccountResolver` (`src/background/account-resolution.ts`)
   wraps resolution: a complete cached selected-installation miss checks stored
   same-owner candidates, requests the background installation service and reruns
-  resolution. The content facade receives an `AccountSummary`, never a full
+  resolution. An account whose installations were never loaded
+  (`installationsRefreshedAt` 0, after a sign-in that could not load them) is
+  always a candidate, once per page session. The content facade receives an `AccountSummary`, never a full
   account. Repository context and installation owner restrict content refresh.
 - The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per account and credential generation. A skipped stale-generation commit returns the existing generic failure outcome. The service response does not include tokens; content has no direct local-storage access.
 - Each candidate is refreshed at most once per page session. Successful
@@ -859,15 +863,21 @@ it is not a live private-repository permission check.
 - After the code exchange the issued tokens are already live at GitHub, so one
   transient failure must not end the sign-in. `GET /user` and the installation
   load each get up to three attempts, one and three seconds apart, for network
-  errors, 5xx, 429 and 403 secondary rate limits. Other failures, including a
-  401 or a schema mismatch, are not retried. Retries run outside the flow queue
-  and stop as soon as the attempt is cancelled, expired or superseded. If
-  `/user` still fails the attempt ends as before. Once `/user` succeeds the
-  account is committed even when its installations could not be loaded: a new
-  account starts with none, a reconnected account keeps its stored ones, and the
-  installation-refresh service then loads them outside the flow queue with its
-  own 401 recovery and generation-checked commit. Attempt isolation,
-  cancel/commit admission and secret scrubbing are unchanged.
+  errors, 5xx, 429 and any 403 (possibly a secondary rate limit). Other
+  failures, including a 401 or a schema mismatch, are not retried. Retries run
+  outside the flow queue and a cancelled, expired or superseded attempt stops at
+  once, even mid-wait. When the exchange succeeds, the attempt's deadline is
+  extended to at least two minutes ahead so these retries cannot expire tokens
+  that are already live. If `/user` still fails the attempt ends as before.
+  Once `/user` succeeds the account is committed even when its installations
+  could not be loaded: a new account starts with none (`installationsRefreshedAt`
+  0), a reconnected account keeps its stored ones. As soon as that commit
+  resolves, the installation-refresh service loads them outside both queues
+  with its own 401 recovery and generation-checked commit, and retries once
+  after 30 seconds if the credentials are still the committed ones. If the
+  worker stops first, the resolver's stale-candidate check above loads them on
+  the next pull list page. Attempt isolation, cancel/commit admission and secret
+  scrubbing are unchanged.
 - The options sign-in panel keeps clipboard feedback as a stable status
   identifier plus its device-code generation, not as rendered prose. A pending
   copy disables only its matching **Copy** control. A successful, rejected, or

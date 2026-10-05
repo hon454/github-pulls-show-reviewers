@@ -149,10 +149,12 @@ follow the successful storage commit. Late results cannot close or advance a
 newer panel; language changes retain the controller and current callback.
 
 Amendment (2026-10-05, #244): after the exchange, `/user` and the installation
-load retry transient failures a bounded number of times, outside the flow
-queue. Once `/user` succeeds the account is committed even without its
-installations, which the installation-refresh service then loads; a truncated
-installation list signs in with the installations loaded so far.
+load retry transient failures (network errors, 5xx, 429 and any 403, possibly a
+secondary rate limit) a bounded number of times, outside the flow queue, within
+a bounded deadline extension. Once `/user` succeeds the account is committed
+even without its installations, which the installation-refresh service then
+loads. An installation list cut at the page limit is stored as loaded, for
+sign-in and refresh; an invalid `next` link still fails.
 
 | Restored state                | Behavior                                                                                                                                            |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
