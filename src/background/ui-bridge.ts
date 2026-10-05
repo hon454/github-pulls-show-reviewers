@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import { getGitHubAppConfig } from "../config/github-app";
-import { accountMutations } from "../storage/accounts";
+import { accountMutations, type Account } from "../storage/accounts";
 import { updatePreferences } from "../storage/preferences";
 import { projectContentAccount, summarizeAccount } from "./account-summary";
 import { createDeviceFlowService, FlowOwnershipError } from "./device-flow";
@@ -15,7 +15,6 @@ import {
   type UIContext,
   type UISender,
 } from "./ui-sender";
-import type { Account } from "../storage/accounts";
 import {
   accountSummarySchema,
   contentAccountSchema,

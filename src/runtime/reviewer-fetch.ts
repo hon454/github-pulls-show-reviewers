@@ -143,7 +143,8 @@ const reviewerFetchErrorShape = {
     .enum(["interrupted", "retired", "unavailable", "exhausted"])
     .optional(),
 };
-// Background parse of stored and internal envelopes; unknown fields are dropped.
+// Parses stored and internal envelopes (background) and serialized errors
+// (content); unknown fields are dropped.
 export const reviewerFetchErrorSchema = z.object({
   ...reviewerFetchErrorShape,
   failures: z
@@ -170,10 +171,7 @@ const contentReplyErrorSchema = z.strictObject({
     )
     .optional(),
 });
-const reviewerUserReplySchema = z.strictObject({
-  login: nonEmptyStringSchema,
-  avatarUrl: z.string().nullable(),
-});
+const reviewerUserReplySchema = reviewerUserMessageSchema.strict();
 const pullReviewerSummarySchema = z.strictObject({
   status: z.literal("ok"),
   requestedUsers: z.array(reviewerUserReplySchema),
@@ -197,12 +195,9 @@ const pullReviewerSummarySchema = z.strictObject({
     )
     .optional(),
 });
-const pullReviewerMetadataReplySchema = z.strictObject({
-  number: nonEmptyStringSchema,
-  authorLogin: nonEmptyStringSchema.nullable(),
-  requestedUsers: z.array(reviewerUserReplySchema),
-  requestedTeams: z.array(z.string()),
-}) satisfies z.ZodType<PullReviewerMetadata>;
+const pullReviewerMetadataReplySchema = pullReviewerMetadataMessageSchema
+  .extend({ requestedUsers: z.array(reviewerUserReplySchema) })
+  .strict();
 const contentReplyAccountSchema = contentAccountSchema.nullable().optional();
 export const fetchPullReviewerSummaryResponseSchema = z.discriminatedUnion(
   "ok",
@@ -232,6 +227,73 @@ export const fetchPullReviewerMetadataBatchResponseSchema =
       account: contentReplyAccountSchema,
     }),
   ]);
+
+// A strict reply schema rejects any field it does not name. Tie each one to
+// the type its producer returns, so a field added to that type fails typecheck
+// here instead of turning every reply into "unavailable" at runtime.
+type Exact<Schema, Type> = [Schema] extends [Type]
+  ? [Type] extends [Schema]
+    ? [
+        Exclude<keyof Schema, keyof Type> | Exclude<keyof Type, keyof Schema>,
+      ] extends [never]
+      ? true
+      : false
+    : false
+  : false;
+type Summary = z.infer<typeof pullReviewerSummarySchema>;
+type ErrorReply = z.infer<typeof contentReplyErrorSchema>;
+type ErrorFailure = NonNullable<ErrorReply["failures"]>[number];
+type Failure = NonNullable<ReviewerFetchErrorEnvelope["failures"]>[number];
+type Reply<T, Ok extends boolean> = Extract<T, { ok: Ok }>;
+type SummaryReply = z.infer<typeof fetchPullReviewerSummaryResponseSchema>;
+type MetadataReply = z.infer<
+  typeof fetchPullReviewerMetadataBatchResponseSchema
+>;
+type AllTrue<Checks extends readonly true[]> = Checks;
+export type ContentReplySchemasMatchTheirTypes = AllTrue<
+  [
+    Exact<Summary, PullReviewerSummary>,
+    Exact<
+      Summary["requestedUsers"][number],
+      PullReviewerSummary["requestedUsers"][number]
+    >,
+    Exact<
+      Summary["completedReviews"][number],
+      PullReviewerSummary["completedReviews"][number]
+    >,
+    Exact<
+      NonNullable<Summary["reviewRequestEvidence"]>[number],
+      NonNullable<PullReviewerSummary["reviewRequestEvidence"]>[number]
+    >,
+    Exact<
+      z.infer<typeof pullReviewerMetadataReplySchema>,
+      PullReviewerMetadata
+    >,
+    Exact<ErrorReply, ReviewerFetchErrorEnvelope>,
+    Exact<ErrorFailure, Failure>,
+    Exact<
+      NonNullable<ErrorFailure["rateLimit"]>,
+      NonNullable<Failure["rateLimit"]>
+    >,
+    Exact<z.infer<typeof contentAccountSchema>, ContentAccount>,
+    Exact<
+      Reply<SummaryReply, true>,
+      Reply<FetchPullReviewerSummaryResponse, true>
+    >,
+    Exact<
+      Reply<SummaryReply, false>,
+      Reply<FetchPullReviewerSummaryResponse, false>
+    >,
+    Exact<
+      Reply<MetadataReply, true>,
+      Reply<FetchPullReviewerMetadataBatchResponse, true>
+    >,
+    Exact<
+      Reply<MetadataReply, false>,
+      Reply<FetchPullReviewerMetadataBatchResponse, false>
+    >,
+  ]
+>;
 
 export class ReviewerFetchRuntimeError extends Error {
   constructor(
