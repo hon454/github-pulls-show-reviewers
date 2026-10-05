@@ -740,10 +740,13 @@ event after the reset time; nothing is retried automatically.
   their budgets. Ordinary port disconnection is not owner loss.
 - Liveness probes never hold the ledger queue. A prune probes each known
   document once, in parallel, then removes confirmed losses in one short queued
-  step and skips the session write when nothing was removed. Pruning runs on
-  worker activation, tab removal and options-document loss; a discovery start
-  probes only its own document and, without waiting, an earlier document of the
-  same tab. A slow document therefore cannot delay another tab's start.
+  step and skips the session write when nothing was removed. That step keeps a
+  session the document replaced after the probe. Pruning runs on worker
+  activation, tab removal or replacement and options-document loss; a discovery
+  start probes only its own document and, without waiting, an earlier document
+  of the same tab. A slow document therefore cannot delay another tab's start.
+  A document that navigates away from GitHub keeps its records until one of
+  those events.
 - Restore validates the session ledger with `safeParse`. A malformed value is
   replaced by an empty store and rewritten, so one bad record cannot reject
   later ledger operations, including anonymous public rows. A live document's

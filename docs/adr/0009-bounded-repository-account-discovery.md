@@ -48,7 +48,7 @@ its records.
 Amendment (2026-10-05, #249): liveness probes follow the same rule as HTTP and
 never hold the ledger queue. They run in parallel, each known document once per
 prune, and one short queued step applies confirmed losses. Pruning is limited
-to worker activation, tab removal, options-document loss and an earlier
+to worker activation, tab removal or replacement, options-document loss and an earlier
 document of the starting tab. A malformed restored ledger resets to an empty
 store instead of failing every later operation.
 
