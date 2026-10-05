@@ -619,8 +619,11 @@ event after the reset time; nothing is retried automatically.
   (`src/shared/credential-deadline.ts`). A timed-out refresh is `transient`:
   the account stays valid and the coordinator releases its in-flight entry,
   so a later 401 starts a new exchange. A response read before the timeout is
-  kept because GitHub may already have rotated the refresh token. A timed-out
-  installation refresh reports failure without refresh or invalidation.
+  kept because GitHub may already have rotated the refresh token. A refresh
+  GitHub completed after the bound is lost like an interrupted rotation, so
+  the next attempt may fail terminally and require re-authentication. A
+  timed-out installation refresh reports failure without refresh or
+  invalidation.
 - HTTP never holds the registry commit queue, preserving network concurrency
   across accounts. Installation refresh admission rereads the current account
   through that owner and joins in-flight work only for the same credential
@@ -808,7 +811,9 @@ it is not a live private-repository permission check.
   the account's atomic opaque `connectionAttemptId` receipt before returning.
 - Device-code, token-poll, `/user` and installation requests each have a
   15-second bound covering the response body
-  (`src/shared/credential-deadline.ts`). A request that exceeds it ends the
+  (`src/shared/credential-deadline.ts`). The bound is per request, including
+  per installation page, not one budget for the whole sign-in. A request that
+  exceeds it ends the
   flow as `network_error` without replaying the exchange, instead of leaving
   options in the fetching state until cancel or the 15-minute expiry.
 - Cancel, expiry, completion and detected owner loss clear secret flow fields.
