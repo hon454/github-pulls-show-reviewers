@@ -163,6 +163,14 @@ expired/abandoned entries; no periodic expiry job is added. Tombstones reject ol
 retries while the document exists, and session records disappear on browser
 restart. Persistence failures fail closed before new HTTP/commit admission.
 
+Amendment (2026-10-05, #245): each device-code, token-poll, `/user` and
+installation request, including its body, is bounded at 15 seconds by
+`src/shared/credential-deadline.ts`, which is separate from reviewer deadlines.
+A request that exceeds it is aborted and ends the flow as the transient
+`network_error`, so options leaves the fetching state and offers a new
+attempt. As with an interrupted exchange, its outcome is unknown and it is not
+replayed. Cancellation still aborts the same request through its signal.
+
 The account receipt prevents replay of an already durable connection; it does
 not guarantee worker lifetime or recover credentials if GitHub rotated them but
 the process stopped before durable storage. That pre-existing refresh rotation

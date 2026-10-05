@@ -412,6 +412,22 @@ locale changes. Injected test clocks do not change production constants. Record
 the tested SHA, build, Node/pnpm/Chromium versions, commands and result artifacts;
 fixture coverage is not live GitHub or store-release verification.
 
+### Stalled credential requests
+
+Device-code, token-poll, token-refresh, `/user` and installation requests each
+stop after 15 seconds. No packaged fixture holds these requests, so run the
+fake-clock regressions:
+
+```bash
+pnpm exec vitest run tests/credential-deadline.test.ts tests/auth.test.ts tests/auth.refresh.test.ts tests/refresh-coordinator.test.ts tests/background-device-flow.test.ts
+```
+
+They check that a held token poll, `/user` or installation request ends the
+sign-in panel as a network error without another exchange or an account
+commit, and that a held refresh stays transient: the account is not
+invalidated and the next 401 starts a new refresh. These tests do not exercise
+live GitHub or a real browser.
+
 ## 5. Rebuild and reload during iteration
 
 The official Chrome docs note that manifest changes, service worker changes, and content script changes require an extension reload, and content script changes also require reloading the host page.

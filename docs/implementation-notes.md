@@ -614,6 +614,13 @@ event after the reset time; nothing is retried automatically.
   or revive a removed account. The raw refresh/invalidation runtime endpoints
   are removed. UI requests operations; background retry helpers reread current
   accounts and stop if an account is gone or invalid.
+- Refresh, `/user` and installation requests, like the device-flow requests,
+  each have a 15-second bound covering the response body
+  (`src/shared/credential-deadline.ts`). A timed-out refresh is `transient`:
+  the account stays valid and the coordinator releases its in-flight entry,
+  so a later 401 starts a new exchange. A response read before the timeout is
+  kept because GitHub may already have rotated the refresh token. A timed-out
+  installation refresh reports failure without refresh or invalidation.
 - HTTP never holds the registry commit queue, preserving network concurrency
   across accounts. Installation refresh admission rereads the current account
   through that owner and joins in-flight work only for the same credential
@@ -799,6 +806,11 @@ it is not a live private-repository permission check.
   background enforces the interval. On `slow_down`, add at least five seconds.
   Interrupted HTTP returns `restart_required`; interrupted commits reconcile
   the account's atomic opaque `connectionAttemptId` receipt before returning.
+- Device-code, token-poll, `/user` and installation requests each have a
+  15-second bound covering the response body
+  (`src/shared/credential-deadline.ts`). A request that exceeds it ends the
+  flow as `network_error` without replaying the exchange, instead of leaving
+  options in the fetching state until cancel or the 15-minute expiry.
 - Cancel, expiry, completion and detected owner loss clear secret flow fields.
   Worker activation and flow entrypoints expire abandoned entries; there is no
   background polling loop, keepalive or new alarm. A browser restart clears
