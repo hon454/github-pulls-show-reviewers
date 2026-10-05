@@ -12,7 +12,7 @@
 
 ![리뷰어 칩과 리뷰 상태 배지가 표시된 GitHub PR 목록](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.7 릴리스 노트](./docs/releases/v1.18.7.md)(영어): GitHub의 어느 페이지에서 페이지 내 이동으로 들어와도 리뷰어가 안정적으로 표시되도록 했습니다. 리뷰나 이벤트 기록이 긴 풀 리퀘스트의 리뷰 상태를 바로잡고, GitHub Preview 레이아웃에서 접근 안내 배너를 목록 위에 배치하며, 유휴 GitHub 탭의 백그라운드 활동을 줄였습니다.
+[v1.18.8 릴리스 노트](./docs/releases/v1.18.8.md)(영어): GitHub·네트워크·로컬 저장소에 일시적인 오류가 있어도 로그인과 토큰 갱신이 유지되도록 했습니다. GitHub 사용자 이름이 바뀌어도 계정이 하나로 유지되고, GitHub 페이지에 전달하는 계정 정보를 줄였으며, 이제 Chrome 140 이상이 필요합니다.
 
 ## 주요 기능
 

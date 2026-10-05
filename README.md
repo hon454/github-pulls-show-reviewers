@@ -12,7 +12,7 @@
 
 ![GitHub PR list with inline reviewer chips and review-state badges](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.7 release notes](./docs/releases/v1.18.7.md) (English): show reviewers reliably after in-page navigation from any GitHub page, correct review states on pull requests with long review or event histories, place the access banner above the list on GitHub's Preview layout, and reduce background activity in idle GitHub tabs.
+[v1.18.8 release notes](./docs/releases/v1.18.8.md) (English): keep sign-in and token refresh working through transient GitHub, network and local storage failures, keep a single account after a GitHub username change, send less account information to GitHub pages, and require Chrome 140 or later.
 
 ## What It Does
 
