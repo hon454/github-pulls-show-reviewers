@@ -74,8 +74,13 @@ export class DiscoveryUnavailableError extends Error {
 
 const ownerKey = (owner: DiscoveryOwner) =>
   JSON.stringify([owner.lane, owner.documentId]);
+const emptyStore = (): Store => ({ version: 1, sessions: {}, records: {} });
 
-/** One short persistence queue; HTTP and subscriber waits never hold it. */
+/**
+ * One short persistence queue; HTTP, subscriber waits and document liveness
+ * probes never hold it. Callers probe owners first and apply the result with
+ * `forget`, so one unresponsive document cannot delay another's discovery.
+ */
 export function createRepositoryDiscoveryLedger(input: {
   ensureReady: () => Promise<void>;
   isOwnerAlive: (owner: DiscoveryOwner) => Promise<boolean>;
@@ -91,30 +96,33 @@ export function createRepositoryDiscoveryLedger(input: {
     const stored = (
       await browser.storage.session.get(REPOSITORY_DISCOVERY_KEY)
     )[REPOSITORY_DISCOVERY_KEY];
-    const state =
-      stored === undefined
-        ? { version: 1 as const, sessions: {}, records: {} }
-        : storeSchema.parse(stored);
-    let changed = false;
-    for (const [key, header] of Object.entries(state.sessions)) {
-      if (!(await input.isOwnerAlive(header.owner))) {
-        delete state.sessions[key];
-        delete state.records[header.id];
-        changed = true;
-      }
-    }
+    const parsed =
+      stored === undefined ? undefined : storeSchema.safeParse(stored);
+    // A malformed record must not reject every later ledger operation,
+    // including anonymous public rows. Start over and replace the bad value.
+    let changed = parsed?.success === false;
+    const state = parsed?.success ? parsed.data : emptyStore();
     for (const record of Object.values(state.records)) {
       // An unacknowledged dispatch cannot be replayed or called a denial.
       if (
-        record.status === "running" ||
-        record.attempts.some((attempt) => attempt.status === "admitted")
+        record.status !== "interrupted" &&
+        (record.status === "running" ||
+          record.attempts.some((attempt) => attempt.status === "admitted"))
       ) {
         record.status = "interrupted";
         changed = true;
       }
     }
-    if (changed)
-      await browser.storage.session.set({ [REPOSITORY_DISCOVERY_KEY]: state });
+    if (changed) {
+      try {
+        await browser.storage.session.set({
+          [REPOSITORY_DISCOVERY_KEY]: state,
+        });
+      } catch {
+        // Keep the repaired state in memory: reads still work, and the next
+        // save replaces the stored value. Admission saves still fail closed.
+      }
+    }
     if (disposed) throw new DiscoveryUnavailableError("retired");
     current = state;
     return state;
@@ -157,7 +165,7 @@ export function createRepositoryDiscoveryLedger(input: {
 
   return {
     initialize: () => queued(async () => {}),
-    begin(
+    async begin(
       owner: DiscoveryOwner,
       request: {
         pageSession: string;
@@ -166,9 +174,10 @@ export function createRepositoryDiscoveryLedger(input: {
         repo: string;
       },
     ): Promise<RepositoryDiscovery> {
+      // Probe before entering the queue: only this document waits for itself.
+      if (!(await input.isOwnerAlive(owner)))
+        throw new DiscoveryUnavailableError("retired");
       return queued(async (state) => {
-        if (!(await input.isOwnerAlive(owner)))
-          throw new DiscoveryUnavailableError("retired");
         const key = ownerKey(owner);
         const previous = state.sessions[key];
         const repositoryOwner = request.owner.toLowerCase();
@@ -253,15 +262,43 @@ export function createRepositoryDiscoveryLedger(input: {
         await save(next);
       });
     },
-    prune(): Promise<void> {
+    /** Session owners for a liveness probe that runs outside the queue. */
+    owners(): Promise<Array<{ owner: DiscoveryOwner; id: string }>> {
+      return queued(async (state) =>
+        Object.values(state.sessions).map((header) => ({
+          owner: structuredClone(header.owner),
+          id: header.id,
+        })),
+      );
+    },
+    /**
+     * Removes documents a probe found lost, in one short step that skips
+     * no-op writes. `id` is the session the probe saw (null: none). A session
+     * that changed since then is newer than the probe and is kept. Returns
+     * the documents whose session is gone, so callers release only those.
+     */
+    forget(
+      lost: Array<{ owner: DiscoveryOwner; id: string | null }>,
+    ): Promise<DiscoveryOwner[]> {
       return queued(async (state) => {
+        const gone: DiscoveryOwner[] = [];
+        const removed: string[] = [];
+        for (const { owner, id } of lost) {
+          const header = state.sessions[ownerKey(owner)];
+          if (!header) gone.push(owner);
+          else if (header.id === id) {
+            gone.push(owner);
+            removed.push(ownerKey(owner));
+          }
+        }
+        if (removed.length === 0) return gone;
         const next = structuredClone(state);
-        for (const [key, header] of Object.entries(state.sessions)) {
-          if (await input.isOwnerAlive(header.owner)) continue;
+        for (const key of removed) {
+          delete next.records[next.sessions[key].id];
           delete next.sessions[key];
-          delete next.records[header.id];
         }
         await save(next);
+        return gone;
       });
     },
     dispose() {

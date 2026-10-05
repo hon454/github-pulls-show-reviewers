@@ -586,9 +586,88 @@ export function createRepositoryAccountService(input: {
     });
   }
 
+  function release(owner: DiscoveryOwner) {
+    const ownerKey = JSON.stringify([owner.lane, owner.documentId]);
+    for (const [operationKey, operation] of operations) {
+      const [lane, documentId] = JSON.parse(operationKey) as string[];
+      if (lane === owner.lane && documentId === owner.documentId)
+        operation.controller.abort();
+    }
+    for (const [operationKey, pending] of rows) {
+      const [lane, documentId] = JSON.parse(operationKey) as string[];
+      if (lane === owner.lane && documentId === owner.documentId)
+        for (const row of pending) row.controller.abort();
+    }
+    for (const collection of [metadataCache, terminal])
+      for (const operationKey of collection.keys()) {
+        const [lane, documentId] = JSON.parse(operationKey) as string[];
+        if (lane === owner.lane && documentId === owner.documentId)
+          collection.delete(operationKey);
+      }
+    owners.delete(ownerKey);
+    activeIds.delete(ownerKey);
+    resolvers.delete(ownerKey);
+  }
+  /**
+   * Probes each known document once, in parallel and outside the ledger
+   * queue, then removes confirmed losses in one short queued step. A probe
+   * that fails or never answers is uncertain and keeps the document's budget.
+   */
+  async function pruneOwners(
+    include: (owner: DiscoveryOwner) => boolean = () => true,
+  ) {
+    const known = new Map<
+      string,
+      { owner: DiscoveryOwner; id: string | null }
+    >();
+    for (const entry of [
+      ...(await ledger.owners()),
+      ...[...owners.values()].map((owner) => ({ owner, id: null })),
+    ]) {
+      const ownerKey = JSON.stringify([
+        entry.owner.lane,
+        entry.owner.documentId,
+      ]);
+      if (!known.has(ownerKey) && include(entry.owner))
+        known.set(ownerKey, entry);
+    }
+    const lost = (
+      await Promise.all(
+        [...known.values()].map(async (entry) =>
+          (await input.isOwnerAlive(entry.owner).catch(() => true))
+            ? []
+            : [entry],
+        ),
+      )
+    ).flat();
+    if (lost.length === 0) return;
+    // A document that began a new discovery after the probe keeps everything.
+    for (const owner of await ledger.forget(lost)) release(owner);
+  }
+  // Prune requests that arrive while one runs share a single follow-up pass.
+  let pruneTail: Promise<void> = Promise.resolve();
+  let pendingPrune: Promise<void> | undefined;
+  function prune(): Promise<void> {
+    if (!pendingPrune) {
+      const next = pruneTail
+        .catch(() => undefined)
+        .then(() => {
+          pendingPrune = undefined;
+          return pruneOwners();
+        });
+      pendingPrune = next;
+      pruneTail = next;
+    }
+    return pendingPrune;
+  }
+
   return {
     ledger,
-    initialize: () => ledger.initialize(),
+    /** Worker activation: restore without probes, then prune in parallel. */
+    async initialize() {
+      await ledger.initialize();
+      await prune();
+    },
     async begin(
       owner: DiscoveryOwner,
       request: {
@@ -873,31 +952,17 @@ export function createRepositoryAccountService(input: {
       terminal.delete(key(owner, id));
       await ledger.retire(owner, id);
     },
-    async prune() {
-      for (const [ownerKey, owner] of owners) {
-        if (await input.isOwnerAlive(owner)) continue;
-        for (const [operationKey, operation] of operations) {
-          const [lane, documentId] = JSON.parse(operationKey) as string[];
-          if (lane === owner.lane && documentId === owner.documentId)
-            operation.controller.abort();
-        }
-        for (const [operationKey, pending] of rows) {
-          const [lane, documentId] = JSON.parse(operationKey) as string[];
-          if (lane === owner.lane && documentId === owner.documentId)
-            for (const row of pending) row.controller.abort();
-        }
-        for (const collection of [metadataCache, terminal])
-          for (const operationKey of collection.keys()) {
-            const [lane, documentId] = JSON.parse(operationKey) as string[];
-            if (lane === owner.lane && documentId === owner.documentId)
-              collection.delete(operationKey);
-          }
-        owners.delete(ownerKey);
-        activeIds.delete(ownerKey);
-        resolvers.delete(ownerKey);
-      }
-      await ledger.prune();
-    },
+    prune,
+    /** Probes only earlier documents of `owner`'s tab, e.g. after navigation. */
+    pruneReplaced: (owner: DiscoveryOwner) =>
+      owner.tabId === undefined
+        ? Promise.resolve()
+        : pruneOwners(
+            (known) =>
+              known.lane === owner.lane &&
+              known.tabId === owner.tabId &&
+              known.documentId !== owner.documentId,
+          ),
     dispose() {
       disposed = true;
       for (const operation of operations.values()) operation.controller.abort();

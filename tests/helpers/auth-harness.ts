@@ -12,6 +12,25 @@ export function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/**
+ * Reports whether `work` settles within a few event-loop turns. It waits with
+ * `setImmediate`, so a test may fake `setTimeout` to keep a timeout fallback
+ * from firing and still observe that unrelated work was not held behind it.
+ */
+export async function settlesWithoutTimers(
+  work: Promise<unknown>,
+  turns = 20,
+): Promise<boolean> {
+  let settled = false;
+  void work.then(
+    () => (settled = true),
+    () => (settled = true),
+  );
+  for (let turn = 0; turn < turns && !settled; turn++)
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  return settled;
+}
+
 export function connectInput(
   overrides: Partial<AccountConnectInput> = {},
 ): AccountConnectInput {

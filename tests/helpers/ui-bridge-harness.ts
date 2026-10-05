@@ -135,6 +135,7 @@ export function createUIBridgeHarness(
         },
       ),
       onRemoved: event<(tabId: number) => void>(),
+      onReplaced: event<(addedTabId: number, removedTabId: number) => void>(),
     },
     i18n: { getUILanguage: () => "en" },
   };
