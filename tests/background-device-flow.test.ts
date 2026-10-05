@@ -32,6 +32,7 @@ beforeEach(() => {
     if (path === "/login/oauth/access_token") return tokens();
     if (path === "/user")
       return json({
+        id: 1,
         login: "octocat",
         avatar_url: null,
         token: SENTINELS.access,
@@ -158,7 +159,12 @@ describe("background OAuth device-flow ownership, restoration and cancellation",
   );
   it("keeps every OAuth secret inside background and returns the actual persisted existing account ID", async () => {
     await accountMutations.upsertAccountByLogin(
-      connectInput({ newAccountId: "retained-id", login: "Octocat", now: 12 }),
+      connectInput({
+        userId: 1,
+        newAccountId: "retained-id",
+        login: "Octocat",
+        now: 12,
+      }),
     );
     const client = harness.client();
     client.subscribe(() => {});

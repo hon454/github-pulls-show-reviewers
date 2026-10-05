@@ -911,6 +911,7 @@ describe("OptionsPage", () => {
       .mockResolvedValueOnce(init)
       .mockResolvedValue({ ...init, deviceCode: "new", userCode: "NEW-CODE" });
     vi.mocked(auth.fetchAuthenticatedUser).mockResolvedValue({
+      userId: 1,
       login: "canceled-user",
       avatarUrl: null,
     });
@@ -997,6 +998,7 @@ describe("OptionsPage", () => {
       refreshTokenExpiresAt: null,
     });
     fetchAuthenticatedUser.mockResolvedValue({
+      userId: 1,
       login: "hon454",
       avatarUrl: null,
     });
@@ -1073,7 +1075,8 @@ describe("OptionsPage", () => {
     vi.mocked(auth.fetchAuthenticatedUser).mockImplementation(
       () =>
         new Promise((resolve) => {
-          releaseUser = () => resolve({ login: "hon454", avatarUrl: null });
+          releaseUser = () =>
+            resolve({ userId: 1, login: "hon454", avatarUrl: null });
         }),
     );
     vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
@@ -1134,7 +1137,8 @@ describe("OptionsPage", () => {
     vi.mocked(auth.fetchAuthenticatedUser).mockImplementation(
       () =>
         new Promise((resolve) => {
-          releaseUser = () => resolve({ login: "hon454", avatarUrl: null });
+          releaseUser = () =>
+            resolve({ userId: 1, login: "hon454", avatarUrl: null });
         }),
     );
     vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
@@ -1188,6 +1192,7 @@ describe("OptionsPage", () => {
       refreshTokenExpiresAt: null,
     });
     vi.mocked(auth.fetchAuthenticatedUser).mockResolvedValue({
+      userId: 1,
       login: "hon454",
       avatarUrl: null,
     });

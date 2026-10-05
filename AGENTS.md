@@ -49,6 +49,7 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - `src/background/`
   Credential-owning services, storage access policy, sender authorization,
   device-flow restoration and the sanitized UI snapshot/event bridge.
+  `account-identity.ts` backfills the GitHub user id on older accounts.
   `repository-accounts.ts` owns shared repository discovery, with a pure
   candidate/failure policy and trusted-session admission ledger. Reuse this
   owner for metadata, summaries and matched diagnostics; keep HTTP outside the

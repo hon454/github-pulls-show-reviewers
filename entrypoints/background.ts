@@ -1,8 +1,10 @@
 import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
+import { createAccountIdentityBackfill } from "../src/background/account-identity";
 import { createInstallationRefreshService } from "../src/background/installation-refresh";
 import { createProactiveRefreshService } from "../src/background/proactive-refresh";
 import { createReviewerFetchService } from "../src/background/reviewer-fetch";
 import { getGitHubAppConfig } from "../src/config/github-app";
+import { PROACTIVE_REFRESH_ALARM_NAME } from "../src/config/proactive-refresh";
 import { createStoragePolicy } from "../src/background/storage-policy";
 import { createUIBridge } from "../src/background/ui-bridge";
 import { accountMutations } from "../src/storage/accounts";
@@ -24,6 +26,7 @@ export default defineBackground(() => {
     listAccounts: accountMutations.listAccounts,
     now: () => Date.now(),
   });
+  const identityBackfill = createAccountIdentityBackfill();
 
   const bridge = createUIBridge({
     ensureReady,
@@ -39,10 +42,21 @@ export default defineBackground(() => {
   browser.alarms.onAlarm.addListener((alarm) => {
     void ensureReady()
       .then(() => proactiveRefreshService.handleAlarmFire(alarm.name))
+      // Records from before the stored user id gain it after token refresh.
+      .then(() =>
+        alarm.name === PROACTIVE_REFRESH_ALARM_NAME
+          ? identityBackfill.backfillMissingUserIds()
+          : undefined,
+      )
       .catch(() => undefined);
   });
 
   browser.runtime.onInstalled.addListener((details) => {
+    // Records from before the stored user id gain it right after the update.
+    if (details.reason === "update")
+      void ensureReady()
+        .then(() => identityBackfill.backfillMissingUserIds())
+        .catch(() => undefined);
     if (details.reason === "install") {
       browser.runtime.openOptionsPage().catch((error) => {
         console.error(

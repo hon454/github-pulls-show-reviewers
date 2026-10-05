@@ -323,7 +323,10 @@ for exact race ordering; a live credential race is not required. For a manual
 packaged-extension smoke check, verify that reviewer refresh, diagnostics, and
 manual installation refresh retain the same sign-in/error behavior. Reconnect
 and remove an account through options and confirm there is one retained card
-per GitHub login and removed cards stay absent. Switching any of the five
+per GitHub user and removed cards stay absent. A GitHub rename followed by a new
+sign-in updates the existing card's login instead of adding a second card; the
+`accounts.user-id` and `account-identity` tests cover the rename and the
+backfill of records stored before the user id. Switching any of the five
 supported languages during a refresh must only reformat the existing UI.
 
 The deterministic `auth-generation` and `accounts.registry-concurrency` tests

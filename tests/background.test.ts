@@ -20,6 +20,7 @@ const {
   refreshAccountInstallationsMock,
   createInstallationRefreshServiceMock,
   getGitHubAppConfigMock,
+  backfillMissingUserIdsMock,
 } = vi.hoisted(() => ({
   refreshAccountTokenMock: vi.fn(),
   fetchPullReviewerSummaryMock: vi.fn(),
@@ -31,6 +32,7 @@ const {
   refreshAccountInstallationsMock: vi.fn(),
   createInstallationRefreshServiceMock: vi.fn(),
   getGitHubAppConfigMock: vi.fn(() => ({ clientId: "test-client-id" })),
+  backfillMissingUserIdsMock: vi.fn(async () => undefined),
 }));
 createRefreshCoordinatorMock.mockImplementation(() => ({
   refreshAccountToken: refreshAccountTokenMock,
@@ -91,6 +93,11 @@ vi.mock("../src/background/installation-refresh", () => ({
   createInstallationRefreshService: createInstallationRefreshServiceMock,
 }));
 
+vi.mock("../src/background/account-identity", () => ({
+  createAccountIdentityBackfill: () => ({
+    backfillMissingUserIds: backfillMissingUserIdsMock,
+  }),
+}));
 vi.mock("../src/config/github-app", () => ({
   getGitHubAppConfig: getGitHubAppConfigMock,
 }));
@@ -180,6 +187,7 @@ beforeEach(() => {
   createInstallationRefreshServiceMock.mockClear();
   getGitHubAppConfigMock.mockClear();
   alarmsCreateMock.mockClear();
+  backfillMissingUserIdsMock.mockClear();
   openOptionsPageMock.mockClear();
   capturedMessageListener = null;
   capturedAlarmListener = null;
@@ -940,6 +948,20 @@ describe("background proactive refresh wiring", () => {
     );
   });
 
+  it("backfills missing user ids after an extension update, not on every boot", async () => {
+    await bootBackground();
+    await flushMicrotasks();
+    expect(backfillMissingUserIdsMock).not.toHaveBeenCalled();
+
+    vi.mocked(browser.runtime.onInstalled.addListener).mock.calls[0][0]({
+      reason: "update",
+    } as never);
+
+    await vi.waitFor(() =>
+      expect(backfillMissingUserIdsMock).toHaveBeenCalledOnce(),
+    );
+  });
+
   it("refreshes eligible accounts when the proactive alarm fires", async () => {
     const now = 1_700_000_000_000;
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -984,6 +1006,21 @@ describe("background proactive refresh wiring", () => {
 
     expect(listAccountsMock).not.toHaveBeenCalled();
     expect(refreshAccountTokenMock).not.toHaveBeenCalled();
+    expect(backfillMissingUserIdsMock).not.toHaveBeenCalled();
+  });
+
+  it("backfills missing user ids after the proactive refresh pass", async () => {
+    listAccountsMock.mockResolvedValue([]);
+    await bootBackground();
+    if (capturedAlarmListener == null) {
+      throw new Error("background did not register an alarms.onAlarm listener");
+    }
+
+    capturedAlarmListener({ name: PROACTIVE_REFRESH_ALARM_NAME });
+    await vi.waitFor(() =>
+      expect(backfillMissingUserIdsMock).toHaveBeenCalledOnce(),
+    );
+    expect(listAccountsMock).toHaveBeenCalled();
   });
 
   it("invalidates accounts whose refresh token has already expired", async () => {

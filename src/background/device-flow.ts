@@ -434,6 +434,7 @@ export function createDeviceFlowService(input: {
               // Do not return a cancellation ACK after admission, or undo a later
               // account by deleting it. Registry identity remains #166's concern.
               const committing = accountMutations.upsertAccountByLogin({
+                userId: user.userId,
                 login: user.login,
                 avatarUrl: user.avatarUrl,
                 token: result.accessToken,

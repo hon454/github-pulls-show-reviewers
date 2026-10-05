@@ -581,11 +581,35 @@ event after the reset time; nothing is retried automatically.
   does not cancel/refetch reviewer work; credential changes and registry repair
   still invalidate the page's account-dependent data.
 - `accountMutations` in `src/storage/accounts.ts` is the background-only owner.
-  Its short commit queue rereads the registry before normalized-login upsert,
+  Its short commit queue rereads the registry before user-id upsert,
   duplicate consolidation, removal, initialization/repair and conditional auth
   writes. All registry and fragment writes share that queue. Background device
   flow commits through that owner, and `src/runtime/account-mutations.ts` exposes
   options-only local removal. Future account work must reuse this owner.
+- Account identity is the numeric GitHub user id from `GET /user`, stored in
+  the profile fragment as `userId`; the login is a display field. Sign-in
+  updates the record with the same `userId`, so a renamed user keeps one card,
+  and a different user who reuses a login gets a separate card from any record
+  that already stores an id.
+- Records written before the id was stored keep working without
+  re-authentication. Until backfilled they still match a sign-in by
+  case-insensitive login, so a different user who now holds that login would
+  replace one. The update itself and each proactive refresh alarm therefore
+  ask `/user` once per valid record without an id, outside the registry queue,
+  with a 30-second deadline. `backfillUserId` stores the id, login and avatar
+  only under the revision that made the request and never replaces a stored id.
+  A failure changes nothing and the next pass retries; a 401 is not retried for
+  the same credentials in that worker. Invalidated records are not backfilled:
+  signing in again with the same login fixes them, and after a rename the old
+  card must be removed.
+- If the user renamed and signed in again before the backfill, the backfill
+  finds the readable record that already holds the id. When that record is
+  valid it is kept, gets the current login and avatar, and the record being
+  backfilled is dropped; an invalidated holder is dropped instead. The
+  background backfill never drops a quarantined record.
+- The login of a record that already stores its id is refreshed only by the next
+  sign-in, so after a rename the owner-login fallback uses the old login until
+  then.
 - The owner reconciles stored account-fragment keys against the repaired v4
   account index on its first initialization after each worker start. The
   initialized, clean registry is memoized for the rest of that activation, so
@@ -605,9 +629,11 @@ event after the reset time; nothing is retried automatically.
   unchanged, and reads project it as an invalidated (`unknown`) account with no
   token, refresh token or connection receipt and the opaque revision
   `quarantined`. Auth and installation commits skip it, the options card offers
-  sign-in again and removal, and re-signing in with the same login replaces it,
+  sign-in again and removal, and re-signing in with the same user id (or, for a
+  record without one, the same login) replaces it,
   preferring a readable duplicate when one exists. When the login itself is
-  unreadable, the card shows the account ID and only removal clears it. A later
+  unreadable but its user id is readable, signing in again still replaces it;
+  otherwise the card shows the account ID and only removal clears it. A later
   release that parses the record restores the account without sign-in.
 - A stored `settings` index that this release cannot parse is not treated as
   empty, which would delete every account record as an orphan. Initialization
@@ -844,7 +870,7 @@ it is not a live private-repository permission check.
   prevents later commit for that attempt. Already admitted writes return
   `committing`/`connected`; the UI waits for the outcome, without rollback or
   deleting an account. Completion returns the actual ID chosen by the existing
-  normalized-login registry owner. Late results cannot advance a newer panel.
+  user-id registry owner. Late results cannot advance a newer panel.
 - Trusted session records restore waiting flows with their original ID, deadline,
   slowdown interval and next allowed poll. Concurrent polls share a request and
   background enforces the interval. On `slow_down`, add at least five seconds.

@@ -45,8 +45,8 @@ service worker before invalidating an account.
   the non-secret `legacy` identity for missing generations so pre-migration
   snapshots, later reads and worker restarts agree until a real rotation.
 - The background-only `accountMutations` queue owns initialization, registry
-  repair, login identity resolution, duplicate consolidation, removal and auth
-  commits. Background device flow and validated options removal capabilities
+  repair, account identity resolution (by GitHub user id since #246),
+  duplicate consolidation, removal and auth commits. Background device flow and validated options removal capabilities
   reuse this owner.
   Conditional auth commits recheck revision and registry membership inside this
   queue. GitHub HTTP runs outside it, so another account can progress while one

@@ -589,11 +589,14 @@ function isExpectedAuthPaginationUrl(
 }
 
 const githubUserSchema = z.object({
+  id: z.number().int().positive(),
   login: z.string(),
   avatar_url: z.string().url().nullable().optional(),
 });
 
 export type AuthenticatedUser = {
+  /** Stable GitHub user id; the login can change after a rename. */
+  userId: number;
   login: string;
   avatarUrl: string | null;
 };
@@ -617,6 +620,7 @@ export async function fetchAuthenticatedUser(
     throw new GitHubAuthSchemaError("GET /user", parsed.error.issues);
   }
   return {
+    userId: parsed.data.id,
     login: parsed.data.login,
     avatarUrl: parsed.data.avatar_url ?? null,
   };

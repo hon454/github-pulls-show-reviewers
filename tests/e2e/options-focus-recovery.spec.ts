@@ -53,7 +53,9 @@ test("restores the add-account fallback after completion removes focused Copy", 
       } else if (endpoint === "/user") {
         markUserRequested();
         await userResponse;
-        await route.fulfill({ json: { login: "octocat", avatar_url: null } });
+        await route.fulfill({
+          json: { id: 1, login: "octocat", avatar_url: null },
+        });
       } else if (endpoint === "/user/installations") {
         await route.fulfill({ json: { total_count: 0, installations: [] } });
       } else {
