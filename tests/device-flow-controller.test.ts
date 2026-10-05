@@ -447,7 +447,11 @@ describe("attempt ownership with transports that ignore abort", () => {
     });
     vi.mocked(auth.fetchUserInstallations)
       .mockReset()
-      .mockResolvedValue({ items: [selectedInstallation], truncated: false });
+      .mockResolvedValue({
+        items: [selectedInstallation],
+        truncated: false,
+        invalidLink: false,
+      });
     vi.mocked(auth.fetchInstallationRepositories)
       .mockReset()
       .mockResolvedValue({ items: ["example/repo"], truncated: false });

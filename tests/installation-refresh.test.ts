@@ -123,14 +123,13 @@ describe("createInstallationRefreshService", () => {
     const outcome = await service.refreshAccountInstallations("acc-1");
 
     expect(outcome).toEqual({ ok: true });
-    expect(fetchUserInstallationsMock).toHaveBeenCalledWith({
-      token: "ghu_live",
-    });
+    expect(fetchUserInstallationsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "ghu_live" }),
+    );
     expect(fetchInstallationRepositoriesMock).toHaveBeenCalledTimes(1);
-    expect(fetchInstallationRepositoriesMock).toHaveBeenCalledWith({
-      token: "ghu_live",
-      installationId: 1,
-    });
+    expect(fetchInstallationRepositoriesMock).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "ghu_live", installationId: 1 }),
+    );
 
     expect(replaceInstallationsMock).toHaveBeenCalledTimes(1);
     const [accountId, installations] = replaceInstallationsMock.mock
@@ -195,7 +194,7 @@ describe("createInstallationRefreshService", () => {
     ]);
   });
 
-  it("does not persist when the account installation list is truncated", async () => {
+  it("persists the installations loaded before the account list's page limit", async () => {
     getAccountByIdMock.mockResolvedValue(makeAccount({ token: "ghu_live" }));
     fetchUserInstallationsMock.mockResolvedValue({
       items: [
@@ -206,6 +205,35 @@ describe("createInstallationRefreshService", () => {
         }),
       ],
       truncated: true,
+      invalidLink: false,
+    });
+
+    const service = createInstallationRefreshService({
+      refreshCoordinator: refreshCoordinatorMock,
+    });
+    const outcome = await service.refreshAccountInstallations("acc-1");
+
+    expect(outcome).toEqual({ ok: true });
+    expect(replaceInstallationsMock).toHaveBeenCalledWith(
+      "acc-1",
+      [expect.objectContaining({ id: 1 })],
+      expect.anything(),
+      expect.any(Function),
+    );
+  });
+
+  it("does not persist when the account list stopped at an invalid next link", async () => {
+    getAccountByIdMock.mockResolvedValue(makeAccount({ token: "ghu_live" }));
+    fetchUserInstallationsMock.mockResolvedValue({
+      items: [
+        makeApiInstallation({
+          id: 1,
+          login: "acme",
+          repositorySelection: "all",
+        }),
+      ],
+      truncated: true,
+      invalidLink: true,
     });
 
     const service = createInstallationRefreshService({
@@ -271,10 +299,10 @@ describe("createInstallationRefreshService", () => {
 
     expect(outcome).toEqual({ ok: true });
     expect(fetchUserInstallationsMock).toHaveBeenCalledTimes(2);
-    expect(fetchUserInstallationsMock.mock.calls[0][0]).toEqual({
+    expect(fetchUserInstallationsMock.mock.calls[0][0]).toMatchObject({
       token: "ghu_old",
     });
-    expect(fetchUserInstallationsMock.mock.calls[1][0]).toEqual({
+    expect(fetchUserInstallationsMock.mock.calls[1][0]).toMatchObject({
       token: "ghu_new",
     });
     expect(refreshAccountTokenMock).toHaveBeenCalledWith("acc-1", "legacy");

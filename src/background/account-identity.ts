@@ -2,9 +2,6 @@ import { extractGitHubApiStatus } from "../github/api";
 import { fetchAuthenticatedUser } from "../github/auth";
 import { accountMutations, credentialGeneration } from "../storage/accounts";
 
-/** One backfill request never holds a pass open longer than this. */
-const USER_REQUEST_TIMEOUT_MS = 30_000;
-
 export type AccountIdentityBackfill = {
   backfillMissingUserIds(): Promise<void>;
 };
@@ -31,10 +28,9 @@ export function createAccountIdentityBackfill(): AccountIdentityBackfill {
     for (const account of pending) {
       const generation = credentialGeneration(account);
       try {
-        const user = await fetchAuthenticatedUser({
-          token: account.token,
-          signal: AbortSignal.timeout(USER_REQUEST_TIMEOUT_MS),
-        });
+        // The credential request deadline bounds each request, so one
+        // backfill request never holds a pass open indefinitely.
+        const user = await fetchAuthenticatedUser({ token: account.token });
         await accountMutations.backfillUserId(account.id, generation, user);
       } catch (error) {
         // Token refresh paths own credential failures; never retry the same

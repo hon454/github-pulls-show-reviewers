@@ -52,6 +52,12 @@ export function createSelfHealingAccountResolver(input: {
       if (account.invalidated) {
         continue;
       }
+      // Installations never loaded (sign-in could not load them) may cover
+      // any owner, so the account is always worth one refresh.
+      if (account.installationsRefreshedAt === 0) {
+        candidates.push(account.id);
+        continue;
+      }
       const ownerInstallations = account.installations.filter(
         (installation) =>
           installation.account.login.toLowerCase() === normalizedOwner,

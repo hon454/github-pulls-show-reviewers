@@ -918,6 +918,7 @@ describe("OptionsPage", () => {
     vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
       items: [],
       truncated: false,
+      invalidLink: false,
     });
     vi.useFakeTimers();
     try {
@@ -1002,7 +1003,11 @@ describe("OptionsPage", () => {
       login: "hon454",
       avatarUrl: null,
     });
-    fetchUserInstallations.mockResolvedValue({ items: [], truncated: false });
+    fetchUserInstallations.mockResolvedValue({
+      items: [],
+      truncated: false,
+      invalidLink: false,
+    });
 
     await act(async () => {
       document
@@ -1082,6 +1087,7 @@ describe("OptionsPage", () => {
     vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
       items: [],
       truncated: false,
+      invalidLink: false,
     });
 
     await act(async () => {
@@ -1144,6 +1150,7 @@ describe("OptionsPage", () => {
     vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
       items: [],
       truncated: false,
+      invalidLink: false,
     });
 
     await act(async () => {
@@ -1199,6 +1206,7 @@ describe("OptionsPage", () => {
     vi.mocked(auth.fetchUserInstallations).mockResolvedValue({
       items: [],
       truncated: false,
+      invalidLink: false,
     });
 
     await act(async () => {

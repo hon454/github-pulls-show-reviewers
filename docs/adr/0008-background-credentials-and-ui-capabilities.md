@@ -148,6 +148,14 @@ account. Completion returns the actual stored account ID. Account notifications
 follow the successful storage commit. Late results cannot close or advance a
 newer panel; language changes retain the controller and current callback.
 
+Amendment (2026-10-05, #244): after the exchange, `/user` and the installation
+load retry transient failures (network errors, credential request timeouts, 5xx,
+429 and any 403, possibly a secondary rate limit) a bounded number of times, outside the flow queue, within
+a bounded deadline extension. Once `/user` succeeds the account is committed
+even without its installations, which the installation-refresh service then
+loads. An installation list cut at the page limit is stored as loaded, for
+sign-in and refresh; an invalid `next` link still fails.
+
 | Restored state                | Behavior                                                                                                                                            |
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Waiting                       | Preserve flow ID, original deadline, slowdown interval and next eligible tick                                                                       |
@@ -169,10 +177,13 @@ restart. Persistence failures fail closed before new HTTP/commit admission.
 Amendment (2026-10-05, #245): each device-code, token-poll, `/user` and
 installation request, including its body, is bounded at 15 seconds by
 `src/shared/credential-deadline.ts`, which is separate from reviewer deadlines.
-A request that exceeds it is aborted and ends the flow as the transient
-`network_error`, so options leaves the fetching state and offers a new
-attempt. As with an interrupted exchange, its outcome is unknown and it is not
-replayed. Cancellation still aborts the same request through its signal.
+A request that exceeds it is aborted. A timed-out device-code or token-poll
+request ends the flow as the transient `network_error`, so options leaves the
+fetching state and offers a new attempt. As with an interrupted exchange, its
+outcome is unknown and it is not replayed. After the exchange, a timed-out
+`/user` or installation request is retried like other transient failures
+(#244); a `/user` request that still times out ends the flow as
+`network_error`. Cancellation still aborts the same request through its signal.
 
 The account receipt prevents replay of an already durable connection; it does
 not guarantee worker lifetime or recover credentials if GitHub rotated them but

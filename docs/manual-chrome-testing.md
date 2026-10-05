@@ -120,6 +120,30 @@ boundary: a successful cancel ACK forbids later commit; an already admitted
 write returns committing/completed instead. A stale callback cannot close a
 newer panel. Cancellation never rolls back or deletes a saved account.
 
+### Sign-in through a failing GitHub API after approval
+
+1. Open the extension's service-worker DevTools (`chrome://extensions` →
+   **service worker**), open the **Network** panel and add a request-blocking
+   pattern for `api.github.com/user/installations*`. Keep `api.github.com/user`
+   unblocked.
+2. In options, start **+ Add another account** and approve the code on GitHub.
+   After a few seconds the panel must show the account as connected; its card
+   lists no installations yet. The Network panel shows four blocked
+   installation requests (three sign-in attempts and one refresh right after
+   the commit), then one more about 30 seconds later, and no sign-in error.
+3. Remove the blocking pattern before that retry, or later use **Refresh
+   installations** or open the next GitHub pull list page; the card then lists
+   the account's installations. No second sign-in is needed.
+4. Repeat with `api.github.com/user` blocked and keep it blocked: the panel ends
+   with the generic sign-in error after three attempts and no card is added.
+   Unblock it within a few seconds on another run and confirm the sign-in
+   completes. Cancel during a blocked retry must close the panel at once and add
+   no card.
+
+Keep the worker DevTools window open only for this scenario; it keeps the worker
+alive. Record the blocked patterns and request counts, never request headers or
+response bodies.
+
 ### Sign-in clipboard, keyboard, and status feedback
 
 Use an isolated Chrome profile and synthetic device-flow responses for this
@@ -180,7 +204,9 @@ Options should display only the user verification code/link and account identity
    The old session must request a new code explicitly. Already connected
    accounts and display/language preferences remain saved. An interrupted OAuth
    HTTP operation similarly offers a new code instead of replaying an uncertain
-   exchange. Unit tests separately cover pending commit recovery receipts.
+   exchange. Unit tests separately cover pending commit recovery receipts, and
+   `background-device-flow` covers transient `/user` and installation failures
+   after the exchange, retry cancellation and a truncated installation list.
 5. The packaged upgrade cases seed a tiny synthetic v3/v4 predecessor extension,
    close Chrome, replace its unpacked files and register the new bundle through
    Chrome's `Extensions.loadUnpacked` operation without uninstalling or clearing
@@ -425,10 +451,12 @@ fake-clock regressions:
 pnpm exec vitest run tests/credential-deadline.test.ts tests/auth.test.ts tests/auth.refresh.test.ts tests/refresh-coordinator.test.ts tests/background-device-flow.test.ts
 ```
 
-They check that a held token poll, `/user` or installation request ends the
-sign-in panel as a network error without another exchange or an account
-commit, and that a held refresh stays transient: the account is not
-invalidated and the next 401 starts a new refresh. These tests do not exercise
+They check that a held token poll ends the sign-in panel as a network error
+without another exchange or an account commit; that a held `/user` request is
+retried, and ends the panel as a network error with no account only when every
+attempt times out; that held installation requests still commit the account;
+and that a held refresh stays transient: the account is not invalidated and the
+next 401 starts a new refresh. These tests do not exercise
 live GitHub or a real browser.
 
 ## 5. Rebuild and reload during iteration

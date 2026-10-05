@@ -152,6 +152,26 @@ describe("createSelfHealingAccountResolver", () => {
     expect(requestRefresh).toHaveBeenCalledWith("acc-empty");
   });
 
+  it("treats an account whose installations were never loaded as a stale candidate", async () => {
+    resolveAccountForRepoMock.mockResolvedValueOnce(null);
+    listAccountsMock.mockResolvedValueOnce([
+      makeAccount({ id: "acc-new", installationsRefreshedAt: 0 }),
+      makeAccount({ id: "acc-loaded" }),
+      makeAccount({
+        id: "acc-invalid",
+        installationsRefreshedAt: 0,
+        invalidated: true,
+      }),
+    ]);
+    resolveAccountForRepoMock.mockResolvedValueOnce(null);
+    const requestRefresh = vi.fn(async () => true);
+
+    const resolver = createSelfHealingAccountResolver({ requestRefresh });
+    await resolver.resolveAccount("acme", "widgets");
+
+    expect(requestRefresh).toHaveBeenCalledExactlyOnceWith("acc-new");
+  });
+
   it("skips invalidated accounts when picking refresh candidates", async () => {
     resolveAccountForRepoMock.mockResolvedValueOnce(null);
     listAccountsMock.mockResolvedValueOnce([

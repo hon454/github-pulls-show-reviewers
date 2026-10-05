@@ -585,6 +585,9 @@ async function addAccountUnlocked(account: Account): Promise<void> {
  *
  * If no account matches, append as a new account.
  *
+ * `installations: null` means sign-in could not load them. A match then keeps
+ * its stored installations; a new account starts with none, never refreshed.
+ *
  * Returns the resulting Account (either the updated existing one or the
  * newly appended one).
  */
@@ -596,7 +599,7 @@ async function upsertAccountByLoginUnlocked(input: {
   refreshToken: string | null;
   expiresAt: number | null;
   refreshTokenExpiresAt: number | null;
-  installations: Installation[];
+  installations: Installation[] | null;
   newAccountId: string;
   now: number;
   connectionAttemptId?: string;
@@ -620,8 +623,12 @@ async function upsertAccountByLoginUnlocked(input: {
       refreshTokenExpiresAt: input.refreshTokenExpiresAt,
       invalidated: false,
       invalidatedReason: null,
-      installations: input.installations,
-      installationsRefreshedAt: input.now,
+      ...(input.installations == null
+        ? {}
+        : {
+            installations: input.installations,
+            installationsRefreshedAt: input.now,
+          }),
     };
 
     const duplicateIds = matches.slice(1).map((account) => account.id);
@@ -661,8 +668,8 @@ async function upsertAccountByLoginUnlocked(input: {
     refreshTokenExpiresAt: input.refreshTokenExpiresAt,
     invalidated: false,
     invalidatedReason: null,
-    installations: input.installations,
-    installationsRefreshedAt: input.now,
+    installations: input.installations ?? [],
+    installationsRefreshedAt: input.installations == null ? 0 : input.now,
   };
   await writeAccounts(
     { version: 4, accountIds: [...settings.accountIds, account.id] },
