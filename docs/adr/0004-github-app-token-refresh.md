@@ -143,5 +143,5 @@ the runtime recovers silently.
   refresh" constraint.
 - `src/github/auth.ts::refreshAccessToken`
 - `src/auth/refresh-coordinator.ts`
-- `src/auth/account-token-refresh.ts::retryWithAccountRefresh`,
-  `validateRepositoryAccessWithAccount`
+- `src/background/account-request.ts::createAccountRequest`,
+  `src/auth/account-token-refresh.ts::validateRepositoryAccessWithAccount`
