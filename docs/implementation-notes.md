@@ -21,7 +21,7 @@ storage and authentication are unchanged.
 
 ## Development toolchain
 
-WXT `0.21.4` uses the explicit Vite `8.2.2` peer and requires Node.js 22.12+
+WXT `0.21.4` uses the explicit Vite `8.3.2` peer and requires Node.js 22.12+
 for this toolchain. The optional `web-ext` auto-launch dependency is excluded to
 remove the unpatched Firefox profile ZIP extraction dependency. `pnpm dev`
 serves `.output/chrome-mv3-dev`, which contributors load manually in Chrome;
