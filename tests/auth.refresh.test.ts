@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RefreshTokenError, refreshAccessToken } from "../src/github/auth";
+import {
+  CREDENTIAL_REQUEST_TIMEOUT_MS,
+  CredentialTimeoutError,
+} from "../src/shared/credential-deadline";
 
 function fixture(name: string): unknown {
   return JSON.parse(
@@ -189,6 +193,59 @@ describe("refreshAccessToken", () => {
     ).rejects.toMatchObject({
       name: "RefreshTokenError",
       kind: "transient",
+    });
+  });
+
+  it("aborts a hung refresh at the credential timeout and classifies it as transient", async () => {
+    let requestSignal: AbortSignal | null | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementationOnce((_url, init) => {
+      requestSignal = init?.signal;
+      return new Promise<Response>(() => {});
+    });
+    let expire!: () => void;
+    const timer = {
+      setTimeout: vi.fn((callback: () => void) => {
+        expire = callback;
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }),
+      clearTimeout: vi.fn(),
+    };
+
+    const refresh = refreshAccessToken({
+      clientId: "Iv1.test",
+      refreshToken: "ghr_old",
+      timer,
+    }).catch((error: unknown) => error);
+    expect(timer.setTimeout).toHaveBeenCalledWith(
+      expect.any(Function),
+      CREDENTIAL_REQUEST_TIMEOUT_MS,
+    );
+    expire();
+
+    expect(await refresh).toMatchObject({
+      name: "RefreshTokenError",
+      kind: "transient",
+      code: "timeout",
+    });
+    expect(requestSignal?.aborted).toBe(true);
+    expect(requestSignal?.reason).toBeInstanceOf(CredentialTimeoutError);
+  });
+
+  it("keeps a hung refresh body after a 400 status transient instead of terminal", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(new ReadableStream({ start() {} }), { status: 400 }),
+    );
+
+    const refresh = refreshAccessToken({
+      clientId: "Iv1.test",
+      refreshToken: "ghr_old",
+    }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_REQUEST_TIMEOUT_MS);
+
+    expect(await refresh).toMatchObject({
+      name: "RefreshTokenError",
+      kind: "transient",
+      code: "timeout",
     });
   });
 

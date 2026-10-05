@@ -61,6 +61,10 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - `src/shared/reviewer-deadline.ts`
   Reviewer deadline defaults, injectable clock/timers, typed timeout and signal
   wait helpers. Request owners create deadlines; consumers never extend them.
+- `src/shared/credential-deadline.ts`
+  The 15-second per-request bound for OAuth, token refresh, `/user` and
+  installation requests, with an injectable timer and a typed timeout. It is
+  separate from reviewer deadlines.
 - `src/storage/`
   Background-only extension settings and persistence. `accounts.ts::accountMutations` is the
   background-only account registry/auth commit owner, including initialization

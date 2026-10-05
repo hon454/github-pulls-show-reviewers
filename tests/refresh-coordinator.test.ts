@@ -18,6 +18,7 @@ import {
   json,
   rotated,
 } from "./helpers/auth-harness";
+import { CREDENTIAL_REQUEST_TIMEOUT_MS } from "../src/shared/credential-deadline";
 
 let storage: ReturnType<typeof createStorageHarness>;
 let http: ReturnType<typeof createHttpHarness>;
@@ -472,6 +473,41 @@ describe("generation-aware refresh coordinator with real storage and HTTP parsin
     expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
       false,
     );
+  });
+
+  it("releases a hung refresh at the credential timeout without invalidating the account", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const old = await accountMutations.upsertAccountByLogin(connectInput());
+      const generation = credentialGeneration(old);
+      const hung = coordinator.refreshAccountToken(old.id, generation);
+      const joined = coordinator.refreshAccountToken(old.id, generation);
+      const stalled = await http.next();
+      expect(stalled.kind).toBe("refresh");
+      await vi.advanceTimersByTimeAsync(CREDENTIAL_REQUEST_TIMEOUT_MS);
+      expect(await hung).toEqual({ ok: false, terminal: false });
+      expect(await joined).toEqual({ ok: false, terminal: false });
+      expect((await accountMutations.getAccountById(old.id))?.invalidated).toBe(
+        false,
+      );
+
+      // A later 401 for the same generation starts a fresh exchange instead
+      // of joining the abandoned one.
+      const retry = coordinator.refreshAccountToken(old.id, generation);
+      const fresh = await http.next();
+      expect(fresh).not.toBe(stalled);
+      fresh.response.resolve(rotated());
+      expect(await retry).toMatchObject({ ok: true });
+      // The abandoned exchange's late reply cannot commit anything.
+      stalled.response.resolve(rotated("2"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await accountMutations.getAccountById(old.id))?.token).toBe(
+        "fixture-access-1",
+      );
+      expect(http.requests.length).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("checks generation before the missing-refresh-token branch and invalidates only a current failure", async () => {

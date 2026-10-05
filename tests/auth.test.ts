@@ -12,6 +12,10 @@ import {
 } from "../src/github/auth";
 
 import { loadAccountInstallations } from "../src/github/installations";
+import {
+  CREDENTIAL_REQUEST_TIMEOUT_MS,
+  CredentialTimeoutError,
+} from "../src/shared/credential-deadline";
 
 function fixture(name: string): unknown {
   return JSON.parse(
@@ -328,7 +332,7 @@ describe("fetchUserInstallations", () => {
       expect((init?.headers as Headers).get("Authorization")).toBe(
         "Bearer ghu_abc",
       );
-      expect(init?.signal).toBe(controller.signal);
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
     }
   });
 
@@ -460,7 +464,7 @@ describe("fetchInstallationRepositories", () => {
       expect((init?.headers as Headers).get("Authorization")).toBe(
         "Bearer ghu_abc",
       );
-      expect(init?.signal).toBe(controller.signal);
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
     }
   });
 
@@ -608,7 +612,141 @@ describe("loadAccountInstallations cancellation", () => {
       completeness: "complete",
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    for (const [, request] of fetchMock.mock.calls)
-      expect(request?.signal).toBe(controller.signal);
+    const signals = fetchMock.mock.calls.map(([, request]) => request?.signal);
+    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("cancels an in-flight installation request when the caller aborts", async () => {
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | null | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementationOnce((_url, init) => {
+      requestSignal = init?.signal;
+      return new Promise<Response>(() => {});
+    });
+    const work = loadAccountInstallations({
+      token: "fake-token",
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    await Promise.resolve();
+    controller.abort();
+    expect(await work).toMatchObject({ name: "AbortError" });
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it("forwards caller cancellation to a later selected-repository page", async () => {
+    const controller = new AbortController();
+    let pageSignal: AbortSignal | null | undefined;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        paginatedResponse(
+          repositoryPage("cinev/one"),
+          "https://api.github.com/user/installations/1/repositories?page=2",
+        ),
+      )
+      .mockImplementationOnce((_url, init) => {
+        pageSignal = init?.signal;
+        return new Promise<Response>(() => {});
+      });
+    const work = fetchInstallationRepositories({
+      token: "ghu_abc",
+      installationId: 1,
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(pageSignal?.aborted).toBe(false);
+    controller.abort();
+    expect(await work).toMatchObject({ name: "AbortError" });
+    expect(pageSignal?.aborted).toBe(true);
+  });
+});
+
+function hungFetch() {
+  const signals: Array<AbortSignal | null | undefined> = [];
+  const fetchMock = vi
+    .spyOn(globalThis, "fetch")
+    .mockImplementation((_url, init) => {
+      signals.push(init?.signal);
+      return new Promise<Response>(() => {});
+    });
+  return { fetchMock, signals };
+}
+
+function manualTimer() {
+  const callbacks: Array<() => void> = [];
+  const timer = {
+    setTimeout: vi.fn((callback: () => void) => {
+      callbacks.push(callback);
+      return callbacks.length as unknown as ReturnType<typeof setTimeout>;
+    }),
+    clearTimeout: vi.fn(),
+  };
+  return { timer, fire: () => callbacks.splice(0).forEach((run) => run()) };
+}
+
+describe("credential request timeouts", () => {
+  it("ends a hung device-flow poll as a network error and aborts the request", async () => {
+    const { signals } = hungFetch();
+    const { timer, fire } = manualTimer();
+    const poll = pollForAccessToken({
+      clientId: "Iv1.test",
+      deviceCode: "abc",
+      timer,
+    }).catch((error: unknown) => error);
+    expect(timer.setTimeout).toHaveBeenCalledWith(
+      expect.any(Function),
+      CREDENTIAL_REQUEST_TIMEOUT_MS,
+    );
+    fire();
+    const error = await poll;
+    expect(error).toBeInstanceOf(DeviceFlowError);
+    expect(error).toMatchObject({ code: "network_error" });
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it("ends a hung device-code body as a network error on the production timer", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(new ReadableStream({ start() {} }), { status: 200 }),
+    );
+    const start = initiateDeviceFlow({ clientId: "Iv1.test" }).catch(
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_REQUEST_TIMEOUT_MS);
+    expect(await start).toMatchObject({
+      name: "DeviceFlowError",
+      code: "network_error",
+    });
+  });
+
+  it("times out a hung /user request", async () => {
+    const { signals } = hungFetch();
+    const { timer, fire } = manualTimer();
+    const user = fetchAuthenticatedUser({ token: "ghu_abc", timer }).catch(
+      (error: unknown) => error,
+    );
+    fire();
+    expect(await user).toBeInstanceOf(CredentialTimeoutError);
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it("times out each hung installation request", async () => {
+    hungFetch();
+    const installations = manualTimer();
+    const listing = fetchUserInstallations({
+      token: "ghu_abc",
+      timer: installations.timer,
+    }).catch((error: unknown) => error);
+    installations.fire();
+    expect(await listing).toBeInstanceOf(CredentialTimeoutError);
+
+    const repositories = manualTimer();
+    const page = fetchInstallationRepositories({
+      token: "ghu_abc",
+      installationId: 1,
+      timer: repositories.timer,
+    }).catch((error: unknown) => error);
+    repositories.fire();
+    expect(await page).toBeInstanceOf(CredentialTimeoutError);
   });
 });

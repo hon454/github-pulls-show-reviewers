@@ -58,9 +58,19 @@ Refresh outcomes are classified into two kinds:
   `unsupported_grant_type`, or HTTP 400/401 from the refresh endpoint. The
   still-current generation is marked invalidated with reason `refresh_failed` and the banner
   prompts re-authentication.
-- `transient` — 5xx, 429, network errors, or malformed bodies. The account is
+- `transient` — 5xx, 429, network errors, malformed bodies, or a request that
+  exceeds the 15-second credential request timeout
+  (`src/shared/credential-deadline.ts`, #245). The account is
   left valid and the row-level failure surfaces; rows self-heal on the next
-  refresh attempt once GitHub recovers.
+  refresh attempt once GitHub recovers. A timed-out refresh releases the
+  coordinator's in-flight entry, so a later 401 for that generation starts a
+  new exchange instead of joining the abandoned one. A response read before
+  the timeout is kept, because GitHub may already have rotated the refresh
+  token for it. Known limitation: refresh tokens are single-use, so a refresh
+  GitHub completed but that did not arrive within the bound is lost like an
+  interrupted rotation. The next attempt may then fail terminally and require
+  re-authentication. This trade-off is accepted so a stalled exchange cannot
+  hold every later recovery for that generation.
 
 Only the refresh HTTP exchange is classified this way. After a successful
 rotation, the old refresh token may already be retired, so a rejected storage

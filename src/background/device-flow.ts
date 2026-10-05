@@ -6,6 +6,7 @@ import {
   fetchAuthenticatedUser,
 } from "../github/auth";
 import { loadAccountInstallations } from "../github/installations";
+import { CredentialTimeoutError } from "../shared/credential-deadline";
 import { accountMutations, type Account } from "../storage/accounts";
 import {
   deviceFlowProgressSchema,
@@ -213,8 +214,14 @@ export function createDeviceFlowService(input: {
       )
         terminal(record, "denied");
       else {
+        // A timed-out /user or installation request is transient like a
+        // timed-out OAuth exchange; the flow still ends without replay.
         const code = flowErrorCodeSchema.safeParse(
-          error instanceof DeviceFlowError ? error.code : "unknown_error",
+          error instanceof DeviceFlowError
+            ? error.code
+            : error instanceof CredentialTimeoutError
+              ? "network_error"
+              : "unknown_error",
         );
         terminal(record, "fatal", code.success ? code.data : "unknown_error");
       }

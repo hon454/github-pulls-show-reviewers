@@ -8,6 +8,7 @@ import {
   type UIRequest,
 } from "../src/runtime/ui-contract";
 import { connectInput, json } from "./helpers/auth-harness";
+import { CREDENTIAL_REQUEST_TIMEOUT_MS } from "../src/shared/credential-deadline";
 import {
   createUIBridgeHarness,
   containsSecret,
@@ -426,6 +427,51 @@ describe("background OAuth device-flow ownership, restoration and cancellation",
     expect(JSON.stringify(harness.session.snapshot())).not.toContain(
       SENTINELS.device,
     );
+  });
+
+  it.each(["/login/oauth/access_token", "/user", "/user/installations"])(
+    "ends a hung %s request in a token poll as a network error without replaying it",
+    async (hungPath) => {
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+      vi.setSystemTime(baseTime);
+      const init = await start();
+      const answer = fetchMock.getMockImplementation()!;
+      const signals: Array<AbortSignal | null | undefined> = [];
+      fetchMock.mockImplementation((url, request) => {
+        if (new URL(String(url)).pathname !== hungPath)
+          return answer(url, request);
+        signals.push(request?.signal);
+        return new Promise<Response>(() => {});
+      });
+      tick(5);
+      const work = poll(init.flowId);
+      await vi.advanceTimersByTimeAsync(CREDENTIAL_REQUEST_TIMEOUT_MS - 1);
+      expect(signals).toHaveLength(1);
+      expect(signals[0]?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await work).toEqual({ phase: "fatal", code: "network_error" });
+      expect(signals[0]?.aborted).toBe(true);
+      expect(await accountMutations.listAccounts()).toEqual([]);
+      const calls = fetchMock.mock.calls.length;
+      tick(5);
+      expect(await poll(init.flowId)).toEqual({
+        phase: "fatal",
+        code: "network_error",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(calls);
+      expect(JSON.stringify(harness.session.snapshot())).not.toContain(
+        SENTINELS.device,
+      );
+    },
+  );
+
+  it("ends a hung device-code request as a network error", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(baseTime);
+    fetchMock.mockReturnValueOnce(new Promise<Response>(() => {}));
+    const work = call({ type: "startDeviceFlow", attemptId: "attempt-a" });
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_REQUEST_TIMEOUT_MS);
+    expect(await work).toEqual({ phase: "fatal", code: "network_error" });
   });
 
   it.each(["initiating", "polling", "committing"])(
