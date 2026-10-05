@@ -1,31 +1,22 @@
-import {
-  REVIEWER_DEADLINES,
-  throwIfReviewerAborted,
-  waitForReviewerSignal,
-  withReviewerDeadline,
-} from "../shared/reviewer-deadline";
-import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import type { RepositoryAccountService } from "./repository-accounts";
 import type { DiscoveryOwner } from "./repository-discovery-ledger";
 import type { RepositoryDiscovery } from "../runtime/repository-discovery";
-import { ReviewerFetchRuntimeError } from "../runtime/reviewer-fetch";
 import {
-  fetchPullReviewerMetadataBatch,
-  fetchPullReviewerSummary,
-  extractGitHubApiStatus,
-} from "../github/api";
-import { accountMutations, credentialGeneration } from "../storage/accounts";
-import {
+  ReviewerFetchRuntimeError,
   serializeReviewerFetchError,
   type FetchPullReviewerMetadataBatchMessage,
   type FetchPullReviewerMetadataBatchResponse,
   type FetchPullReviewerSummaryMessage,
   type FetchPullReviewerSummaryResponse,
-  type ReviewerFetchErrorEnvelope,
 } from "../runtime/reviewer-fetch";
 
 export const CANCELED_REQUEST_TTL_MS = 60_000;
-type RepositoryFetchContext = {
+/**
+ * The repository binding of one reviewer request: the sender document's
+ * committed discovery and the shared account service that owns its account
+ * choice and token retries. There is no path that takes only an account id.
+ */
+export type RepositoryFetchContext = {
   service: RepositoryAccountService;
   owner: DiscoveryOwner;
   discovery: RepositoryDiscovery;
@@ -35,28 +26,15 @@ export type ReviewerFetchService = {
   cancelRequest(requestId: string): void;
   handleFetchMessage(
     message: FetchPullReviewerSummaryMessage,
-    context?: RepositoryFetchContext,
+    context: RepositoryFetchContext,
   ): Promise<FetchPullReviewerSummaryResponse>;
   handleMetadataBatchMessage(
     message: FetchPullReviewerMetadataBatchMessage,
-    context?: RepositoryFetchContext,
+    context: RepositoryFetchContext,
   ): Promise<FetchPullReviewerMetadataBatchResponse>;
 };
 
-type ReviewerFetchMessage = {
-  requestId: string;
-  accountId: string | null;
-};
-
-type ReviewerFetchFailureResponse = {
-  ok: false;
-  error: ReviewerFetchErrorEnvelope;
-};
-
-export function createReviewerFetchService(input: {
-  refreshCoordinator: RefreshCoordinator;
-}): ReviewerFetchService {
-  const { refreshCoordinator } = input;
+export function createReviewerFetchService(): ReviewerFetchService {
   const inFlightControllers = new Map<string, Set<AbortController>>();
   const canceledRequestIds = new Map<string, number>();
 
@@ -90,92 +68,6 @@ export function createReviewerFetchService(input: {
     if (controllers?.size === 0) inFlightControllers.delete(requestId);
   }
 
-  async function runWithRefreshRetry<
-    Result,
-    SuccessResponse extends { ok: true },
-  >(
-    message: ReviewerFetchMessage,
-    duration: number,
-    execute: (token: string | null, signal: AbortSignal) => Promise<Result>,
-    toSuccessResponse: (result: Result) => SuccessResponse,
-  ): Promise<SuccessResponse | ReviewerFetchFailureResponse> {
-    const controller = createController(message.requestId);
-
-    try {
-      return await withReviewerDeadline(
-        duration,
-        controller.signal,
-        async (signal) => {
-          const account =
-            message.accountId == null
-              ? null
-              : await accountMutations.getAccountById(message.accountId);
-
-          throwIfReviewerAborted(signal);
-          try {
-            const result = await waitForReviewerSignal(
-              execute(account?.token ?? null, signal),
-              signal,
-            );
-            return toSuccessResponse(result);
-          } catch (error) {
-            throwIfReviewerAborted(signal);
-            if (extractGitHubApiStatus(error) !== 401 || account == null) {
-              return {
-                ok: false,
-                error: serializeReviewerFetchError(error),
-              };
-            }
-
-            const outcome = await waitForReviewerSignal(
-              refreshCoordinator.refreshAccountToken(
-                account.id,
-                credentialGeneration(account),
-              ),
-              signal,
-            );
-            throwIfReviewerAborted(signal);
-            if (outcome.ok !== true) {
-              return {
-                ok: false,
-                error: serializeReviewerFetchError(error),
-              };
-            }
-
-            const refreshed = await accountMutations.getAccountById(account.id);
-            throwIfReviewerAborted(signal);
-            if (refreshed == null || refreshed.invalidated || signal.aborted) {
-              return { ok: false, error: serializeReviewerFetchError(error) };
-            }
-            try {
-              const result = await waitForReviewerSignal(
-                execute(refreshed.token, signal),
-                signal,
-              );
-              return toSuccessResponse(result);
-            } catch (retryError) {
-              throwIfReviewerAborted(signal);
-              if (extractGitHubApiStatus(retryError) === 401) {
-                await refreshCoordinator.invalidateAccountToken(
-                  account.id,
-                  credentialGeneration(refreshed),
-                );
-              }
-              return {
-                ok: false,
-                error: serializeReviewerFetchError(retryError),
-              };
-            }
-          }
-        },
-      );
-    } catch (error) {
-      return { ok: false, error: serializeReviewerFetchError(error) };
-    } finally {
-      releaseController(message.requestId, controller);
-    }
-  }
-
   return {
     cancelRequest(requestId: string): void {
       const now = Date.now();
@@ -186,102 +78,67 @@ export function createReviewerFetchService(input: {
     },
     async handleFetchMessage(
       message: FetchPullReviewerSummaryMessage,
-      context?: RepositoryFetchContext,
+      context: RepositoryFetchContext,
     ): Promise<FetchPullReviewerSummaryResponse> {
-      if (context) {
-        const controller = createController(message.requestId);
-        try {
-          const result = await context.service.summary(
-            context.owner,
-            context.discovery,
-            {
-              pullNumber: message.pullNumber,
-              signal: controller.signal,
-              ...(message.pullMetadata
-                ? { pullMetadata: message.pullMetadata }
-                : {}),
-              metadataAccount:
-                message.accountId !== null && message.accountRevision
-                  ? { id: message.accountId, revision: message.accountRevision }
-                  : null,
-            },
-          );
-          return { ok: true, ...result };
-        } catch (error) {
-          return {
-            ok: false,
-            error: serializeReviewerFetchError(error),
-            ...(error instanceof ReviewerFetchRuntimeError
-              ? { account: error.account }
-              : {}),
-          };
-        } finally {
-          releaseController(message.requestId, controller);
-        }
-      }
-      return runWithRefreshRetry(
-        message,
-        REVIEWER_DEADLINES.summary,
-        (token, signal) =>
-          fetchPullReviewerSummary({
-            owner: message.owner,
-            repo: message.repo,
+      const controller = createController(message.requestId);
+      try {
+        const result = await context.service.summary(
+          context.owner,
+          context.discovery,
+          {
             pullNumber: message.pullNumber,
-            githubToken: token,
-            signal,
-            ...(message.pullMetadata == null
-              ? {}
-              : { pullMetadata: message.pullMetadata }),
-          }),
-        (summary) => ({ ok: true, summary }),
-      );
+            signal: controller.signal,
+            ...(message.pullMetadata
+              ? { pullMetadata: message.pullMetadata }
+              : {}),
+            metadataAccount:
+              message.accountId !== null && message.accountRevision
+                ? { id: message.accountId, revision: message.accountRevision }
+                : null,
+          },
+        );
+        return { ok: true, ...result };
+      } catch (error) {
+        return {
+          ok: false,
+          error: serializeReviewerFetchError(error),
+          ...(error instanceof ReviewerFetchRuntimeError
+            ? { account: error.account }
+            : {}),
+        };
+      } finally {
+        releaseController(message.requestId, controller);
+      }
     },
     async handleMetadataBatchMessage(
       message: FetchPullReviewerMetadataBatchMessage,
-      context?: RepositoryFetchContext,
+      context: RepositoryFetchContext,
     ): Promise<FetchPullReviewerMetadataBatchResponse> {
-      if (context) {
-        const controller = createController(message.requestId);
-        try {
-          const result = await context.service.metadata(
-            context.owner,
-            context.discovery,
-            controller.signal,
-            message.targetPullNumbers,
-            message.refresh,
-          );
-          return {
-            ok: true,
-            metadata: result.metadata ?? [],
-            account: result.account,
-          };
-        } catch (error) {
-          return {
-            ok: false,
-            error: serializeReviewerFetchError(error),
-            ...(error instanceof ReviewerFetchRuntimeError
-              ? { account: error.account }
-              : {}),
-          };
-        } finally {
-          releaseController(message.requestId, controller);
-        }
+      const controller = createController(message.requestId);
+      try {
+        const result = await context.service.metadata(
+          context.owner,
+          context.discovery,
+          controller.signal,
+          message.targetPullNumbers,
+          message.refresh,
+        );
+        return {
+          ok: true,
+          metadata: result.metadata ?? [],
+          account: result.account,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          error: serializeReviewerFetchError(error),
+          ...(error instanceof ReviewerFetchRuntimeError
+            ? { account: error.account }
+            : {}),
+        };
+      } finally {
+        releaseController(message.requestId, controller);
       }
-      return runWithRefreshRetry(
-        message,
-        REVIEWER_DEADLINES.metadata,
-        (token, signal) =>
-          fetchPullReviewerMetadataBatch({
-            owner: message.owner,
-            repo: message.repo,
-            githubToken: token,
-            signal,
-            ...(message.targetPullNumbers == null
-              ? {}
-              : { targetPullNumbers: message.targetPullNumbers }),
-          }),
-        (metadata) => ({ ok: true, metadata }),
-      );
     },
   };
 }

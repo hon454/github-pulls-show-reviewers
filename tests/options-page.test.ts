@@ -63,7 +63,6 @@ vi.mock("../src/storage/accounts", async (importActual) => {
   return {
     ...actual,
     listAccounts: listAccountsMock,
-    addAccount: vi.fn(async () => {}),
     upsertAccountByLogin: vi.fn(async (input: Record<string, unknown>) => ({
       id: input.newAccountId,
       login: input.login,

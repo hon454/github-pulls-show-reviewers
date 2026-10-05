@@ -59,6 +59,9 @@ evidence, separate full/production audit results, and TypeScript compatibility.
   covering account per repo via the cached installations and performs the
   GitHub REST calls, so access tokens never enter the content-script
   execution context. No user-typed scope patterns.
+- A reviewer fetch always runs under the sender document's committed
+  repository discovery. The background reviewer service has no path that
+  fetches with a caller-supplied account id alone.
 - Row-level failures do not render inline error text. A page-level banner
   aggregates repeated failures into one of six guidance states — token expired,
   App not installed, auth rate limit, unauthenticated rate limit, sign-in
@@ -586,6 +589,8 @@ event after the reset time; nothing is retried automatically.
   writes. All registry and fragment writes share that queue. Background device
   flow commits through that owner, and `src/runtime/account-mutations.ts` exposes
   options-only local removal. Future account work must reuse this owner.
+  Token and invalidation writes have no unconditional export: they go through
+  `accountMutations.commitAuth`, which checks the credential generation.
 - Account identity is the numeric GitHub user id from `GET /user`, stored in
   the profile fragment as `userId`; the login is a display field. Sign-in
   updates the record with the same `userId`, so a renamed user keeps one card,

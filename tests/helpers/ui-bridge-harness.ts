@@ -165,9 +165,7 @@ export function createUIBridgeHarness(
       installations: createInstallationRefreshService({
         refreshCoordinator: coordinator,
       }),
-      reviewers: createReviewerFetchService({
-        refreshCoordinator: coordinator,
-      }),
+      reviewers: createReviewerFetchService(),
     });
   }
   let bridge = makeBridge();

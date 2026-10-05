@@ -312,7 +312,7 @@ describe("createProactiveRefreshService", () => {
     // Defensive coverage: Promise.allSettled insulates us even if a future
     // change lets a rejection escape. refreshAccountToken wraps
     // refreshAccessToken in try/catch, but storage I/O (getAccountById,
-    // updateAccountTokens, markAccountInvalidated) is outside that guard
+    // accountMutations.commitAuth) is outside that guard
     // and can reject.
     const now = 1_700_000_000_000;
     const futureRefresh = now + 60 * 60 * 1_000;

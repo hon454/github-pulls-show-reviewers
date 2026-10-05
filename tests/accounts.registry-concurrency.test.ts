@@ -6,7 +6,11 @@ import {
   listAccounts,
 } from "../src/storage/accounts";
 const { upsertAccountByLogin, removeAccount } = accountMutations;
-import { connectInput, createStorageHarness } from "./helpers/auth-harness";
+import {
+  connectInput,
+  createStorageHarness,
+  storeAccountRecord,
+} from "./helpers/auth-harness";
 
 let storage: ReturnType<typeof createStorageHarness>;
 beforeEach(() => {
@@ -216,9 +220,12 @@ describe("one background registry owner across connected flows", () => {
 
   it("consolidates legacy duplicate logins without orphaning their fragments", async () => {
     await boot();
-    const { addAccount } = await import("../src/storage/accounts");
     const current = await upsertAccountByLogin(connectInput());
-    await addAccount({ ...current, id: "duplicate", createdAt: 10 });
+    await storeAccountRecord(storage.local, {
+      ...current,
+      id: "duplicate",
+      createdAt: 10,
+    });
     const retained = await upsertAccountByLogin(
       connectInput({ login: "OctoCat", newAccountId: "unused" }),
     );

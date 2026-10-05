@@ -4,6 +4,14 @@ import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
 import { createStorageHarness, deferred, json } from "./helpers/auth-harness";
 import { REVIEWER_DEADLINES } from "../src/shared/reviewer-deadline";
 import { reviewRequestEventsSchema } from "../src/github/api/schemas";
+import type {
+  FetchPullReviewerMetadataBatchMessage,
+  FetchPullReviewerSummaryMessage,
+} from "../src/runtime/reviewer-fetch";
+import {
+  createReviewerFetchContext,
+  settleDiscovery,
+} from "./helpers/reviewer-fetch-context";
 
 const metadata = {
   number: "42",
@@ -36,19 +44,39 @@ const timeout = {
   },
 };
 const never = () => new Promise<Response>(() => {});
+type Context = Awaited<ReturnType<typeof createReviewerFetchContext>>;
 let service: ReturnType<typeof createReviewerFetchService>;
-beforeEach(() => {
+let summaryContext: Context;
+let metadataContext: Context;
+// Production admission: summaries run under a settled public discovery, and
+// metadata batches run their own discovery.
+const fetchSummary = (message: FetchPullReviewerSummaryMessage) =>
+  service.handleFetchMessage(message, summaryContext);
+const fetchMetadata = (message: FetchPullReviewerMetadataBatchMessage) =>
+  service.handleMetadataBatchMessage(message, metadataContext);
+beforeEach(async () => {
   vi.useFakeTimers();
   vi.stubGlobal("browser", {
-    storage: { local: createStorageHarness().local },
+    storage: {
+      local: createStorageHarness().local,
+      session: createStorageHarness().local,
+    },
   });
-  service = createReviewerFetchService({
-    refreshCoordinator: createRefreshCoordinator({
-      getClientId: () => "fixture",
-    }),
+  const coordinator = createRefreshCoordinator({
+    getClientId: () => "fixture",
+  });
+  service = createReviewerFetchService();
+  const repository = { coordinator, repositoryOwner: "acme", repo: "widgets" };
+  summaryContext = await createReviewerFetchContext(repository);
+  await settleDiscovery(summaryContext);
+  metadataContext = await createReviewerFetchContext({
+    ...repository,
+    documentId: "content-2",
   });
 });
 afterEach(() => {
+  summaryContext.service.dispose();
+  metadataContext.service.dispose();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
@@ -67,8 +95,8 @@ describe("mandatory reviewer HTTP deadlines", () => {
       vi.stubGlobal("fetch", fetch);
       const work =
         kind === "summary"
-          ? service.handleFetchMessage(summaryMessage)
-          : service.handleMetadataBatchMessage(metadataMessage);
+          ? fetchSummary(summaryMessage)
+          : fetchMetadata(metadataMessage);
       await vi.advanceTimersByTimeAsync(29_999);
       expect(owned.aborted).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
@@ -94,8 +122,8 @@ describe("mandatory reviewer HTTP deadlines", () => {
     const fetch = vi.fn(async () => response);
     vi.stubGlobal("fetch", fetch);
     const work = kind.startsWith("metadata")
-      ? service.handleMetadataBatchMessage(metadataMessage)
-      : service.handleFetchMessage(summaryMessage);
+      ? fetchMetadata(metadataMessage)
+      : fetchSummary(summaryMessage);
     await vi.advanceTimersByTimeAsync(REVIEWER_DEADLINES.summary);
     expect(await work).toMatchObject(timeout);
     body.resolve([]);
@@ -116,8 +144,8 @@ describe("mandatory reviewer HTTP deadlines", () => {
       vi.stubGlobal("fetch", fetch);
       const work =
         kind === "summary"
-          ? service.handleFetchMessage(summaryMessage)
-          : service.handleMetadataBatchMessage(metadataMessage);
+          ? fetchSummary(summaryMessage)
+          : fetchMetadata(metadataMessage);
       await vi.advanceTimersByTimeAsync(20_000);
       const response = json([]);
       const path = kind === "summary" ? "/pulls/42/reviews" : "/pulls";
@@ -139,7 +167,7 @@ describe("mandatory reviewer HTTP deadlines", () => {
 
   it("bounds both unbatched endpoints even if one never answers", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(never));
-    const work = service.handleFetchMessage({
+    const work = fetchSummary({
       type: "fetchPullReviewerSummary",
       requestId: "unbatched",
       owner: "acme",
@@ -154,7 +182,7 @@ describe("mandatory reviewer HTTP deadlines", () => {
 
   it("preserves external cancellation and cleans the deadline", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(never));
-    const work = service.handleFetchMessage(summaryMessage);
+    const work = fetchSummary(summaryMessage);
     await vi.advanceTimersByTimeAsync(1);
     service.cancelRequest(summaryMessage.requestId);
     expect(await work).toMatchObject({
@@ -190,7 +218,7 @@ it("returns the first four summary slots at 30s and only then starts the other f
   const tasks = Array.from({ length: 8 }, (_, index) =>
     scheduler.run(
       () =>
-        service.handleFetchMessage({
+        fetchSummary({
           ...summaryMessage,
           requestId: `fifo-${index + 1}`,
           pullNumber: String(index + 1),
@@ -250,7 +278,7 @@ describe("optional events inherit the mandatory operation lifetime", () => {
           return Promise.resolve(response);
         }),
       );
-      const work = service.handleFetchMessage(ambiguous);
+      const work = fetchSummary(ambiguous);
       await vi.advanceTimersByTimeAsync(7_000);
       if (stage === "second-page") {
         const response = json([]);
@@ -306,7 +334,7 @@ describe("optional events inherit the mandatory operation lifetime", () => {
         return Promise.resolve(response);
       });
       vi.stubGlobal("fetch", fetch);
-      const work = service.handleFetchMessage({
+      const work = fetchSummary({
         ...ambiguous,
         pullMetadata: { ...metadata, requestedUsers: users },
       });
@@ -408,7 +436,7 @@ describe("optional events inherit the mandatory operation lifetime", () => {
           return Promise.resolve(response);
         }),
       );
-      const work = service.handleFetchMessage(ambiguous);
+      const work = fetchSummary(ambiguous);
       await reviewsStarted.promise;
       now = eventsStart;
       reviewGate.resolve(json(completed));
@@ -476,7 +504,7 @@ describe("optional events inherit the mandatory operation lifetime", () => {
         }),
       );
       expect(
-        await service.handleFetchMessage({
+        await fetchSummary({
           ...ambiguous,
           pullMetadata: {
             ...metadata,
@@ -515,7 +543,7 @@ describe("optional events inherit the mandatory operation lifetime", () => {
           _url.includes("/reviews") ? reviewGate.promise : eventGate.promise,
         ),
       );
-      const work = service.handleFetchMessage(ambiguous);
+      const work = fetchSummary(ambiguous);
       await vi.advanceTimersByTimeAsync(reviewsDelay);
       reviewGate.resolve(json(completed));
       await vi.advanceTimersByTimeAsync(30_000 - reviewsDelay);
@@ -538,7 +566,7 @@ describe("optional events inherit the mandatory operation lifetime", () => {
         return response;
       }),
     );
-    const work = service.handleFetchMessage(ambiguous);
+    const work = fetchSummary(ambiguous);
     await vi.advanceTimersByTimeAsync(1);
     service.cancelRequest(ambiguous.requestId);
     expect(await work).toMatchObject({
@@ -577,7 +605,7 @@ it.each(["headers", "body"])(
       return Promise.resolve(response);
     });
     vi.stubGlobal("fetch", fetch);
-    const work = service.handleFetchMessage(summaryMessage);
+    const work = fetchSummary(summaryMessage);
     await entered.promise;
     now = 30_001;
     headerGate.resolve(response);
