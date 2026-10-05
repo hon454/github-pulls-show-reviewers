@@ -131,7 +131,7 @@ vi.mock("../src/runtime/accounts", async () => {
 });
 
 // Content replies carry only the account projection.
-function safeFixtureAccount(account: { id: string; login: string }) {
+function safeFixtureAccount(account: { id: string }) {
   return { id: account.id, revision: "legacy", invalidated: false };
 }
 
@@ -682,7 +682,7 @@ describe("bootReviewerListPage", () => {
           return Promise.resolve({
             ok: true,
             metadata: [],
-            account: safeFixtureAccount({ id: "acc-owner", login: "hon454" }),
+            account: safeFixtureAccount({ id: "acc-owner" }),
           });
         }
         if (
