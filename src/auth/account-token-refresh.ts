@@ -1,5 +1,4 @@
 import {
-  extractGitHubApiStatus,
   validateGitHubRepositoryAccess,
   type RepositoryValidationResult,
 } from "../github/api";
@@ -40,43 +39,4 @@ export async function validateRepositoryAccessWithAccount(input: {
     );
   }
   return retry;
-}
-
-export async function retryWithAccountRefresh<T>(input: {
-  account: Account | null;
-  execute: (token: string | null) => Promise<T>;
-  coordinator: RefreshCoordinator;
-}): Promise<T> {
-  const { account, execute } = input;
-
-  try {
-    return await execute(account?.token ?? null);
-  } catch (error) {
-    if (extractGitHubApiStatus(error) !== 401 || account == null) {
-      throw error;
-    }
-
-    const outcome = await input.coordinator.refreshAccountToken(
-      account.id,
-      credentialGeneration(account),
-    );
-
-    if (!outcome || outcome.ok !== true) {
-      throw error;
-    }
-
-    const refreshed = await accountMutations.getAccountById(account.id);
-    if (refreshed == null || refreshed.invalidated) throw error;
-    try {
-      return await execute(refreshed.token);
-    } catch (retryError) {
-      if (extractGitHubApiStatus(retryError) === 401) {
-        await input.coordinator.invalidateAccountToken(
-          refreshed.id,
-          credentialGeneration(refreshed),
-        );
-      }
-      throw retryError;
-    }
-  }
 }

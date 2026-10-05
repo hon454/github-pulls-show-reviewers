@@ -15,9 +15,7 @@ export default defineBackground(() => {
   const coordinator = createRefreshCoordinator({
     getClientId: () => getGitHubAppConfig().clientId,
   });
-  const reviewerFetchService = createReviewerFetchService({
-    refreshCoordinator: coordinator,
-  });
+  const reviewerFetchService = createReviewerFetchService();
   const installationRefreshService = createInstallationRefreshService({
     refreshCoordinator: coordinator,
   });

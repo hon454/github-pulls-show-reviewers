@@ -136,35 +136,39 @@ describe("settings migration", () => {
   });
 });
 
-describe("updateAccountTokens", () => {
+describe("commitAuth token rotation", () => {
+  const account = (id: string, login: string, generation: number) => ({
+    id,
+    login,
+    avatarUrl: null,
+    token: `ghu_old_${generation}`,
+    createdAt: generation,
+    installations: [],
+    installationsRefreshedAt: generation,
+    invalidated: false,
+    invalidatedReason: null,
+    refreshToken: `ghr_old_${generation}`,
+    expiresAt: 100 * generation,
+    refreshTokenExpiresAt: 200 * generation,
+  });
+
   it("replaces the four token fields without touching invalidation state", async () => {
-    const { addAccount, updateAccountTokens, listAccounts } =
+    browserMock.seed({ version: 3, accounts: [account("acc-1", "hon454", 1)] });
+    const { accountMutations, credentialGeneration, listAccounts } =
       await import("../src/storage/accounts");
+    const [stored] = await accountMutations.listAccounts();
 
-    await addAccount({
-      id: "acc-1",
-      login: "hon454",
-      avatarUrl: null,
-      token: "ghu_old",
-      createdAt: 1,
-      installations: [],
-      installationsRefreshedAt: 1,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: "ghr_old",
-      expiresAt: 100,
-      refreshTokenExpiresAt: 200,
+    await accountMutations.commitAuth("acc-1", credentialGeneration(stored), {
+      tokens: {
+        token: "ghu_new",
+        refreshToken: "ghr_new",
+        expiresAt: 999,
+        refreshTokenExpiresAt: 1999,
+      },
     });
 
-    await updateAccountTokens("acc-1", {
-      token: "ghu_new",
-      refreshToken: "ghr_new",
-      expiresAt: 999,
-      refreshTokenExpiresAt: 1999,
-    });
-
-    const [account] = await listAccounts();
-    expect(account).toMatchObject({
+    const [rotated] = await listAccounts();
+    expect(rotated).toMatchObject({
       token: "ghu_new",
       refreshToken: "ghr_new",
       expiresAt: 999,
@@ -172,46 +176,30 @@ describe("updateAccountTokens", () => {
       invalidated: false,
       invalidatedReason: null,
     });
+    expect(credentialGeneration(rotated)).not.toBe(
+      credentialGeneration(stored),
+    );
   });
 
   it("updates only the targeted account key", async () => {
-    const { addAccount, updateAccountTokens } =
+    browserMock.seed({
+      version: 3,
+      accounts: [
+        account("acc-1", "hon454", 1),
+        account("acc-2", "hon454-work", 2),
+      ],
+    });
+    const { accountMutations, credentialGeneration } =
       await import("../src/storage/accounts");
+    const stored = await accountMutations.getAccountById("acc-1");
 
-    await addAccount({
-      id: "acc-1",
-      login: "hon454",
-      avatarUrl: null,
-      token: "ghu_old_1",
-      createdAt: 1,
-      installations: [],
-      installationsRefreshedAt: 1,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: "ghr_old_1",
-      expiresAt: 100,
-      refreshTokenExpiresAt: 200,
-    });
-    await addAccount({
-      id: "acc-2",
-      login: "hon454-work",
-      avatarUrl: null,
-      token: "ghu_old_2",
-      createdAt: 2,
-      installations: [],
-      installationsRefreshedAt: 2,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: "ghr_old_2",
-      expiresAt: 300,
-      refreshTokenExpiresAt: 400,
-    });
-
-    await updateAccountTokens("acc-1", {
-      token: "ghu_new_1",
-      refreshToken: "ghr_new_1",
-      expiresAt: 999,
-      refreshTokenExpiresAt: 1999,
+    await accountMutations.commitAuth("acc-1", credentialGeneration(stored!), {
+      tokens: {
+        token: "ghu_new_1",
+        refreshToken: "ghr_new_1",
+        expiresAt: 999,
+        refreshTokenExpiresAt: 1999,
+      },
     });
 
     expect(browserMock.snapshot()).toMatchObject({

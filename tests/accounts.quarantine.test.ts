@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectInput, createStorageHarness } from "./helpers/auth-harness";
+import {
+  connectInput,
+  createStorageHarness,
+  storeAccountRecord,
+} from "./helpers/auth-harness";
 
 let storage: ReturnType<typeof createStorageHarness>;
 
@@ -165,13 +169,12 @@ describe("unparseable account records", () => {
   });
 
   it("keeps a readable duplicate over a quarantined one on re-sign-in", async () => {
-    const { accountMutations, addAccount } =
-      await import("../src/storage/accounts");
+    const { accountMutations } = await import("../src/storage/accounts");
     const readable = await accountMutations.upsertAccountByLogin(
       connectInput({ now: 5 }),
     );
     // An unreadable duplicate whose creation time cannot be recovered.
-    await addAccount({ ...readable, id: "unreadable" });
+    await storeAccountRecord(storage.local, { ...readable, id: "unreadable" });
     await storage.local.set({
       "account:profile:unreadable": { id: "unreadable", login: "octocat" },
     });

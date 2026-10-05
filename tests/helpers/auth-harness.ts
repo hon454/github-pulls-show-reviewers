@@ -1,6 +1,6 @@
 import type { UISender } from "../../src/background/ui-sender";
 import { vi } from "vitest";
-import type { AccountConnectInput } from "../../src/storage/accounts";
+import type { Account, AccountConnectInput } from "../../src/storage/accounts";
 
 export function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -55,6 +55,54 @@ export function connectInput(
     now: 1,
     ...overrides,
   };
+}
+
+/**
+ * Write an account's v4 fragments with a fresh credential generation and
+ * append its id to the v4 index, bypassing the account owner. Use it for
+ * fixtures the owner never produces itself, such as a duplicate login or a
+ * chosen id. Seed legacy (v2/v3) settings directly instead.
+ */
+export async function storeAccountRecord(
+  local: {
+    get(keys: string): Promise<Record<string, unknown>>;
+    set(items: Record<string, unknown>): Promise<void>;
+  },
+  account: Account,
+): Promise<void> {
+  const { settings } = await local.get("settings");
+  const index = settings as { version?: unknown; accountIds?: unknown };
+  if (settings !== undefined && index.version !== 4)
+    throw new Error("storeAccountRecord needs an empty or v4 settings index");
+  const accountIds = Array.isArray(index?.accountIds)
+    ? (index.accountIds as string[]).filter((id) => id !== account.id)
+    : [];
+  await local.set({
+    settings: { version: 4, accountIds: [...accountIds, account.id] },
+    [`account:profile:${account.id}`]: {
+      id: account.id,
+      ...(account.userId != null ? { userId: account.userId } : {}),
+      login: account.login,
+      avatarUrl: account.avatarUrl,
+      createdAt: account.createdAt,
+    },
+    [`account:auth:${account.id}`]: {
+      token: account.token,
+      credentialGeneration: crypto.randomUUID(),
+      ...(account.connectionAttemptId != null
+        ? { connectionAttemptId: account.connectionAttemptId }
+        : {}),
+      invalidated: account.invalidated,
+      invalidatedReason: account.invalidatedReason,
+      refreshToken: account.refreshToken,
+      expiresAt: account.expiresAt,
+      refreshTokenExpiresAt: account.refreshTokenExpiresAt,
+    },
+    [`account:installations:${account.id}`]: {
+      installations: account.installations,
+      installationsRefreshedAt: account.installationsRefreshedAt,
+    },
+  });
 }
 
 type Storage = Record<string, unknown>;

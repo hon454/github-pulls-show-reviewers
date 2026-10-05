@@ -554,20 +554,6 @@ function commit<T>(
   return result;
 }
 
-async function addAccountUnlocked(account: Account): Promise<void> {
-  const settings = await getSettings();
-  const next: ExtensionSettings = {
-    version: 4,
-    accountIds: [
-      ...settings.accountIds.filter((id) => id !== account.id),
-      account.id,
-    ],
-  };
-  await writeAccounts(next, [
-    { ...account, credentialGeneration: crypto.randomUUID() },
-  ]);
-}
-
 /**
  * Upsert an account by its numeric GitHub user id.
  *
@@ -833,7 +819,7 @@ async function markAccountInvalidatedUnlocked(
   const parsed = accountAuthSchema.safeParse(result[accountAuthKey(accountId)]);
   if (!parsed.success) {
     console.warn(
-      `[accounts] markAccountInvalidated skipped for ${accountId}: stored auth record is missing or malformed.`,
+      `[accounts] commitAuth invalidation skipped for ${accountId}: stored auth record is missing or malformed.`,
     );
     return;
   }
@@ -860,7 +846,7 @@ async function updateAccountTokensUnlocked(
   const parsed = accountAuthSchema.safeParse(result[accountAuthKey(accountId)]);
   if (!parsed.success) {
     console.warn(
-      `[accounts] updateAccountTokens skipped for ${accountId}: stored auth record is missing or malformed.`,
+      `[accounts] commitAuth token write skipped for ${accountId}: stored auth record is missing or malformed.`,
     );
     return;
   }
@@ -887,8 +873,8 @@ export type AccountInvalidationReason = NonNullable<
 
 // These storage mutation exports are background-only. Options must use the
 // corresponding runtime/account-mutations wrappers, never a context-local queue.
-export const addAccount = (account: Account): Promise<void> =>
-  commit(() => addAccountUnlocked(account));
+// Auth writes have no unconditional export: they go through
+// accountMutations.commitAuth, which checks the credential generation.
 export const upsertAccountByLogin = (
   input: AccountConnectInput,
 ): Promise<Account> => commit(() => upsertAccountByLoginUnlocked(input));
@@ -914,14 +900,6 @@ export const replaceInstallations = (
     if (mayCommit != null && !mayCommit()) return "skipped";
     return replaceInstallationsUnlocked(id, installations);
   });
-export const markAccountInvalidated = (
-  id: string,
-  reason: AccountInvalidationReason,
-): Promise<void> => commit(() => markAccountInvalidatedUnlocked(id, reason));
-export const updateAccountTokens = (
-  id: string,
-  tokens: AccountTokens,
-): Promise<void> => commit(() => updateAccountTokensUnlocked(id, tokens));
 
 export const accountMutations = {
   /** Once per worker activation; always re-verifies the registry. */

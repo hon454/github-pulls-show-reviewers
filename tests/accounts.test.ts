@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Account } from "../src/storage/accounts";
+import { connectInput, storeAccountRecord } from "./helpers/auth-harness";
 
 type StorageShape = Record<string, unknown>;
 
@@ -77,79 +79,51 @@ describe("accounts storage", () => {
     });
   });
 
-  it("addAccount persists and listAccounts returns the account", async () => {
-    const { addAccount, listAccounts } =
+  const storedAccount = (overrides: Partial<Account> = {}): Account => ({
+    id: "acc-1",
+    login: "hon454",
+    avatarUrl: null,
+    token: "ghu_abc",
+    createdAt: 1,
+    installations: [],
+    installationsRefreshedAt: 1,
+    invalidated: false,
+    invalidatedReason: null,
+    refreshToken: null,
+    expiresAt: null,
+    refreshTokenExpiresAt: null,
+    ...overrides,
+  });
+
+  it("upsertAccountByLogin persists fragments and listAccounts returns the account", async () => {
+    const { accountMutations, listAccounts } =
       await import("../src/storage/accounts");
-    await addAccount({
-      id: "acc-1",
-      login: "hon454",
-      avatarUrl: null,
-      token: "ghu_abc",
-      createdAt: 1,
-      installations: [],
-      installationsRefreshedAt: 1,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: null,
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
-    });
+    await accountMutations.upsertAccountByLogin(
+      connectInput({ login: "hon454", token: "ghu_abc" }),
+    );
     const accounts = await listAccounts();
     expect(accounts).toHaveLength(1);
     expect(accounts[0].login).toBe("hon454");
-    expect(browserMock.browser.storage.local.set).toHaveBeenCalledWith({
+    expect(await browser.storage.local.get()).toMatchObject({
       settings: { version: 4, accountIds: ["acc-1"] },
-      "account:profile:acc-1": expect.objectContaining({
-        id: "acc-1",
-        login: "hon454",
-      }),
-      "account:auth:acc-1": expect.objectContaining({
-        token: "ghu_abc",
-      }),
-      "account:installations:acc-1": expect.objectContaining({
-        installations: [],
-      }),
+      "account:profile:acc-1": { id: "acc-1", login: "hon454" },
+      "account:auth:acc-1": { token: "ghu_abc" },
+      "account:installations:acc-1": { installations: [] },
     });
   });
 
   it("removeAccount drops the matching id", async () => {
-    const { addAccount, removeAccount, listAccounts } =
+    const { removeAccount, listAccounts } =
       await import("../src/storage/accounts");
-    await addAccount({
-      id: "acc-1",
-      login: "hon454",
-      avatarUrl: null,
-      token: "ghu_abc",
-      createdAt: 1,
-      installations: [],
-      installationsRefreshedAt: 1,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: null,
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
-    });
+    await storeAccountRecord(browser.storage.local, storedAccount());
     await removeAccount("acc-1");
     await expect(listAccounts()).resolves.toEqual([]);
   });
 
   it("replaceInstallations swaps installations and bumps refreshedAt", async () => {
-    const { addAccount, replaceInstallations, listAccounts } =
+    const { replaceInstallations, listAccounts } =
       await import("../src/storage/accounts");
-    await addAccount({
-      id: "acc-1",
-      login: "hon454",
-      avatarUrl: null,
-      token: "ghu_abc",
-      createdAt: 1,
-      installations: [],
-      installationsRefreshedAt: 1,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: null,
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
-    });
+    await storeAccountRecord(browser.storage.local, storedAccount());
     await replaceInstallations("acc-1", [
       {
         id: 42,
@@ -164,72 +138,62 @@ describe("accounts storage", () => {
     expect(account.installationsRefreshedAt).toBeGreaterThan(1);
   });
 
-  it("markAccountInvalidated sets the invalidation fields", async () => {
-    const { addAccount, markAccountInvalidated, listAccounts } =
+  it("commitAuth invalidation sets the invalidation fields", async () => {
+    const { accountMutations, credentialGeneration, listAccounts } =
       await import("../src/storage/accounts");
-    await addAccount({
-      id: "acc-1",
-      login: "hon454",
-      avatarUrl: null,
-      token: "ghu_abc",
-      createdAt: 1,
-      installations: [],
-      installationsRefreshedAt: 1,
-      invalidated: false,
-      invalidatedReason: null,
-      refreshToken: null,
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
+    await storeAccountRecord(browser.storage.local, storedAccount());
+    const stored = await accountMutations.getAccountById("acc-1");
+    await accountMutations.commitAuth("acc-1", credentialGeneration(stored!), {
+      invalidatedReason: "revoked",
     });
-    await markAccountInvalidated("acc-1", "revoked");
     const [account] = await listAccounts();
     expect(account.invalidated).toBe(true);
     expect(account.invalidatedReason).toBe("revoked");
   });
 
-  it("markAccountInvalidated warns and skips when the stored auth record is missing", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { markAccountInvalidated } = await import("../src/storage/accounts");
-    await markAccountInvalidated("missing-acc", "revoked");
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain("missing-acc");
-    expect(warnSpy.mock.calls[0][0]).toContain("markAccountInvalidated");
-    // Nothing should land in storage for a missing record.
-    const stored = await browser.storage.local.get();
-    expect(Object.keys(stored)).not.toContain("account:auth:missing-acc");
-  });
+  it.each([
+    { invalidatedReason: "revoked" as const },
+    {
+      tokens: {
+        token: "ghu_new",
+        refreshToken: "ghr_new",
+        expiresAt: null,
+        refreshTokenExpiresAt: null,
+      },
+    },
+  ])(
+    "commitAuth writes nothing when the account is missing (%o)",
+    async (change) => {
+      const { accountMutations } = await import("../src/storage/accounts");
+      await expect(
+        accountMutations.commitAuth("missing-acc", "legacy", change),
+      ).resolves.toBeNull();
+      const stored = await browser.storage.local.get();
+      expect(Object.keys(stored)).not.toContain("account:auth:missing-acc");
+    },
+  );
 
-  it("markAccountInvalidated warns and skips when the stored auth record is malformed", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("commitAuth leaves a registered account's malformed auth record unchanged", async () => {
+    await storeAccountRecord(
+      browser.storage.local,
+      storedAccount({ id: "bad-acc" }),
+    );
     await browser.storage.local.set({
       "account:auth:bad-acc": {
         token: 123,
       },
     });
-    const { markAccountInvalidated } = await import("../src/storage/accounts");
-    await markAccountInvalidated("bad-acc", "revoked");
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain("bad-acc");
-    expect(warnSpy.mock.calls[0][0]).toContain("markAccountInvalidated");
+    const { accountMutations } = await import("../src/storage/accounts");
+    // The unreadable record is quarantined: listed, invalidated, never written.
+    await expect(
+      accountMutations.commitAuth("bad-acc", "quarantined", {
+        invalidatedReason: "revoked",
+      }),
+    ).resolves.toMatchObject({ id: "bad-acc", invalidated: true });
     const stored = await browser.storage.local.get();
     expect(stored["account:auth:bad-acc"]).toEqual({
       token: 123,
     });
-  });
-
-  it("updateAccountTokens warns and skips when the stored auth record is missing", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { updateAccountTokens } = await import("../src/storage/accounts");
-    await updateAccountTokens("missing-acc", {
-      token: "ghu_new",
-      refreshToken: "ghr_new",
-      expiresAt: null,
-      refreshTokenExpiresAt: null,
-    });
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain("updateAccountTokens");
-    const stored = await browser.storage.local.get();
-    expect(Object.keys(stored)).not.toContain("account:auth:missing-acc");
   });
 
   it("replaceInstallations warns and skips when the stored installations record is missing", async () => {
@@ -245,10 +209,10 @@ describe("accounts storage", () => {
   });
 
   it("upsertAccountByLogin replaces an existing invalidated account when login matches", async () => {
-    const { addAccount, upsertAccountByLogin, listAccounts } =
+    const { upsertAccountByLogin, listAccounts } =
       await import("../src/storage/accounts");
 
-    await addAccount({
+    await storeAccountRecord(browser.storage.local, {
       id: "acc-original",
       login: "hon454",
       avatarUrl: null,
@@ -299,10 +263,10 @@ describe("accounts storage", () => {
   });
 
   it("upsertAccountByLogin is case-insensitive on login", async () => {
-    const { addAccount, upsertAccountByLogin, listAccounts } =
+    const { upsertAccountByLogin, listAccounts } =
       await import("../src/storage/accounts");
 
-    await addAccount({
+    await storeAccountRecord(browser.storage.local, {
       id: "acc-mixed",
       login: "Hon454",
       avatarUrl: null,
@@ -340,10 +304,10 @@ describe("accounts storage", () => {
   });
 
   it("upsertAccountByLogin appends when login is new", async () => {
-    const { addAccount, upsertAccountByLogin, listAccounts } =
+    const { upsertAccountByLogin, listAccounts } =
       await import("../src/storage/accounts");
 
-    await addAccount({
+    await storeAccountRecord(browser.storage.local, {
       id: "acc-existing",
       login: "hon454",
       avatarUrl: null,
@@ -382,10 +346,10 @@ describe("accounts storage", () => {
   });
 
   it("upsertAccountByLogin collapses duplicate matching logins into one record", async () => {
-    const { addAccount, upsertAccountByLogin, listAccounts } =
+    const { upsertAccountByLogin, listAccounts } =
       await import("../src/storage/accounts");
 
-    await addAccount({
+    await storeAccountRecord(browser.storage.local, {
       id: "acc-original",
       login: "hon454",
       avatarUrl: null,
@@ -399,7 +363,7 @@ describe("accounts storage", () => {
       expiresAt: 100,
       refreshTokenExpiresAt: 200,
     });
-    await addAccount({
+    await storeAccountRecord(browser.storage.local, {
       id: "acc-ghost",
       login: "hon454",
       avatarUrl: null,

@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const validateGitHubRepositoryAccessMock = vi.fn();
 const getAccountByIdMock = vi.fn();
-const markAccountInvalidatedMock = vi.fn();
 const refreshMock = vi.fn();
 const invalidateMock = vi.fn();
 const coordinator = {
@@ -35,7 +34,6 @@ vi.mock("../src/github/api", () => ({
 vi.mock("../src/storage/accounts", async (importActual) => ({
   ...(await importActual<typeof AccountsStorageModule>()),
   accountMutations: { getAccountById: getAccountByIdMock },
-  markAccountInvalidated: markAccountInvalidatedMock,
 }));
 
 const { validateRepositoryAccessWithAccount } =
@@ -58,7 +56,6 @@ const baseAccount: StoredAccount = {
 beforeEach(() => {
   validateGitHubRepositoryAccessMock.mockReset();
   getAccountByIdMock.mockReset();
-  markAccountInvalidatedMock.mockReset();
   refreshMock.mockReset();
   invalidateMock.mockReset();
 });
@@ -87,7 +84,7 @@ describe("validateRepositoryAccessWithAccount", () => {
 
     expect(result).toBe(success);
     expect(refreshMock).not.toHaveBeenCalled();
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+    expect(invalidateMock).not.toHaveBeenCalled();
   });
 
   it("returns the first result when the failure is not token-invalid", async () => {
@@ -144,7 +141,7 @@ describe("validateRepositoryAccessWithAccount", () => {
 
     expect(result.ok).toBe(true);
     expect(refreshMock).toHaveBeenCalledWith("acc-1", "legacy");
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+    expect(invalidateMock).not.toHaveBeenCalled();
     const retryCall = validateGitHubRepositoryAccessMock.mock.calls[1];
     expect((retryCall[0] as { token: string }).token === "ghu_fresh").toBe(
       true,
@@ -209,7 +206,7 @@ describe("validateRepositoryAccessWithAccount", () => {
 
     expect(result).toBe(firstFailure);
     expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+    expect(invalidateMock).not.toHaveBeenCalled();
   });
 
   it("delegates the no-refresh-token decision to the background owner", async () => {
@@ -230,6 +227,6 @@ describe("validateRepositoryAccessWithAccount", () => {
 
     expect(result).toBe(failure);
     expect(refreshMock).toHaveBeenCalledWith("acc-1", "legacy");
-    expect(markAccountInvalidatedMock).not.toHaveBeenCalled();
+    expect(invalidateMock).not.toHaveBeenCalled();
   });
 });

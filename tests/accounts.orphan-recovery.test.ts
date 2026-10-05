@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectInput, createStorageHarness } from "./helpers/auth-harness";
+import {
+  connectInput,
+  createStorageHarness,
+  storeAccountRecord,
+} from "./helpers/auth-harness";
 
 const accountKeys = (id: string) => [
   `account:profile:${id}`,
@@ -126,11 +130,14 @@ describe("background account orphan recovery", () => {
   });
 
   it("recovers failed duplicate and orphan deletion while keeping an unparseable record", async () => {
-    const { accountMutations, addAccount } =
-      await import("../src/storage/accounts");
+    const { accountMutations } = await import("../src/storage/accounts");
     const retained =
       await accountMutations.upsertAccountByLogin(connectInput());
-    await addAccount({ ...retained, id: "duplicate", createdAt: 10 });
+    await storeAccountRecord(storage.local, {
+      ...retained,
+      id: "duplicate",
+      createdAt: 10,
+    });
     storage.local.remove.mockRejectedValueOnce(
       new Error("duplicate cleanup failed"),
     );

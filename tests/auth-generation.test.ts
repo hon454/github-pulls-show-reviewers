@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRefreshCoordinator } from "../src/auth/refresh-coordinator";
-import {
-  retryWithAccountRefresh,
-  validateRepositoryAccessWithAccount,
-} from "../src/auth/account-token-refresh";
+import { validateRepositoryAccessWithAccount } from "../src/auth/account-token-refresh";
+import { createAccountRequest } from "../src/background/account-request";
+import { GitHubApiError } from "../src/github/api";
 import { createReviewerFetchService } from "../src/background/reviewer-fetch";
 import { createInstallationRefreshService } from "../src/background/installation-refresh";
 import { createProactiveRefreshService } from "../src/background/proactive-refresh";
@@ -24,6 +23,11 @@ import {
   json,
   rotated,
 } from "./helpers/auth-harness";
+import {
+  coveringInstallation,
+  createReviewerFetchContext,
+  settleDiscovery,
+} from "./helpers/reviewer-fetch-context";
 
 let storage: ReturnType<typeof createStorageHarness>;
 let http: ReturnType<typeof createHttpHarness>;
@@ -42,14 +46,42 @@ const message = (requestId: string) => ({
     requestedTeams: [],
   },
 });
+type ReviewerContext = Awaited<ReturnType<typeof createReviewerFetchContext>>;
+const reviewerContexts: ReviewerContext[] = [];
+// Reviewer fetches are admitted only under a content document's discovery.
+// The account covers octo/repo and discovery has already succeeded with it,
+// so the HTTP harness sees only reviewer and token requests. An unsettled
+// context leaves discovery to the first metadata batch.
+const covered = { installations: [coveringInstallation("octo")] };
+async function reviewerContext(settled = true): Promise<ReviewerContext> {
+  const context = await createReviewerFetchContext({
+    coordinator,
+    repositoryOwner: "octo",
+    repo: "repo",
+  });
+  reviewerContexts.push(context);
+  if (!settled) return context;
+  await settleDiscovery(context, [
+    {
+      number: 1,
+      user: { login: "author" },
+      requested_reviewers: [],
+      requested_teams: [],
+    },
+  ]);
+  return context;
+}
 beforeEach(() => {
   storage = createStorageHarness();
   http = createHttpHarness();
-  vi.stubGlobal("browser", { storage: { local: storage.local } });
+  vi.stubGlobal("browser", {
+    storage: { local: storage.local, session: createStorageHarness().local },
+  });
   vi.stubGlobal("fetch", http.fetch);
   coordinator = createRefreshCoordinator({ getClientId: () => "test-client" });
 });
 afterEach(() => {
+  for (const context of reviewerContexts.splice(0)) context.service.dispose();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -58,10 +90,11 @@ describe("deferred authenticated service schedules", () => {
   it.each(["success", "terminal", "transient"])(
     "waits for an in-flight same-generation refresh before retry invalidation (%s)",
     async (result) => {
-      await accountMutations.upsertAccountByLogin(connectInput());
-      const a = createReviewerFetchService({
-        refreshCoordinator: coordinator,
-      }).handleFetchMessage(message("retry-before-refresh-commit"));
+      await accountMutations.upsertAccountByLogin(connectInput(covered));
+      const a = createReviewerFetchService().handleFetchMessage(
+        message("retry-before-refresh-commit"),
+        await reviewerContext(),
+      );
       (await http.next()).response.resolve(json({}, 401));
       (await http.next()).response.resolve(rotated("1"));
       const retry = await http.next();
@@ -137,14 +170,17 @@ describe("deferred authenticated service schedules", () => {
   });
 
   it("A/B: a delayed g0 401 after A starts its g1 retry reuses g1, with exactly one refresh", async () => {
-    await accountMutations.upsertAccountByLogin(connectInput());
-    // Separate service instances still share the same background coordinator.
-    const a = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("A"));
-    const b = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("B"));
+    await accountMutations.upsertAccountByLogin(connectInput(covered));
+    const context = await reviewerContext();
+    // Separate reviewer services still share one account service and coordinator.
+    const a = createReviewerFetchService().handleFetchMessage(
+      message("A"),
+      context,
+    );
+    const b = createReviewerFetchService().handleFetchMessage(
+      message("B"),
+      context,
+    );
     const firstA = await http.next();
     const firstB = await http.next();
     expect([firstA.credential, firstB.credential]).toEqual(["0", "0"]);
@@ -176,20 +212,23 @@ describe("deferred authenticated service schedules", () => {
   it.each(["summary", "metadata"])(
     "an obsolete %s retry 401 cannot invalidate a newer rotation",
     async (kind) => {
-      await accountMutations.upsertAccountByLogin(connectInput());
-      const service = createReviewerFetchService({
-        refreshCoordinator: coordinator,
-      });
+      await accountMutations.upsertAccountByLogin(connectInput(covered));
+      const service = createReviewerFetchService();
+      // A metadata batch runs repository discovery itself.
+      const context = await reviewerContext(kind === "summary");
       const work =
         kind === "summary"
-          ? service.handleFetchMessage(message("A"))
-          : service.handleMetadataBatchMessage({
-              type: "fetchPullReviewerMetadataBatch",
-              requestId: "A",
-              owner: "octo",
-              repo: "repo",
-              accountId: "acc-1",
-            });
+          ? service.handleFetchMessage(message("A"), context)
+          : service.handleMetadataBatchMessage(
+              {
+                type: "fetchPullReviewerMetadataBatch",
+                requestId: "A",
+                owner: "octo",
+                repo: "repo",
+                accountId: "acc-1",
+              },
+              context,
+            );
       (await http.next()).response.resolve(json({}, 401));
       (await http.next()).response.resolve(rotated());
       const retry = await http.next();
@@ -210,10 +249,11 @@ describe("deferred authenticated service schedules", () => {
   );
 
   it("a current retry's 401 still invalidates after one bounded recovery", async () => {
-    await accountMutations.upsertAccountByLogin(connectInput());
-    const work = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("A"));
+    await accountMutations.upsertAccountByLogin(connectInput(covered));
+    const work = createReviewerFetchService().handleFetchMessage(
+      message("A"),
+      await reviewerContext(),
+    );
     (await http.next()).response.resolve(json({}, 401));
     (await http.next()).response.resolve(rotated());
     (await http.next()).response.resolve(json({}, 401));
@@ -225,10 +265,11 @@ describe("deferred authenticated service schedules", () => {
   });
 
   it("retries a reviewer request with rotated credentials after a rejected first commit", async () => {
-    await accountMutations.upsertAccountByLogin(connectInput());
-    const work = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("A"));
+    await accountMutations.upsertAccountByLogin(connectInput(covered));
+    const work = createReviewerFetchService().handleFetchMessage(
+      message("A"),
+      await reviewerContext(),
+    );
     (await http.next()).response.resolve(json({}, 401));
     const refresh = await http.next();
     storage.local.set.mockRejectedValueOnce(new Error("storage-write-failure"));
@@ -247,10 +288,11 @@ describe("deferred authenticated service schedules", () => {
   });
 
   it("a removed account is not retried with a refresh response token", async () => {
-    await accountMutations.upsertAccountByLogin(connectInput());
-    const work = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("A"));
+    await accountMutations.upsertAccountByLogin(connectInput(covered));
+    const work = createReviewerFetchService().handleFetchMessage(
+      message("A"),
+      await reviewerContext(),
+    );
     (await http.next()).response.resolve(json({}, 401));
     const refresh = await http.next();
     await accountMutations.removeAccount("acc-1");
@@ -261,9 +303,10 @@ describe("deferred authenticated service schedules", () => {
   });
 
   it("retains no-token public requests", async () => {
-    const work = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage({ ...message("public"), accountId: null });
+    const work = createReviewerFetchService().handleFetchMessage(
+      { ...message("public"), accountId: null },
+      await reviewerContext(),
+    );
     const request = await http.next();
     expect(request.credential).toBe("public");
     request.response.resolve(json([]));
@@ -290,9 +333,9 @@ describe("deferred authenticated service schedules", () => {
               account: old,
               repository: "octo/repo",
             }).then((r) => r.ok)
-          : retryWithAccountRefresh({
-              coordinator,
-              account: old,
+          : createAccountRequest(coordinator)({
+              accountId: old.id,
+              signal: new AbortController().signal,
               execute: async (token) => {
                 const response = await fetch(
                   "https://api.github.com/user/installations",
@@ -300,10 +343,7 @@ describe("deferred authenticated service schedules", () => {
                     headers: token ? { Authorization: `Bearer ${token}` } : {},
                   },
                 );
-                if (!response.ok)
-                  throw Object.assign(new Error("api_failure"), {
-                    status: response.status,
-                  });
+                if (!response.ok) throw new GitHubApiError(response.status);
                 return true;
               },
             }).catch(() => false);
@@ -645,18 +685,15 @@ describe("deferred authenticated service schedules", () => {
     const old = await accountMutations.upsertAccountByLogin(
       connectInput({ refreshToken: null }),
     );
-    const work = retryWithAccountRefresh({
-      coordinator,
-      account: old,
+    const work = createAccountRequest(coordinator)({
+      accountId: old.id,
+      signal: new AbortController().signal,
       execute: async (token) => {
         const response = await fetch(
           "https://api.github.com/user/installations",
           { headers: token ? { Authorization: `Bearer ${token}` } : {} },
         );
-        if (!response.ok)
-          throw Object.assign(new Error("api_failure"), {
-            status: response.status,
-          });
+        if (!response.ok) throw new GitHubApiError(response.status);
         return response.status;
       },
     });
@@ -668,7 +705,7 @@ describe("deferred authenticated service schedules", () => {
     const retry = await http.next();
     expect(retry.credential).toBe("login");
     retry.response.resolve(json([]));
-    expect(await work).toBe(200);
+    expect((await work).value).toBe(200);
     expect(http.requests.length).toBe(2);
   });
 
@@ -718,10 +755,11 @@ describe("deferred authenticated service schedules", () => {
   });
 
   it("a delayed API failure reuses a completed proactive rotation", async () => {
-    await accountMutations.upsertAccountByLogin(connectInput());
-    const reviewer = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("A"));
+    await accountMutations.upsertAccountByLogin(connectInput(covered));
+    const reviewer = createReviewerFetchService().handleFetchMessage(
+      message("A"),
+      await reviewerContext(),
+    );
     const initial = await http.next();
     const alarm = createProactiveRefreshService({
       refreshCoordinator: coordinator,
@@ -747,10 +785,13 @@ describe("reviewer deadline and shared auth ownership", () => {
 
   it("detaches a timed-out reviewer from shared refresh without retry or invalidation", async () => {
     vi.useFakeTimers();
-    const account = await accountMutations.upsertAccountByLogin(connectInput());
-    const reviewer = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("deadline"));
+    const account = await accountMutations.upsertAccountByLogin(
+      connectInput(covered),
+    );
+    const reviewer = createReviewerFetchService().handleFetchMessage(
+      message("deadline"),
+      await reviewerContext(),
+    );
     const initial = await http.next();
     // Start the shared refresh late enough that the reviewer deadline expires
     // before the refresh request's own credential timeout.
@@ -780,10 +821,11 @@ describe("reviewer deadline and shared auth ownership", () => {
 
   it("does not cancel an already admitted auth commit when its reviewer expires", async () => {
     vi.useFakeTimers();
-    await accountMutations.upsertAccountByLogin(connectInput());
-    const reviewer = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("commit-deadline"));
+    await accountMutations.upsertAccountByLogin(connectInput(covered));
+    const reviewer = createReviewerFetchService().handleFetchMessage(
+      message("commit-deadline"),
+      await reviewerContext(),
+    );
     (await http.next()).response.resolve(json({}, 401));
     const refresh = await http.next();
     const barrier = storage.pauseSet();
@@ -806,10 +848,11 @@ describe("reviewer deadline and shared auth ownership", () => {
 
   it("shares one original deadline across same-account recovery and retry", async () => {
     vi.useFakeTimers();
-    await accountMutations.upsertAccountByLogin(connectInput());
-    const reviewer = createReviewerFetchService({
-      refreshCoordinator: coordinator,
-    }).handleFetchMessage(message("retry-deadline"));
+    await accountMutations.upsertAccountByLogin(connectInput(covered));
+    const reviewer = createReviewerFetchService().handleFetchMessage(
+      message("retry-deadline"),
+      await reviewerContext(),
+    );
     const first = await http.next();
     await vi.advanceTimersByTimeAsync(20_000);
     first.response.resolve(json({}, 401));
