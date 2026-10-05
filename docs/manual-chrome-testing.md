@@ -329,6 +329,8 @@ supported languages during a refresh must only reformat the existing UI.
 The deterministic `auth-generation` and `accounts.registry-concurrency` tests
 cover delayed 401s after rotation, obsolete retry invalidation, reauthentication
 or removal during refresh, and concurrent sign-in/registry repair. The
+`refresh-coordinator` tests reject the post-rotation storage write once and
+persistently; storage write failures are not reproduced manually. The
 installation refresh cases also verify that a new credential generation starts
 its own request, an old skipped commit reports failure, and a delayed old 401
 retry cannot replace a completed newer refresh or invalidate that account.

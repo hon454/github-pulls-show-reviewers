@@ -224,6 +224,28 @@ describe("deferred authenticated service schedules", () => {
     expect(http.requests.length).toBe(3);
   });
 
+  it("retries a reviewer request with rotated credentials after a rejected first commit", async () => {
+    await accountMutations.upsertAccountByLogin(connectInput());
+    const work = createReviewerFetchService({
+      refreshCoordinator: coordinator,
+    }).handleFetchMessage(message("A"));
+    (await http.next()).response.resolve(json({}, 401));
+    const refresh = await http.next();
+    storage.local.set.mockRejectedValueOnce(new Error("storage-write-failure"));
+    refresh.response.resolve(rotated());
+    const retry = await http.next();
+    expect({ kind: retry.kind, credential: retry.credential }).toEqual({
+      kind: "api",
+      credential: "1",
+    });
+    retry.response.resolve(json([]));
+    expect((await work).ok).toBe(true);
+    const current = await accountMutations.getAccountById("acc-1");
+    expect(current?.invalidated).toBe(false);
+    expect(current?.refreshToken === "fixture-refresh-1").toBe(true);
+    expect(http.requests.filter((r) => r.kind === "refresh").length).toBe(1);
+  });
+
   it("a removed account is not retried with a refresh response token", async () => {
     await accountMutations.upsertAccountByLogin(connectInput());
     const work = createReviewerFetchService({
