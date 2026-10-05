@@ -161,6 +161,8 @@ export function createUIBridge(input: {
         .catch(() => undefined);
   };
   browser.tabs?.onRemoved?.addListener(onTabRemoved);
+  // A prerender swap replaces the tab and its document without onRemoved.
+  browser.tabs?.onReplaced?.addListener(onTabRemoved);
 
   function resolver(context: UIContext) {
     const owner = discoveryOwner(context);
@@ -485,6 +487,7 @@ export function createUIBridge(input: {
       state.dispose();
       repositories.dispose();
       browser.tabs?.onRemoved?.removeListener(onTabRemoved);
+      browser.tabs?.onReplaced?.removeListener(onTabRemoved);
       for (const controllers of diagnosticControllers.values())
         for (const controller of controllers) controller.abort();
       diagnosticControllers.clear();

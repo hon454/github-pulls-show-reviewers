@@ -616,20 +616,33 @@ export function createRepositoryAccountService(input: {
   async function pruneOwners(
     include: (owner: DiscoveryOwner) => boolean = () => true,
   ) {
-    const known = new Map<string, DiscoveryOwner>();
-    for (const owner of [...owners.values(), ...(await ledger.owners())]) {
-      const ownerKey = JSON.stringify([owner.lane, owner.documentId]);
-      if (!known.has(ownerKey) && include(owner)) known.set(ownerKey, owner);
+    const known = new Map<
+      string,
+      { owner: DiscoveryOwner; id: string | null }
+    >();
+    for (const entry of [
+      ...(await ledger.owners()),
+      ...[...owners.values()].map((owner) => ({ owner, id: null })),
+    ]) {
+      const ownerKey = JSON.stringify([
+        entry.owner.lane,
+        entry.owner.documentId,
+      ]);
+      if (!known.has(ownerKey) && include(entry.owner))
+        known.set(ownerKey, entry);
     }
     const lost = (
       await Promise.all(
-        [...known.values()].map(async (owner) =>
-          (await input.isOwnerAlive(owner).catch(() => true)) ? [] : [owner],
+        [...known.values()].map(async (entry) =>
+          (await input.isOwnerAlive(entry.owner).catch(() => true))
+            ? []
+            : [entry],
         ),
       )
     ).flat();
-    for (const owner of lost) release(owner);
-    await ledger.forget(lost);
+    if (lost.length === 0) return;
+    // A document that began a new discovery after the probe keeps everything.
+    for (const owner of await ledger.forget(lost)) release(owner);
   }
   // Prune requests that arrive while one runs share a single follow-up pass.
   let pruneTail: Promise<void> = Promise.resolve();

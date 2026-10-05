@@ -1354,6 +1354,49 @@ describe("discovery ledger restore and owner liveness", () => {
     expect(session.local.set).not.toHaveBeenCalled();
   });
 
+  it("shares one follow-up pass among prune requests made while a pass runs", async () => {
+    const held = deferred<boolean>();
+    const probed: string[] = [];
+    let hold = false;
+    service.dispose();
+    service = createService((document) => {
+      probed.push(document.documentId);
+      if (!hold) return Promise.resolve(true);
+      hold = false;
+      return held.promise;
+    });
+    await begin();
+    probed.length = 0;
+    hold = true;
+    const passes = [service.prune()];
+    await vi.waitFor(() => expect(probed).toEqual([owner.documentId]));
+    passes.push(service.prune(), service.prune(), service.prune());
+    held.resolve(true);
+    await Promise.all(passes);
+    expect(probed).toEqual([owner.documentId, owner.documentId]);
+  });
+
+  it("keeps a discovery the document began after a stale lost probe", async () => {
+    const held = deferred<boolean>();
+    let hold = false;
+    let probing = false;
+    service.dispose();
+    service = createService(() => {
+      if (!hold) return Promise.resolve(true);
+      hold = false;
+      probing = true;
+      return held.promise;
+    });
+    await begin();
+    hold = true;
+    const pruning = service.prune();
+    await vi.waitFor(() => expect(probing).toBe(true));
+    const newer = await begin(1);
+    held.resolve(false);
+    await pruning;
+    expect((await service.ledger.read(owner, newer.id)).generation).toBe(1);
+  });
+
   it("restores without a store write when nothing changed and prunes a lost document at activation", async () => {
     const discovery = await begin();
     const kept = await begin(0, "private-b", other);
@@ -1377,6 +1420,7 @@ describe("discovery ledger restore and owner liveness", () => {
   it.each([
     ["a malformed session header", { sessions: { bad: { owner: 1 } } }],
     ["an unknown store version", { version: 2 }],
+    ["a malformed record body", { records: { bad: { id: 1 } } }],
     ["a non-object value", "corrupt"],
   ])(
     "resets %s to an empty store, rewrites it, and keeps public rows working",

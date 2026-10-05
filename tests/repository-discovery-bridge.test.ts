@@ -194,6 +194,26 @@ it("does not delay another tab's discovery start behind a slow document's livene
   held.resolve({ alive: true });
 });
 
+it("probes only an earlier document of the same tab on discovery start", async () => {
+  await begin();
+  harness.browserMock.tabs.sendMessage.mockClear();
+  await begin("content-2", 1, 3);
+  await drain();
+  const probedDocuments = harness.browserMock.tabs.sendMessage.mock.calls.map(
+    ([, , options]) => options.documentId,
+  );
+  expect(probedDocuments).toEqual(["content-2"]);
+});
+
+it("prunes a document whose tab a prerender swap replaced", async () => {
+  const discovery = await begin();
+  harness.alive.delete("content-1");
+  harness.browserMock.tabs.onReplaced.emit(5, 2);
+  await vi.waitFor(() =>
+    expect(ledger().records[discovery.id]).toBeUndefined(),
+  );
+});
+
 it("does not rewrite the session ledger when a discovery start changes nothing", async () => {
   const discovery = await begin();
   harness.session.local.set.mockClear();

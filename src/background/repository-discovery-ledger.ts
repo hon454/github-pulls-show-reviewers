@@ -113,8 +113,16 @@ export function createRepositoryDiscoveryLedger(input: {
         changed = true;
       }
     }
-    if (changed)
-      await browser.storage.session.set({ [REPOSITORY_DISCOVERY_KEY]: state });
+    if (changed) {
+      try {
+        await browser.storage.session.set({
+          [REPOSITORY_DISCOVERY_KEY]: state,
+        });
+      } catch {
+        // Keep the repaired state in memory: reads still work, and the next
+        // save replaces the stored value. Admission saves still fail closed.
+      }
+    }
     if (disposed) throw new DiscoveryUnavailableError("retired");
     current = state;
     return state;
@@ -255,27 +263,42 @@ export function createRepositoryDiscoveryLedger(input: {
       });
     },
     /** Session owners for a liveness probe that runs outside the queue. */
-    owners(): Promise<DiscoveryOwner[]> {
+    owners(): Promise<Array<{ owner: DiscoveryOwner; id: string }>> {
       return queued(async (state) =>
-        Object.values(state.sessions).map((header) =>
-          structuredClone(header.owner),
-        ),
+        Object.values(state.sessions).map((header) => ({
+          owner: structuredClone(header.owner),
+          id: header.id,
+        })),
       );
     },
-    /** Removes confirmed-lost documents in one short step; skips no-op writes. */
-    forget(lost: DiscoveryOwner[]): Promise<void> {
+    /**
+     * Removes documents a probe found lost, in one short step that skips
+     * no-op writes. `id` is the session the probe saw (null: none). A session
+     * that changed since then is newer than the probe and is kept. Returns
+     * the documents whose session is gone, so callers release only those.
+     */
+    forget(
+      lost: Array<{ owner: DiscoveryOwner; id: string | null }>,
+    ): Promise<DiscoveryOwner[]> {
       return queued(async (state) => {
-        const keys = new Set(lost.map(ownerKey));
-        const removed = Object.entries(state.sessions).filter(([key]) =>
-          keys.has(key),
-        );
-        if (removed.length === 0) return;
+        const gone: DiscoveryOwner[] = [];
+        const removed: string[] = [];
+        for (const { owner, id } of lost) {
+          const header = state.sessions[ownerKey(owner)];
+          if (!header) gone.push(owner);
+          else if (header.id === id) {
+            gone.push(owner);
+            removed.push(ownerKey(owner));
+          }
+        }
+        if (removed.length === 0) return gone;
         const next = structuredClone(state);
-        for (const [key, header] of removed) {
+        for (const key of removed) {
+          delete next.records[next.sessions[key].id];
           delete next.sessions[key];
-          delete next.records[header.id];
         }
         await save(next);
+        return gone;
       });
     },
     dispose() {
