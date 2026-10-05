@@ -355,6 +355,17 @@ uses the existing bounded revalidation path.
   the Chromium MV3 output, but they are compatibility expectations rather than
   supported targets. Firefox support would need separate MV3 behavior checks,
   packaging validation, store guidance, and private-repository sign-in testing.
+- Minimum Chrome version: the manifest declares
+  `minimum_chrome_version: "140"`. The storage policy restricts both
+  `storage.local` and `storage.session` to `TRUSTED_CONTEXTS` before any
+  bridge request is served. Chrome accepts `setAccessLevel` on
+  `storage.local` only from Chrome 140; Chrome 102 to 139 reject it for every
+  area except `session`, so every request would fail there. The other
+  required APIs are older: `runtime.MessageSender.documentId` and the
+  `tabs.sendMessage` `documentId` option (Chrome 106), and `storage.session`
+  (Chrome 102). `runtime.getContexts` (Chrome 116) and `tabs.Tab.frozen`
+  (Chrome 132) are feature-detected. A new API above the floor must be
+  feature-detected or must raise this version in the same change.
 - Chrome metadata, options/auth, repository diagnostics, content reviewer labels,
   and access banners use the five bundled catalogs. No runtime translation
   service is used.

@@ -72,7 +72,8 @@ After installation, open a GitHub repository's pull request list. Public reposit
 
 ## Browser and Language Support
 
-Chrome is the only browser this extension currently supports and tests. Other
+Chrome is the only browser this extension currently supports and tests. It
+requires Chrome 140 or later, and older Chrome versions cannot install it. Other
 Chromium-family browsers such as Edge, Brave, and Arc may be able to run the
 same MV3 build, but they are not release targets today and are not covered by
 the manual Chrome verification flow. Firefox support is also out of scope until
