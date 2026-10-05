@@ -20,6 +20,9 @@ export default defineConfig({
     default_locale: "en",
     name: "__MSG_extension_name__",
     description: "__MSG_extension_description__",
+    // storage.local.setAccessLevel, required by the storage policy, is Chrome
+    // 140+. See "minimum Chrome version" in docs/implementation-notes.md.
+    minimum_chrome_version: "140",
     icons: {
       16: "/icon/16.png",
       32: "/icon/32.png",
