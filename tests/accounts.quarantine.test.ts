@@ -144,6 +144,49 @@ describe("unparseable account records", () => {
     ]);
   });
 
+  it("recovers the index from stored records when the settings record is unreadable", async () => {
+    const { accountMutations } = await import("../src/storage/accounts");
+    const kept = await accountMutations.upsertAccountByLogin(connectInput());
+    const before = accountFragments(kept.id);
+    // A newer release bumped the index format, then the user rolled back.
+    await storage.local.set({
+      settings: { version: 5, accounts: { [kept.id]: {} } },
+    });
+    vi.resetModules();
+    const restarted = await import("../src/storage/accounts");
+
+    await restarted.accountMutations.initialize();
+
+    expect(accountFragments(kept.id)).toEqual(before);
+    expect((await restarted.getSettings()).accountIds).toEqual([kept.id]);
+    expect(
+      await restarted.accountMutations.getAccountById(kept.id),
+    ).toMatchObject({ invalidated: false, token: "fixture-access-0" });
+  });
+
+  it("keeps a readable duplicate over a quarantined one on re-sign-in", async () => {
+    const { accountMutations, addAccount } =
+      await import("../src/storage/accounts");
+    const readable = await accountMutations.upsertAccountByLogin(
+      connectInput({ now: 5 }),
+    );
+    // An unreadable duplicate whose creation time cannot be recovered.
+    await addAccount({ ...readable, id: "unreadable" });
+    await storage.local.set({
+      "account:profile:unreadable": { id: "unreadable", login: "octocat" },
+    });
+    await accountMutations.initialize();
+
+    const reconnected = await accountMutations.upsertAccountByLogin(
+      connectInput({ token: "fixture-access-new", newAccountId: "unused" }),
+    );
+
+    expect(reconnected.id).toBe(readable.id);
+    expect(
+      (await accountMutations.listAccounts()).map((account) => account.id),
+    ).toEqual([readable.id]);
+  });
+
   it("still drops a registered id that has no stored record", async () => {
     const { accountMutations, getSettings } =
       await import("../src/storage/accounts");

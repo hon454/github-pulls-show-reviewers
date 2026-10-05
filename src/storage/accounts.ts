@@ -375,6 +375,8 @@ async function loadAccountsByIds(accountIds: string[]): Promise<{
 async function readRegistry(): Promise<{
   settings: ExtensionSettings;
   legacyAccounts?: Account[];
+  /** A stored index this release cannot parse, e.g. after a rollback. */
+  unrecognized?: true;
 }> {
   const result = await browser.storage.local.get(SETTINGS_KEY);
   const raw = result[SETTINGS_KEY];
@@ -403,7 +405,21 @@ async function readRegistry(): Promise<{
       legacyAccounts: accounts,
     };
   }
-  return { settings: EMPTY_SETTINGS };
+  return raw === undefined
+    ? { settings: EMPTY_SETTINGS }
+    : { settings: EMPTY_SETTINGS, unrecognized: true };
+}
+
+/** IDs that still have at least one stored account fragment. */
+async function storedAccountIds(): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const key of Object.keys(await browser.storage.local.get(null))) {
+    const prefix = ACCOUNT_RECORD_KEY_PREFIXES.find((candidate) =>
+      key.startsWith(candidate),
+    );
+    if (prefix != null) ids.add(key.slice(prefix.length));
+  }
+  return [...ids];
 }
 
 export async function getSettings(): Promise<ExtensionSettings> {
@@ -436,6 +452,16 @@ async function initializeAccountsUnlocked(): Promise<void> {
   const registry = await readRegistry();
   let settings = registry.settings;
   const { legacyAccounts } = registry;
+  if (registry.unrecognized) {
+    // Treating an unreadable index as empty would delete every account's
+    // fragments as orphans. Rebuild the index from the stored records instead;
+    // unparseable ones are then quarantined like any other.
+    settings = { version: 4, accountIds: await storedAccountIds() };
+    console.warn(
+      "[accounts] stored account index could not be parsed; rebuilt it from stored account records.",
+    );
+    await writeSettings(settings);
+  }
   if (legacyAccounts) {
     settings = await migrateAccounts(
       legacyAccounts.map((account) => ({
@@ -633,7 +659,7 @@ async function findAccountsByLogin(login: string): Promise<{
   matches: Account[];
 }> {
   let settings = await getSettings();
-  const { accounts, retainedIds } = await loadAccountsByIds(
+  const { accounts, validIds, retainedIds } = await loadAccountsByIds(
     settings.accountIds,
   );
   if (retainedIds.length !== settings.accountIds.length) {
@@ -642,11 +668,16 @@ async function findAccountsByLogin(login: string): Promise<{
   }
 
   const normalized = login.toLowerCase();
+  // Prefer readable records over quarantined ones, then the earliest.
+  const unreadable = (account: Account) =>
+    validIds.includes(account.id) ? 0 : 1;
   return {
     settings,
     matches: accounts
       .filter((account) => account.login.toLowerCase() === normalized)
-      .sort((a, b) => a.createdAt - b.createdAt),
+      .sort(
+        (a, b) => unreadable(a) - unreadable(b) || a.createdAt - b.createdAt,
+      ),
   };
 }
 

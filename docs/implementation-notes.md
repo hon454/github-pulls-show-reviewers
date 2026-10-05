@@ -593,18 +593,25 @@ event after the reset time; nothing is retried automatically.
   failed owner operation (a failed write or cleanup) clears that memo and
   requests another reconciliation before the next owner operation. This retries
   a removal or duplicate cleanup interrupted after the index write, including
-  older orphaned fragments with no cleanup marker.
+  older orphaned fragments with no cleanup marker. Only the three
+  account-record prefixes are eligible for deletion; indexed accounts and
+  unrelated local storage are preserved. The queue serializes reconciliation
+  with sign-in and reconnection, so a new account generation cannot be deleted
+  by an older cleanup attempt. The memo assumes that only this owner writes
+  account keys during an activation; an extension update restarts the worker.
 - Repair drops only indexed IDs that have no stored fragment. An indexed record
   whose fragments fail to parse, for example after rolling back to a release
   that predates a schema or enum addition, is quarantined: its fragments stay
   unchanged, and reads project it as an invalidated (`unknown`) account with no
   token, refresh token or connection receipt and the opaque revision
   `quarantined`. Auth and installation commits skip it, the options card offers
-  sign-in again and removal, and re-signing in with the same login replaces it.
-  A later release that parses the record restores the account without sign-in. Only the three account-record prefixes are eligible for
-  deletion; indexed accounts and unrelated local storage are preserved. The
-  queue serializes reconciliation with sign-in and reconnection, so a new
-  account generation cannot be deleted by an older cleanup attempt.
+  sign-in again and removal, and re-signing in with the same login replaces it,
+  preferring a readable duplicate when one exists. When the login itself is
+  unreadable, the card shows the account ID and only removal clears it. A later
+  release that parses the record restores the account without sign-in.
+- A stored `settings` index that this release cannot parse is not treated as
+  empty, which would delete every account record as an orphan. Initialization
+  rebuilds a v4 index from the IDs that still have account fragments.
 - The options account card keeps local removal available whether credentials are
   active or invalidated. It calls the same background mutation wrapper by
   account ID, so removal neither starts device sign-in nor revokes the GitHub
