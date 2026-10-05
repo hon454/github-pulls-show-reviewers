@@ -60,10 +60,14 @@ const POST_EXCHANGE_BUDGET_MS = 2 * 60_000;
 /** Delay before the single retry of a failed post-sign-in installation load. */
 const INSTALLATION_RETRY_DELAY_MS = 30_000;
 
-/** Network errors, 5xx, 429 and any 403 (possibly a secondary rate limit). */
+/**
+ * Network errors, credential request timeouts, 5xx, 429 and any 403 (possibly
+ * a secondary rate limit). Callers check their own cancellation first.
+ */
 function isTransientFailure(error: unknown): boolean {
   if (error instanceof GitHubAuthSchemaError) return false;
   if (error instanceof TypeError) return true;
+  if (error instanceof CredentialTimeoutError) return true;
   const status = extractGitHubApiStatus(error);
   return status != null && (status >= 500 || status === 429 || status === 403);
 }

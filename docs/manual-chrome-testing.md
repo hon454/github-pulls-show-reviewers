@@ -451,10 +451,12 @@ fake-clock regressions:
 pnpm exec vitest run tests/credential-deadline.test.ts tests/auth.test.ts tests/auth.refresh.test.ts tests/refresh-coordinator.test.ts tests/background-device-flow.test.ts
 ```
 
-They check that a held token poll, `/user` or installation request ends the
-sign-in panel as a network error without another exchange or an account
-commit, and that a held refresh stays transient: the account is not
-invalidated and the next 401 starts a new refresh. These tests do not exercise
+They check that a held token poll ends the sign-in panel as a network error
+without another exchange or an account commit; that a held `/user` request is
+retried, and ends the panel as a network error with no account only when every
+attempt times out; that held installation requests still commit the account;
+and that a held refresh stays transient: the account is not invalidated and the
+next 401 starts a new refresh. These tests do not exercise
 live GitHub or a real browser.
 
 ## 5. Rebuild and reload during iteration

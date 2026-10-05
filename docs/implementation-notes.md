@@ -864,7 +864,8 @@ it is not a live private-repository permission check.
 - After the code exchange the issued tokens are already live at GitHub, so one
   transient failure must not end the sign-in. `GET /user` and the installation
   load each get up to three attempts, one and three seconds apart, for network
-  errors, 5xx, 429 and any 403 (possibly a secondary rate limit). Other
+  errors, credential request timeouts, 5xx, 429 and any 403 (possibly a
+  secondary rate limit). Other
   failures, including a 401 or a schema mismatch, are not retried. Retries run
   outside the flow queue and a cancelled, expired or superseded attempt stops at
   once, even mid-wait. When the exchange succeeds, the attempt's deadline is
@@ -906,10 +907,13 @@ it is not a live private-repository permission check.
 - Device-code, token-poll, `/user` and installation requests each have a
   15-second bound covering the response body
   (`src/shared/credential-deadline.ts`). The bound is per request, including
-  per installation page, not one budget for the whole sign-in. A request that
-  exceeds it ends the
-  flow as `network_error` without replaying the exchange, instead of leaving
-  options in the fetching state until cancel or the 15-minute expiry.
+  per installation page, not one budget for the whole sign-in. A device-code
+  or token-poll request that exceeds it ends the flow as `network_error`
+  without replaying the exchange, instead of leaving options in the fetching
+  state until cancel or the 15-minute expiry. A timed-out `/user` or
+  installation request after the exchange is retried like other transient
+  failures; a `/user` request that still times out ends the flow as
+  `network_error`.
 - Cancel, expiry, completion and detected owner loss clear secret flow fields.
   Worker activation and flow entrypoints expire abandoned entries; there is no
   background polling loop, keepalive or new alarm. A browser restart clears

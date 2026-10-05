@@ -435,7 +435,7 @@ describe("background OAuth device-flow ownership, restoration and cancellation",
     );
   });
 
-  it.each(["/login/oauth/access_token", "/user"])(
+  it.each(["/login/oauth/access_token"])(
     "ends a hung %s request in a token poll as a network error without replaying it",
     async (hungPath) => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
@@ -470,6 +470,72 @@ describe("background OAuth device-flow ownership, restoration and cancellation",
       );
     },
   );
+
+  it("retries a timed-out /user request and keeps the exchanged tokens", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(baseTime);
+    const init = await start();
+    const answer = fetchMock.getMockImplementation()!;
+    const signals: Array<AbortSignal | null | undefined> = [];
+    fetchMock.mockImplementation((url, request) => {
+      if (new URL(String(url)).pathname !== "/user" || signals.length > 0)
+        return answer(url, request);
+      signals.push(request?.signal);
+      return new Promise<Response>(() => {});
+    });
+    tick(5);
+    const work = poll(init.flowId);
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_REQUEST_TIMEOUT_MS);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(await work).toMatchObject({
+      phase: "connected",
+      account: { login: "octocat" },
+    });
+    const userCalls = fetchMock.mock.calls.filter(
+      ([url]) => new URL(String(url)).pathname === "/user",
+    );
+    expect(userCalls).toHaveLength(2);
+    expect(await accountMutations.listAccounts()).toEqual([
+      expect.objectContaining({
+        token: SENTINELS.access,
+        refreshToken: SENTINELS.refresh,
+      }),
+    ]);
+  });
+
+  it("ends the attempt as a network error when every /user attempt times out", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(baseTime);
+    const init = await start();
+    const answer = fetchMock.getMockImplementation()!;
+    const signals: Array<AbortSignal | null | undefined> = [];
+    fetchMock.mockImplementation((url, request) => {
+      if (new URL(String(url)).pathname !== "/user")
+        return answer(url, request);
+      signals.push(request?.signal);
+      return new Promise<Response>(() => {});
+    });
+    tick(5);
+    const work = poll(init.flowId);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await vi.waitFor(() => expect(signals).toHaveLength(attempt));
+      await vi.advanceTimersByTimeAsync(CREDENTIAL_REQUEST_TIMEOUT_MS);
+      expect(signals[attempt - 1]?.aborted).toBe(true);
+    }
+    expect(await work).toEqual({ phase: "fatal", code: "network_error" });
+    expect(await accountMutations.listAccounts()).toEqual([]);
+    const calls = fetchMock.mock.calls.length;
+    tick(5);
+    expect(await poll(init.flowId)).toEqual({
+      phase: "fatal",
+      code: "network_error",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(calls);
+    expect(JSON.stringify(harness.session.snapshot())).not.toContain(
+      SENTINELS.device,
+    );
+  });
 
   it("commits the account when every hung /user/installations attempt times out", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
