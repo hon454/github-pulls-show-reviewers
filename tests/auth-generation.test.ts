@@ -751,13 +751,17 @@ describe("reviewer deadline and shared auth ownership", () => {
     const reviewer = createReviewerFetchService({
       refreshCoordinator: coordinator,
     }).handleFetchMessage(message("deadline"));
-    (await http.next()).response.resolve(json({}, 401));
+    const initial = await http.next();
+    // Start the shared refresh late enough that the reviewer deadline expires
+    // before the refresh request's own credential timeout.
+    await vi.advanceTimersByTimeAsync(20_000);
+    initial.response.resolve(json({}, 401));
     const refresh = await http.next();
     const other = coordinator.refreshAccountToken(
       account.id,
       credentialGeneration(account),
     );
-    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect(await reviewer).toMatchObject({
       ok: false,
       error: { status: null, failures: [{ kind: "timeout" }] },

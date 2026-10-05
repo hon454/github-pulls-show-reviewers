@@ -1,6 +1,40 @@
 import { z } from "zod";
 
-import { withOptionalSignal } from "./request-init";
+import {
+  CredentialTimeoutError,
+  withCredentialTimeout,
+  type CredentialTimer,
+} from "../shared/credential-deadline";
+
+type CredentialRequestOptions = {
+  signal?: AbortSignal;
+  timer?: CredentialTimer;
+};
+
+// The body is read inside the same bound as the request, so headers followed
+// by a stalled body cannot hang the caller either.
+function credentialRequest<T>(
+  url: string,
+  init: Omit<RequestInit, "signal">,
+  options: CredentialRequestOptions,
+  read: (response: Response) => Promise<T>,
+): Promise<T> {
+  return withCredentialTimeout(
+    async (signal) => read(await fetch(url, { ...init, signal })),
+    options,
+  );
+}
+
+// A timed-out OAuth exchange has an unknown outcome. It ends as the transient
+// network error and is never replayed automatically.
+function deviceFlowTimeout(request: string) {
+  return (error: unknown): never => {
+    if (error instanceof CredentialTimeoutError) {
+      throw new DeviceFlowError("network_error", `${request} timed out.`);
+    }
+    throw error;
+  };
+}
 
 export type DeviceFlowErrorCode =
   | "expired_token"
@@ -49,31 +83,31 @@ export type DeviceFlowInit = {
   interval: number;
 };
 
-export async function initiateDeviceFlow(input: {
-  clientId: string;
-  signal?: AbortSignal;
-}): Promise<DeviceFlowInit> {
-  const response = await fetch(
+export async function initiateDeviceFlow(
+  input: { clientId: string } & CredentialRequestOptions,
+): Promise<DeviceFlowInit> {
+  const body = await credentialRequest(
     "https://github.com/login/device/code",
-    withOptionalSignal(
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({ client_id: input.clientId }).toString(),
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
       },
-      input.signal,
-    ),
-  );
-  if (!response.ok) {
-    throw new DeviceFlowError(
-      "network_error",
-      `Device code request failed with status ${response.status}.`,
-    );
-  }
-  const payload = deviceCodeInitSchema.safeParse(await response.json());
+      body: new URLSearchParams({ client_id: input.clientId }).toString(),
+    },
+    input,
+    async (response): Promise<unknown> => {
+      if (!response.ok) {
+        throw new DeviceFlowError(
+          "network_error",
+          `Device code request failed with status ${response.status}.`,
+        );
+      }
+      return response.json();
+    },
+  ).catch(deviceFlowTimeout("Device code request"));
+  const payload = deviceCodeInitSchema.safeParse(body);
   if (!payload.success) {
     throw new DeviceFlowError(
       "invalid_response",
@@ -130,36 +164,35 @@ const TERMINAL_POLL_ERRORS: DeviceFlowErrorCode[] = [
   "incorrect_device_code",
 ];
 
-export async function pollForAccessToken(input: {
-  clientId: string;
-  deviceCode: string;
-  signal?: AbortSignal;
-}): Promise<AccessTokenPollResult> {
-  const response = await fetch(
+export async function pollForAccessToken(
+  input: { clientId: string; deviceCode: string } & CredentialRequestOptions,
+): Promise<AccessTokenPollResult> {
+  const body = await credentialRequest(
     "https://github.com/login/oauth/access_token",
-    withOptionalSignal(
-      {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          client_id: input.clientId,
-          device_code: input.deviceCode,
-          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-        }).toString(),
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
       },
-      input.signal,
-    ),
-  );
-  if (!response.ok) {
-    throw new DeviceFlowError(
-      "network_error",
-      `Access token request failed with status ${response.status}.`,
-    );
-  }
-  const payload = accessTokenResponseSchema.safeParse(await response.json());
+      body: new URLSearchParams({
+        client_id: input.clientId,
+        device_code: input.deviceCode,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      }).toString(),
+    },
+    input,
+    async (response): Promise<unknown> => {
+      if (!response.ok) {
+        throw new DeviceFlowError(
+          "network_error",
+          `Access token request failed with status ${response.status}.`,
+        );
+      }
+      return response.json();
+    },
+  ).catch(deviceFlowTimeout("Access token request"));
+  const payload = accessTokenResponseSchema.safeParse(body);
   if (!payload.success) {
     throw new DeviceFlowError(
       "invalid_response",
@@ -235,46 +268,44 @@ export type RefreshTokenResult = {
   refreshTokenExpiresAt: number | null;
 };
 
-export async function refreshAccessToken(input: {
-  clientId: string;
-  refreshToken: string;
-  signal?: AbortSignal;
-}): Promise<RefreshTokenResult> {
-  let response: Response;
+export async function refreshAccessToken(
+  input: { clientId: string; refreshToken: string } & CredentialRequestOptions,
+): Promise<RefreshTokenResult> {
+  let exchange: { response: Response; json: unknown; readJsonError: unknown };
   try {
-    response = await fetch(
+    exchange = await credentialRequest(
       "https://github.com/login/oauth/access_token",
-      withOptionalSignal(
-        {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
-          body: new URLSearchParams({
-            client_id: input.clientId,
-            grant_type: "refresh_token",
-            refresh_token: input.refreshToken,
-          }).toString(),
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        input.signal,
-      ),
+        body: new URLSearchParams({
+          client_id: input.clientId,
+          grant_type: "refresh_token",
+          refresh_token: input.refreshToken,
+        }).toString(),
+      },
+      input,
+      async (response) => {
+        try {
+          return { response, json: await response.json(), readJsonError: null };
+        } catch (cause) {
+          return { response, json: null, readJsonError: cause };
+        }
+      },
     );
   } catch (cause) {
+    // A timeout stays transient even when a 4xx status arrived before the body
+    // stalled: only a fully read response may classify a refresh as terminal.
     throw new RefreshTokenError(
       "transient",
-      "network_error",
+      cause instanceof CredentialTimeoutError ? "timeout" : "network_error",
       cause instanceof Error ? cause.message : undefined,
     );
   }
-
-  let json: unknown = null;
-  let readJsonError: unknown = null;
-  try {
-    json = await response.json();
-  } catch (cause) {
-    readJsonError = cause;
-  }
+  const { response, json, readJsonError } = exchange;
 
   const parsed = accessTokenResponseSchema.safeParse(json);
 
@@ -567,21 +598,21 @@ export type AuthenticatedUser = {
   avatarUrl: string | null;
 };
 
-export async function fetchAuthenticatedUser(input: {
-  token: string;
-  signal?: AbortSignal;
-}): Promise<AuthenticatedUser> {
-  const response = await fetch(
+export async function fetchAuthenticatedUser(
+  input: { token: string } & CredentialRequestOptions,
+): Promise<AuthenticatedUser> {
+  const body = await credentialRequest(
     "https://api.github.com/user",
-    withOptionalSignal(
-      { headers: createAuthHeaders(input.token) },
-      input.signal,
-    ),
+    { headers: createAuthHeaders(input.token) },
+    input,
+    async (response): Promise<unknown> => {
+      if (!response.ok) {
+        throw new Error(`GET /user failed with status ${response.status}.`);
+      }
+      return response.json();
+    },
   );
-  if (!response.ok) {
-    throw new Error(`GET /user failed with status ${response.status}.`);
-  }
-  const parsed = githubUserSchema.safeParse(await response.json());
+  const parsed = githubUserSchema.safeParse(body);
   if (!parsed.success) {
     throw new GitHubAuthSchemaError("GET /user", parsed.error.issues);
   }
@@ -625,29 +656,45 @@ export type PaginatedResult<T> = {
 
 export const MAX_INSTALLATION_PAGES = 10;
 
-export async function fetchUserInstallations(input: {
-  token: string;
-  signal?: AbortSignal;
-}): Promise<PaginatedResult<ApiInstallation>> {
+// Each page gets its own credential request bound.
+function fetchInstallationPage(
+  url: string,
+  endpoint: string,
+  input: { token: string } & CredentialRequestOptions,
+): Promise<{ body: unknown; link: string | null }> {
+  return credentialRequest(
+    url,
+    { headers: createAuthHeaders(input.token) },
+    input,
+    async (response) => {
+      if (!response.ok) {
+        throw new Error(
+          `GET ${endpoint} failed with status ${response.status}.`,
+        );
+      }
+      return {
+        body: (await response.json()) as unknown,
+        link: response.headers.get("link"),
+      };
+    },
+  );
+}
+
+export async function fetchUserInstallations(
+  input: { token: string } & CredentialRequestOptions,
+): Promise<PaginatedResult<ApiInstallation>> {
   const results: ApiInstallation[] = [];
   const expectedPathname = "/user/installations";
   let truncated = false;
   let url: string | null =
     "https://api.github.com/user/installations?per_page=100";
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
-    const response = await fetch(
+    const response = await fetchInstallationPage(
       url,
-      withOptionalSignal(
-        { headers: createAuthHeaders(input.token) },
-        input.signal,
-      ),
+      "/user/installations",
+      input,
     );
-    if (!response.ok) {
-      throw new Error(
-        `GET /user/installations failed with status ${response.status}.`,
-      );
-    }
-    const parsed = userInstallationsSchema.safeParse(await response.json());
+    const parsed = userInstallationsSchema.safeParse(response.body);
     if (!parsed.success) {
       throw new GitHubAuthSchemaError(
         "GET /user/installations",
@@ -669,7 +716,7 @@ export async function fetchUserInstallations(input: {
       });
     }
     const nextTarget = parseAuthPaginationTarget(
-      response.headers.get("link"),
+      response.link,
       expectedPathname,
     );
     if (nextTarget.kind === "valid") {
@@ -687,32 +734,17 @@ const installationRepositoriesSchema = z.object({
   repositories: z.array(z.object({ full_name: z.string() })),
 });
 
-export async function fetchInstallationRepositories(input: {
-  token: string;
-  installationId: number;
-  signal?: AbortSignal;
-}): Promise<PaginatedResult<string>> {
+export async function fetchInstallationRepositories(
+  input: { token: string; installationId: number } & CredentialRequestOptions,
+): Promise<PaginatedResult<string>> {
   const results: string[] = [];
   const expectedPathname = `/user/installations/${input.installationId}/repositories`;
   let truncated = false;
   let url: string | null =
     `https://api.github.com${expectedPathname}?per_page=100`;
   for (let page = 0; page < MAX_INSTALLATION_PAGES && url != null; page++) {
-    const response = await fetch(
-      url,
-      withOptionalSignal(
-        { headers: createAuthHeaders(input.token) },
-        input.signal,
-      ),
-    );
-    if (!response.ok) {
-      throw new Error(
-        `GET /user/installations/${input.installationId}/repositories failed with status ${response.status}.`,
-      );
-    }
-    const parsed = installationRepositoriesSchema.safeParse(
-      await response.json(),
-    );
+    const response = await fetchInstallationPage(url, expectedPathname, input);
+    const parsed = installationRepositoriesSchema.safeParse(response.body);
     if (!parsed.success) {
       throw new GitHubAuthSchemaError(
         `GET /user/installations/${input.installationId}/repositories`,
@@ -723,7 +755,7 @@ export async function fetchInstallationRepositories(input: {
       results.push(repository.full_name);
     }
     const nextTarget = parseAuthPaginationTarget(
-      response.headers.get("link"),
+      response.link,
       expectedPathname,
     );
     if (nextTarget.kind === "valid") {
