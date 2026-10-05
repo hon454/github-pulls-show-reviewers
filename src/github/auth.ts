@@ -297,8 +297,8 @@ export async function refreshAccessToken(
       },
     );
   } catch (cause) {
-    // A timeout stays transient even when a 4xx status arrived before the body
-    // stalled: only a fully read response may classify a refresh as terminal.
+    // A timeout or caller abort stays transient even when a 4xx status
+    // arrived before the body stalled.
     throw new RefreshTokenError(
       "transient",
       cause instanceof CredentialTimeoutError ? "timeout" : "network_error",
