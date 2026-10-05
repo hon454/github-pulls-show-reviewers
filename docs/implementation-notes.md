@@ -738,6 +738,16 @@ event after the reset time; nothing is retried automatically.
   `getContexts` omits content documents, so content liveness uses the recorded
   tab and a document-targeted content probe. Frozen/unresponsive documents keep
   their budgets. Ordinary port disconnection is not owner loss.
+- Liveness probes never hold the ledger queue. A prune probes each known
+  document once, in parallel, then removes confirmed losses in one short queued
+  step and skips the session write when nothing was removed. Pruning runs on
+  worker activation, tab removal and options-document loss; a discovery start
+  probes only its own document and, without waiting, an earlier document of the
+  same tab. A slow document therefore cannot delay another tab's start.
+- Restore validates the session ledger with `safeParse`. A malformed value is
+  replaced by an empty store and rewritten, so one bad record cannot reject
+  later ledger operations, including anonymous public rows. A live document's
+  next start then opens a new record; only corruption causes this reset.
 - Reload/navigation, force refresh, removal/reconnection or changed installation
   coverage may create a new discovery generation. Credential invalidation alone
   cancels obsolete row work but retains terminal 401 evidence. Duplicate row
