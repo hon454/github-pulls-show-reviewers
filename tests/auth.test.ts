@@ -369,6 +369,7 @@ describe("fetchUserInstallations", () => {
 
       expect(result.items.map(({ id }) => id)).toEqual([1]);
       expect(result.truncated).toBe(true);
+      expect(result.invalidLink).toBe(true);
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(
         (fetchMock.mock.calls[0]?.[1]?.headers as Headers).get("Authorization"),
@@ -387,6 +388,7 @@ describe("fetchUserInstallations", () => {
 
       expect(result.items.map(({ id }) => id)).toEqual([1]);
       expect(result.truncated).toBe(true);
+      expect(result.invalidLink).toBe(true);
       expect(fetchMock).toHaveBeenCalledTimes(1);
     },
   );
@@ -419,6 +421,7 @@ describe("fetchUserInstallations", () => {
 
     expect(result.items).toHaveLength(10);
     expect(result.truncated).toBe(true);
+    expect(result.invalidLink).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(10);
   });
 });
@@ -584,6 +587,50 @@ describe("auth schema diagnostics", () => {
   });
 });
 
+describe("loadAccountInstallations truncation", () => {
+  const allPage = (page: number) => ({
+    total_count: 1_001,
+    installations: [
+      {
+        id: page,
+        account: {
+          login: `org-${page}`,
+          type: "Organization",
+          avatar_url: null,
+        },
+        repository_selection: "all",
+      },
+    ],
+  });
+
+  it("returns the installations loaded before the page limit", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    for (let page = 1; page <= 10; page++)
+      fetchMock.mockResolvedValueOnce(
+        paginatedResponse(
+          allPage(page),
+          `https://api.github.com/user/installations?page=${page + 1}&per_page=100`,
+        ),
+      );
+
+    const installations = await loadAccountInstallations({ token: "ghu_abc" });
+
+    expect(installations.map(({ id }) => id)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
+  });
+
+  it("rejects an installation list whose next link is invalid", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      paginatedResponse(allPage(1), "https://example.com/user/installations"),
+    );
+
+    await expect(
+      loadAccountInstallations({ token: "ghu_abc" }),
+    ).rejects.toThrow();
+  });
+});
+
 describe("loadAccountInstallations cancellation", () => {
   it("does not start HTTP with an already aborted signal", async () => {
     const controller = new AbortController();
@@ -668,6 +715,23 @@ describe("loadAccountInstallations cancellation", () => {
     controller.abort();
     expect(await work).toMatchObject({ name: "AbortError" });
     expect(pageSignal?.aborted).toBe(true);
+  });
+
+  it("aborts its requests when the caller's signal aborts", async () => {
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | undefined;
+    vi.spyOn(globalThis, "fetch").mockImplementationOnce(async (_url, init) => {
+      requestSignal = init?.signal ?? undefined;
+      controller.abort();
+      return jsonResponse(fixture("user-installations.json"));
+    });
+    await expect(
+      loadAccountInstallations({
+        token: "fake-token",
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(requestSignal?.aborted).toBe(true);
   });
 });
 

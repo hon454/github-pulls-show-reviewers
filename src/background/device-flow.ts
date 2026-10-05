@@ -7,10 +7,11 @@ import {
   fetchAuthenticatedUser,
 } from "../github/auth";
 import { extractGitHubApiStatus } from "../github/api";
-import { loadAccountInstallationSnapshot } from "../github/installations";
+import { loadAccountInstallations } from "../github/installations";
 import { CredentialTimeoutError } from "../shared/credential-deadline";
 import {
   accountMutations,
+  credentialGeneration,
   type Account,
   type Installation,
 } from "../storage/accounts";
@@ -51,8 +52,15 @@ export class FlowOwnershipError extends Error {}
 
 /** Waits between attempts of one post-exchange request (three attempts). */
 const POST_EXCHANGE_RETRY_DELAYS_MS = [1_000, 3_000] as const;
+/**
+ * The exchanged tokens are live, so the attempt must not expire while its
+ * post-exchange requests and retries run. This bounds that extension.
+ */
+const POST_EXCHANGE_BUDGET_MS = 2 * 60_000;
+/** Delay before the single retry of a failed post-sign-in installation load. */
+const INSTALLATION_RETRY_DELAY_MS = 30_000;
 
-/** Network errors, 5xx, 429 and 403 secondary rate limits may succeed later. */
+/** Network errors, 5xx, 429 and any 403 (possibly a secondary rate limit). */
 function isTransientFailure(error: unknown): boolean {
   if (error instanceof GitHubAuthSchemaError) return false;
   if (error instanceof TypeError) return true;
@@ -82,12 +90,15 @@ export function createDeviceFlowService(input: {
     progress: DeviceFlowProgress,
   ) => void;
   /** Loads installations for an account committed without them. */
-  refreshInstallations?: (accountId: string) => Promise<unknown>;
+  refreshInstallations?: (accountId: string) => Promise<{ ok: boolean }>;
   retryDelaysMs?: readonly number[];
+  installationRetryDelayMs?: number;
   now?: () => number;
 }) {
   const now = input.now ?? (() => Date.now());
   const retryDelaysMs = input.retryDelaysMs ?? POST_EXCHANGE_RETRY_DELAYS_MS;
+  const installationRetryDelayMs =
+    input.installationRetryDelayMs ?? INSTALLATION_RETRY_DELAY_MS;
   // Retries run outside the flow queue and stop as soon as the attempt is
   // cancelled, expired or superseded (its controller aborts).
   async function retryTransient<T>(
@@ -102,8 +113,34 @@ export function createDeviceFlowService(input: {
         if (delay === undefined || signal.aborted || !isTransientFailure(error))
           throw error;
         await waitForRetry(delay, signal);
+        signal.throwIfAborted();
       }
     }
+  }
+
+  // Runs outside both queues. The refresh service owns its HTTP, 401 recovery
+  // and revision-checked commit. One delayed retry follows a failure, only
+  // while the committed credentials are still current. The account resolver's
+  // stale-candidate check covers what is still missing after that, including
+  // a worker that stopped in between.
+  function loadCommittedInstallations(account: Account): void {
+    const refresh = input.refreshInstallations;
+    if (!refresh) return;
+    const revision = credentialGeneration(account);
+    void (async () => {
+      if ((await refresh(account.id).catch(() => ({ ok: false }))).ok) return;
+      await new Promise((resolve) =>
+        setTimeout(resolve, installationRetryDelayMs),
+      );
+      const current = await accountMutations.getAccountById(account.id);
+      if (
+        current == null ||
+        current.invalidated ||
+        credentialGeneration(current) !== revision
+      )
+        return;
+      await refresh(account.id);
+    })().catch(() => undefined);
   }
   let records: FlowRecord[] | undefined;
   let tail: Promise<unknown> = Promise.resolve();
@@ -447,9 +484,17 @@ export function createDeviceFlowService(input: {
               await persistTransition(current);
               return progress(current);
             });
-          const active = await ordered(
-            async () => find(owner, attemptId)?.phase === "polling",
-          );
+          const active = await ordered(async () => {
+            const current = find(owner, attemptId);
+            if (current?.phase !== "polling") return false;
+            // Keep the attempt from expiring under the post-exchange requests.
+            const deadline = now() + POST_EXCHANGE_BUDGET_MS;
+            if (current.expiresAt < deadline) {
+              current.expiresAt = deadline;
+              if (!(await persistTransition(current))) return false;
+            }
+            return true;
+          });
           if (!active || controller!.signal.aborted)
             return ordered(() => progress(find(owner, attemptId)));
           notify(record!, { phase: "fetching_installations" });
@@ -465,20 +510,15 @@ export function createDeviceFlowService(input: {
             return ordered(() => progress(find(owner, attemptId)));
           // Once /user succeeds the account is committed even when its
           // installations cannot be loaded (null); installation refresh fills
-          // them after the commit. A truncated installation list signs in with
-          // the installations loaded before the page limit.
+          // them after the commit. A list cut at the page limit signs in with
+          // the installations loaded before it.
           let installations: Installation[] | null = null;
           try {
-            installations = (
-              await retryTransient(
-                () =>
-                  loadAccountInstallationSnapshot({
-                    token: result.accessToken,
-                    signal,
-                  }),
-                signal,
-              )
-            ).installations;
+            installations = await retryTransient(
+              () =>
+                loadAccountInstallations({ token: result.accessToken, signal }),
+              signal,
+            );
           } catch (error) {
             if (signal.aborted) throw error;
           }
@@ -537,6 +577,7 @@ export function createDeviceFlowService(input: {
               return progress(current);
             });
           }
+          if (installations == null) loadCommittedInstallations(account);
           const connected = await ordered(
             async (): Promise<DeviceFlowProgress> => {
               const current = find(owner, attemptId);
@@ -547,10 +588,6 @@ export function createDeviceFlowService(input: {
               return { phase: "connected", account: summarizeAccount(account) };
             },
           );
-          // Outside both queues; the refresh service owns its own HTTP,
-          // 401 recovery and generation-checked commit.
-          if (installations == null && input.refreshInstallations)
-            void input.refreshInstallations(account.id).catch(() => undefined);
           return connected;
         } catch (error) {
           return failed(owner, attemptId, error);

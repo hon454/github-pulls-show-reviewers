@@ -686,7 +686,12 @@ function fetchInstallationPage(
 
 export async function fetchUserInstallations(
   input: { token: string } & CredentialRequestOptions,
-): Promise<PaginatedResult<ApiInstallation>> {
+): Promise<
+  PaginatedResult<ApiInstallation> & {
+    /** Pagination stopped at a rejected `next` link, not the page limit. */
+    invalidLink: boolean;
+  }
+> {
   const results: ApiInstallation[] = [];
   const expectedPathname = "/user/installations";
   let truncated = false;
@@ -730,7 +735,11 @@ export async function fetchUserInstallations(
       url = null;
     }
   }
-  return { items: results, truncated: truncated || url != null };
+  return {
+    items: results,
+    truncated: truncated || url != null,
+    invalidLink: truncated,
+  };
 }
 
 const installationRepositoriesSchema = z.object({

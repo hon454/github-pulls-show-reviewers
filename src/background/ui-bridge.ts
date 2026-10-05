@@ -50,6 +50,7 @@ export function createUIBridge(input: {
   isOwnerAlive?: (owner: string) => Promise<boolean>;
   isDiscoveryOwnerAlive?: (owner: DiscoveryOwner) => Promise<boolean>;
   deviceFlowRetryDelaysMs?: readonly number[];
+  deviceFlowInstallationRetryDelayMs?: number;
 }) {
   type Port = ReturnType<typeof browser.runtime.connect>;
   const ports = new Map<string, Set<Port>>();
@@ -139,6 +140,9 @@ export function createUIBridge(input: {
     ...(input.deviceFlowRetryDelaysMs
       ? { retryDelaysMs: input.deviceFlowRetryDelaysMs }
       : {}),
+    ...(input.deviceFlowInstallationRetryDelayMs === undefined
+      ? {}
+      : { installationRetryDelayMs: input.deviceFlowInstallationRetryDelayMs }),
     onProgress(owner, attemptId, progress) {
       const event = uiStateEventSchema.parse({
         type: "deviceFlow",

@@ -155,6 +155,7 @@ export function createUIBridgeHarness(
       ensureReady,
       coordinator,
       deviceFlowRetryDelaysMs: [0, 0],
+      deviceFlowInstallationRetryDelayMs: 0,
       ...(nativeDiscoveryLiveness
         ? {}
         : {

@@ -435,7 +435,7 @@ describe("background OAuth device-flow ownership, restoration and cancellation",
     );
   });
 
-  it.each(["/login/oauth/access_token", "/user", "/user/installations"])(
+  it.each(["/login/oauth/access_token", "/user"])(
     "ends a hung %s request in a token poll as a network error without replaying it",
     async (hungPath) => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
@@ -470,6 +470,34 @@ describe("background OAuth device-flow ownership, restoration and cancellation",
       );
     },
   );
+
+  it("commits the account when every hung /user/installations attempt times out", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(baseTime);
+    const init = await start();
+    const answer = fetchMock.getMockImplementation()!;
+    const signals: Array<AbortSignal | null | undefined> = [];
+    fetchMock.mockImplementation((url, request) => {
+      if (new URL(String(url)).pathname !== "/user/installations")
+        return answer(url, request);
+      signals.push(request?.signal);
+      return new Promise<Response>(() => {});
+    });
+    tick(5);
+    const work = poll(init.flowId);
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await vi.waitFor(() => expect(signals).toHaveLength(attempt));
+      await vi.advanceTimersByTimeAsync(CREDENTIAL_REQUEST_TIMEOUT_MS);
+      expect(signals[attempt - 1]?.aborted).toBe(true);
+    }
+    expect(await work).toMatchObject({
+      phase: "connected",
+      account: { login: "octocat", installations: [] },
+    });
+    expect(await accountMutations.listAccounts()).toEqual([
+      expect.objectContaining({ token: SENTINELS.access, installations: [] }),
+    ]);
+  });
 
   it("ends a hung device-code request as a network error", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
@@ -753,5 +781,177 @@ describe("background device flow after the token exchange", () => {
 
     expect(await work).toEqual({ phase: "cancelled" });
     expect(await accountMutations.listAccounts()).toEqual([]);
+  });
+
+  it("starts the installation refresh even when the connected step cannot be saved", async () => {
+    let failures = 0;
+    route("/user/installations", () => {
+      if (failures >= 3)
+        return json({ total_count: 1, installations: [installation(1)] });
+      failures += 1;
+      return json({ message: "unavailable" }, 502);
+    });
+    const original =
+      harness.browserMock.storage.session.set.getMockImplementation()!;
+    harness.browserMock.storage.session.set.mockImplementation(
+      async (values) => {
+        const records = values[SESSION_KEY] as Array<{ phase: string }>;
+        if (records.some((record) => record.phase === "connected"))
+          throw new Error("session unavailable");
+        await original(values);
+      },
+    );
+
+    await connect();
+
+    await vi.waitFor(async () =>
+      expect((await accountMutations.listAccounts())[0]).toMatchObject({
+        installations: [expect.objectContaining({ id: 1 })],
+      }),
+    );
+  });
+
+  it("retries a failed post-sign-in installation refresh once", async () => {
+    let failures = 0;
+    const calls = route("/user/installations", () => {
+      if (failures >= 4)
+        return json({ total_count: 1, installations: [installation(1)] });
+      failures += 1;
+      return json({ message: "unavailable" }, 502);
+    });
+
+    await connect();
+
+    await vi.waitFor(async () =>
+      expect((await accountMutations.listAccounts())[0]).toMatchObject({
+        installations: [expect.objectContaining({ id: 1 })],
+      }),
+    );
+    expect(calls).toHaveLength(5);
+  });
+
+  it("does not retry the installation refresh after the credentials changed", async () => {
+    route("/user/installations", () => json({ message: "unavailable" }, 502));
+    const refreshInstallations = vi.fn(async (accountId: string) => {
+      const account = await accountMutations.getAccountById(accountId);
+      await accountMutations.commitAuth(
+        accountId,
+        account!.credentialGeneration!,
+        {
+          tokens: {
+            token: "fixture-access-rotated",
+            refreshToken: null,
+            expiresAt: null,
+            refreshTokenExpiresAt: null,
+          },
+        },
+      );
+      return { ok: false };
+    });
+    const service = createDeviceFlowService({
+      ensureReady: async () => {},
+      getClientId: () => "test-client",
+      isOwnerAlive: async () => true,
+      refreshInstallations,
+      retryDelaysMs: [0, 0],
+      installationRetryDelayMs: 0,
+    });
+    const init = await service.start("options-1", "attempt-direct");
+    if (init.phase !== "waiting") throw new Error("expected waiting");
+    tick(5);
+
+    expect(
+      await service.poll("options-1", "attempt-direct", init.flowId),
+    ).toMatchObject({ phase: "connected" });
+    await drain();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(refreshInstallations).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends a cancelled retry wait promptly without another /user request", async () => {
+    const failed = deferred<void>();
+    const calls = route("/user", () => {
+      failed.resolve();
+      return json({ message: "bad gateway" }, 502);
+    });
+    const service = createDeviceFlowService({
+      ensureReady: async () => {},
+      getClientId: () => "test-client",
+      isOwnerAlive: async () => true,
+      retryDelaysMs: [60_000],
+    });
+    const init = await service.start("options-1", "attempt-wait");
+    if (init.phase !== "waiting") throw new Error("expected waiting");
+    tick(5);
+    const work = service.poll("options-1", "attempt-wait", init.flowId);
+    await failed.promise;
+    await drain();
+
+    await service.cancel("options-1", "attempt-wait");
+
+    expect(await work).toEqual({ phase: "cancelled" });
+    expect(calls).toHaveLength(1);
+    expect(await accountMutations.listAccounts()).toEqual([]);
+  });
+
+  it("keeps the attempt alive past the device-code deadline while post-exchange retries run", async () => {
+    route("/login/device/code", () => initiation({ expires_in: 10 }));
+    let failed = false;
+    route("/user", () => {
+      if (failed) return undefined;
+      failed = true;
+      tick(60);
+      return json({ message: "bad gateway" }, 502);
+    });
+
+    expect(await connect()).toMatchObject({ phase: "connected" });
+    expect(await accountMutations.listAccounts()).toHaveLength(1);
+  });
+
+  it("stops a failed installation try's parallel repository requests", async () => {
+    const signals: AbortSignal[] = [];
+    route("/user/installations", () =>
+      json({
+        total_count: 2,
+        installations: [1, 2].map((id) => ({
+          ...installation(id),
+          repository_selection: "selected",
+        })),
+      }),
+    );
+    route("/user/installations/1/repositories", () =>
+      json({ message: "unavailable" }, 502),
+    );
+    route("/user/installations/2/repositories", (_url, init) => {
+      signals.push(init!.signal!);
+      return new Promise<Response>(() => {});
+    });
+
+    expect(await connect()).toMatchObject({ phase: "connected" });
+    expect(signals.length).toBeGreaterThan(0);
+    for (const signal of signals) expect(signal.aborted).toBe(true);
+  });
+
+  it("does not accept a sign-in installation list with an invalid next link", async () => {
+    route(
+      "/user/installations",
+      () =>
+        new Response(
+          JSON.stringify({ total_count: 2, installations: [installation(1)] }),
+          {
+            headers: {
+              "Content-Type": "application/json",
+              link: '<https://example.com/user/installations?page=2>; rel="next"',
+            },
+          },
+        ),
+    );
+
+    expect(await connect()).toMatchObject({ phase: "connected" });
+    expect((await accountMutations.listAccounts())[0]).toMatchObject({
+      installations: [],
+      installationsRefreshedAt: 0,
+    });
   });
 });
