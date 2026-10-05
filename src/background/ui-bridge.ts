@@ -3,7 +3,7 @@ import type { RefreshCoordinator } from "../auth/refresh-coordinator";
 import { getGitHubAppConfig } from "../config/github-app";
 import { accountMutations } from "../storage/accounts";
 import { updatePreferences } from "../storage/preferences";
-import { summarizeAccount } from "./account-summary";
+import { projectContentAccount, summarizeAccount } from "./account-summary";
 import { createDeviceFlowService, FlowOwnershipError } from "./device-flow";
 import { createDiagnosticsService } from "./diagnostics";
 import type { InstallationRefreshService } from "./installation-refresh";
@@ -15,8 +15,10 @@ import {
   type UIContext,
   type UISender,
 } from "./ui-sender";
+import type { Account } from "../storage/accounts";
 import {
   accountSummarySchema,
+  contentAccountSchema,
   capabilityResponseSchema,
   deviceFlowProgressSchema,
   UI_STATE_CHANGED,
@@ -187,6 +189,17 @@ export function createUIBridge(input: {
     return capabilityResponseSchema(schema).parse({ ok: true, data });
   }
   const forbidden = () => ({ ok: false as const, error: "forbidden" as const });
+  // Content documents get only the account's id, revision and validity; the
+  // options page keeps the full summary.
+  function accountReply(context: UIContext, account: Account | null) {
+    const summary = account ? summarizeAccount(account) : null;
+    return context.kind === "content"
+      ? success(
+          contentAccountSchema.nullable(),
+          summary ? projectContentAccount(summary) : null,
+        )
+      : success(accountSummarySchema.nullable(), summary);
+  }
 
   async function handle(
     message: unknown,
@@ -239,22 +252,18 @@ export function createUIBridge(input: {
             await updatePreferences(request.patch);
             return success(uiSnapshotSchema, await state.read("options"));
           case "resolveAccount": {
-            const account = await resolver(context).resolveAccount(
-              request.owner,
-              request.repo,
-            );
-            return success(
-              accountSummarySchema.nullable(),
-              account ? summarizeAccount(account) : null,
+            return accountReply(
+              context,
+              await resolver(context).resolveAccount(
+                request.owner,
+                request.repo,
+              ),
             );
           }
           case "resolveFallbackAccount": {
-            const account = await resolver(context).resolveFallbackAccount(
-              request.owner,
-            );
-            return success(
-              accountSummarySchema.nullable(),
-              account ? summarizeAccount(account) : null,
+            return accountReply(
+              context,
+              await resolver(context).resolveFallbackAccount(request.owner),
             );
           }
           case "removeAccount":

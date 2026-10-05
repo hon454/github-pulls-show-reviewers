@@ -233,6 +233,25 @@ const storageDenial = `(async () => {
   const unsafe = /SYNTHETIC_(ACCESS|REFRESH|DEVICE)_175|"(?:accessToken|refreshToken|deviceCode|oldValue|newValue|token)"/.test(JSON.stringify(snapshot));
   return { readDenied, writeDenied, snapshotSafe: !unsafe, accountListHidden: snapshot.data?.accounts === null, capabilityForbidden: forbidden.error === 'forbidden' };
 })()`;
+// Every account-bearing reply a content document can request, after sign-in.
+// A fresh discovery generation is used, so it runs after the page's own work.
+const contentAccountReplies = `(async () => {
+  const send = (message) => chrome.runtime.sendMessage({ owner: 'octo', repo: 'repo', ...message });
+  const discovery = await send({ type: 'beginRepositoryDiscovery', pageSession: 'content-reply-probe', generation: 1000000 });
+  const reviewer = { accountId: null, discoveryId: discovery.data.id };
+  const replies = [
+    await send({ type: 'resolveAccount' }),
+    await send({ type: 'resolveFallbackAccount' }),
+    await send({ ...reviewer, type: 'fetchPullReviewerMetadataBatch', requestId: 'content-reply-metadata' }),
+    await send({ ...reviewer, type: 'fetchPullReviewerSummary', requestId: 'content-reply-summary', pullNumber: '42' }),
+  ];
+  const accounts = replies.map((reply) => reply.data === undefined ? reply.account : reply.data);
+  return {
+    ok: replies.map((reply) => reply.ok),
+    accountKeys: accounts.map((account) => account && Object.keys(account).sort()),
+    identityFree: !/octocat|"octo"|"login":"octo|installations|avatarUrl|invalidatedReason/.test(JSON.stringify(accounts)) && !/octocat|installations/.test(JSON.stringify(replies)),
+  };
+})()`;
 const denied = {
   readDenied: true,
   writeDenied: true,
@@ -411,6 +430,14 @@ test("packaged sign-in, diagnostics, refresh and two-tab settings cross only a t
       provenance.filter((request) => request.path === "/user/installations"),
     ).toHaveLength(2);
     expect(await evaluateContent(content, storageDenial)).toEqual(denied);
+    // Content replies name the account by id, revision and validity only:
+    // never the signed-in login, avatar or installation owners.
+    const projection = ["id", "invalidated", "revision"];
+    expect(await evaluateContent(content, contentAccountReplies)).toEqual({
+      ok: [true, true, true, true],
+      accountKeys: [projection, projection, projection, projection],
+      identityFree: true,
+    });
     await assertAudit(options);
     await assertAudit(second);
     await testInfo.attach("boundary-provenance", {

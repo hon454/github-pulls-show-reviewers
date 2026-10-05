@@ -47,6 +47,16 @@ export const accountSummarySchema = z.strictObject({
 });
 export type AccountSummary = z.infer<typeof accountSummarySchema>;
 
+// What a content document receives about an account: which one served its
+// rows and its opaque credential revision. Login, avatar and installation
+// owners stay with the options page. Strict, so extra fields fail validation.
+export const contentAccountSchema = z.strictObject({
+  id: opaqueIdSchema,
+  revision: opaqueIdSchema,
+  invalidated: z.boolean(),
+});
+export type ContentAccount = z.infer<typeof contentAccountSchema>;
+
 export const uiSnapshotSchema = z.strictObject({
   epoch: opaqueIdSchema,
   revision: z.number().int().nonnegative(),

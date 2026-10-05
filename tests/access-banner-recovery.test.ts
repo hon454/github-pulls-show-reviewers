@@ -396,13 +396,8 @@ describe("real content access banner recovery", () => {
       ...success(),
       account: {
         id: account.id,
-        login: account.login,
-        avatarUrl: null,
         revision: "fixture-generation",
         invalidated: false,
-        invalidatedReason: null,
-        installations: [],
-        installationsRefreshedAt: 1,
       },
     });
     await boot();

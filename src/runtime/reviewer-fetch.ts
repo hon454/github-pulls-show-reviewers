@@ -2,8 +2,8 @@ import { z } from "zod";
 import {
   repositoryOwnerSchema,
   repositoryNameSchema,
-  accountSummarySchema,
-  type AccountSummary,
+  contentAccountSchema,
+  type ContentAccount,
 } from "./ui-contract";
 import { rateLimitSnapshotSchema } from "./diagnostics";
 
@@ -108,59 +108,78 @@ export type FetchPullReviewerSummaryResponse =
   | {
       ok: true;
       summary: PullReviewerSummary;
-      account?: AccountSummary | null | undefined;
+      account?: ContentAccount | null | undefined;
     }
   | {
       ok: false;
       error: ReviewerFetchErrorEnvelope;
-      account?: AccountSummary | null | undefined;
+      account?: ContentAccount | null | undefined;
     };
 
 export type FetchPullReviewerMetadataBatchResponse =
   | {
       ok: true;
       metadata: PullReviewerMetadata[];
-      account?: AccountSummary | null | undefined;
+      account?: ContentAccount | null | undefined;
     }
   | {
       ok: false;
       error: ReviewerFetchErrorEnvelope;
-      account?: AccountSummary | null | undefined;
+      account?: ContentAccount | null | undefined;
     };
 
-export const reviewerFetchErrorSchema = z.object({
+const reviewerFetchFailureShape = {
+  status: z.number().nullable(),
+  kind: z
+    .enum(["http", "schema", "network", "cancellation", "timeout", "unknown"])
+    .optional(),
+  endpoint: z.string().nullable(),
+  rateLimited: z.boolean(),
+};
+const reviewerFetchErrorShape = {
   kind: z.enum(["github-api", "github-endpoints", "schema", "unknown"]),
   status: z.number().nullable(),
+  discoveryOutcome: z
+    .enum(["interrupted", "retired", "unavailable", "exhausted"])
+    .optional(),
+};
+// Background parse of stored and internal envelopes; unknown fields are dropped.
+export const reviewerFetchErrorSchema = z.object({
+  ...reviewerFetchErrorShape,
   failures: z
     .array(
       z.object({
-        status: z.number().nullable(),
-        kind: z
-          .enum([
-            "http",
-            "schema",
-            "network",
-            "cancellation",
-            "timeout",
-            "unknown",
-          ])
-          .optional(),
-        endpoint: z.string().nullable(),
-        rateLimited: z.boolean(),
+        ...reviewerFetchFailureShape,
         rateLimit: rateLimitSnapshotSchema.optional(),
       }),
     )
     .optional(),
-  discoveryOutcome: z
-    .enum(["interrupted", "retired", "unavailable", "exhausted"])
+});
+
+// Replies to content documents are strict at every level, so a field the
+// contract does not name (such as account login or installations) fails
+// validation instead of reaching a github.com renderer.
+const contentReplyErrorSchema = z.strictObject({
+  ...reviewerFetchErrorShape,
+  failures: z
+    .array(
+      z.strictObject({
+        ...reviewerFetchFailureShape,
+        rateLimit: rateLimitSnapshotSchema.strict().optional(),
+      }),
+    )
     .optional(),
 });
-const pullReviewerSummarySchema = z.object({
+const reviewerUserReplySchema = z.strictObject({
+  login: nonEmptyStringSchema,
+  avatarUrl: z.string().nullable(),
+});
+const pullReviewerSummarySchema = z.strictObject({
   status: z.literal("ok"),
-  requestedUsers: z.array(reviewerUserMessageSchema),
+  requestedUsers: z.array(reviewerUserReplySchema),
   requestedTeams: z.array(z.string()),
   completedReviews: z.array(
-    reviewerUserMessageSchema.extend({
+    reviewerUserReplySchema.extend({
       state: z.enum([
         "APPROVED",
         "CHANGES_REQUESTED",
@@ -171,46 +190,55 @@ const pullReviewerSummarySchema = z.object({
   ),
   reviewRequestEvidence: z
     .array(
-      z.object({
+      z.strictObject({
         login: z.string(),
         status: z.enum(["confirmed", "unverified"]),
       }),
     )
     .optional(),
 });
+const pullReviewerMetadataReplySchema = z.strictObject({
+  number: nonEmptyStringSchema,
+  authorLogin: nonEmptyStringSchema.nullable(),
+  requestedUsers: z.array(reviewerUserReplySchema),
+  requestedTeams: z.array(z.string()),
+}) satisfies z.ZodType<PullReviewerMetadata>;
+const contentReplyAccountSchema = contentAccountSchema.nullable().optional();
 export const fetchPullReviewerSummaryResponseSchema = z.discriminatedUnion(
   "ok",
   [
-    z.object({
+    z.strictObject({
       ok: z.literal(true),
       summary: pullReviewerSummarySchema,
-      account: accountSummarySchema.nullable().optional(),
+      account: contentReplyAccountSchema,
     }),
-    z.object({
+    z.strictObject({
       ok: z.literal(false),
-      error: reviewerFetchErrorSchema,
-      account: accountSummarySchema.nullable().optional(),
+      error: contentReplyErrorSchema,
+      account: contentReplyAccountSchema,
     }),
   ],
 );
 export const fetchPullReviewerMetadataBatchResponseSchema =
   z.discriminatedUnion("ok", [
-    z.object({
+    z.strictObject({
       ok: z.literal(true),
-      metadata: z.array(pullReviewerMetadataMessageSchema),
-      account: accountSummarySchema.nullable().optional(),
+      metadata: z.array(pullReviewerMetadataReplySchema),
+      account: contentReplyAccountSchema,
     }),
-    z.object({
+    z.strictObject({
       ok: z.literal(false),
-      error: reviewerFetchErrorSchema,
-      account: accountSummarySchema.nullable().optional(),
+      error: contentReplyErrorSchema,
+      account: contentReplyAccountSchema,
     }),
   ]);
 
 export class ReviewerFetchRuntimeError extends Error {
   constructor(
     public readonly envelope: ReviewerFetchErrorEnvelope,
-    public readonly account?: AccountSummary | null,
+    // Background errors may carry the full AccountSummary (a structural
+    // superset); content replies project it before it leaves background.
+    public readonly account?: ContentAccount | null,
   ) {
     super("Background reviewer fetch failed.");
     this.name = "ReviewerFetchRuntimeError";

@@ -1,6 +1,6 @@
 import type { PullReviewerMetadata } from "../../github/api";
 import type { PullListRoute } from "../../github/routes";
-import type { AccountSummary as Account } from "../../runtime/ui-contract";
+import type { ContentAccount as Account } from "../../runtime/ui-contract";
 import {
   ReviewerFetchRuntimeError,
   extractReviewerFetchFailures,

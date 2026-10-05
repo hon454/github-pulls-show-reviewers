@@ -6,9 +6,11 @@ import {
 } from "../src/github/api";
 import {
   extractReviewerFetchFailures,
+  fetchPullReviewerMetadataBatchResponseSchema,
   fetchPullReviewerSummaryResponseSchema,
   serializeReviewerFetchError,
 } from "../src/runtime/reviewer-fetch";
+import { contentAccountSchema } from "../src/runtime/ui-contract";
 
 const pullEndpoint = {
   name: "pull" as const,
@@ -64,6 +66,98 @@ describe("fetchPullReviewerSummaryResponseSchema", () => {
     if (parsed.ok) {
       expect(parsed.summary.reviewRequestEvidence).toBeUndefined();
     }
+  });
+});
+
+describe("strict content reply schemas", () => {
+  const account = { id: "acc-1", revision: "g1", invalidated: false };
+  const summary = {
+    status: "ok" as const,
+    requestedUsers: [],
+    requestedTeams: [],
+    completedReviews: [],
+  };
+  const error = { kind: "unknown" as const, status: null };
+  const identity = {
+    login: "octocat",
+    avatarUrl: null,
+    installations: [{ id: 1, account: { login: "octo", type: "User" } }],
+  };
+
+  it("accepts the account projection on every reply variant", () => {
+    for (const reply of [
+      { ok: true, summary, account },
+      { ok: false, error, account },
+    ])
+      expect(fetchPullReviewerSummaryResponseSchema.parse(reply)).toEqual(
+        reply,
+      );
+    for (const reply of [
+      { ok: true, metadata: [], account },
+      { ok: false, error, account: null },
+    ])
+      expect(fetchPullReviewerMetadataBatchResponseSchema.parse(reply)).toEqual(
+        reply,
+      );
+  });
+
+  it.each(Object.keys(identity))(
+    "rejects an account that carries %s",
+    (key) => {
+      const leaked = {
+        ...account,
+        [key]: identity[key as keyof typeof identity],
+      };
+      expect(contentAccountSchema.safeParse(leaked).success).toBe(false);
+      for (const reply of [
+        { ok: true, summary, account: leaked },
+        { ok: false, error, account: leaked },
+      ])
+        expect(
+          fetchPullReviewerSummaryResponseSchema.safeParse(reply).success,
+        ).toBe(false);
+      for (const reply of [
+        { ok: true, metadata: [], account: leaked },
+        { ok: false, error, account: leaked },
+      ])
+        expect(
+          fetchPullReviewerMetadataBatchResponseSchema.safeParse(reply).success,
+        ).toBe(false);
+    },
+  );
+
+  it("rejects extra fields at the reply, summary, metadata and error levels", () => {
+    for (const reply of [
+      { ok: true, summary, account, accountSummary: identity },
+      { ok: true, summary: { ...summary, viewer: "octocat" } },
+      { ok: false, error: { ...error, message: "raw" } },
+      {
+        ok: false,
+        error: {
+          ...error,
+          failures: [
+            { status: 401, endpoint: null, rateLimited: false, body: "raw" },
+          ],
+        },
+      },
+    ])
+      expect(
+        fetchPullReviewerSummaryResponseSchema.safeParse(reply).success,
+      ).toBe(false);
+    expect(
+      fetchPullReviewerMetadataBatchResponseSchema.safeParse({
+        ok: true,
+        metadata: [
+          {
+            number: "1",
+            authorLogin: null,
+            requestedUsers: [],
+            requestedTeams: [],
+            installation: 1,
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 });
 

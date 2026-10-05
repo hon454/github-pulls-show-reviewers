@@ -9,12 +9,12 @@ import {
   accountMutations,
   resolveAccountCoverageForRepo,
 } from "../storage/accounts";
-import type { RepositoryAccountService } from "./repository-accounts";
-import type { DiscoveryOwner } from "./repository-discovery-ledger";
 import {
-  ReviewerFetchRuntimeError,
-  serializeReviewerFetchError,
-} from "../runtime/reviewer-fetch";
+  RepositoryAccountError,
+  type RepositoryAccountService,
+} from "./repository-accounts";
+import type { DiscoveryOwner } from "./repository-discovery-ledger";
+import { serializeReviewerFetchError } from "../runtime/reviewer-fetch";
 import type { AccountSummary } from "../runtime/ui-contract";
 import {
   repositoryDiagnosticSchema,
@@ -95,7 +95,7 @@ export function createDiagnosticsService(
               fullName: repository,
             };
         } catch (error) {
-          if (error instanceof ReviewerFetchRuntimeError)
+          if (error instanceof RepositoryAccountError)
             account = error.account ?? account;
           const envelope = serializeReviewerFetchError(error);
           const failures = envelope.failures ?? [];

@@ -23,7 +23,7 @@ import type { PullReviewerSummary } from "../../github/api";
 import { parsePullListRoute } from "../../github/routes";
 import { githubSelectors } from "../../github/selectors";
 import type {
-  AccountSummary as Account,
+  ContentAccount as Account,
   UISnapshot,
 } from "../../runtime/ui-contract";
 import {
