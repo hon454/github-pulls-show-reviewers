@@ -632,6 +632,33 @@ describe("loadAccountInstallations cancellation", () => {
     expect(await work).toMatchObject({ name: "AbortError" });
     expect(requestSignal?.aborted).toBe(true);
   });
+
+  it("forwards caller cancellation to a later selected-repository page", async () => {
+    const controller = new AbortController();
+    let pageSignal: AbortSignal | null | undefined;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        paginatedResponse(
+          repositoryPage("cinev/one"),
+          "https://api.github.com/user/installations/1/repositories?page=2",
+        ),
+      )
+      .mockImplementationOnce((_url, init) => {
+        pageSignal = init?.signal;
+        return new Promise<Response>(() => {});
+      });
+    const work = fetchInstallationRepositories({
+      token: "ghu_abc",
+      installationId: 1,
+      signal: controller.signal,
+    }).catch((error: unknown) => error);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(pageSignal?.aborted).toBe(false);
+    controller.abort();
+    expect(await work).toMatchObject({ name: "AbortError" });
+    expect(pageSignal?.aborted).toBe(true);
+  });
 });
 
 function hungFetch() {
