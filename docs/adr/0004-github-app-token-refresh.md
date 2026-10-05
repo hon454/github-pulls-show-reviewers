@@ -66,10 +66,12 @@ Only the refresh HTTP exchange is classified this way. After a successful
 rotation, the old refresh token may already be retired, so a rejected storage
 commit is not a transient refresh failure. The coordinator retries the same
 generation-conditional commit a bounded number of times with the in-memory
-tokens, without new HTTP and outside the registry queue, while same-generation
+tokens. Each attempt is a separate owner commit; it starts no new HTTP, and the
+waits between attempts stay outside the registry queue while same-generation
 callers keep joining that rotation. If every attempt fails it rejects with
-`RefreshCommitError`; later same-generation invalidation still waits for that
-recovery to settle.
+`RefreshCommitError`. A later same-generation invalidation waits for an earlier
+recovery to settle, whether that recovery resolves or rejects, and then makes
+its own conditional commit.
 
 Diagnostics requested by options use the same background retry-with-refresh path
 (`validateRepositoryAccessWithAccount`) so "Check matched account" mirrors
