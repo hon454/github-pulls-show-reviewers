@@ -7,7 +7,9 @@ product rules and architecture expectations before proposing changes.
 
 ## Prerequisites
 
-- Node.js 22.12+ (WXT 0.21 requires Node 22; Vite 8 requires 22.12+).
+- Node.js 22.12+ for `pnpm dev` and builds (WXT 0.21 requires Node 22;
+  Vite 8 requires 22.12+). Unit tests use jsdom 30, which needs Node.js
+  22.22.2+ (22.x), 24.15+ (24.x), or 26+; Node 23 and 25 are not supported.
   Workflows run the exact version in [`.node-version`](./.node-version);
   bump that file deliberately, because the release scripts rely on
   `--experimental-strip-types`.
@@ -241,16 +243,18 @@ An `ignore` entry in `dependabot.yml` is allowed only when:
 
 Remove the entry, its test, and close the issue in the same pull request.
 
-As of 2026-10-02, both `pnpm audit --audit-level moderate` and
+As of 2026-10-05, both `pnpm audit --audit-level moderate` and
 `pnpm audit --prod --audit-level moderate` report zero findings on the locked
-graph, after refreshing the transitive `brace-expansion` entries to `1.1.21`
-and `5.0.12`
-([GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p),
-[GHSA-q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr)).
-Vitest and its V8 coverage provider remain pinned to `4.1.11`, which
-fixes [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9).
+graph. The only transitive `brace-expansion` entry is `5.0.12`, which is patched
+for [GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)
+and [GHSA-q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr).
+Vitest and its V8 coverage provider are pinned to exactly `5.0.3` because
+`@vitest/coverage-v8@5.0.3` peers on `vitest` `5.0.3`; bump both together.
+[GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)
+affects `vitest` and `@vitest/mocker` (fixed in `4.1.11` and `5.0.0-rc.2`);
+both resolve to `5.0.3`, outside the vulnerable ranges.
 
-WXT is pinned to `0.21.4`, with Vite `8.2.2` now an explicit development peer.
+WXT is pinned to `0.21.4`, with Vite `8.3.2` now an explicit development peer.
 The [official WXT migration guide](https://wxt.dev/guide/resources/upgrading)
 makes browser auto-launch optional. We omit `web-ext`, removing the old
 `wxt > web-ext-run > firefox-profile > adm-zip@0.6.0` path and its obsolete
