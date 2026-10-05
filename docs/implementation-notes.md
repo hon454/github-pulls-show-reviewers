@@ -596,8 +596,9 @@ event after the reset time; nothing is retried automatically.
   case-insensitive login, so a different user who now holds that login would
   replace one. The update itself and each proactive refresh alarm therefore
   ask `/user` once per valid record without an id, outside the registry queue,
-  with a 30-second deadline. `backfillUserId` stores the id, login and avatar
-  only under the revision that made the request and never replaces a stored id.
+  bounded by the 15-second credential request deadline. `backfillUserId`
+  stores the id, login and avatar only under the revision that made the
+  request and never replaces a stored id.
   A failure changes nothing and the next pass retries; a 401 is not retried for
   the same credentials in that worker. Invalidated records are not backfilled:
   signing in again with the same login fixes them, and after a rename the old
