@@ -587,11 +587,21 @@ event after the reset time; nothing is retried automatically.
   flow commits through that owner, and `src/runtime/account-mutations.ts` exposes
   options-only local removal. Future account work must reuse this owner.
 - The owner reconciles stored account-fragment keys against the repaired v4
-  account index on its first initialization after each worker start. Index
-  changes that detach an account request another reconciliation before the next
-  owner operation. This retries a removal or duplicate/malformed-record cleanup
-  interrupted after the index write, including older orphaned fragments with no
-  cleanup marker. Only the three account-record prefixes are eligible for
+  account index on its first initialization after each worker start. The
+  initialized, clean registry is memoized for the rest of that activation, so
+  ordinary owner reads load only the index and the requested fragments. Any
+  failed owner operation (a failed write or cleanup) clears that memo and
+  requests another reconciliation before the next owner operation. This retries
+  a removal or duplicate cleanup interrupted after the index write, including
+  older orphaned fragments with no cleanup marker.
+- Repair drops only indexed IDs that have no stored fragment. An indexed record
+  whose fragments fail to parse, for example after rolling back to a release
+  that predates a schema or enum addition, is quarantined: its fragments stay
+  unchanged, and reads project it as an invalidated (`unknown`) account with no
+  token, refresh token or connection receipt and the opaque revision
+  `quarantined`. Auth and installation commits skip it, the options card offers
+  sign-in again and removal, and re-signing in with the same login replaces it.
+  A later release that parses the record restores the account without sign-in. Only the three account-record prefixes are eligible for
   deletion; indexed accounts and unrelated local storage are preserved. The
   queue serializes reconciliation with sign-in and reconnection, so a new
   account generation cannot be deleted by an older cleanup attempt.

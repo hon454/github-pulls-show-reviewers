@@ -46,6 +46,11 @@ To provide its reviewer visibility feature, the extension may access:
   account is removed from the index, the background account owner retries
   cleanup during its next initialization. It also removes older unindexed
   account records, while preserving connected accounts and other local data.
+  An indexed account record that the installed version cannot read, for
+  example after downgrading to an older release, is kept unchanged rather than
+  deleted. Its stored credentials are not used; the account is shown as
+  needing sign-in until the user signs in again, removes it, or installs a
+  version that can read it.
 - Display preferences are stored locally in `browser.storage.local` under a
   separate `preferences` key. That record currently stores whether review-state
   badges stay visible, whether reviewer names expand into text pills, and
