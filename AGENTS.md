@@ -56,7 +56,9 @@ Agents working in this repository should preserve that narrow product scope. Do 
   registry/ledger queues and never reset budgets on presentation changes.
 - `src/runtime/`
   Schema-validated UI capabilities and the per-document snapshot client.
-  UI code uses `AccountSummary`; full accounts and OAuth helpers stay in background.
+  Options code uses `AccountSummary`; content documents receive only the
+  `ContentAccount` projection (id, revision, validity). Full accounts and OAuth
+  helpers stay in background.
 - `src/shared/preferences.ts`
   Pure preference schemas/defaults shared by UI contracts and background storage.
 - `src/shared/reviewer-deadline.ts`

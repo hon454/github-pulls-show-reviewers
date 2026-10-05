@@ -24,7 +24,7 @@ To provide its reviewer visibility feature, the extension may access:
 ## How data is used
 
 - GitHub page context is used locally to determine which repository and pull requests are visible on the current page.
-- Reviewer metadata is requested from GitHub's API and rendered inline on the GitHub pull request list page. OAuth exchanges, authenticated API calls, diagnostics and credential writes run in the background service worker. Content and options receive only allowlisted account summaries, structured results and sign-in progress; they do not read or receive access tokens, refresh tokens or the OAuth device-code secret. Options displays GitHub's user-facing verification code and link.
+- Reviewer metadata is requested from GitHub's API and rendered inline on the GitHub pull request list page. OAuth exchanges, authenticated API calls, diagnostics and credential writes run in the background service worker. The options page receives allowlisted account summaries and sign-in progress. The content script on GitHub pages receives only an opaque account identifier, credential revision and validity flag, never the account login, avatar or installation owners. Both receive structured results and do not read or receive access tokens, refresh tokens or the OAuth device-code secret. Options displays GitHub's user-facing verification code and link.
 - The GitHub App credentials are used only to authenticate requests to GitHub for private repository access and to refresh expired access tokens. Refreshes run both reactively on a `401` response and proactively on a recurring 15-minute background schedule via the `alarms` permission, so tokens stay valid even while no GitHub tab is open.
 
 ## Storage and retention

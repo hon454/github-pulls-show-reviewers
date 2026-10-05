@@ -2,8 +2,8 @@ import { z } from "zod";
 import {
   repositoryOwnerSchema,
   repositoryNameSchema,
-  accountSummarySchema,
-  type AccountSummary,
+  contentAccountSchema,
+  type ContentAccount,
 } from "./ui-contract";
 import { rateLimitSnapshotSchema } from "./diagnostics";
 
@@ -108,59 +108,76 @@ export type FetchPullReviewerSummaryResponse =
   | {
       ok: true;
       summary: PullReviewerSummary;
-      account?: AccountSummary | null | undefined;
+      account?: ContentAccount | null | undefined;
     }
   | {
       ok: false;
       error: ReviewerFetchErrorEnvelope;
-      account?: AccountSummary | null | undefined;
+      account?: ContentAccount | null | undefined;
     };
 
 export type FetchPullReviewerMetadataBatchResponse =
   | {
       ok: true;
       metadata: PullReviewerMetadata[];
-      account?: AccountSummary | null | undefined;
+      account?: ContentAccount | null | undefined;
     }
   | {
       ok: false;
       error: ReviewerFetchErrorEnvelope;
-      account?: AccountSummary | null | undefined;
+      account?: ContentAccount | null | undefined;
     };
 
-export const reviewerFetchErrorSchema = z.object({
+const reviewerFetchFailureShape = {
+  status: z.number().nullable(),
+  kind: z
+    .enum(["http", "schema", "network", "cancellation", "timeout", "unknown"])
+    .optional(),
+  endpoint: z.string().nullable(),
+  rateLimited: z.boolean(),
+};
+const reviewerFetchErrorShape = {
   kind: z.enum(["github-api", "github-endpoints", "schema", "unknown"]),
   status: z.number().nullable(),
+  discoveryOutcome: z
+    .enum(["interrupted", "retired", "unavailable", "exhausted"])
+    .optional(),
+};
+// Parses stored and internal envelopes (background) and serialized errors
+// (content); unknown fields are dropped.
+export const reviewerFetchErrorSchema = z.object({
+  ...reviewerFetchErrorShape,
   failures: z
     .array(
       z.object({
-        status: z.number().nullable(),
-        kind: z
-          .enum([
-            "http",
-            "schema",
-            "network",
-            "cancellation",
-            "timeout",
-            "unknown",
-          ])
-          .optional(),
-        endpoint: z.string().nullable(),
-        rateLimited: z.boolean(),
+        ...reviewerFetchFailureShape,
         rateLimit: rateLimitSnapshotSchema.optional(),
       }),
     )
     .optional(),
-  discoveryOutcome: z
-    .enum(["interrupted", "retired", "unavailable", "exhausted"])
+});
+
+// Replies to content documents are strict at every level, so a field the
+// contract does not name (such as account login or installations) fails
+// validation instead of reaching a github.com renderer.
+const contentReplyErrorSchema = z.strictObject({
+  ...reviewerFetchErrorShape,
+  failures: z
+    .array(
+      z.strictObject({
+        ...reviewerFetchFailureShape,
+        rateLimit: rateLimitSnapshotSchema.strict().optional(),
+      }),
+    )
     .optional(),
 });
-const pullReviewerSummarySchema = z.object({
+const reviewerUserReplySchema = reviewerUserMessageSchema.strict();
+const pullReviewerSummarySchema = z.strictObject({
   status: z.literal("ok"),
-  requestedUsers: z.array(reviewerUserMessageSchema),
+  requestedUsers: z.array(reviewerUserReplySchema),
   requestedTeams: z.array(z.string()),
   completedReviews: z.array(
-    reviewerUserMessageSchema.extend({
+    reviewerUserReplySchema.extend({
       state: z.enum([
         "APPROVED",
         "CHANGES_REQUESTED",
@@ -171,46 +188,119 @@ const pullReviewerSummarySchema = z.object({
   ),
   reviewRequestEvidence: z
     .array(
-      z.object({
+      z.strictObject({
         login: z.string(),
         status: z.enum(["confirmed", "unverified"]),
       }),
     )
     .optional(),
 });
+const pullReviewerMetadataReplySchema = pullReviewerMetadataMessageSchema
+  .extend({ requestedUsers: z.array(reviewerUserReplySchema) })
+  .strict();
+const contentReplyAccountSchema = contentAccountSchema.nullable().optional();
 export const fetchPullReviewerSummaryResponseSchema = z.discriminatedUnion(
   "ok",
   [
-    z.object({
+    z.strictObject({
       ok: z.literal(true),
       summary: pullReviewerSummarySchema,
-      account: accountSummarySchema.nullable().optional(),
+      account: contentReplyAccountSchema,
     }),
-    z.object({
+    z.strictObject({
       ok: z.literal(false),
-      error: reviewerFetchErrorSchema,
-      account: accountSummarySchema.nullable().optional(),
+      error: contentReplyErrorSchema,
+      account: contentReplyAccountSchema,
     }),
   ],
 );
 export const fetchPullReviewerMetadataBatchResponseSchema =
   z.discriminatedUnion("ok", [
-    z.object({
+    z.strictObject({
       ok: z.literal(true),
-      metadata: z.array(pullReviewerMetadataMessageSchema),
-      account: accountSummarySchema.nullable().optional(),
+      metadata: z.array(pullReviewerMetadataReplySchema),
+      account: contentReplyAccountSchema,
     }),
-    z.object({
+    z.strictObject({
       ok: z.literal(false),
-      error: reviewerFetchErrorSchema,
-      account: accountSummarySchema.nullable().optional(),
+      error: contentReplyErrorSchema,
+      account: contentReplyAccountSchema,
     }),
   ]);
+
+// A strict reply schema rejects any field it does not name. Tie each one to
+// the type its producer returns, so a field added to that type fails typecheck
+// here instead of turning every reply into "unavailable" at runtime.
+type Exact<Schema, Type> = [Schema] extends [Type]
+  ? [Type] extends [Schema]
+    ? [
+        Exclude<keyof Schema, keyof Type> | Exclude<keyof Type, keyof Schema>,
+      ] extends [never]
+      ? true
+      : false
+    : false
+  : false;
+type Summary = z.infer<typeof pullReviewerSummarySchema>;
+type ErrorReply = z.infer<typeof contentReplyErrorSchema>;
+type ErrorFailure = NonNullable<ErrorReply["failures"]>[number];
+type Failure = NonNullable<ReviewerFetchErrorEnvelope["failures"]>[number];
+type Reply<T, Ok extends boolean> = Extract<T, { ok: Ok }>;
+type SummaryReply = z.infer<typeof fetchPullReviewerSummaryResponseSchema>;
+type MetadataReply = z.infer<
+  typeof fetchPullReviewerMetadataBatchResponseSchema
+>;
+type AllTrue<Checks extends readonly true[]> = Checks;
+export type ContentReplySchemasMatchTheirTypes = AllTrue<
+  [
+    Exact<Summary, PullReviewerSummary>,
+    Exact<
+      Summary["requestedUsers"][number],
+      PullReviewerSummary["requestedUsers"][number]
+    >,
+    Exact<
+      Summary["completedReviews"][number],
+      PullReviewerSummary["completedReviews"][number]
+    >,
+    Exact<
+      NonNullable<Summary["reviewRequestEvidence"]>[number],
+      NonNullable<PullReviewerSummary["reviewRequestEvidence"]>[number]
+    >,
+    Exact<
+      z.infer<typeof pullReviewerMetadataReplySchema>,
+      PullReviewerMetadata
+    >,
+    Exact<ErrorReply, ReviewerFetchErrorEnvelope>,
+    Exact<ErrorFailure, Failure>,
+    Exact<
+      NonNullable<ErrorFailure["rateLimit"]>,
+      NonNullable<Failure["rateLimit"]>
+    >,
+    Exact<z.infer<typeof contentAccountSchema>, ContentAccount>,
+    Exact<
+      Reply<SummaryReply, true>,
+      Reply<FetchPullReviewerSummaryResponse, true>
+    >,
+    Exact<
+      Reply<SummaryReply, false>,
+      Reply<FetchPullReviewerSummaryResponse, false>
+    >,
+    Exact<
+      Reply<MetadataReply, true>,
+      Reply<FetchPullReviewerMetadataBatchResponse, true>
+    >,
+    Exact<
+      Reply<MetadataReply, false>,
+      Reply<FetchPullReviewerMetadataBatchResponse, false>
+    >,
+  ]
+>;
 
 export class ReviewerFetchRuntimeError extends Error {
   constructor(
     public readonly envelope: ReviewerFetchErrorEnvelope,
-    public readonly account?: AccountSummary | null,
+    // Background errors may carry the full AccountSummary (a structural
+    // superset); content replies project it before it leaves background.
+    public readonly account?: ContentAccount | null,
   ) {
     super("Background reviewer fetch failed.");
     this.name = "ReviewerFetchRuntimeError";

@@ -746,9 +746,15 @@ event after the reset time; nothing is retried automatically.
   same-owner candidates, requests the background installation service and reruns
   resolution. An account whose installations were never loaded
   (`installationsRefreshedAt` 0, after a sign-in that could not load them) is
-  always a candidate, once per page session. The content facade receives an
-  `AccountSummary`, never a full account. Repository context and installation
+  always a candidate, once per page session. The content facade receives only
+  a `ContentAccount` (id, opaque revision, validity), never a full account or
+  its login, avatar or installation owners. Repository context and installation
   owner restrict content refresh.
+- Every account-bearing reply to a content document (account and fallback
+  resolution, reviewer summary and metadata, including failures) carries that
+  projection. The reply schemas are strict, so an extra field fails validation.
+  The options page keeps the full `AccountSummary` for its account list and
+  matched diagnostics.
 - The background-side `createInstallationRefreshService` (`src/background/installation-refresh.ts`) holds the token, refreshes via `RefreshCoordinator` on 401, persists through `replaceInstallations`, and dedupes concurrent calls per account and credential generation. A skipped stale-generation commit returns the existing generic failure outcome. The service response does not include tokens; content has no direct local-storage access.
 - Each candidate is refreshed at most once per page session. Successful
   installation writes change the sanitized account/coverage digest; the content

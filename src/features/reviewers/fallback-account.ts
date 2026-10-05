@@ -1,4 +1,4 @@
-import type { AccountSummary as Account } from "../../runtime/ui-contract";
+import type { ContentAccount as Account } from "../../runtime/ui-contract";
 
 export type FallbackAccountIntegration = {
   read(owner: string): Account | null | undefined;

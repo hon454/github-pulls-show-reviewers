@@ -53,6 +53,16 @@ never forwarded. Technical statuses and rate-limit scalars remain available for
 localized presentation. Full `Account` and credential-accepting helpers stay in
 background application paths.
 
+Amendment (2026-10-05, #247): only the options page receives `AccountSummary`.
+Every account-bearing reply to a content document (account and fallback
+resolution, reviewer summary and metadata, including failures) carries the
+`ContentAccount` projection: account ID, opaque credential revision and the
+invalidated flag. Content code uses nothing else, so a compromised github.com
+renderer cannot read the extension account's login, avatar or installation
+owners, which may belong to a different identity than the page session. The
+projection and these reply schemas are strict, so extra fields fail validation.
+Options diagnostics keep the full summary through a background-only error type.
+
 The bridge checks extension ID, a browser-supplied document ID, and sender URL.
 Options requires the extension's exact `/options.html` URL. Content requires a
 top-level `https://github.com` tab, and repository operations must match that

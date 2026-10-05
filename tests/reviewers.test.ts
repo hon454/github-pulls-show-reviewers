@@ -77,7 +77,7 @@ vi.mock("../src/runtime/ui-client", async (importActual) => ({
 vi.mock("../src/runtime/accounts", async () => {
   const { createSelfHealingAccountResolver } =
     await import("../src/background/account-resolution");
-  const { summarizeAccount } =
+  const { projectContentAccount, summarizeAccount } =
     await import("../src/background/account-summary");
   const resolver = createSelfHealingAccountResolver({
     requestRefresh: async (accountId) => {
@@ -92,16 +92,18 @@ vi.mock("../src/runtime/accounts", async () => {
     resolveAccountForRepo: async (owner: string, repo: string) => {
       const result = await resolver.resolveAccount(owner, repo);
       return result
-        ? summarizeAccount(
-            Object.assign(
-              {
-                avatarUrl: null,
-                invalidated: false,
-                invalidatedReason: null,
-                installations: [],
-                installationsRefreshedAt: 0,
-              },
-              result,
+        ? projectContentAccount(
+            summarizeAccount(
+              Object.assign(
+                {
+                  avatarUrl: null,
+                  invalidated: false,
+                  invalidatedReason: null,
+                  installations: [],
+                  installationsRefreshedAt: 0,
+                },
+                result,
+              ),
             ),
           )
         : null;
@@ -109,16 +111,18 @@ vi.mock("../src/runtime/accounts", async () => {
     resolveFallbackAccount: async (owner: string) => {
       const result = await resolver.resolveFallbackAccount(owner);
       return result
-        ? summarizeAccount(
-            Object.assign(
-              {
-                avatarUrl: null,
-                invalidated: false,
-                invalidatedReason: null,
-                installations: [],
-                installationsRefreshedAt: 0,
-              },
-              result,
+        ? projectContentAccount(
+            summarizeAccount(
+              Object.assign(
+                {
+                  avatarUrl: null,
+                  invalidated: false,
+                  invalidatedReason: null,
+                  installations: [],
+                  installationsRefreshedAt: 0,
+                },
+                result,
+              ),
             ),
           )
         : null;
@@ -126,17 +130,9 @@ vi.mock("../src/runtime/accounts", async () => {
   };
 });
 
-function safeFixtureAccount(account: { id: string; login: string }) {
-  return {
-    id: account.id,
-    login: account.login,
-    avatarUrl: null,
-    revision: "legacy",
-    invalidated: false,
-    invalidatedReason: null,
-    installations: [],
-    installationsRefreshedAt: 1,
-  };
+// Content replies carry only the account projection.
+function safeFixtureAccount(account: { id: string }) {
+  return { id: account.id, revision: "legacy", invalidated: false };
 }
 
 /**
@@ -407,11 +403,8 @@ describe("bootReviewerListPage", () => {
 
   it("reports a cold unexpected failure while keeping row-level UI empty", async () => {
     resolveAccountForRepoMock.mockResolvedValue(null);
-    const schemaError = {
-      kind: "schema" as const,
-      status: null,
-      message: "Response shape changed",
-    };
+    // Replies are strict: background never adds fields such as a message.
+    const schemaError = { kind: "schema" as const, status: null };
     runtimeSendMessageMock.mockImplementation((message: { type?: string }) => {
       if (message.type === "fetchPullReviewerMetadataBatch") {
         return Promise.resolve({ ok: true, metadata: [] });
@@ -689,7 +682,7 @@ describe("bootReviewerListPage", () => {
           return Promise.resolve({
             ok: true,
             metadata: [],
-            account: safeFixtureAccount({ id: "acc-owner", login: "hon454" }),
+            account: safeFixtureAccount({ id: "acc-owner" }),
           });
         }
         if (
@@ -805,10 +798,7 @@ describe("bootReviewerListPage", () => {
     expect(rowFailure).toHaveBeenCalledWith({
       owner: "hon454",
       repo: "private-repo",
-      account: expect.objectContaining({
-        id: account.id,
-        login: account.login,
-      }),
+      account: { id: account.id, revision: "legacy", invalidated: false },
       error: expect.objectContaining({
         envelope: expect.objectContaining({
           kind: notFoundError.kind,

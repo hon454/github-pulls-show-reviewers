@@ -60,6 +60,21 @@ type Operation = {
 };
 const METADATA_FRESH_MS = 10_000;
 
+/**
+ * A repository access failure with the full account summary, for options
+ * diagnostics. Content replies project the account before it leaves
+ * background (`projectContentAccount`).
+ */
+export class RepositoryAccountError extends ReviewerFetchRuntimeError {
+  declare readonly account?: AccountSummary | null;
+  constructor(
+    envelope: ReviewerFetchErrorEnvelope,
+    account?: AccountSummary | null,
+  ) {
+    super(envelope, account);
+  }
+}
+
 /** One owner for repository discovery; ordinary summary HTTP remains caller-owned. */
 export function createRepositoryAccountService(input: {
   ensureReady: () => Promise<void>;
@@ -124,7 +139,7 @@ export function createRepositoryAccountService(input: {
     return account ? summarizeAccount(account) : null;
   }
   async function fail(record: DiscoveryRecord): Promise<never> {
-    throw new ReviewerFetchRuntimeError(
+    throw new RepositoryAccountError(
       record.error ??
         unavailable(record.status === "retired" ? "retired" : "interrupted"),
       await accountSummary(record.accountId),
@@ -198,7 +213,7 @@ export function createRepositoryAccountService(input: {
       );
       check(operation);
       if (nextAccount === null)
-        throw new ReviewerFetchRuntimeError(
+        throw new RepositoryAccountError(
           serializeReviewerFetchError(anonymousFailure),
           null,
         );
@@ -493,7 +508,7 @@ export function createRepositoryAccountService(input: {
             activeIds.get(JSON.stringify([owner.lane, owner.documentId])) !==
               discovery.id
           )
-            throw new ReviewerFetchRuntimeError(envelope, created.account);
+            throw new RepositoryAccountError(envelope, created.account);
           terminal.set(operationKey, envelope);
           metadataCache.delete(operationKey);
           if (timedOut) {
@@ -507,7 +522,7 @@ export function createRepositoryAccountService(input: {
                 if (attempt) attempt.status = "stopped";
               })
               .catch(() => undefined);
-            throw new ReviewerFetchRuntimeError(envelope, created.account);
+            throw new RepositoryAccountError(envelope, created.account);
           }
           if (!disposed)
             void ledger
@@ -517,7 +532,7 @@ export function createRepositoryAccountService(input: {
                 record.error = envelope;
               })
               .catch(() => undefined);
-          throw new ReviewerFetchRuntimeError(envelope, created.account);
+          throw new RepositoryAccountError(envelope, created.account);
         })
         .finally(() => {
           deadline.dispose();
@@ -901,7 +916,7 @@ export function createRepositoryAccountService(input: {
                             : null,
                         };
                       } catch (fallbackError) {
-                        throw new ReviewerFetchRuntimeError(
+                        throw new RepositoryAccountError(
                           serializeReviewerFetchError(fallbackError),
                           fallback.account,
                         );
@@ -909,7 +924,7 @@ export function createRepositoryAccountService(input: {
                     }
                   }
                   // Repository access is already established. A missing PR stays row-local.
-                  throw new ReviewerFetchRuntimeError(
+                  throw new RepositoryAccountError(
                     serializeReviewerFetchError(error),
                     resolved.account,
                   );

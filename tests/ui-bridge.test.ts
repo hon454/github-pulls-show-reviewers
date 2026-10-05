@@ -527,4 +527,91 @@ describe("real token-free background capability bridge", () => {
     });
     expect(containsSecret(success)).toBe(false);
   });
+
+  it("gives content replies only the account id, revision and validity while options keeps the summary", async () => {
+    const account = await add();
+    const projected = {
+      id: "acc-1",
+      revision: account.credentialGeneration,
+      invalidated: false,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.includes("/pulls/2/")
+          ? json({}, 404)
+          : json(
+              url.includes("/reviews") || url.includes("/events")
+                ? []
+                : [
+                    {
+                      number: 1,
+                      user: { login: "author" },
+                      requested_reviewers: [],
+                      requested_teams: [],
+                    },
+                  ],
+            ),
+      ),
+    );
+    const content = (request: Record<string, unknown>) =>
+      harness.send(
+        { owner: "octo", repo: "repo", ...request },
+        contentSender(),
+      );
+    const discovery = (await content({
+      type: "beginRepositoryDiscovery",
+      pageSession: "projection",
+      generation: 0,
+    })) as { ok: true; data: { id: string } };
+    const reviewer = {
+      accountId: null,
+      discoveryId: discovery.data.id,
+    };
+    const resolved = await content({ type: "resolveAccount" });
+    const fallback = await content({ type: "resolveFallbackAccount" });
+    const metadata = await content({
+      ...reviewer,
+      type: "fetchPullReviewerMetadataBatch",
+      requestId: "projection-metadata",
+    });
+    const summary = await content({
+      ...reviewer,
+      type: "fetchPullReviewerSummary",
+      requestId: "projection-summary",
+      pullNumber: "1",
+    });
+    // A pull request-only 404 keeps the repository's account on the error.
+    const failed = await content({
+      ...reviewer,
+      type: "fetchPullReviewerSummary",
+      requestId: "projection-failure",
+      pullNumber: "2",
+    });
+
+    expect(resolved).toStrictEqual({ ok: true, data: projected });
+    expect(fallback).toStrictEqual({ ok: true, data: projected });
+    expect(metadata).toMatchObject({ ok: true, account: projected });
+    expect(summary).toMatchObject({ ok: true, account: projected });
+    expect(failed).toMatchObject({ ok: false, account: projected });
+    for (const reply of [metadata, summary, failed])
+      expect((reply as { account: unknown }).account).toStrictEqual(projected);
+    expect(
+      JSON.stringify([resolved, fallback, metadata, summary, failed]),
+    ).not.toMatch(/octocat|"octo"|installations|avatarUrl|invalidatedReason/);
+    expect(
+      await harness.send({
+        type: "resolveAccount",
+        owner: "octo",
+        repo: "repo",
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        ...projected,
+        login: "octocat",
+        installations: [{ account: { login: "octo" } }],
+      },
+    });
+  });
 });

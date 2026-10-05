@@ -1,6 +1,8 @@
 import {
   accountSummarySchema,
+  contentAccountSchema,
   type AccountSummary,
+  type ContentAccount,
 } from "../runtime/ui-contract";
 import { credentialGeneration, type Account } from "../storage/accounts";
 
@@ -21,5 +23,19 @@ export function summarizeAccount(account: Account): AccountSummary {
       },
     })),
     installationsRefreshedAt: account.installationsRefreshedAt,
+  });
+}
+
+/**
+ * The only account data a content document receives. A github.com renderer
+ * must not learn the extension account's login, avatar or installation owners.
+ */
+export function projectContentAccount(
+  account: Pick<AccountSummary, "id" | "revision" | "invalidated">,
+): ContentAccount {
+  return contentAccountSchema.parse({
+    id: account.id,
+    revision: account.revision,
+    invalidated: account.invalidated,
   });
 }

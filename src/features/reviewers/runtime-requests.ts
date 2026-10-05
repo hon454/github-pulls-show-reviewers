@@ -19,7 +19,7 @@ import {
   type FetchPullReviewerMetadataBatchResponse,
   type FetchPullReviewerSummaryResponse,
 } from "../../runtime/reviewer-fetch";
-import type { AccountSummary as Account } from "../../runtime/ui-contract";
+import type { ContentAccount as Account } from "../../runtime/ui-contract";
 
 export async function fetchReviewerSummary(args: {
   account: Account | null;

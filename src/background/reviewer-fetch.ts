@@ -1,3 +1,4 @@
+import { projectContentAccount } from "./account-summary";
 import type { RepositoryAccountService } from "./repository-accounts";
 import type { DiscoveryOwner } from "./repository-discovery-ledger";
 import type { RepositoryDiscovery } from "../runtime/repository-discovery";
@@ -9,8 +10,25 @@ import {
   type FetchPullReviewerSummaryMessage,
   type FetchPullReviewerSummaryResponse,
 } from "../runtime/reviewer-fetch";
+import type { ContentAccount } from "../runtime/ui-contract";
 
 export const CANCELED_REQUEST_TTL_MS = 60_000;
+
+// Reviewer replies go only to content documents: project the account.
+function contentAccount(
+  account: ContentAccount | null | undefined,
+): ContentAccount | null | undefined {
+  return account ? projectContentAccount(account) : account;
+}
+function failure(error: unknown) {
+  return {
+    ok: false as const,
+    error: serializeReviewerFetchError(error),
+    ...(error instanceof ReviewerFetchRuntimeError
+      ? { account: contentAccount(error.account) }
+      : {}),
+  };
+}
 /**
  * The repository binding of one reviewer request: the sender document's
  * committed discovery and the shared account service that owns its account
@@ -97,15 +115,13 @@ export function createReviewerFetchService(): ReviewerFetchService {
                 : null,
           },
         );
-        return { ok: true, ...result };
-      } catch (error) {
         return {
-          ok: false,
-          error: serializeReviewerFetchError(error),
-          ...(error instanceof ReviewerFetchRuntimeError
-            ? { account: error.account }
-            : {}),
+          ok: true,
+          summary: result.summary,
+          account: contentAccount(result.account),
         };
+      } catch (error) {
+        return failure(error);
       } finally {
         releaseController(message.requestId, controller);
       }
@@ -126,16 +142,10 @@ export function createReviewerFetchService(): ReviewerFetchService {
         return {
           ok: true,
           metadata: result.metadata ?? [],
-          account: result.account,
+          account: contentAccount(result.account),
         };
       } catch (error) {
-        return {
-          ok: false,
-          error: serializeReviewerFetchError(error),
-          ...(error instanceof ReviewerFetchRuntimeError
-            ? { account: error.account }
-            : {}),
-        };
+        return failure(error);
       } finally {
         releaseController(message.requestId, controller);
       }

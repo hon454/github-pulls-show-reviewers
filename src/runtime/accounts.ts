@@ -1,4 +1,4 @@
-import { accountSummarySchema } from "./ui-contract";
+import { contentAccountSchema } from "./ui-contract";
 import { getUIClient, requestCapability } from "./ui-client";
 
 export async function listAccounts() {
@@ -9,12 +9,12 @@ export async function listAccounts() {
 export function resolveAccountForRepo(owner: string, repo: string) {
   return requestCapability(
     { type: "resolveAccount", owner, repo },
-    accountSummarySchema.nullable(),
+    contentAccountSchema.nullable(),
   );
 }
 export function resolveFallbackAccount(owner: string, repo: string) {
   return requestCapability(
     { type: "resolveFallbackAccount", owner, repo },
-    accountSummarySchema.nullable(),
+    contentAccountSchema.nullable(),
   );
 }

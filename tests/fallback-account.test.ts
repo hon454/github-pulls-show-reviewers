@@ -1,18 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createFallbackAccountIntegration } from "../src/features/reviewers/fallback-account";
-import type { AccountSummary as Account } from "../src/runtime/ui-contract";
+import type { ContentAccount as Account } from "../src/runtime/ui-contract";
 
 function makeAccount(id: string): Account {
   return {
     id,
-    login: id,
-    avatarUrl: null,
     revision: "g0",
-    installations: [],
-    installationsRefreshedAt: 1,
     invalidated: false,
-    invalidatedReason: null,
   };
 }
 
