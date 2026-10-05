@@ -6,6 +6,7 @@ import {
   deferred,
   json,
   rotated,
+  settlesWithoutTimers,
 } from "./helpers/auth-harness";
 import {
   accountMutations,
@@ -50,14 +51,16 @@ let coordinator: ReturnType<typeof createRefreshCoordinator>;
 let service: ReturnType<typeof createRepositoryAccountService>;
 let alive: boolean;
 const services: Array<typeof service> = [];
-function createService() {
+function createService(
+  isOwnerAlive: (owner: DiscoveryOwner) => Promise<boolean> = async () => alive,
+) {
   const value = createRepositoryAccountService({
     ensureReady: ready,
     coordinator,
     installations: createInstallationRefreshService({
       refreshCoordinator: coordinator,
     }),
-    isOwnerAlive: async () => alive,
+    isOwnerAlive,
   });
   services.push(value);
   return value;
@@ -1307,4 +1310,94 @@ describe("absolute deadlines while timer callbacks are delayed", () => {
     ).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
   });
+});
+
+describe("discovery ledger restore and owner liveness", () => {
+  const other: DiscoveryOwner = {
+    documentId: "content-2",
+    lane: "content",
+    tabId: 3,
+  };
+  const emptyStore = { version: 1, sessions: {}, records: {} };
+
+  it("a slow document's liveness probe does not delay another document's discovery start after worker activation", async () => {
+    await begin();
+    service.dispose();
+    const held = deferred<boolean>();
+    const probed: string[] = [];
+    service = createService((document) => {
+      probed.push(document.documentId);
+      return document.documentId === owner.documentId
+        ? held.promise
+        : Promise.resolve(true);
+    });
+    const activation = service.initialize();
+    await vi.waitFor(() => expect(probed).toContain(owner.documentId));
+    expect(await settlesWithoutTimers(begin(0, "private-b", other))).toBe(true);
+    held.resolve(true);
+    await activation;
+  });
+
+  it("probes each known document once per prune and skips the store write when nothing changed", async () => {
+    const probed: string[] = [];
+    service.dispose();
+    service = createService(async (document) => {
+      probed.push(document.documentId);
+      return true;
+    });
+    await begin();
+    await begin(0, "private-b", other);
+    probed.length = 0;
+    session.local.set.mockClear();
+    await service.prune();
+    expect([...probed].sort()).toEqual(["content-1", "content-2"]);
+    expect(session.local.set).not.toHaveBeenCalled();
+  });
+
+  it("restores without a store write when nothing changed and prunes a lost document at activation", async () => {
+    const discovery = await begin();
+    const kept = await begin(0, "private-b", other);
+    service.dispose();
+    session.local.set.mockClear();
+    service = createService(async () => true);
+    await service.initialize();
+    expect(session.local.set).not.toHaveBeenCalled();
+    service.dispose();
+    service = createService(
+      async (document) => document.documentId !== owner.documentId,
+    );
+    await service.initialize();
+    const state = session.snapshot()[REPOSITORY_DISCOVERY_KEY] as {
+      records: Record<string, unknown>;
+    };
+    expect(state.records[discovery.id]).toBeUndefined();
+    expect(state.records[kept.id]).toBeDefined();
+  });
+
+  it.each([
+    ["a malformed session header", { sessions: { bad: { owner: 1 } } }],
+    ["an unknown store version", { version: 2 }],
+    ["a non-object value", "corrupt"],
+  ])(
+    "resets %s to an empty store, rewrites it, and keeps public rows working",
+    async (_label, corruption) => {
+      await session.local.set({
+        [REPOSITORY_DISCOVERY_KEY]:
+          typeof corruption === "string"
+            ? corruption
+            : { ...emptyStore, records: {}, ...corruption },
+      });
+      session.local.set.mockClear();
+      await service.initialize();
+      expect(session.local.set).toHaveBeenCalledWith({
+        [REPOSITORY_DISCOVERY_KEY]: emptyStore,
+      });
+      expect(session.snapshot()[REPOSITORY_DISCOVERY_KEY]).toEqual(emptyStore);
+      mockHttp(() => json(pulls()));
+      const discovery = await begin();
+      const access = await service.metadata(owner, discovery, signal());
+      expect(access.account).toBeNull();
+      expect(access.metadata?.map((pull) => pull.number)).toEqual(["42"]);
+    },
+  );
 });

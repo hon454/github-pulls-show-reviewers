@@ -74,8 +74,13 @@ export class DiscoveryUnavailableError extends Error {
 
 const ownerKey = (owner: DiscoveryOwner) =>
   JSON.stringify([owner.lane, owner.documentId]);
+const emptyStore = (): Store => ({ version: 1, sessions: {}, records: {} });
 
-/** One short persistence queue; HTTP and subscriber waits never hold it. */
+/**
+ * One short persistence queue; HTTP, subscriber waits and document liveness
+ * probes never hold it. Callers probe owners first and apply the result with
+ * `forget`, so one unresponsive document cannot delay another's discovery.
+ */
 export function createRepositoryDiscoveryLedger(input: {
   ensureReady: () => Promise<void>;
   isOwnerAlive: (owner: DiscoveryOwner) => Promise<boolean>;
@@ -91,23 +96,18 @@ export function createRepositoryDiscoveryLedger(input: {
     const stored = (
       await browser.storage.session.get(REPOSITORY_DISCOVERY_KEY)
     )[REPOSITORY_DISCOVERY_KEY];
-    const state =
-      stored === undefined
-        ? { version: 1 as const, sessions: {}, records: {} }
-        : storeSchema.parse(stored);
-    let changed = false;
-    for (const [key, header] of Object.entries(state.sessions)) {
-      if (!(await input.isOwnerAlive(header.owner))) {
-        delete state.sessions[key];
-        delete state.records[header.id];
-        changed = true;
-      }
-    }
+    const parsed =
+      stored === undefined ? undefined : storeSchema.safeParse(stored);
+    // A malformed record must not reject every later ledger operation,
+    // including anonymous public rows. Start over and replace the bad value.
+    let changed = parsed?.success === false;
+    const state = parsed?.success ? parsed.data : emptyStore();
     for (const record of Object.values(state.records)) {
       // An unacknowledged dispatch cannot be replayed or called a denial.
       if (
-        record.status === "running" ||
-        record.attempts.some((attempt) => attempt.status === "admitted")
+        record.status !== "interrupted" &&
+        (record.status === "running" ||
+          record.attempts.some((attempt) => attempt.status === "admitted"))
       ) {
         record.status = "interrupted";
         changed = true;
@@ -157,7 +157,7 @@ export function createRepositoryDiscoveryLedger(input: {
 
   return {
     initialize: () => queued(async () => {}),
-    begin(
+    async begin(
       owner: DiscoveryOwner,
       request: {
         pageSession: string;
@@ -166,9 +166,10 @@ export function createRepositoryDiscoveryLedger(input: {
         repo: string;
       },
     ): Promise<RepositoryDiscovery> {
+      // Probe before entering the queue: only this document waits for itself.
+      if (!(await input.isOwnerAlive(owner)))
+        throw new DiscoveryUnavailableError("retired");
       return queued(async (state) => {
-        if (!(await input.isOwnerAlive(owner)))
-          throw new DiscoveryUnavailableError("retired");
         const key = ownerKey(owner);
         const previous = state.sessions[key];
         const repositoryOwner = request.owner.toLowerCase();
@@ -253,11 +254,24 @@ export function createRepositoryDiscoveryLedger(input: {
         await save(next);
       });
     },
-    prune(): Promise<void> {
+    /** Session owners for a liveness probe that runs outside the queue. */
+    owners(): Promise<DiscoveryOwner[]> {
+      return queued(async (state) =>
+        Object.values(state.sessions).map((header) =>
+          structuredClone(header.owner),
+        ),
+      );
+    },
+    /** Removes confirmed-lost documents in one short step; skips no-op writes. */
+    forget(lost: DiscoveryOwner[]): Promise<void> {
       return queued(async (state) => {
+        const keys = new Set(lost.map(ownerKey));
+        const removed = Object.entries(state.sessions).filter(([key]) =>
+          keys.has(key),
+        );
+        if (removed.length === 0) return;
         const next = structuredClone(state);
-        for (const [key, header] of Object.entries(state.sessions)) {
-          if (await input.isOwnerAlive(header.owner)) continue;
+        for (const [key, header] of removed) {
           delete next.sessions[key];
           delete next.records[header.id];
         }

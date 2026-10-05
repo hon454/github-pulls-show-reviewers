@@ -207,12 +207,16 @@ export function createUIBridge(input: {
         switch (request.type) {
           case "getUISnapshot":
             return success(uiSnapshotSchema, await state.read(context.kind));
-          case "beginRepositoryDiscovery":
-            await repositories.prune();
+          case "beginRepositoryDiscovery": {
+            const owner = discoveryOwner(context);
+            // Only a document this tab replaced is probed, and nothing waits
+            // for it. Tab removal and worker activation prune everything else.
+            void repositories.pruneReplaced(owner).catch(() => undefined);
             return success(
               repositoryDiscoverySchema,
-              await repositories.begin(discoveryOwner(context), request),
+              await repositories.begin(owner, request),
             );
+          }
           case "retireRepositoryDiscovery":
             await repositories.retire(
               discoveryOwner(context),

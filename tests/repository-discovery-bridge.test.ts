@@ -5,7 +5,12 @@ import {
   repositoryDiscoverySchema,
   type RepositoryDiscovery,
 } from "../src/runtime/repository-discovery";
-import { connectInput, deferred, json } from "./helpers/auth-harness";
+import {
+  connectInput,
+  deferred,
+  json,
+  settlesWithoutTimers,
+} from "./helpers/auth-harness";
 import {
   contentSender,
   createUIBridgeHarness,
@@ -43,7 +48,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-async function begin(documentId = "content-1", generation = 1) {
+async function begin(documentId = "content-1", generation = 1, tabId = 2) {
   const reply = (await harness.send(
     {
       type: "beginRepositoryDiscovery",
@@ -52,7 +57,7 @@ async function begin(documentId = "content-1", generation = 1) {
       owner: "octo",
       repo: "repo",
     },
-    contentSender(documentId),
+    { ...contentSender(documentId), tab: { id: tabId } },
   )) as { ok: boolean; data: unknown };
   expect(reply.ok).toBe(true);
   return repositoryDiscoverySchema.parse(reply.data);
@@ -128,11 +133,9 @@ it.each(["replaced", "closed"])(
     const pending = metadata(discovery);
     await entered.promise;
     harness.alive.delete("content-1");
-    if (event === "closed") {
-      harness.browserMock.tabs.onRemoved.emit(2);
-      await vi.waitFor(() => expect(signal?.aborted).toBe(true));
-    } else await begin("content-2");
-    expect(signal?.aborted).toBe(true);
+    if (event === "closed") harness.browserMock.tabs.onRemoved.emit(2);
+    else await begin("content-2");
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
     expect(await pending).toMatchObject({ ok: false });
     held.resolve(json({}, 404));
     await drain();
@@ -168,6 +171,34 @@ it("retains the budget on ordinary content port disconnect and frozen-tab checks
   expect(await begin()).toEqual(discovery);
   expect(ledger().records[discovery.id]?.attempts).toHaveLength(2);
   expect(harness.browserMock.tabs.sendMessage).not.toHaveBeenCalled();
+});
+
+it("does not delay another tab's discovery start behind a slow document's liveness probe", async () => {
+  await begin();
+  // Keep the one-second probe fallback from firing: only the unrelated work
+  // may finish while content-1 leaves its probe unanswered.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const held = deferred<{ alive: boolean }>();
+  harness.browserMock.tabs.sendMessage.mockImplementation(
+    async (_id, _message, options) =>
+      options.documentId === "content-1" ? held.promise : { alive: true },
+  );
+  harness.browserMock.tabs.onRemoved.emit(9);
+  await drain();
+  expect(harness.browserMock.tabs.sendMessage).toHaveBeenCalledWith(
+    2,
+    { type: "repositoryDiscoveryDocumentProbe" },
+    { documentId: "content-1" },
+  );
+  expect(await settlesWithoutTimers(begin("content-2", 1, 3))).toBe(true);
+  held.resolve({ alive: true });
+});
+
+it("does not rewrite the session ledger when a discovery start changes nothing", async () => {
+  const discovery = await begin();
+  harness.session.local.set.mockClear();
+  expect(await begin()).toEqual(discovery);
+  expect(harness.session.local.set).not.toHaveBeenCalled();
 });
 
 it("rejects foreign document/repository discovery IDs without issuing HTTP", async () => {
