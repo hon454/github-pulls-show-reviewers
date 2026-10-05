@@ -1,13 +1,19 @@
 import { z } from "zod";
 import {
   DeviceFlowError,
+  GitHubAuthSchemaError,
   initiateDeviceFlow,
   pollForAccessToken,
   fetchAuthenticatedUser,
 } from "../github/auth";
-import { loadAccountInstallations } from "../github/installations";
+import { extractGitHubApiStatus } from "../github/api";
+import { loadAccountInstallationSnapshot } from "../github/installations";
 import { CredentialTimeoutError } from "../shared/credential-deadline";
-import { accountMutations, type Account } from "../storage/accounts";
+import {
+  accountMutations,
+  type Account,
+  type Installation,
+} from "../storage/accounts";
 import {
   deviceFlowProgressSchema,
   flowErrorCodeSchema,
@@ -43,6 +49,29 @@ const flowRecordSchema = z.object({
 type FlowRecord = z.infer<typeof flowRecordSchema>;
 export class FlowOwnershipError extends Error {}
 
+/** Waits between attempts of one post-exchange request (three attempts). */
+const POST_EXCHANGE_RETRY_DELAYS_MS = [1_000, 3_000] as const;
+
+/** Network errors, 5xx, 429 and 403 secondary rate limits may succeed later. */
+function isTransientFailure(error: unknown): boolean {
+  if (error instanceof GitHubAuthSchemaError) return false;
+  if (error instanceof TypeError) return true;
+  const status = extractGitHubApiStatus(error);
+  return status != null && (status >= 500 || status === 429 || status === 403);
+}
+
+function waitForRetry(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
+}
+
 export function createDeviceFlowService(input: {
   ensureReady: () => Promise<void>;
   getClientId: () => string;
@@ -52,9 +81,30 @@ export function createDeviceFlowService(input: {
     attemptId: string,
     progress: DeviceFlowProgress,
   ) => void;
+  /** Loads installations for an account committed without them. */
+  refreshInstallations?: (accountId: string) => Promise<unknown>;
+  retryDelaysMs?: readonly number[];
   now?: () => number;
 }) {
   const now = input.now ?? (() => Date.now());
+  const retryDelaysMs = input.retryDelaysMs ?? POST_EXCHANGE_RETRY_DELAYS_MS;
+  // Retries run outside the flow queue and stop as soon as the attempt is
+  // cancelled, expired or superseded (its controller aborts).
+  async function retryTransient<T>(
+    operation: () => Promise<T>,
+    signal: AbortSignal,
+  ): Promise<T> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await operation();
+      } catch (error) {
+        const delay = retryDelaysMs[attempt];
+        if (delay === undefined || signal.aborted || !isTransientFailure(error))
+          throw error;
+        await waitForRetry(delay, signal);
+      }
+    }
+  }
   let records: FlowRecord[] | undefined;
   let tail: Promise<unknown> = Promise.resolve();
   const requests = new Map<string, Promise<DeviceFlowProgress>>();
@@ -403,16 +453,37 @@ export function createDeviceFlowService(input: {
           if (!active || controller!.signal.aborted)
             return ordered(() => progress(find(owner, attemptId)));
           notify(record!, { phase: "fetching_installations" });
-          const user = await fetchAuthenticatedUser({
-            token: result.accessToken,
-            signal: controller!.signal,
-          });
-          if (controller!.signal.aborted)
+          const signal = controller!.signal;
+          // The exchanged tokens are already live at GitHub. A transient /user
+          // failure is retried a bounded number of times before the attempt
+          // ends, so one 5xx or network blip does not discard the sign-in.
+          const user = await retryTransient(
+            () => fetchAuthenticatedUser({ token: result.accessToken, signal }),
+            signal,
+          );
+          if (signal.aborted)
             return ordered(() => progress(find(owner, attemptId)));
-          const installations = await loadAccountInstallations({
-            token: result.accessToken,
-            signal: controller!.signal,
-          });
+          // Once /user succeeds the account is committed even when its
+          // installations cannot be loaded (null); installation refresh fills
+          // them after the commit. A truncated installation list signs in with
+          // the installations loaded before the page limit.
+          let installations: Installation[] | null = null;
+          try {
+            installations = (
+              await retryTransient(
+                () =>
+                  loadAccountInstallationSnapshot({
+                    token: result.accessToken,
+                    signal,
+                  }),
+                signal,
+              )
+            ).installations;
+          } catch (error) {
+            if (signal.aborted) throw error;
+          }
+          if (signal.aborted)
+            return ordered(() => progress(find(owner, attemptId)));
           const commit = await ordered(
             async (): Promise<
               { result: DeviceFlowProgress } | { commit: Promise<Account> }
@@ -466,14 +537,21 @@ export function createDeviceFlowService(input: {
               return progress(current);
             });
           }
-          return await ordered(async () => {
-            const current = find(owner, attemptId);
-            if (!current) return { phase: "fatal", code: "restart_required" };
-            current.phase = "connected";
-            current.accountId = account.id;
-            await save();
-            return { phase: "connected", account: summarizeAccount(account) };
-          });
+          const connected = await ordered(
+            async (): Promise<DeviceFlowProgress> => {
+              const current = find(owner, attemptId);
+              if (!current) return { phase: "fatal", code: "restart_required" };
+              current.phase = "connected";
+              current.accountId = account.id;
+              await save();
+              return { phase: "connected", account: summarizeAccount(account) };
+            },
+          );
+          // Outside both queues; the refresh service owns its own HTTP,
+          // 401 recovery and generation-checked commit.
+          if (installations == null && input.refreshInstallations)
+            void input.refreshInstallations(account.id).catch(() => undefined);
+          return connected;
         } catch (error) {
           return failed(owner, attemptId, error);
         } finally {

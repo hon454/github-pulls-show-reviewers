@@ -1,10 +1,28 @@
 import type { Installation } from "../storage/accounts";
 import { fetchInstallationRepositories, fetchUserInstallations } from "./auth";
 
-export async function loadAccountInstallations(input: {
-  token: string;
-  signal?: AbortSignal;
-}): Promise<Installation[]> {
+type LoadInput = { token: string; signal?: AbortSignal };
+
+export async function loadAccountInstallations(
+  input: LoadInput,
+): Promise<Installation[]> {
+  return (await load(input, false)).installations;
+}
+
+/**
+ * Like `loadAccountInstallations`, but returns the installations loaded before
+ * the page limit instead of failing when the installation list is truncated.
+ */
+export function loadAccountInstallationSnapshot(
+  input: LoadInput,
+): Promise<{ installations: Installation[]; truncated: boolean }> {
+  return load(input, true);
+}
+
+async function load(
+  input: LoadInput,
+  allowTruncated: boolean,
+): Promise<{ installations: Installation[]; truncated: boolean }> {
   input.signal?.throwIfAborted();
   const signal = input.signal ? { signal: input.signal } : {};
   const apiInstallations = await fetchUserInstallations({
@@ -12,13 +30,13 @@ export async function loadAccountInstallations(input: {
     ...signal,
   });
   input.signal?.throwIfAborted();
-  if (apiInstallations.truncated) {
+  if (apiInstallations.truncated && !allowTruncated) {
     throw new Error(
       "GitHub App installation list was truncated before all installations were loaded.",
     );
   }
 
-  return Promise.all(
+  const installations = await Promise.all(
     apiInstallations.items.map(async (installation): Promise<Installation> => {
       if (installation.repositorySelection === "all") {
         return {
@@ -46,4 +64,5 @@ export async function loadAccountInstallations(input: {
       };
     }),
   );
+  return { installations, truncated: apiInstallations.truncated };
 }

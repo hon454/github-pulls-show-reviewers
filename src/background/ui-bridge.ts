@@ -49,6 +49,7 @@ export function createUIBridge(input: {
   reviewers: ReviewerFetchService;
   isOwnerAlive?: (owner: string) => Promise<boolean>;
   isDiscoveryOwnerAlive?: (owner: DiscoveryOwner) => Promise<boolean>;
+  deviceFlowRetryDelaysMs?: readonly number[];
 }) {
   type Port = ReturnType<typeof browser.runtime.connect>;
   const ports = new Map<string, Set<Port>>();
@@ -133,6 +134,11 @@ export function createUIBridge(input: {
     ensureReady: input.ensureReady,
     getClientId: () => getGitHubAppConfig().clientId,
     isOwnerAlive,
+    refreshInstallations: (accountId) =>
+      input.installations.refreshAccountInstallations(accountId),
+    ...(input.deviceFlowRetryDelaysMs
+      ? { retryDelaysMs: input.deviceFlowRetryDelaysMs }
+      : {}),
     onProgress(owner, attemptId, progress) {
       const event = uiStateEventSchema.parse({
         type: "deviceFlow",

@@ -572,3 +572,186 @@ describe("background OAuth device-flow ownership, restoration and cancellation",
     },
   );
 });
+
+describe("background device flow after the token exchange", () => {
+  type Route = (
+    url: string,
+    init: RequestInit | undefined,
+  ) => Promise<Response> | Response | undefined;
+  // Route one endpoint; every other request keeps the default fixtures.
+  function route(path: string, handler: Route) {
+    const normal = fetchMock.getMockImplementation()!;
+    const calls: string[] = [];
+    fetchMock.mockImplementation(async (url, init) => {
+      if (new URL(String(url)).pathname === path) {
+        calls.push(String(url));
+        const response = await handler(String(url), init);
+        if (response) return response;
+      }
+      return normal(url, init);
+    });
+    return calls;
+  }
+  const installation = (id: number) => ({
+    id,
+    account: { login: `org-${id}`, type: "Organization", avatar_url: null },
+    repository_selection: "all",
+  });
+  async function connect() {
+    const init = await start();
+    tick(5);
+    return poll(init.flowId);
+  }
+
+  it.each([
+    ["a 502", () => json({ message: "bad gateway" }, 502)],
+    ["a secondary rate limit", () => json({ message: "slow down" }, 403)],
+    [
+      "a network error",
+      () => {
+        throw new TypeError("Failed to fetch");
+      },
+    ],
+  ])(
+    "retries /user after %s and keeps the exchanged tokens",
+    async (_name, failure) => {
+      let failed = false;
+      const calls = route("/user", () => {
+        if (failed) return undefined;
+        failed = true;
+        return failure();
+      });
+
+      expect(await connect()).toMatchObject({
+        phase: "connected",
+        account: { login: "octocat" },
+      });
+      expect(calls).toHaveLength(2);
+      expect(await accountMutations.listAccounts()).toEqual([
+        expect.objectContaining({
+          token: SENTINELS.access,
+          refreshToken: SENTINELS.refresh,
+        }),
+      ]);
+    },
+  );
+
+  it("ends the attempt after bounded /user retries and scrubs its secrets", async () => {
+    const calls = route("/user", () => json({ message: "unavailable" }, 503));
+
+    expect(await connect()).toEqual({ phase: "fatal", code: "unknown_error" });
+    expect(calls).toHaveLength(3);
+    expect(await accountMutations.listAccounts()).toEqual([]);
+    expect(JSON.stringify(harness.session.snapshot())).not.toContain(
+      SENTINELS.device,
+    );
+  });
+
+  it("does not retry a rejected /user request", async () => {
+    const calls = route("/user", () => json({ message: "bad token" }, 401));
+
+    expect(await connect()).toEqual({ phase: "fatal", code: "unknown_error" });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("commits the account when installations fail and fills them through installation refresh", async () => {
+    let failures = 0;
+    const calls = route("/user/installations", () => {
+      if (failures >= 3) {
+        return json({ total_count: 1, installations: [installation(1)] });
+      }
+      failures += 1;
+      return json({ message: "unavailable" }, 502);
+    });
+
+    const connected = await connect();
+
+    expect(connected).toMatchObject({
+      phase: "connected",
+      account: { login: "octocat", installations: [] },
+    });
+    await vi.waitFor(async () =>
+      expect((await accountMutations.listAccounts())[0]).toMatchObject({
+        token: SENTINELS.access,
+        installations: [expect.objectContaining({ id: 1 })],
+      }),
+    );
+    expect(calls).toHaveLength(4);
+  });
+
+  it("keeps an existing account's installations when they cannot be reloaded at sign-in", async () => {
+    const existing = await accountMutations.upsertAccountByLogin(
+      connectInput({
+        userId: 1,
+        installations: [
+          {
+            id: 9,
+            account: { login: "kept", type: "Organization", avatarUrl: null },
+            repositorySelection: "all",
+            repoSnapshot: null,
+          },
+        ],
+        now: 7,
+      }),
+    );
+    route("/user/installations", () => json({ message: "unavailable" }, 502));
+
+    expect(await connect()).toMatchObject({ phase: "connected" });
+
+    await drain();
+    expect(await accountMutations.getAccountById(existing.id)).toMatchObject({
+      token: SENTINELS.access,
+      installations: [expect.objectContaining({ id: 9 })],
+      installationsRefreshedAt: 7,
+    });
+  });
+
+  it("signs in with a truncated installation list", async () => {
+    let page = 0;
+    route("/user/installations", () => {
+      page += 1;
+      return new Response(
+        JSON.stringify({
+          total_count: 10_000,
+          installations: [installation(page)],
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json",
+            link: `<https://api.github.com/user/installations?per_page=100&page=${page + 1}>; rel="next"`,
+          },
+        },
+      );
+    });
+
+    expect(await connect()).toMatchObject({ phase: "connected" });
+    const [account] = await accountMutations.listAccounts();
+    expect(account.installations.map((entry) => entry.id)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
+  });
+
+  it("cancellation between /user retries prevents the commit", async () => {
+    const held = deferred<Response>();
+    const retried = deferred<void>();
+    let attempts = 0;
+    route("/user", () => {
+      attempts += 1;
+      if (attempts === 1) return json({ message: "bad gateway" }, 502);
+      retried.resolve();
+      return held.promise;
+    });
+    const init = await start();
+    tick(5);
+    const work = poll(init.flowId);
+    await retried.promise;
+
+    expect(
+      await call({ type: "cancelDeviceFlow", attemptId: "attempt-a" }),
+    ).toEqual({ phase: "cancelled" });
+    held.resolve(json({ id: 1, login: "octocat", avatar_url: null }));
+
+    expect(await work).toEqual({ phase: "cancelled" });
+    expect(await accountMutations.listAccounts()).toEqual([]);
+  });
+});
