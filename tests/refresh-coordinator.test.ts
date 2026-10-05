@@ -3,6 +3,7 @@ import {
   createRefreshCoordinator,
   RefreshCommitError,
   ROTATION_COMMIT_ATTEMPTS,
+  type RefreshOutcome,
 } from "../src/auth/refresh-coordinator";
 import { RefreshTokenError } from "../src/github/auth";
 import {
@@ -276,17 +277,50 @@ describe("generation-aware refresh coordinator with real storage and HTTP parsin
     const joined = coordinator.refreshAccountToken(old.id, generation);
     const invalidation = coordinator.invalidateAccountToken(old.id, generation);
     const writes = storage.local.set.mock.calls.length;
-    storage.local.set.mockRejectedValueOnce(new Error("storage-write-failure"));
+    let duringBackoff: Promise<RefreshOutcome> | undefined;
+    storage.local.set.mockImplementationOnce(async () => {
+      // Admitted while the rotation commit is failing and before its retry.
+      duringBackoff = coordinator.refreshAccountToken(old.id, generation);
+      throw new Error("storage-write-failure");
+    });
     request.response.resolve(rotated());
     const [a, b] = await Promise.all([first, joined, invalidation]);
     const current = (await accountMutations.getAccountById(old.id))!;
     expect(a).toEqual({ ok: true, generation: credentialGeneration(current) });
     expect(b).toEqual(a);
+    expect(await duringBackoff!).toEqual(a);
     expect(credentialGeneration(current) !== generation).toBe(true);
     expect(current.invalidated).toBe(false);
     expect(current.token === "fixture-access-1").toBe(true);
     expect(current.refreshToken === "fixture-refresh-1").toBe(true);
     expect(storage.local.set.mock.calls.length - writes).toBe(2);
+    expect(http.requests.length).toBe(1);
+  });
+
+  it("reports rotated credentials whose write landed before the commit read failed", async () => {
+    const old = await accountMutations.upsertAccountByLogin(connectInput());
+    const generation = credentialGeneration(old);
+    const work = coordinator.refreshAccountToken(old.id, generation);
+    const request = await http.next();
+    const writes = storage.local.set.mock.calls.length;
+    const write = storage.local.set.getMockImplementation()!;
+    storage.local.set.mockImplementationOnce(async (values) => {
+      await write(values);
+      storage.local.get.mockRejectedValueOnce(
+        new Error("storage-read-failure"),
+      );
+    });
+    request.response.resolve(rotated());
+    const outcome = await work;
+    const current = (await accountMutations.getAccountById(old.id))!;
+    expect(outcome).toEqual({
+      ok: true,
+      generation: credentialGeneration(current),
+    });
+    expect(credentialGeneration(current) !== generation).toBe(true);
+    expect(current.token === "fixture-access-1").toBe(true);
+    // The generation-conditional retry is a no-op rather than a second write.
+    expect(storage.local.set.mock.calls.length - writes).toBe(1);
     expect(http.requests.length).toBe(1);
   });
 
