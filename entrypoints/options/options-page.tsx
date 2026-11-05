@@ -169,6 +169,17 @@ export function OptionsPage({
     }
   };
 
+  // The catalog owns the spacing and sentence-final punctuation around the
+  // link, so CJK locales end with 。 and no inserted space.
+  const LINK_MARKER = "\u0000";
+  const revokeSentence = appConfig
+    ? t("options_about_description", {
+        app: appConfig.name,
+        permission: "Pull requests: Read",
+        link: LINK_MARKER,
+      }).split(LINK_MARKER)
+    : [];
+
   return (
     <main className="options-page">
       <aside className="options-intro">
@@ -324,10 +335,7 @@ export function OptionsPage({
           <p className="about-copy">
             {appConfig ? (
               <>
-                {t("options_about_description", {
-                  app: appConfig.name,
-                  permission: "Pull requests: Read",
-                })}{" "}
+                {revokeSentence[0]}
                 <a
                   href="https://github.com/settings/applications"
                   target="_blank"
@@ -335,7 +343,7 @@ export function OptionsPage({
                 >
                   {t("options_revoke_link")}
                 </a>
-                .
+                {revokeSentence[1]}
               </>
             ) : (
               <>{t("options_metadata_unavailable")}</>

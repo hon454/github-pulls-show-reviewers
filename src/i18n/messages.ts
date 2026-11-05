@@ -120,7 +120,11 @@ export interface MessageArgs {
   options_add_account: undefined;
   options_about_title: undefined;
   options_about_subtitle: undefined;
-  options_about_description: { app: string; permission: string };
+  options_about_description: {
+    app: string;
+    permission: string;
+    link: string;
+  };
   options_revoke_link: undefined;
   options_metadata_unavailable: undefined;
   options_accounts_load_failed: undefined;

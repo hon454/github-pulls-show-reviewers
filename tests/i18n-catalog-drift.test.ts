@@ -57,3 +57,38 @@ describe("i18n catalog drift", () => {
     );
   });
 });
+
+// Superseded variants of glossary terms (docs/localization.md). Each entry
+// lists the locale's catalog and README so both stay on the glossary term.
+const SUPERSEDED: Record<
+  Exclude<keyof typeof catalogs, "en">,
+  { readme: string; terms: string[] }
+> = {
+  ko: { readme: "README.ko.md", terms: ["레이트 제한", "미인증", "재설정"] },
+  ja: { readme: "README.ja.md", terms: ["サインイン", "未完了"] },
+  zh_CN: { readme: "README.zh-CN.md", terms: ["未认证"] },
+  zh_TW: { readme: "README.zh-TW.md", terms: ["未驗證", "請求"] },
+};
+
+describe("i18n glossary regressions", () => {
+  it.each(Object.entries(SUPERSEDED))(
+    "keeps %s on the glossary terms",
+    (locale, { readme, terms }) => {
+      const catalog = catalogs[locale as keyof typeof SUPERSEDED];
+      const text = [
+        ...Object.values(catalog).map((entry) => entry.message),
+        readFileSync(path.resolve(readme), "utf8"),
+      ].join("\n");
+      expect(terms.filter((term) => text.includes(term))).toEqual([]);
+    },
+  );
+
+  it("uses one ellipsis and no space after a full-width full stop", () => {
+    const offending = Object.entries(catalogs).flatMap(([locale, catalog]) =>
+      Object.entries(catalog)
+        .filter(([, entry]) => /\.\.\.|。 /.test(entry.message))
+        .map(([key]) => `${locale}.${key}`),
+    );
+    expect(offending).toEqual([]);
+  });
+});

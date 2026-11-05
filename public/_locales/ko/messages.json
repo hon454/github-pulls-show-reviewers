@@ -85,14 +85,17 @@
     "description": "Options page about subtitle. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_about_description": {
-    "message": "이 확장 프로그램은 $APP$ GitHub App을 통해 로그인하며, $PERMISSION$ 권한만 요청합니다. 계정을 기기에서 삭제해도 GitHub의 접근 권한 승인은 취소되지 않습니다.",
-    "description": "Options page about description. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "message": "이 확장 프로그램은 $APP$ GitHub App을 통해 로그인하며, $PERMISSION$ 권한만 요청합니다. 계정을 기기에서 삭제해도 GitHub에서 부여한 접근 권한은 취소되지 않습니다. $LINK$.",
+    "description": "Options page about paragraph. $LINK$ is the authorization management link (options_revoke_link); keep the spacing and sentence-final punctuation for this locale around it. Visible text; keep GitHub names, codes and identifiers unchanged.",
     "placeholders": {
       "app": {
         "content": "$1"
       },
       "permission": {
         "content": "$2"
+      },
+      "link": {
+        "content": "$3"
       }
     }
   },
@@ -146,7 +149,7 @@
     "description": "Options page refresh. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_refreshing": {
-    "message": "새로고침 중...",
+    "message": "새로고침 중…",
     "description": "Options page refreshing. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_remove": {
@@ -154,7 +157,7 @@
     "description": "Options page remove. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_removing": {
-    "message": "삭제 중...",
+    "message": "삭제 중…",
     "description": "Options page removing. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_refresh_failed": {
@@ -182,7 +185,7 @@
     "description": "Options page display save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_display_saving": {
-    "message": "표시 설정 저장 중...",
+    "message": "표시 설정 저장 중…",
     "description": "Options page display saving. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_badges": {
@@ -242,7 +245,7 @@
     "description": "Options page help. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "language_saving": {
-    "message": "언어 저장 중...",
+    "message": "언어 저장 중…",
     "description": "Options page saving. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "language_saved": {
@@ -254,11 +257,11 @@
     "description": "Options page save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_requesting": {
-    "message": "기기 코드 요청 중...",
+    "message": "기기 코드 요청 중…",
     "description": "Options page requesting. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_enter_code": {
-    "message": "GitHub에서 다음 코드를 입력해 승인하세요:",
+    "message": "GitHub에서 다음 코드를 입력해 권한을 부여하세요:",
     "description": "Options page enter code. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_copy": {
@@ -278,11 +281,11 @@
     "description": "Polite status when Clipboard API is unavailable or rejects."
   },
   "auth_open_github": {
-    "message": "GitHub에서 승인하기 →",
+    "message": "GitHub에서 권한 부여하기 →",
     "description": "Options page open github. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_waiting": {
-    "message": "승인 대기 중…",
+    "message": "권한 부여 대기 중…",
     "description": "Options page waiting. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_expires_at": {
@@ -315,7 +318,7 @@
     "description": "Options page new code. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_denied": {
-    "message": "승인이 거부되었습니다.",
+    "message": "권한 부여가 거부되었습니다.",
     "description": "Options page denied. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_try_again": {
@@ -375,7 +378,7 @@
     "description": "Repository diagnostics check no token. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_running": {
-    "message": "진단 중...",
+    "message": "진단 중…",
     "description": "Repository diagnostics running. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_empty": {
@@ -460,7 +463,7 @@
     "description": "Repository diagnostics token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_no_token_rate_label": {
-    "message": "미인증 요청 한도",
+    "message": "비로그인 요청 한도",
     "description": "Repository diagnostics no token rate label. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_private_like_label": {
@@ -527,7 +530,7 @@
     }
   },
   "diagnostics_token_rate": {
-    "message": "$REPOSITORY$ 요청이 로그인 계정의 한도에 도달했습니다. 한도가 재설정된 뒤 다시 시도하세요.",
+    "message": "$REPOSITORY$ 요청이 로그인 계정의 한도에 도달했습니다. 한도가 초기화된 뒤 다시 시도하세요.",
     "description": "Repository diagnostics token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -536,7 +539,7 @@
     }
   },
   "diagnostics_no_token_rate": {
-    "message": "$REPOSITORY$ 요청이 미인증 한도에 도달했습니다. 공개 저장소는 보통 로그인 없이 사용할 수 있습니다. 한도 재설정을 기다리거나 로그인해 더 높은 한도를 사용하세요.",
+    "message": "$REPOSITORY$ 요청이 비로그인 요청 한도에 도달했습니다. 공개 저장소는 보통 로그인 없이 사용할 수 있습니다. 한도 초기화를 기다리거나 로그인해 더 높은 한도를 사용하세요.",
     "description": "Repository diagnostics no token rate. Preserve interpolated API paths, identifiers and numeric evidence.",
     "placeholders": {
       "repository": {
@@ -673,11 +676,11 @@
     "description": "Repository diagnostics rate resource. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_rate_reset": {
-    "message": "요청 한도 재설정",
+    "message": "요청 한도 초기화",
     "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "reviewers_loading": {
-    "message": "리뷰어 불러오는 중...",
+    "message": "리뷰어 불러오는 중…",
     "description": "Loading status in a pull request reviewer mount."
   },
   "reviewers_section": {

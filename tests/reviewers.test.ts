@@ -2844,7 +2844,7 @@ describe("settled reviewer request ownership", () => {
         expect(replacement.querySelector("a.ghpsr-avatar")).not.toBeNull();
       else
         expect(replacement.querySelector(".ghpsr-status")?.textContent).toBe(
-          "Loading reviewers...",
+          "Loading reviewers…",
         );
 
       if (stage === "account rejection")

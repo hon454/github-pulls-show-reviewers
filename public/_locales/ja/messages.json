@@ -85,14 +85,17 @@
     "description": "Options page about subtitle. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_about_description": {
-    "message": "この拡張機能は$APP$ GitHub Appを使ってログインし、$PERMISSION$のみを要求します。ローカルでアカウントを削除しても、GitHubでの認可は取り消されません。",
-    "description": "Options page about description. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "message": "この拡張機能は$APP$ GitHub Appを使ってログインし、$PERMISSION$のみを要求します。ローカルでアカウントを削除しても、GitHubでの認可は取り消されません。$LINK$。",
+    "description": "Options page about paragraph. $LINK$ is the authorization management link (options_revoke_link); keep the spacing and sentence-final punctuation for this locale around it. Visible text; keep GitHub names, codes and identifiers unchanged.",
     "placeholders": {
       "app": {
         "content": "$1"
       },
       "permission": {
         "content": "$2"
+      },
+      "link": {
+        "content": "$3"
       }
     }
   },
@@ -146,7 +149,7 @@
     "description": "Options page refresh. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_refreshing": {
-    "message": "更新中...",
+    "message": "更新中…",
     "description": "Options page refreshing. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_remove": {
@@ -154,7 +157,7 @@
     "description": "Options page remove. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_removing": {
-    "message": "削除中...",
+    "message": "削除中…",
     "description": "Options page removing. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_refresh_failed": {
@@ -182,7 +185,7 @@
     "description": "Options page display save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_display_saving": {
-    "message": "表示設定を保存中...",
+    "message": "表示設定を保存中…",
     "description": "Options page display saving. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_badges": {
@@ -202,11 +205,11 @@
     "description": "Help for the username display toggle; the value is the GitHub login identifier."
   },
   "options_open_only": {
-    "message": "レビュアーリンク：未完了のPRのみ",
+    "message": "レビュアーリンク：オープンなPRのみ",
     "description": "Toggle for the destination filter of reviewer links; does not hide reviewer information on closed PR list rows."
   },
   "options_open_only_description": {
-    "message": "レビュアーのリンク先を未完了の作業に限定します。",
+    "message": "レビュアーのリンク先をオープンなプルリクエストに限定します。",
     "description": "Options page open only description. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "language_label": {
@@ -242,7 +245,7 @@
     "description": "Options page help. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "language_saving": {
-    "message": "言語を保存中...",
+    "message": "言語を保存中…",
     "description": "Options page saving. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "language_saved": {
@@ -254,7 +257,7 @@
     "description": "Options page save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_requesting": {
-    "message": "デバイスコードを取得中...",
+    "message": "デバイスコードを取得中…",
     "description": "Options page requesting. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_enter_code": {
@@ -375,7 +378,7 @@
     "description": "Repository diagnostics check no token. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_running": {
-    "message": "診断中...",
+    "message": "診断中…",
     "description": "Repository diagnostics running. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_empty": {
@@ -677,15 +680,15 @@
     "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "reviewers_loading": {
-    "message": "レビュアーを読み込み中...",
+    "message": "レビュアーを読み込み中…",
     "description": "Loading status in a pull request reviewer mount."
   },
   "reviewers_section": {
-    "message": "レビュアー:",
+    "message": "レビュアー：",
     "description": "Label before reviewer chips."
   },
   "reviewers_team": {
-    "message": "チーム: $SLUG$",
+    "message": "チーム：$SLUG$",
     "description": "Requested team chip; preserve the team slug.",
     "placeholders": {
       "slug": {
@@ -754,7 +757,7 @@
     "description": "Completed dismissed review while the reviewer is still requested."
   },
   "reviewers_requested_previous_unverified": {
-    "message": "レビュー依頼中 · 以前のレビュー: $STATE$ · 再依頼の時点を確認できません",
+    "message": "レビュー依頼中 · 以前のレビュー：$STATE$ · 再依頼の時点を確認できません",
     "description": "以前の完了済みレビューは表示されるものの、再依頼の時点を確認できないレビュアーです。",
     "placeholders": {
       "state": {
@@ -846,7 +849,7 @@
     }
   },
   "banner_unauth_rate_shortly": {
-    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 まもなくリセットされます。",
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。まもなくリセットされます。",
     "description": "unauth rate-limit guidance with shortly reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -864,7 +867,7 @@
     }
   },
   "banner_unauth_rate_minute": {
-    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 約 1 分後にリセットされます。",
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。約 1 分後にリセットされます。",
     "description": "unauth rate-limit guidance with minute reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -885,7 +888,7 @@
     }
   },
   "banner_unauth_rate_minutes": {
-    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 約 $COUNT$ 分後にリセットされます。",
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。約 $COUNT$ 分後にリセットされます。",
     "description": "unauth rate-limit guidance with minutes reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -906,7 +909,7 @@
     }
   },
   "banner_unauth_rate_hour": {
-    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 約 1 時間後にリセットされます。",
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。約 1 時間後にリセットされます。",
     "description": "unauth rate-limit guidance with hour reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -927,7 +930,7 @@
     }
   },
   "banner_unauth_rate_hours": {
-    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。 約 $COUNT$ 時間後にリセットされます。",
+    "message": "GitHub の未認証リクエスト上限に達しました。$USAGE$ ログインすると毎時 5,000 回まで利用できます。約 $COUNT$ 時間後にリセットされます。",
     "description": "unauth rate-limit guidance with hours reset timing; preserve retry claim and rounding.",
     "placeholders": {
       "usage": {
@@ -939,11 +942,11 @@
     }
   },
   "auth_cancelling": {
-    "message": "サインインをキャンセルしています…",
+    "message": "ログインをキャンセルしています…",
     "description": "Status while background confirms sign-in cancellation."
   },
   "auth_error_restart": {
-    "message": "このサインインを復元できませんでした。新しいコードを取得してサインインしてください。",
+    "message": "このログインを復元できませんでした。新しいコードを取得してログインしてください。",
     "description": "Device flow session was lost or its interrupted result cannot be recovered; user can request a fresh code."
   },
   "diagnostics_pull_unavailable": {
