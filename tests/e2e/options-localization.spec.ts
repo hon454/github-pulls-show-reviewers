@@ -219,6 +219,15 @@ test("keeps options state across tabs and readable actions in five languages at 
           content: document.documentElement.scrollWidth,
         }));
         expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+        // #252: the header description keeps its own measure and spacing
+        // even though the language selector follows it in the header.
+        const description = await first
+          .locator(".workspace-description")
+          .evaluate((element) => {
+            const style = getComputedStyle(element);
+            return { maxWidth: style.maxWidth, margin: style.margin };
+          });
+        expect(description).toEqual({ maxWidth: "650px", margin: "0px" });
         for (const action of await first
           .locator(
             ".account-row .button, #language-select, .add-account-button, .diagnostic-actions .button",
