@@ -27,10 +27,14 @@ PR review is coordinated separately. Future additions must change the typed
 | `extension_`   |               3 | Manifest name, description, toolbar title; Chrome owns selection                                                                                                         |
 | `options_`     |              45 | Options shell, account empty/error/installations/actions, display controls, permission/configuration guidance                                                            |
 | `language_`    |              11 | Selector autonyms, auto/help, save/live status and failure                                                                                                               |
-| `auth_`        |              23 | Device initiation/code/copy/URL/expiry/cancel, waiting/connected/denied/expired and structured failures                                                                  |
-| `diagnostics_` |              56 | Input validation, matched account/coverage, all ten outcomes, endpoints and rate-limit evidence                                                                          |
+| `auth_`        |              26 | Device initiation/code/copy/URL/expiry/cancel, waiting/connected/denied/expired and structured failures                                                                  |
+| `diagnostics_` |              57 | Input validation, matched account/coverage, all ten outcomes, endpoints and rate-limit evidence                                                                          |
 | `reviewers_`   |              15 | Loading/section/team, title/ARIA patterns, requested plus four completed states, four confirmed still-requested combinations, and the unverified previous-review pattern |
 | `banner_`      |              22 | Six access/failure kinds, configure/sign-in/reload/dismiss, usage and reset-time variants                                                                                |
+
+The catalog currently has 179 keys per locale. `tests/i18n-catalog-drift.test.ts`
+asserts these counts against the English catalog and fails when a message key
+has no consumer, so update this table and remove dead keys in the same change.
 
 Owners of each surface maintain its namespace and consumer tests. The locale QA
 owner maintains this glossary and checks cross-surface consistency. Store copy

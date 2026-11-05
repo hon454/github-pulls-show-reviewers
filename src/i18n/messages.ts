@@ -137,7 +137,6 @@ export interface MessageArgs {
   options_removing: undefined;
   options_refresh_failed: undefined;
   options_remove_failed: undefined;
-  options_token_required: undefined;
   options_display_title: undefined;
   options_display_description: undefined;
   options_display_load_failed: undefined;

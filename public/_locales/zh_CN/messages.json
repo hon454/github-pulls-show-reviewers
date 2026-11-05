@@ -165,10 +165,6 @@
     "message": "无法移除账号，请重试。",
     "description": "Options page remove failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
-  "options_token_required": {
-    "message": "请重新登录后再刷新安装信息。",
-    "description": "Options page token required. Visible text; keep GitHub names, codes and identifiers unchanged."
-  },
   "options_display_title": {
     "message": "显示",
     "description": "Options page display title. Visible text; keep GitHub names, codes and identifiers unchanged."

@@ -165,10 +165,6 @@
     "message": "계정을 삭제하지 못했습니다. 다시 시도하세요.",
     "description": "Options page remove failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
-  "options_token_required": {
-    "message": "설치 정보를 새로고침하려면 다시 로그인하세요.",
-    "description": "Options page token required. Visible text; keep GitHub names, codes and identifiers unchanged."
-  },
   "options_display_title": {
     "message": "표시",
     "description": "Options page display title. Visible text; keep GitHub names, codes and identifiers unchanged."
