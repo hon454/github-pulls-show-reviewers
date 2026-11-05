@@ -115,9 +115,11 @@ For routine changes, `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and
 `pnpm test` are the minimum expected signals. CI fails on unformatted files;
 run `pnpm format` to fix them. Before tagging a
 release, run `pnpm verify:release`, which chains
-`pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e`
-as a single gate. PR CI runs the same four signals in parallel
-jobs. Regenerate Chrome Web Store screenshots with
+`pnpm lint`, `pnpm typecheck`, `pnpm test:coverage`, and `pnpm test:e2e`
+as a single gate. PR CI runs two jobs: `lint-and-test` runs
+`pnpm format:check`, `pnpm lint`, `pnpm typecheck`, and
+`pnpm test:coverage`; `e2e` builds the packaged extension and runs the
+Playwright `default` project. Regenerate Chrome Web Store screenshots with
 `pnpm cws:assets` only when store-facing visuals need to change,
 and run `pnpm zip` (or `pnpm zip:release` for production
 packaging) only after the checks above are green.
@@ -243,18 +245,15 @@ An `ignore` entry in `dependabot.yml` is allowed only when:
 
 Remove the entry, its test, and close the issue in the same pull request.
 
-As of 2026-10-05, both `pnpm audit --audit-level moderate` and
-`pnpm audit --prod --audit-level moderate` report zero findings on the locked
-graph. The only transitive `brace-expansion` entry is `5.0.12`, which is patched
-for [GHSA-6j4f-fj2g-mc7p](https://github.com/advisories/GHSA-6j4f-fj2g-mc7p)
-and [GHSA-q2hr-2g5m-vwhr](https://github.com/advisories/GHSA-q2hr-2g5m-vwhr).
-Vitest and its V8 coverage provider are pinned to exactly `5.0.3` because
-`@vitest/coverage-v8@5.0.3` peers on `vitest` `5.0.3`; bump both together.
-[GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)
-affects `vitest` and `@vitest/mocker` (fixed in `4.1.11` and `5.0.0-rc.2`);
-both resolve to `5.0.3`, outside the vulnerable ranges.
+Record the current audit result in the release notes, not here. Vitest and
+its V8 coverage provider are pinned to the same exact version because
+`@vitest/coverage-v8` peers on the identical `vitest` version; bump both
+together. [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)
+affects `vitest` and `@vitest/mocker` before `4.1.11` and `5.0.0-rc.2`; keep
+both at or above those versions.
 
-WXT is pinned to `0.21.4`, with Vite `8.3.2` now an explicit development peer.
+WXT and Vite are pinned to exact versions in `package.json`, with Vite an
+explicit development peer.
 The [official WXT migration guide](https://wxt.dev/guide/resources/upgrading)
 makes browser auto-launch optional. We omit `web-ext`, removing the old
 `wxt > web-ext-run > firefox-profile > adm-zip@0.6.0` path and its obsolete

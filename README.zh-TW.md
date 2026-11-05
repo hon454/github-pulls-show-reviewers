@@ -12,7 +12,7 @@
 
 ![GitHub PR 清單內的審查者標籤與審查狀態徽章](./docs/chrome-web-store-assets/02-pr-list-avatar-state-showcase.png)
 
-[v1.18.8 版本說明](./docs/releases/v1.18.8.md)（英文）：GitHub、網路或本機儲存空間發生暫時性故障時，登入與權杖更新仍能持續運作。變更 GitHub 使用者名稱後仍只保留一個帳號，減少傳遞給 GitHub 頁面中擴充功能指令碼的帳號資訊，且現在需要 Chrome 140 或更新版本。
+各版本的變更請參閱[版本資訊](./docs/releases/)（英文）。
 
 ## 主要功能
 

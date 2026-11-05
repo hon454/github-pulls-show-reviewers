@@ -387,16 +387,14 @@ uses the existing bounded revalidation path.
   WXT output under `.output/` and `.wxt/` is excluded from the report.
 - Coverage reports are emitted as terminal text and ignored local HTML output in
   `coverage/`.
-- The expanded v1.13.0 baseline is 92.11% statements, 88.31% branches, 96.61%
-  functions, and 92.11% lines overall. Entrypoints measure 79.68% statements,
-  92.85% branches, 87.50% functions, and 79.68% lines: `content.ts`,
-  `background.ts`, and the options entrypoint modules are present in the
+- `content.ts`, `background.ts`, and the options entrypoint modules are in the
   report; `options/main.tsx` is a zero-coverage bootstrap module because the
   unit suite mounts `OptionsPage` directly.
-- The enforced global thresholds are 90% statements, 85% branches, 95%
-  functions, and 90% lines. Each is rounded down only slightly from the
-  expanded baseline, retaining a meaningful branch gate while allowing the
-  known unexecuted options bootstrap and existing incremental coverage gaps.
+- The enforced global thresholds (`vitest.config.ts`) are 90% statements, 85%
+  branches, 95% functions, and 90% lines. They were set slightly below the
+  v1.13.0 baseline, keeping a meaningful branch gate while allowing the known
+  unexecuted options bootstrap. Read current figures from the
+  `pnpm test:coverage` output rather than from this document.
 
 ## Display preferences
 
@@ -851,10 +849,6 @@ live in `tests/repository-accounts.test.ts`,
 `tests/repository-fallback-dom.test.ts`. The packaged fixture
 `multi-account repository fallback` uses synthetic accounts and mocked HTTP;
 it is not a live private-repository permission check.
-
-## Next implementation targets
-
-- Add more fixture-backed extension boot coverage for GitHub DOM variants.
 
 ## End-to-end banner coverage
 
