@@ -85,14 +85,17 @@
     "description": "Options page about subtitle. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_about_description": {
-    "message": "This extension signs you in through the $APP$ GitHub App. The App requests $PERMISSION$ only. Removing an account locally does not revoke the authorization on GitHub.",
-    "description": "Options page about description. Visible text; keep GitHub names, codes and identifiers unchanged.",
+    "message": "This extension signs you in through the $APP$ GitHub App. The App requests $PERMISSION$ only. Removing an account locally does not revoke the authorization on GitHub. $LINK$.",
+    "description": "Options page about paragraph. $LINK$ is the authorization management link (options_revoke_link); keep the spacing and sentence-final punctuation for this locale around it. Visible text; keep GitHub names, codes and identifiers unchanged.",
     "placeholders": {
       "app": {
         "content": "$1"
       },
       "permission": {
         "content": "$2"
+      },
+      "link": {
+        "content": "$3"
       }
     }
   },
@@ -146,7 +149,7 @@
     "description": "Options page refresh. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_refreshing": {
-    "message": "Refreshing...",
+    "message": "Refreshing…",
     "description": "Options page refreshing. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_remove": {
@@ -154,7 +157,7 @@
     "description": "Options page remove. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_removing": {
-    "message": "Removing...",
+    "message": "Removing…",
     "description": "Options page removing. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_refresh_failed": {
@@ -182,7 +185,7 @@
     "description": "Options page display save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_display_saving": {
-    "message": "Saving display settings...",
+    "message": "Saving display settings…",
     "description": "Options page display saving. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "options_badges": {
@@ -242,7 +245,7 @@
     "description": "Options page help. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "language_saving": {
-    "message": "Saving language...",
+    "message": "Saving language…",
     "description": "Options page saving. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "language_saved": {
@@ -254,7 +257,7 @@
     "description": "Options page save failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_requesting": {
-    "message": "Requesting device code...",
+    "message": "Requesting device code…",
     "description": "Options page requesting. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
   "auth_enter_code": {
@@ -375,7 +378,7 @@
     "description": "Repository diagnostics check no token. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_running": {
-    "message": "Running diagnostics...",
+    "message": "Running diagnostics…",
     "description": "Repository diagnostics running. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "diagnostics_empty": {
@@ -677,7 +680,7 @@
     "description": "Repository diagnostics rate reset. Preserve interpolated API paths, identifiers and numeric evidence."
   },
   "reviewers_loading": {
-    "message": "Loading reviewers...",
+    "message": "Loading reviewers…",
     "description": "Loading status in a pull request reviewer mount."
   },
   "reviewers_section": {

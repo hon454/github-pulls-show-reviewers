@@ -31,7 +31,7 @@ it.each([
     "계정을 연결했습니다",
   ],
   [{ phase: "expired" }, "The device code expired", "기기 코드가 만료"],
-  [{ phase: "denied" }, "Authorization was denied", "승인이 거부"],
+  [{ phase: "denied" }, "Authorization was denied", "권한 부여가 거부"],
   [
     { phase: "fatal", code: "device_flow_disabled" },
     "Device flow is disabled",

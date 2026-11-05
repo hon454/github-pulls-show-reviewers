@@ -80,6 +80,18 @@ These are context-specific display terms, not translations of API enum values.
 | Sign in                       | Sign in                       | 로그인                | ログイン                     | 登录                 | 登入                       |
 | Token                         | token                         | 토큰                  | トークン                     | 令牌                 | 權杖                       |
 | Refresh installations         | Refresh installations         | 설치 정보 새로고침    | インストール情報を更新       | 刷新安装信息         | 重新整理安裝資訊           |
+| Pull request                  | pull request (PR)             | 풀 리퀘스트 (PR)      | プルリクエスト (PR)          | 拉取请求 (PR)        | 提取要求 (PR)              |
+| Open pull request             | open PR                       | 열린 PR               | オープンなPR                 | 未关闭的 PR          | 未關閉的 PR                |
+| Rate-limit reset              | reset                         | 초기화                | リセット                     | 重置                 | 重設                       |
+| Unauthenticated (no token)    | unauthenticated               | 비로그인              | 未認証                       | 未登录               | 未登入                     |
+| Authorize (device sign-in)    | authorize                     | 권한 부여             | 認可                         | 授权                 | 授權                       |
+
+Device sign-in "authorize" stays distinct from review "approved" (승인됨,
+承認済み, 已批准, 已核准). Locales keep their own sentence punctuation: CJK
+catalogs use full-width `：` and `。` with no space after `。`, and every
+catalog writes the ellipsis as `…`. `tests/i18n-catalog-drift.test.ts` rejects
+the superseded variants (for example 레이트 제한, 미인증, サインイン, 未完了, 未认证,
+未驗證 and 請求) in catalogs and the matching README.
 
 `DISMISSED` means an existing review was dismissed, not that a PR was rejected
 or a notification was closed. `COMMENTED` does not override a prior non-comment
