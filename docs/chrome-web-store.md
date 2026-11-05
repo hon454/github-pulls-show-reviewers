@@ -27,14 +27,18 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
-The current package target is [v1.18.8](./releases/v1.18.8.md). Its capture
-source hashes are refreshed for the version, development-dependency, manifest,
-and authentication and background changes. On one machine and with one
-Playwright Chromium build, all 15 screenshots regenerated from the `v1.18.7`
-tag source built with the v1.18.8 lockfile and from the v1.18.8 source were
-byte-identical, so the changes do not alter the captured scenes. Existing rendering provenance and all 15 committed
-image bytes are retained; no new screenshot capture or dashboard save is
-claimed or needed.
+The current package target is [v1.18.9](./releases/v1.18.9.md). All five
+store descriptions and all 15 committed image bytes are retained, and the
+verified saved-listing baseline is reused; no new screenshot capture or
+dashboard save is claimed or needed. The capture source hashes are
+intentionally left at v1.18.8: on one machine and with one Playwright Chromium
+build, regenerating from the v1.18.9 source changed 7 of 15 screenshots (all
+five `03-options-repository-check.png` at pixel level, and the Japanese
+`01-pr-list-before-after.png` and `02-pr-list-avatar-state-showcase.png`
+because reviewer labels now use a full-width colon). `pnpm verify:cws`
+therefore reports stale sources until those screenshots are recaptured and the
+listing is updated in a later release
+([#319](https://github.com/hon454/github-pulls-show-reviewers/issues/319)).
 
 The [v1.17.2 readiness handoff](./releases/v1.17.2-readiness.md) remains
 historical local preparation, not a CWS receipt or saved-listing attestation.

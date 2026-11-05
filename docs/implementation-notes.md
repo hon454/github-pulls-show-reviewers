@@ -26,9 +26,14 @@ GitHub user ID, quarantined unreadable account records, discovery-ledger
 probes outside the queue, and the content-scoped account projection. The
 manifest declares `minimum_chrome_version: "140"`; permissions are unchanged.
 
+The [v1.18.9 release notes](./releases/v1.18.9.md) cover options page
+recovery and keyboard fixes, glossary-aligned wording and CJK punctuation in
+the catalogs, and dependency updates. Permissions, storage and authentication
+are unchanged.
+
 ## Development toolchain
 
-WXT `0.21.4` uses the explicit Vite `8.3.2` peer and requires Node.js 22.12+
+WXT `0.21.5` uses the explicit Vite `8.3.5` peer and requires Node.js 22.12+
 for this toolchain. The optional `web-ext` auto-launch dependency is excluded to
 remove the unpatched Firefox profile ZIP extraction dependency. `pnpm dev`
 serves `.output/chrome-mv3-dev`, which contributors load manually in Chrome;
