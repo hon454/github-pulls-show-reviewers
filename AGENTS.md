@@ -36,6 +36,12 @@ Agents working in this repository should preserve that narrow product scope. Do 
   GitHub-specific routing, selectors, and API access. `api.ts` is the stable
   facade; `api/` separates schemas and parsing, authenticated request and
   pagination helpers, reviewer aggregation, diagnostics, and shared types.
+- `src/features/access-banner/`
+  Repository access/rate-limit banner: failure aggregation, localized
+  formatting and DOM mounting for the pull list page.
+- `src/features/repository-diagnostics/`
+  Options-page repository diagnostics view model and the shared repository
+  input parser.
 - `src/features/reviewers/`
   Reviewer-focused feature orchestration and rendering. `index.ts` is the
   stable facade; the page controller delegates page metadata caching, fallback
@@ -43,6 +49,12 @@ Agents working in this repository should preserve that narrow product scope. Do 
   (`request-registry.ts`), generation-scoped row outcomes, and row mutation
   handling to focused modules. Row results reach the entrypoint only through
   `onOutcomes`.
+- `src/auth/`
+  Access-token refresh coordination (`refresh-coordinator.ts`) and the
+  refresh-then-retry wrapper for authenticated repository requests.
+- `src/config/`
+  Build-time GitHub App configuration (`github-app.ts`) and proactive token
+  refresh alarm constants.
 - `src/i18n/`
   Typed bundled localization, locale resolution and lifecycle-owned subscriptions.
   See `docs/adr/0006-bundled-localization-and-render-only-language.md` for the shared contract.
@@ -77,8 +89,17 @@ Agents working in this repository should preserve that narrow product scope. Do 
   to raw `storage.onChanged`; use the safe runtime snapshot/preferences APIs.
 - `src/cache/`
   Request and page-session caching helpers.
+- `public/_locales/`
+  The five shipped message catalogs (en, ko, ja, zh_CN, zh_TW). Keys are typed in
+  `src/i18n/messages.ts`; see `docs/localization.md` for the glossary.
 - `tests/`
-  Automated tests, including future extension regression coverage.
+  Vitest unit/integration tests, shared helpers and DOM fixtures; `tests/e2e/`
+  holds the packaged-extension Playwright specs (default and live canary
+  projects).
+- `scripts/`
+  Build and verification helpers: GitHub App build env loading, icon rendering,
+  CWS description/asset checks, packaged locale and App-config verification, and
+  the E2E flaky-test reporter.
 - `scripts/release/`
   Release action policy, CWS adapter, checked-package receipts, shared readiness
   checks, saved-listing validation, read-only reports, and workflow orchestration.
@@ -95,7 +116,7 @@ Agents working in this repository should preserve that narrow product scope. Do 
 - Keep reviewer rendering deterministic and testable through pure view-model helpers where possible.
 - Update all five READMEs and `docs/implementation-notes.md` when MVP behavior or scope changes; follow the Documentation Policy below.
 - Keep review-state semantics explicit. If review states are shown, document which GitHub states are included and how they are mapped in the UI.
-- Prefer fixture-backed regression coverage for GitHub DOM behavior and reserve placeholder end-to-end tests for bootstrapping only.
+- Prefer fixture-backed regression coverage for GitHub DOM behavior; use the packaged Playwright specs for behavior that needs a real extension runtime.
 
 ## Documentation Policy
 
@@ -199,14 +220,19 @@ Agents working in this repository should preserve that narrow product scope. Do 
 
 ```bash
 pnpm install
-pnpm prepare
+pnpm prepare          # wxt prepare (generated types)
 pnpm dev
 pnpm build
-pnpm zip
+pnpm format:check
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm test:e2e
+pnpm test:coverage    # what CI runs
+pnpm test:e2e         # packaged build + Playwright default project
+pnpm verify:locales   # after a build: packaged locale/manifest references
+pnpm verify:release   # lint, typecheck, test:coverage, test:e2e
+pnpm zip
+pnpm zip:release      # production package; releases use the guarded workflow
 ```
 
 ## Commit Conventions
