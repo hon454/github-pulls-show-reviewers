@@ -165,10 +165,6 @@
     "message": "アカウントを削除できませんでした。もう一度お試しください。",
     "description": "Options page remove failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
-  "options_token_required": {
-    "message": "インストール情報を更新するには、再ログインしてください。",
-    "description": "Options page token required. Visible text; keep GitHub names, codes and identifiers unchanged."
-  },
   "options_display_title": {
     "message": "表示",
     "description": "Options page display title. Visible text; keep GitHub names, codes and identifiers unchanged."

@@ -165,10 +165,6 @@
     "message": "Could not remove account. Please try again.",
     "description": "Options page remove failed. Visible text; keep GitHub names, codes and identifiers unchanged."
   },
-  "options_token_required": {
-    "message": "Sign in again before refreshing installations.",
-    "description": "Options page token required. Visible text; keep GitHub names, codes and identifiers unchanged."
-  },
   "options_display_title": {
     "message": "Display",
     "description": "Options page display title. Visible text; keep GitHub names, codes and identifiers unchanged."

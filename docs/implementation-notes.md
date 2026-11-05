@@ -1134,8 +1134,9 @@ Validate catalogs with the i18n unit tests and emitted metadata with
 
 ## Integrated locale quality (#151)
 
-All 172 messages in each of the five shipped catalogs have a recorded linguistic
-review and glossary in [localization.md](localization.md). Labels clarify that
+The 172 messages that each of the five catalogs shipped at #151 have a recorded
+linguistic review and glossary in [localization.md](localization.md); current
+per-namespace counts live there and are test-checked. Labels clarify that
 reviewer names are GitHub usernames and the open-PR setting filters link
 destinations. Runtime, permissions, data contracts and review semantics are
 unchanged. Strict source/package validation rejects malformed or untranslated
