@@ -184,7 +184,7 @@ export function OptionsPage({
         <header className="workspace-header">
           <p className="eyebrow">{t("options_settings")}</p>
           <h2>{t("options_workspace_heading")}</h2>
-          <p>
+          <p className="workspace-description">
             {appConfig
               ? t("options_workspace_description")
               : t("options_signin_unavailable_description")}

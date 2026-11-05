@@ -163,10 +163,6 @@ code {
   line-height: 1.55;
 }
 
-.intro-footnote code {
-  color: var(--text);
-}
-
 .options-workspace {
   min-width: 0;
   padding: clamp(56px, 7vw, 94px) clamp(32px, 6vw, 82px) 100px;
@@ -185,7 +181,7 @@ code {
   line-height: 1.05;
 }
 
-.workspace-header > p:last-child {
+.workspace-description {
   max-width: 650px;
   margin: 0;
   color: var(--muted);
@@ -279,9 +275,7 @@ code {
   gap: 18px;
   padding: 18px 0;
   border-bottom: 1px solid var(--border);
-  transition:
-    opacity 160ms ease,
-    border-color 160ms ease;
+  transition: border-color 160ms ease;
 }
 
 .account-row:first-child {
@@ -655,11 +649,6 @@ code {
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.65;
-}
-
-.about-copy strong,
-.about-copy code {
-  color: var(--text);
 }
 
 @keyframes panel-in {
