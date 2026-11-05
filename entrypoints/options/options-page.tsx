@@ -33,6 +33,7 @@ export function OptionsPage({
   const [connectionStatus, setConnectionStatus] = useState<"connected" | null>(
     null,
   );
+  const [signinUnavailable, setSigninUnavailable] = useState(false);
   const [focusRestorationIntent, setFocusRestorationIntent] = useState<
     number | null
   >(null);
@@ -44,6 +45,19 @@ export function OptionsPage({
   const focusIntentGeneration = useRef(0);
   const appConfigResult = readGitHubAppConfig();
   const appConfig = appConfigResult.ok ? appConfigResult.config : null;
+
+  // A stale "Account connected" status must not outlive an account that has
+  // since left the list, whether it was removed here or in another tab.
+  const shownAccounts = useRef<Account[]>([]);
+  const applyAccounts = useCallback((next: Account[]) => {
+    const nextIds = new Set(next.map((account) => account.id));
+    if (shownAccounts.current.some((account) => !nextIds.has(account.id))) {
+      setConnectionStatus(null);
+      setSigninUnavailable(false);
+    }
+    shownAccounts.current = next;
+    setAccounts(next);
+  }, []);
 
   useEffect(() => {
     const relinquishPanelFocus = (target: EventTarget | null) => {
@@ -75,18 +89,18 @@ export function OptionsPage({
     try {
       const next = await listAccounts();
       if (accountsRevision.current !== readingAt) return;
-      setAccounts(next);
+      applyAccounts(next);
       setLoadFailed(false);
     } catch {
       if (accountsRevision.current === readingAt) setLoadFailed(true);
     }
-  }, []);
+  }, [applyAccounts]);
 
   useEffect(() => {
     const unsubscribe = getUIClient().subscribe(({ snapshot }) => {
       if (snapshot.accounts) {
         accountsRevision.current += 1;
-        setAccounts(snapshot.accounts);
+        applyAccounts(snapshot.accounts);
         setLoadFailed(false);
       }
     });
@@ -95,7 +109,7 @@ export function OptionsPage({
       accountsRevision.current += 1;
       unsubscribe();
     };
-  }, [reload]);
+  }, [applyAccounts, reload]);
 
   const restoreOpeningFocus = useCallback(() => {
     setFocusRestorationIntent(focusIntentGeneration.current);
@@ -216,16 +230,31 @@ export function OptionsPage({
               </button>
             </div>
           ) : null}
-          <AccountsList
-            t={t}
-            accounts={accounts}
-            onChange={reload}
-            onReauthenticate={(_, control) => {
-              if (appConfig) {
-                openAddPanel(control);
-              }
-            }}
-          />
+          {loadFailed && accounts.length === 0 ? null : (
+            <AccountsList
+              t={t}
+              accounts={accounts}
+              onChange={reload}
+              onReauthenticate={(_, control) => {
+                if (appConfig) {
+                  openAddPanel(control);
+                } else {
+                  setConnectionStatus(null);
+                  setSigninUnavailable(true);
+                }
+              }}
+            />
+          )}
+          {signinUnavailable ? (
+            <p
+              className="inline-status inline-status--error"
+              data-testid="account-signin-unavailable"
+              role="status"
+              aria-live="polite"
+            >
+              {t("options_config_title")}
+            </p>
+          ) : null}
           {connectionStatus === "connected" ? (
             <p
               className="inline-status"
