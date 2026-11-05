@@ -1,6 +1,6 @@
 import { getUIClient } from "../../../src/runtime/ui-client";
 import type { Translator, MessageKey } from "../../../src/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   DEFAULT_PREFERENCES,
@@ -13,6 +13,9 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
   const [preferences, setPreferences] =
     useState<Preferences>(DEFAULT_PREFERENCES);
   const [busy, setBusy] = useState(false);
+  // Toggles stay disabled until stored values (or a snapshot) arrive, so the
+  // defaults are never presented as if they were the saved settings.
+  const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<{
     tone: "neutral" | "error";
     key: Extract<
@@ -24,31 +27,48 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
   } | null>(null);
   const busyRef = useRef(false);
   const events = useRef(0);
+  const active = useRef(false);
+
+  const clearLoadFailure = useCallback(
+    () =>
+      setStatus((current) =>
+        current?.key === "options_display_load_failed" ? null : current,
+      ),
+    [],
+  );
+
+  const load = useCallback(async () => {
+    const readingAt = events.current;
+    clearLoadFailure();
+    try {
+      const next = await getPreferences();
+      if (active.current && events.current === readingAt) {
+        setPreferences(next);
+        setLoaded(true);
+      }
+    } catch {
+      if (active.current && events.current === readingAt)
+        setStatus({
+          tone: "error",
+          key: "options_display_load_failed",
+        });
+    }
+  }, [clearLoadFailure]);
 
   useEffect(() => {
-    let active = true;
+    active.current = true;
     const unsubscribe = getUIClient().subscribe(({ snapshot }) => {
       events.current += 1;
       setPreferences(snapshot.preferences);
+      setLoaded(true);
+      clearLoadFailure();
     });
-    const readingAt = events.current;
-    void (async () => {
-      try {
-        const next = await getPreferences();
-        if (active && events.current === readingAt) setPreferences(next);
-      } catch {
-        if (active && events.current === readingAt)
-          setStatus({
-            tone: "error",
-            key: "options_display_load_failed",
-          });
-      }
-    })();
+    void load();
     return () => {
-      active = false;
+      active.current = false;
       unsubscribe();
     };
-  }, []);
+  }, [clearLoadFailure, load]);
 
   async function handleChange(patch: Partial<Omit<Preferences, "version">>) {
     if (busyRef.current) {
@@ -89,7 +109,7 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
             data-testid="prefs-show-state-badge"
             type="checkbox"
             checked={preferences.showStateBadge}
-            disabled={busy}
+            disabled={busy || !loaded}
             onChange={(event) =>
               void handleChange({ showStateBadge: event.target.checked })
             }
@@ -104,7 +124,7 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
             data-testid="prefs-show-reviewer-name"
             type="checkbox"
             checked={preferences.showReviewerName}
-            disabled={busy}
+            disabled={busy || !loaded}
             onChange={(event) =>
               void handleChange({ showReviewerName: event.target.checked })
             }
@@ -119,7 +139,7 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
             data-testid="prefs-open-pulls-only"
             type="checkbox"
             checked={preferences.openPullsOnly}
-            disabled={busy}
+            disabled={busy || !loaded}
             onChange={(event) =>
               void handleChange({ openPullsOnly: event.target.checked })
             }
@@ -130,7 +150,24 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
           </span>
         </label>
       </div>
-      {status ? (
+      {status?.key === "options_display_load_failed" ? (
+        <div
+          className="inline-status inline-status--error"
+          role="status"
+          aria-live="polite"
+          data-testid="prefs-error"
+        >
+          <p>{t(status.key)}</p>
+          <button
+            type="button"
+            className="button button--secondary"
+            data-testid="prefs-retry"
+            onClick={() => void load()}
+          >
+            {t("options_retry")}
+          </button>
+        </div>
+      ) : status ? (
         <p
           className={`inline-status${status.tone === "error" ? " inline-status--error" : ""}`}
           role="status"

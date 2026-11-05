@@ -1417,6 +1417,175 @@ function pending<T>() {
   return { promise, resolve, reject };
 }
 
+describe("options error recovery (#253)", () => {
+  const preferenceToggles = () =>
+    [
+      "prefs-show-state-badge",
+      "prefs-show-reviewer-name",
+      "prefs-open-pulls-only",
+    ].map((id) =>
+      document.querySelector<HTMLInputElement>(`[data-testid="${id}"]`)!,
+    );
+
+  it("keeps display toggles disabled after a load failure and recovers through retry", async () => {
+    getPreferencesMock.mockRejectedValueOnce(new Error("storage read failed"));
+    await renderOptionsPage();
+
+    expect(
+      document.querySelector('[data-testid="prefs-error"]')?.textContent,
+    ).toContain("Could not load display settings");
+    expect(preferenceToggles().every((toggle) => toggle.disabled)).toBe(true);
+
+    getPreferencesMock.mockResolvedValueOnce({
+      version: 1,
+      language: "auto",
+      showStateBadge: false,
+      showReviewerName: true,
+      openPullsOnly: false,
+    });
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="prefs-retry"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.querySelector('[data-testid="prefs-error"]')).toBeNull();
+    const [badge, name, openOnly] = preferenceToggles();
+    expect([badge!.disabled, name!.disabled, openOnly!.disabled]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+    expect([badge!.checked, name!.checked, openOnly!.checked]).toEqual([
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it("hides the empty accounts state while the accounts load has failed", async () => {
+    listAccountsMock.mockRejectedValueOnce(new Error("storage read failed"));
+    await renderOptionsPage();
+
+    expect(document.body.textContent).toContain("Could not load accounts");
+    expect(document.querySelector('[data-testid="accounts-empty"]')).toBeNull();
+
+    await act(async () => {
+      Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
+        .find((button) => button.textContent?.trim() === "Try again")!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.body.textContent).not.toContain("Could not load accounts");
+    expect(
+      document.querySelector('[data-testid="accounts-empty"]'),
+    ).not.toBeNull();
+  });
+
+  it("explains why Sign in again does nothing when sign-in is unavailable", async () => {
+    vi.stubGlobal("__GITHUB_APP_CLIENT_ID__", "");
+    vi.stubGlobal("__GITHUB_APP_SLUG__", "");
+    vi.stubGlobal("__GITHUB_APP_NAME__", "");
+    vi.stubGlobal("__PROD__", true);
+    listAccountsMock.mockResolvedValue([
+      account({ invalidated: true, invalidatedReason: "revoked" }),
+    ]);
+    await renderOptionsPage();
+
+    expect(
+      document.querySelector('[data-testid="account-signin-unavailable"]'),
+    ).toBeNull();
+    await act(async () => {
+      Array.from(
+        document
+          .querySelector('[data-testid="account-card-hon454"]')!
+          .querySelectorAll<HTMLButtonElement>("button"),
+      )
+        .find((button) => button.textContent?.trim() === "Sign in again")!
+        .click();
+      await Promise.resolve();
+    });
+
+    expect(
+      document.querySelector('[data-testid="account-signin-unavailable"]')
+        ?.textContent,
+    ).toBe("GitHub sign-in is unavailable in this build.");
+    const auth = await import("../src/github/auth");
+    expect(auth.initiateDeviceFlow).not.toHaveBeenCalled();
+  });
+
+  it("clears the connected status once an account leaves the list", async () => {
+    await renderOptionsPage();
+    const auth = await import("../src/github/auth");
+    (
+      auth.initiateDeviceFlow as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
+      deviceCode: "dc",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://github.com/login/device",
+      verificationUriComplete:
+        "https://github.com/login/device?user_code=ABCD-EFGH",
+      expiresIn: 900,
+      interval: 1,
+    });
+    (
+      auth.pollForAccessToken as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({
+      status: "success",
+      accessToken: "ghu_abc",
+      refreshToken: null,
+      expiresAt: null,
+      refreshTokenExpiresAt: null,
+    });
+    (
+      auth.fetchAuthenticatedUser as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ userId: 1, login: "hon454", avatarUrl: null });
+    (
+      auth.fetchUserInstallations as unknown as ReturnType<typeof vi.fn>
+    ).mockResolvedValue({ items: [], truncated: false, invalidLink: false });
+    listAccountsMock.mockResolvedValue([account()]);
+
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[data-testid="accounts-add"]')!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(
+      document.querySelector('[data-testid="account-connected-status"]'),
+    ).not.toBeNull();
+
+    listAccountsMock.mockResolvedValue([]);
+    await act(async () => {
+      Array.from(
+        document
+          .querySelector('[data-testid="account-card-hon454"]')!
+          .querySelectorAll<HTMLButtonElement>("button"),
+      )
+        .find((button) => button.textContent?.trim() === "Remove")!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(
+      document.querySelector('[data-testid="account-card-hon454"]'),
+    ).toBeNull();
+    expect(
+      document.querySelector('[data-testid="account-connected-status"]'),
+    ).toBeNull();
+  });
+});
+
 describe("options live language selection", () => {
   it.each([
     ["en", "Remove"],
