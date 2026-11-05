@@ -332,7 +332,7 @@ code {
     transform 150ms ease;
 }
 
-.button:hover:not(:disabled) {
+.button:hover:not(:disabled, [aria-disabled="true"]) {
   transform: translateY(-1px);
 }
 
@@ -343,7 +343,8 @@ code {
   outline-offset: 2px;
 }
 
-.button:disabled {
+.button:disabled,
+.button[aria-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -354,7 +355,7 @@ code {
   color: #ffffff;
 }
 
-.button--primary:hover:not(:disabled) {
+.button--primary:hover:not(:disabled, [aria-disabled="true"]) {
   background: #238636;
 }
 
@@ -364,7 +365,7 @@ code {
   color: var(--text);
 }
 
-.button--secondary:hover:not(:disabled) {
+.button--secondary:hover:not(:disabled, [aria-disabled="true"]) {
   background: #30363d;
 }
 
@@ -374,7 +375,7 @@ code {
   color: var(--danger);
 }
 
-.button--danger:hover:not(:disabled) {
+.button--danger:hover:not(:disabled, [aria-disabled="true"]) {
   background: rgba(248, 81, 73, 0.1);
 }
 
@@ -549,7 +550,8 @@ code {
   transform: translateX(14px);
 }
 
-.preference-row input:disabled {
+.preference-row input:disabled,
+.preference-row input[aria-disabled="true"] {
   cursor: wait;
   opacity: 0.6;
 }
@@ -583,7 +585,7 @@ code {
 }
 
 .text-input::placeholder {
-  color: #6e7681;
+  color: #7d8590;
 }
 
 .text-input:focus {

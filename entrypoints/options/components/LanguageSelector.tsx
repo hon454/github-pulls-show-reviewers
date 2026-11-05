@@ -47,7 +47,8 @@ export function LanguageSelector({
         id="language-select"
         data-testid="language-select"
         value={locale.language}
-        disabled={status === "saving"}
+        aria-disabled={status === "saving" || undefined}
+        aria-busy={status === "saving" || undefined}
         aria-describedby="language-help language-status"
         onChange={(event) =>
           void select(event.target.value as LanguagePreference)

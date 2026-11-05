@@ -109,7 +109,9 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
             data-testid="prefs-show-state-badge"
             type="checkbox"
             checked={preferences.showStateBadge}
-            disabled={busy || !loaded}
+            disabled={!loaded}
+            aria-disabled={busy || undefined}
+            aria-busy={busy || undefined}
             onChange={(event) =>
               void handleChange({ showStateBadge: event.target.checked })
             }
@@ -124,7 +126,9 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
             data-testid="prefs-show-reviewer-name"
             type="checkbox"
             checked={preferences.showReviewerName}
-            disabled={busy || !loaded}
+            disabled={!loaded}
+            aria-disabled={busy || undefined}
+            aria-busy={busy || undefined}
             onChange={(event) =>
               void handleChange({ showReviewerName: event.target.checked })
             }
@@ -139,7 +143,9 @@ export function DisplaySettingsPanel({ t }: { t: Translator }) {
             data-testid="prefs-open-pulls-only"
             type="checkbox"
             checked={preferences.openPullsOnly}
-            disabled={busy || !loaded}
+            disabled={!loaded}
+            aria-disabled={busy || undefined}
+            aria-busy={busy || undefined}
             onChange={(event) =>
               void handleChange({ openPullsOnly: event.target.checked })
             }

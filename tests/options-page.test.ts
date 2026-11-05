@@ -215,6 +215,10 @@ async function renderOptionsPageInStrictMode() {
   });
 }
 
+function unavailable(control: HTMLButtonElement | HTMLSelectElement): boolean {
+  return control.disabled || control.getAttribute("aria-disabled") === "true";
+}
+
 function account(partial: Partial<Account> = {}): Account {
   return {
     id: "acc",
@@ -580,7 +584,7 @@ describe("OptionsPage", () => {
         signInLabel,
         removeLabel,
       ]);
-      expect(buttons[1]?.disabled).toBe(false);
+      expect(unavailable(buttons[1]!)).toBe(false);
     },
   );
 
@@ -620,9 +624,9 @@ describe("OptionsPage", () => {
 
     expect(removeAccountMock).toHaveBeenCalledTimes(1);
     expect(removeAccountMock).toHaveBeenCalledWith("invalidated");
-    expect(signInButton!.disabled).toBe(true);
-    expect(removeButton!.disabled).toBe(true);
-    expect(retainedRefresh.disabled).toBe(false);
+    expect(unavailable(signInButton!)).toBe(true);
+    expect(unavailable(removeButton!)).toBe(true);
+    expect(unavailable(retainedRefresh)).toBe(false);
     const auth = await import("../src/github/auth");
     expect(auth.initiateDeviceFlow).not.toHaveBeenCalled();
 
@@ -660,7 +664,7 @@ describe("OptionsPage", () => {
     expect(
       document.querySelector('[data-testid="account-card-hon454"]'),
     ).not.toBeNull();
-    expect(removeButton.disabled).toBe(false);
+    expect(unavailable(removeButton)).toBe(false);
     expect(
       document.querySelector('[data-testid="account-action-error-invalidated"]')
         ?.textContent,
@@ -733,7 +737,7 @@ describe("OptionsPage", () => {
     });
 
     expect(browser.runtime.sendMessage).toHaveBeenCalledTimes(1);
-    expect(refreshButton!.disabled).toBe(false);
+    expect(unavailable(refreshButton!)).toBe(false);
     expect(
       document.querySelector('[data-testid="account-action-error-acc"]')
         ?.textContent,
@@ -773,7 +777,7 @@ describe("OptionsPage", () => {
     });
 
     expect(removeAccountMock).toHaveBeenCalledTimes(1);
-    expect(removeButton!.disabled).toBe(false);
+    expect(unavailable(removeButton!)).toBe(false);
     expect(
       document.querySelector('[data-testid="account-action-error-acc"]')
         ?.textContent,
@@ -1364,7 +1368,7 @@ describe("OptionsPage", () => {
     });
 
     expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
-    expect(noTokenButton.disabled).toBe(false);
+    expect(unavailable(noTokenButton)).toBe(false);
     expect(
       document.querySelector('[data-testid="diagnostics-status"]')?.textContent,
     ).toContain("Could not run diagnostics");
@@ -1586,6 +1590,183 @@ describe("options error recovery (#253)", () => {
   });
 });
 
+describe("options keyboard and focus semantics (#254)", () => {
+  const repoInput = () =>
+    document.querySelector<HTMLInputElement>(
+      '[data-testid="diagnostics-repo"]',
+    )!;
+
+  async function typeRepository(value: string) {
+    await act(async () => {
+      fireEvent.change(repoInput(), { target: { value } });
+      await Promise.resolve();
+    });
+  }
+
+  it("runs the matched check on Enter and accepts the same URL forms as the no-token check", async () => {
+    resolveAccountCoverageForRepoMock.mockResolvedValue({
+      status: "uncovered",
+    });
+    await renderOptionsPage();
+    await typeRepository("https://github.com/cinev/shotloom/");
+
+    await act(async () => {
+      fireEvent.submit(repoInput().form!);
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(
+      document.querySelector('[data-testid="diagnostics-status"]')?.textContent,
+    ).not.toBe("Enter a repository as owner/name before running diagnostics.");
+    expect(
+      document.querySelector('[data-testid="diagnostics-fields"]')?.textContent,
+    ).toContain("Installation coverageUncovered");
+    expect(repoInput().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("ties input validation errors to the repository field", async () => {
+    await renderOptionsPage();
+    await typeRepository("not a repository");
+
+    await act(async () => {
+      fireEvent.submit(repoInput().form!);
+      await Promise.resolve();
+    });
+
+    expect(repoInput().getAttribute("aria-invalid")).toBe("true");
+    expect(repoInput().getAttribute("aria-describedby")).toBe(
+      "diagnostics-status",
+    );
+    expect(document.getElementById("diagnostics-status")?.textContent).toBe(
+      "Enter a repository as owner/name before running diagnostics.",
+    );
+
+    await typeRepository("cinev/shotloom");
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-no-token"]',
+        )!
+        .click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(repoInput().getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("keeps focus on a diagnostics button while its check is running", async () => {
+    const validation = pending<RepositoryValidationResult>();
+    validateGitHubRepositoryAccessMock.mockReturnValueOnce(validation.promise);
+    await renderOptionsPage();
+    await typeRepository("cinev/shotloom");
+    const noToken = document.querySelector<HTMLButtonElement>(
+      '[data-testid="diagnostics-no-token"]',
+    )!;
+    noToken.focus();
+
+    await act(async () => {
+      noToken.click();
+      await Promise.resolve();
+    });
+
+    expect(noToken.disabled).toBe(false);
+    expect(noToken.getAttribute("aria-disabled")).toBe("true");
+    expect(noToken.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(noToken);
+
+    await act(async () => {
+      noToken.click();
+      fireEvent.submit(repoInput().form!);
+      validation.resolve(validationResult());
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
+    expect(noToken.getAttribute("aria-disabled")).toBeNull();
+  });
+
+  it("keeps focus on a display toggle while its change saves", async () => {
+    const saving = pending<Awaited<ReturnType<typeof updatePreferencesMock>>>();
+    updatePreferencesMock.mockReturnValueOnce(saving.promise);
+    await renderOptionsPage();
+    const badge = document.querySelector<HTMLInputElement>(
+      '[data-testid="prefs-show-state-badge"]',
+    )!;
+    badge.focus();
+
+    await act(async () => {
+      badge.click();
+      await Promise.resolve();
+    });
+
+    expect(badge.disabled).toBe(false);
+    expect(badge.getAttribute("aria-busy")).toBe("true");
+    expect(document.activeElement).toBe(badge);
+    await act(async () => {
+      saving.resolve({
+        version: 1,
+        language: "auto",
+        showStateBadge: false,
+        showReviewerName: false,
+        openPullsOnly: true,
+      });
+    });
+    expect(badge.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("moves focus to the next account row, then to Add account, as rows are removed", async () => {
+    const first = account({ id: "first", login: "first-account" });
+    const second = account({ id: "second", login: "second-account" });
+    listAccountsMock.mockResolvedValue([first, second]);
+    await renderOptionsPage();
+
+    const removeButtonOf = (login: string) =>
+      Array.from(
+        document
+          .querySelector(`[data-testid="account-card-${login}"]`)!
+          .querySelectorAll<HTMLButtonElement>("button"),
+      ).find((button) => button.textContent?.trim() === "Remove")!;
+
+    listAccountsMock.mockResolvedValue([second]);
+    const firstRemove = removeButtonOf("first-account");
+    firstRemove.focus();
+    await act(async () => {
+      firstRemove.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(
+      document.querySelector('[data-testid="account-card-first-account"]'),
+    ).toBeNull();
+    expect(document.activeElement?.textContent?.trim()).toBe(
+      "Refresh installations",
+    );
+    expect(
+      document
+        .querySelector('[data-testid="account-card-second-account"]')!
+        .contains(document.activeElement),
+    ).toBe(true);
+
+    listAccountsMock.mockResolvedValue([]);
+    const secondRemove = removeButtonOf("second-account");
+    secondRemove.focus();
+    await act(async () => {
+      secondRemove.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(
+      document.querySelector('[data-testid="accounts-empty"]'),
+    ).not.toBeNull();
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-testid="accounts-add"]'),
+    );
+  });
+});
+
 describe("options live language selection", () => {
   it.each([
     ["en", "Remove"],
@@ -1659,8 +1840,8 @@ describe("options live language selection", () => {
       removeButton!.click();
     });
 
-    expect(removeButton!.disabled).toBe(false);
-    expect(signInButton!.disabled).toBe(false);
+    expect(unavailable(removeButton!)).toBe(false);
+    expect(unavailable(signInButton!)).toBe(false);
     await chooseLanguage("ko");
     expect(
       document.querySelector('[data-testid="account-action-error-acc"]')
@@ -1728,7 +1909,7 @@ describe("options live language selection", () => {
     const select =
       document.querySelector<HTMLSelectElement>("#language-select")!;
     expect(select.value).toBe("auto");
-    expect(select.disabled).toBe(false);
+    expect(unavailable(select)).toBe(false);
     expect(document.querySelector("#language-status")?.textContent).toContain(
       "Could not save language",
     );
@@ -1932,14 +2113,18 @@ describe("diagnostic render-only language changes", () => {
             ?.textContent,
         ).toBe(h.store.getSnapshot().t("diagnostics_running"));
         expect(
-          document.querySelector<HTMLButtonElement>(
-            '[data-testid="diagnostics-no-token"]',
-          )!.disabled,
+          unavailable(
+            document.querySelector<HTMLButtonElement>(
+              '[data-testid="diagnostics-no-token"]',
+            )!,
+          ),
         ).toBe(true);
         expect(
-          document.querySelector<HTMLButtonElement>(
-            '[data-testid="diagnostics-matched"]',
-          )!.disabled,
+          unavailable(
+            document.querySelector<HTMLButtonElement>(
+              '[data-testid="diagnostics-matched"]',
+            )!,
+          ),
         ).toBe(true);
         expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
         expect(input.value).toBe("cinev/shotloom");
@@ -2020,9 +2205,11 @@ describe("diagnostic render-only language changes", () => {
         );
         expect(input.value).toBe("cinev/shotloom");
         expect(
-          document.querySelector<HTMLButtonElement>(
-            '[data-testid="diagnostics-no-token"]',
-          )!.disabled,
+          unavailable(
+            document.querySelector<HTMLButtonElement>(
+              '[data-testid="diagnostics-no-token"]',
+            )!,
+          ),
         ).toBe(false);
       }
       expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
@@ -2092,9 +2279,11 @@ describe("diagnostic render-only language changes", () => {
     );
     expect(validateGitHubRepositoryAccessMock).toHaveBeenCalledTimes(1);
     expect(
-      document.querySelector<HTMLButtonElement>(
-        '[data-testid="diagnostics-no-token"]',
-      )!.disabled,
+      unavailable(
+        document.querySelector<HTMLButtonElement>(
+          '[data-testid="diagnostics-no-token"]',
+        )!,
+      ),
     ).toBe(false);
   });
 });
