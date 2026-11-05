@@ -268,6 +268,15 @@ runner would reintroduce the finding. Do not add it or an unpatched override
 just to restore auto-launch. Recheck these upstream versions and both audits
 before changing the development runner graph.
 
+`pnpm.overrides` in `package.json` raises `minimatch` from `10.x` to `^11.0.4`
+for [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249).
+The patch exists only in `11.0.1` and later, and ESLint,
+`@eslint/config-array` and `@typescript-eslint/typescript-estree` still
+declare `^10`, so Dependabot cannot resolve it in range. `minimatch` is reached
+only through the lint toolchain, not the packaged extension. Remove the
+override once those packages accept `11.x`, and confirm `pnpm audit` stays
+clean.
+
 `pnpm dev` now requires manually loading `.output/chrome-mv3-dev` from
 `chrome://extensions` with Developer mode enabled; keep the server running.
 Production Chrome builds still use `.output/chrome-mv3`. The project keeps its
