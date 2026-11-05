@@ -4,6 +4,7 @@ import {
   buildNoTokenDiagnostic,
   buildRepositoryDiagnostic,
   buildUncoveredAccountDiagnostic,
+  parseRepositoryInput,
 } from "../src/features/repository-diagnostics";
 import type {
   RepositoryValidationOutcome,
@@ -289,3 +290,21 @@ it.each(locales)(
     expect(diagnostic.fields[1].value).toBe("@actual-account");
   },
 );
+
+describe("parseRepositoryInput", () => {
+  it.each([
+    ["cinev/shotloom", { owner: "cinev", name: "shotloom" }],
+    ["  cinev/shotloom  ", { owner: "cinev", name: "shotloom" }],
+    ["https://github.com/cinev/shotloom", { owner: "cinev", name: "shotloom" }],
+    [
+      "https://github.com/cinev/shotloom//",
+      { owner: "cinev", name: "shotloom" },
+    ],
+    ["", null],
+    ["cinev", null],
+    ["cinev/shotloom/pulls", null],
+    ["cinev/shot loom", null],
+  ])("parses %j", (input, expected) => {
+    expect(parseRepositoryInput(input)).toEqual(expected);
+  });
+});

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { diagnoseRepository } from "../../../src/runtime/diagnostics";
 import {
   buildRepositoryDiagnostic,
+  parseRepositoryInput,
   type RepositoryDiagnosticState,
 } from "../../../src/features/repository-diagnostics";
 import type { Translator } from "../../../src/i18n";
@@ -46,16 +47,16 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
   }
 
   async function runMatched() {
-    const trimmed = repository.trim();
-    const match = trimmed.match(/^([^/\s]+)\/([^/\s]+)$/);
-    if (!match) {
+    if (busyRef.current) return;
+    const parsed = parseRepositoryInput(repository);
+    if (!parsed) {
       setDiagnostic({ kind: "input-matched" });
       return;
     }
     await runDiagnostic(async (signal) => {
       const result = await diagnoseRepository(
-        match[1],
-        match[2],
+        parsed.owner,
+        parsed.name,
         "matched",
         signal,
       );
@@ -64,17 +65,15 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
   }
 
   async function runNoToken() {
+    if (busyRef.current) return;
     const trimmed = repository.trim();
     if (!trimmed) {
       setDiagnostic({ kind: "input-no-token" });
       return;
     }
     await runDiagnostic(async (signal) => {
-      const normalized = trimmed
-        .replace(/^https:\/\/github\.com\//, "")
-        .replace(/\/+$/, "");
-      const match = normalized.match(/^([^/\s]+)\/([^/\s]+)$/);
-      if (!match) {
+      const parsed = parseRepositoryInput(trimmed);
+      if (!parsed) {
         setDiagnostic({
           kind: "no-token",
           repository: trimmed,
@@ -87,14 +86,20 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
         return;
       }
       const result = await diagnoseRepository(
-        match[1],
-        match[2],
+        parsed.owner,
+        parsed.name,
         "no-token",
         signal,
       );
       if (!signal.aborted) setDiagnostic(result);
     });
   }
+
+  const inputInvalid =
+    state.kind === "input-matched" ||
+    state.kind === "input-no-token" ||
+    (state.kind === "no-token" &&
+      state.result.outcome === "invalid-repository");
 
   return (
     <section className="settings-section" aria-labelledby="diagnostics-title">
@@ -105,41 +110,54 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
           <p>{t("diagnostics_description")}</p>
         </div>
       </div>
-      <label htmlFor="diagnostics-repository" className="field-label">
-        {t("diagnostics_repository")} <span>owner/name</span>
-      </label>
-      <input
-        id="diagnostics-repository"
-        type="text"
-        value={repository}
-        placeholder="owner/name"
-        onChange={(event) => setRepository(event.currentTarget.value)}
-        className="text-input"
-        data-testid="diagnostics-repo"
-      />
-      <div className="button-row diagnostic-actions">
-        <button
-          type="button"
-          onClick={() => void runMatched()}
-          disabled={busy}
-          className="button button--primary"
-          data-testid="diagnostics-matched"
-        >
-          {t("diagnostics_check_matched")}
-        </button>
-        <button
-          type="button"
-          onClick={() => void runNoToken()}
-          disabled={busy}
-          className="button button--secondary"
-          data-testid="diagnostics-no-token"
-        >
-          {t("diagnostics_check_no_token")}
-        </button>
-      </div>
+      <form
+        className="diagnostics-form"
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          void runMatched();
+        }}
+      >
+        <label htmlFor="diagnostics-repository" className="field-label">
+          {t("diagnostics_repository")} <span>owner/name</span>
+        </label>
+        <input
+          id="diagnostics-repository"
+          type="text"
+          value={repository}
+          placeholder="owner/name"
+          onChange={(event) => setRepository(event.currentTarget.value)}
+          className="text-input"
+          data-testid="diagnostics-repo"
+          aria-invalid={inputInvalid || undefined}
+          aria-describedby={inputInvalid ? "diagnostics-status" : undefined}
+        />
+        <div className="button-row diagnostic-actions">
+          <button
+            type="submit"
+            aria-disabled={busy || undefined}
+            aria-busy={busy || undefined}
+            className="button button--primary"
+            data-testid="diagnostics-matched"
+          >
+            {t("diagnostics_check_matched")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void runNoToken()}
+            aria-disabled={busy || undefined}
+            aria-busy={busy || undefined}
+            className="button button--secondary"
+            data-testid="diagnostics-no-token"
+          >
+            {t("diagnostics_check_no_token")}
+          </button>
+        </div>
+      </form>
       {diagnostic ? (
         <>
           <p
+            id="diagnostics-status"
             className={`inline-status inline-status--${diagnostic.tone}`}
             role="status"
             aria-live="polite"
@@ -149,8 +167,11 @@ export function DiagnosticsPanel({ t }: { t: Translator }) {
           </p>
           {diagnostic.fields.length > 0 ? (
             <dl className="diagnostic-fields" data-testid="diagnostics-fields">
-              {diagnostic.fields.map((field, index) => (
-                <div key={index} className="diagnostic-field">
+              {diagnostic.fields.map((field) => (
+                <div
+                  key={`${field.label}\u0000${field.value}`}
+                  className="diagnostic-field"
+                >
                   <dt>{field.label}</dt>
                   <dd
                     className={`diagnostic-value diagnostic-value--${field.tone}`}

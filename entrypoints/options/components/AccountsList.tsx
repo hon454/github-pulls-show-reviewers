@@ -1,5 +1,5 @@
 import type { Translator } from "../../../src/i18n";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { removeAccount } from "../../../src/runtime/account-mutations";
 import { refreshAccountInstallations } from "../../../src/runtime/installation-refresh";
@@ -10,6 +10,8 @@ type Props = {
   accounts: Account[];
   onChange: () => Promise<void>;
   onReauthenticate: (account: Account, control: HTMLButtonElement) => void;
+  /** Focus target once the last account row is removed. */
+  onListEmptiedFocus?: () => void;
 };
 
 type AccountAction = "refresh" | "remove";
@@ -18,8 +20,13 @@ export function AccountsList({
   accounts,
   onChange,
   onReauthenticate,
+  onListEmptiedFocus,
   t,
 }: Props) {
+  const list = useRef<HTMLDivElement | null>(null);
+  // Row index whose removal took focus with it; focus moves to the row now in
+  // that position (or the previous one, or the add button) once it renders.
+  const removedFocusIndex = useRef<number | null>(null);
   const inFlightAccountIds = useRef(new Set<string>());
   const [busyActions, setBusyActions] = useState<
     Record<string, AccountAction | undefined>
@@ -64,11 +71,36 @@ export function AccountsList({
   }
 
   async function handleRemove(account: Account) {
+    const index = accounts.findIndex((entry) => entry.id === account.id);
     await runAccountAction(account, "remove", async () => {
       await removeAccount(account.id);
+      removedFocusIndex.current = index;
       await onChange();
     });
   }
+
+  useEffect(() => {
+    const index = removedFocusIndex.current;
+    if (index === null) return;
+    if (accounts.length > 0 && !list.current) return;
+    const focusLost =
+      document.activeElement === document.body ||
+      !document.activeElement?.isConnected;
+    if (!focusLost) {
+      removedFocusIndex.current = null;
+      return;
+    }
+    const rows = list.current?.querySelectorAll(".account-row") ?? [];
+    const row = rows[Math.min(index, rows.length - 1)];
+    const next = row?.querySelector<HTMLButtonElement>("button");
+    if (next) {
+      removedFocusIndex.current = null;
+      next.focus();
+    } else if (accounts.length === 0) {
+      removedFocusIndex.current = null;
+      onListEmptiedFocus?.();
+    }
+  }, [accounts, onListEmptiedFocus]);
 
   if (accounts.length === 0) {
     return (
@@ -85,7 +117,7 @@ export function AccountsList({
   }
 
   return (
-    <div className="account-list">
+    <div className="account-list" ref={list}>
       {accounts.map((account) => {
         const busyAction = busyActions[account.id];
         const isBusy = busyAction != null;
@@ -120,10 +152,10 @@ export function AccountsList({
               {account.invalidated ? (
                 <button
                   type="button"
-                  onClick={(event) =>
-                    onReauthenticate(account, event.currentTarget)
-                  }
-                  disabled={isBusy}
+                  onClick={(event) => {
+                    if (!isBusy) onReauthenticate(account, event.currentTarget);
+                  }}
+                  aria-disabled={isBusy || undefined}
                   className="button button--primary"
                 >
                   {t("options_signin_again")}
@@ -132,7 +164,8 @@ export function AccountsList({
                 <button
                   type="button"
                   onClick={() => void handleRefresh(account)}
-                  disabled={isBusy}
+                  aria-disabled={isBusy || undefined}
+                  aria-busy={busyAction === "refresh" || undefined}
                   className="button button--secondary"
                 >
                   {busyAction === "refresh"
@@ -143,7 +176,8 @@ export function AccountsList({
               <button
                 type="button"
                 onClick={() => void handleRemove(account)}
-                disabled={isBusy}
+                aria-disabled={isBusy || undefined}
+                aria-busy={busyAction === "remove" || undefined}
                 className="button button--danger"
               >
                 {busyAction === "remove"

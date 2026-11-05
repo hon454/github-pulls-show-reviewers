@@ -111,6 +111,10 @@ export function OptionsPage({
     };
   }, [applyAccounts, reload]);
 
+  const focusAddAccount = useCallback(() => {
+    addAccountButton.current?.focus();
+  }, []);
+
   const restoreOpeningFocus = useCallback(() => {
     setFocusRestorationIntent(focusIntentGeneration.current);
   }, []);
@@ -235,6 +239,7 @@ export function OptionsPage({
               t={t}
               accounts={accounts}
               onChange={reload}
+              onListEmptiedFocus={focusAddAccount}
               onReauthenticate={(_, control) => {
                 if (appConfig) {
                   openAddPanel(control);
