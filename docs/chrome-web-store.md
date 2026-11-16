@@ -27,12 +27,12 @@ review submission and tags are separate authorized stages.
 
 ## Reviewed listing materials
 
-The current package target is [v1.18.9](./releases/v1.18.9.md). All five
+The current package target is [v1.18.10](./releases/v1.18.10.md). All five
 store descriptions and all 15 committed image bytes are retained, and the
 verified saved-listing baseline is reused; no new screenshot capture or
 dashboard save is claimed or needed. The capture source hashes are
 intentionally left at v1.18.8: on one machine and with one Playwright Chromium
-build, regenerating from the v1.18.9 source changed 7 of 15 screenshots (all
+build, regenerating from the v1.18.9 source (unchanged in v1.18.10) changed 7 of 15 screenshots (all
 five `03-options-repository-check.png` at pixel level, and the Japanese
 `01-pr-list-before-after.png` and `02-pr-list-avatar-state-showcase.png`
 because reviewer labels now use a full-width colon). `pnpm verify:cws`
