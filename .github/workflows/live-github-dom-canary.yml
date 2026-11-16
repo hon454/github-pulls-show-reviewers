@@ -22,7 +22,9 @@ jobs:
   live-github-dom-canary:
     name: Live GitHub DOM canary
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Each of up to three attempts may wait up to 62 minutes for the
+    # unauthenticated API quota to reset before its ~2-minute run.
+    timeout-minutes: 210
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

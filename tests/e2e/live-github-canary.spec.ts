@@ -42,6 +42,10 @@ import {
   NavigationEvidenceError,
   type NavigationFailureCode,
 } from "../helpers/live-github-canary-navigation";
+import {
+  fetchCanaryCoreQuota,
+  waitForCanaryQuota,
+} from "../helpers/live-github-canary-quota";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "../..");
@@ -56,6 +60,25 @@ test("verifies reviewer recovery across live pull-list navigation", async ({
   const [owner, repo] = liveRepository.split("/");
   const repository: CanaryRepository = { owner, repo };
   const targetUrl = `https://github.com/${liveRepository}/pulls?q=is%3Apr`;
+
+  // Every attempt, including retries, starts with enough unauthenticated quota
+  // for a full A→D run; waiting extends only this attempt's own deadline.
+  const quotaGate = await waitForCanaryQuota({
+    readQuota: () => fetchCanaryCoreQuota(),
+    now: () => Date.now(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    onWait: (waitMs) => test.setTimeout(testInfo.timeout + waitMs),
+  });
+  await attachCanaryDiagnostics(
+    testInfo,
+    { phase: "quota-preflight", ...quotaGate },
+    "canary-quota-preflight.json",
+  );
+  expect(
+    quotaGate.outcome,
+    `live canary quota preflight failed (environment): ${quotaGate.failureCode}`,
+  ).not.toBe("fail");
+
   const userDataDir = await mkdtemp(
     path.join(os.tmpdir(), "ghpsr-live-canary-"),
   );
