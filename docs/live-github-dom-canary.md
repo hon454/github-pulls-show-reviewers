@@ -157,6 +157,30 @@ only `contents: read` permission, does not persist checkout credentials, and
 does not receive a GitHub user token. The Playwright live project retries at
 most twice within one run.
 
+### Unauthenticated quota preflight
+
+The extension reads public reviewers without a token, so the canary shares the
+runner IP's 60-requests-per-hour core quota with any earlier job on that IP. A
+complete attempt freshly fetches two pull-list pages (one list request plus one
+reviews request per row, 52 requests for 25-row pages); stages C and D are
+mostly served from the browser HTTP cache. Run 43900403604 started with only 38
+requests left, exhausted the quota at stage B, and every retry then failed at
+stage A with HTTP 403.
+
+Before each attempt, including retries, the canary therefore reads
+`GET https://api.github.com/rate_limit`, which does not consume core quota and
+never feeds the reviewer verdict. If fewer than 56 requests remain (two fresh
+pages plus a margin of four), the attempt waits until just past the advertised
+reset and reads the quota again, extending only its own Playwright deadline.
+The total wait per attempt is bounded at 62 minutes and the workflow timeout
+(210 minutes) outlasts three such attempts so failure evidence still uploads.
+If the bound would be exceeded, or the advertised limit itself is below 56, the
+attempt fails with an environment-owned `api-quota-wait-exceeded` or
+`api-quota-limit-too-low` code. An unreadable quota endpoint is recorded and
+the attempt proceeds, so the preflight never becomes a new failure source.
+Every attempt attaches `canary-quota-preflight.json` with the required budget,
+waited time, and each quota observation.
+
 The live test remains absent from `.github/workflows/ci.yml` and from the
 Playwright `default` project. Pull requests block on deterministic Vitest and
 packaged fixtures; GitHub uptime, rate limiting, challenge delivery, and live
@@ -180,7 +204,8 @@ pnpm test:e2e:live
 The live-canary project has a two-minute per-attempt timeout. This lifts the
 default 30-second ceiling for a normal four-stage attempt while keeping the
 attempt bounded well below the workflow timeout; it does not add retries beyond
-the project's existing two retries.
+the project's existing two retries. A quota preflight wait extends that
+attempt's deadline by exactly the waited time.
 
 Each native pagination or filter link must be visible and not marked
 `aria-disabled` in GitHub's current `main` region. Hidden or `aria-disabled`
@@ -254,7 +279,8 @@ run in this order:
    fixture before changing the centralized production selector. Do not change
    selectors based only on an assumed live markup change.
 
-The bounded Playwright retries are the only automatic retries. Do not add
+The bounded Playwright retries are the only automatic retries; the quota
+preflight waits before an attempt starts and never repeats a failed attempt. Do not add
 unbounded retries, `skip`, `continue-on-error`, a mount-only fallback, an oracle
 HTTP request, or authenticated/private data to make a recurring failure green.
 If GitHub permanently restricts unauthenticated automation or the live data can
