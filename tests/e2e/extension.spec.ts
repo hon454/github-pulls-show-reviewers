@@ -735,18 +735,32 @@ test("an idle pull-list tab leaves a stopped worker stopped and still receives l
       string,
       { versionId: string; scriptURL: string; runningStatus: string }
     >();
+    // Count stop transitions as they arrive: a reconnecting port can restart
+    // the worker before a poll ever samples the transient "stopped" state.
+    let stoppedTransitions = 0;
     cdp.on("ServiceWorker.workerVersionUpdated", ({ versions: updates }) => {
-      for (const version of updates) versions.set(version.versionId, version);
+      for (const version of updates) {
+        if (
+          version.scriptURL === workerUrl &&
+          version.runningStatus === "stopped" &&
+          versions.get(version.versionId)?.runningStatus !== "stopped"
+        )
+          stoppedTransitions += 1;
+        versions.set(version.versionId, version);
+      }
     });
     await cdp.send("ServiceWorker.enable");
     const workerVersion = () =>
       [...versions.values()].find((value) => value.scriptURL === workerUrl);
     const stopWorker = async () => {
       await expect.poll(() => workerVersion()?.runningStatus).toBe("running");
+      const transitionsBefore = stoppedTransitions;
       await cdp.send("ServiceWorker.stopWorker", {
         versionId: workerVersion()!.versionId,
       });
-      await expect.poll(() => workerVersion()?.runningStatus).toBe("stopped");
+      await expect
+        .poll(() => stoppedTransitions)
+        .toBeGreaterThan(transitionsBefore);
     };
 
     // Chrome stops an idle MV3 worker after about thirty seconds, which drops
