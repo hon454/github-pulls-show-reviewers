@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { LIVE_CANARY_MAX_QUOTA_WAIT_MS } from "./helpers/live-github-canary-quota";
+
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(currentDir, "..");
 const workflowDir = path.join(projectRoot, ".github/workflows");
@@ -72,6 +74,15 @@ describe("live GitHub DOM canary workflow", () => {
     expect(workflow).toContain("path: test-results");
     expect(workflow).toContain("retention-days: 14");
     expect(workflow).not.toContain("continue-on-error");
+  });
+
+  it("outlasts every attempt's bounded quota wait so failure evidence uploads", async () => {
+    const workflow = await readLiveCanaryWorkflow();
+    const minutes = Number(/timeout-minutes: (\d+)/.exec(workflow)?.[1]);
+    const attempts = 1 + 2; // live project retries
+    const perAttemptMinutes = LIVE_CANARY_MAX_QUOTA_WAIT_MS / 60_000 + 4;
+
+    expect(minutes).toBeGreaterThanOrEqual(attempts * perAttemptMinutes);
   });
 });
 
