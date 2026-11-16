@@ -29,8 +29,9 @@ manifest declares `minimum_chrome_version: "140"`; permissions are unchanged.
 The [v1.18.9 release notes](./releases/v1.18.9.md) cover options page
 recovery and keyboard fixes, glossary-aligned wording and CJK punctuation in
 the catalogs, and dependency updates. The
-[v1.18.10 release notes](./releases/v1.18.10.md) cover a lint-toolchain
-advisory override and a quota preflight for the weekly live canary; the
+[v1.18.11 release notes](./releases/v1.18.11.md) cover a lint-toolchain
+advisory override, a quota preflight for the weekly live canary and a
+service-worker test timing fix (v1.18.10 was tagged but not published); the
 shipped extension code is unchanged. Permissions, storage and authentication
 are unchanged.
 
